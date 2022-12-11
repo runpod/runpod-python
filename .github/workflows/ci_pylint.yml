@@ -1,0 +1,31 @@
+name: CI | Code Quality
+
+on:
+  push:
+    branches:
+      - '**'
+      - 'master'
+      - '!master-ci'
+      - '!release'
+
+  pull_request:
+    branches:
+      - master
+
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.11.0
+
+      - name: Run Pylint
+        run: |
+          find . -type f -name '*.py' | xargs pylint
