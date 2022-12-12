@@ -1,4 +1,4 @@
-''' Template for the predict.py file. '''
+''' Template for the infer.py file. '''
 
 
 class Predictor:

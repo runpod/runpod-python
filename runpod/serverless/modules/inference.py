@@ -7,7 +7,7 @@ import os
 import zipfile
 
 # -------------------------- Import Model Predictors ------------------------- #
-from predict import Predictor
+from infer import Predictor
 
 from .download import download_input_objects
 from .logging import log

@@ -1,7 +1,6 @@
 ''' Tests for runpod | serverless| modules | download.py '''
 # pylint: disable=R0903,W0613,R0801
 
-import sys
 import unittest
 from unittest.mock import patch, mock_open
 
@@ -38,7 +37,6 @@ class TestDownloadInputObjects(unittest.TestCase):
         '''
         Tests download_input_objects
         '''
-        sys.modules['predict'] = __import__('mock_predict')
         objects = download_input_objects(
             ['https://example.com/picture.jpg', ]
         )
