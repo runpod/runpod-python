@@ -15,7 +15,7 @@ EXECUTION_TIMEOUT= # Timeout for execution in milliseconds (Default: 300000)
 TERMINATE_IDLE_TIME= # Time in milliseconds to wait before terminating idle pods (Default: 60000)
 
 # API Endpoints
-AI_API_KEY= # infer-ai API Key
+AI_API_KEY= # Serverless API Key
 WEBHOOK_GET_WORK= # URL to get work from
 WEBHOOK_POST_OUTPUT= # URL to post output to
 

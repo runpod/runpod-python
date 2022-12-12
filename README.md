@@ -43,3 +43,5 @@ import runpod
 
 runpod.serverless.pod_worker()
 ```
+
+Add the env veriables found in [serverless-worker](docs/serverless-worker.md) to your project.
