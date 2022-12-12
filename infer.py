@@ -7,7 +7,7 @@ class Predictor:
     def setup(self):
         ''' Loads the model. '''
 
-    def predict(self):
+    def predict(self, model_inputs):
         '''
         Predicts the output of the model.
         '''
