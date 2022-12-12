@@ -4,7 +4,6 @@ Interacts with the model to make predictions.
 '''
 
 import os
-import shutil
 import zipfile
 
 # -------------------------- Import Model Predictors ------------------------- #

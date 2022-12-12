@@ -20,7 +20,7 @@ def download_input_objects(object_locations):
 
     objects = []
     for object_url in object_locations:
-        response = requests.get(object_url)
+        response = requests.get(object_url, timeout=5)
 
         file_name = os.path.basename(object_url)
         file_extension = os.path.splitext(file_name)[1]
