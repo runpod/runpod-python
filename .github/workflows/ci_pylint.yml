@@ -26,6 +26,7 @@ jobs:
         with:
           python-version: 3.11.0
 
-      - name: Run Pylint
+      - name: Pylint Source
         run: |
+          cd src
           find . -type f -name '*.py' | xargs pylint
