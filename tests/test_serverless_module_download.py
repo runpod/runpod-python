@@ -3,9 +3,7 @@
 import unittest
 from unittest.mock import patch, mock_open
 
-from runpod import hello_world
-
-from runpod.serverless.modules.download import download_input_objects
+from runpod.serverless.modules import download
 
 
 def mock_requests_get(*args, **kwargs):
@@ -33,10 +31,14 @@ class TestDownloadInputObjects(unittest.TestCase):
 
     @patch('requests.get', side_effect=mock_requests_get)
     @patch('builtins.open', new_callable=mock_open)
-    def test_download_input_objects(self):
+    def test_download_input_objects(self, mock_open_file, mock_get):
         '''
         Tests download_input_objects
         '''
-        objects = download_input_objects(
+        objects = download.download_input_objects(
             ['https://example.com/picture.jpg', ]
         )
+
+        self.assertEqual(len(objects), 1)
+        self.assertIn('https://example.com/picture.jpg', mock_get.call_args_list[0][0])
+        mock_open_file.assert_called_once_with(objects[0], 'wb')
