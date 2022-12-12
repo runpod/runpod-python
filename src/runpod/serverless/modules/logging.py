@@ -1,0 +1,40 @@
+''' PodWorker | modules | logging.py '''
+
+import os
+from dotenv import load_dotenv
+
+
+load_dotenv( )  # Load environment variables
+
+
+def log(message, level='INFO'):
+    '''
+    Log message to stdout
+    '''
+    if os.environ.get('DEBUG', 'False') == 'true':
+        print(f'{level} | {message}')
+
+
+def log_secret(secret_name, secret, level='INFO'):
+    '''
+    Censors secrets for logging
+    Replaces everything except the first and last characters with *
+    '''
+    if secret is None:
+        secret = 'Could not read environment variable.'
+        log(f"{secret_name}: {secret}", 'ERROR')
+    else:
+        secret = str(secret)
+        secret = secret[0] + '*' * len(secret) + secret[-1]
+        log(f"{secret_name}: {secret}", level)
+
+
+log('Logging module loaded')
+
+log_secret('AI_API_KEY', os.environ.get('AI_API_KEY', None))
+log_secret('WEBHOOK_GET_WORK', os.environ.get('WEBHOOK_GET_WORK', None))
+log_secret('WEBHOOK_POST_OUTPUT', os.environ.get('WEBHOOK_POST_OUTPUT', None))
+
+log_secret('BUCKET_ENDPOINT_URL', os.environ.get('BUCKET_ENDPOINT_URL', None))
+log_secret('BUCKET_ACCESS_KEY_ID', os.environ.get('BUCKET_ACCESS_KEY_ID', None))
+log_secret('BUCKET_SECRET_ACCESS_KEY', os.environ.get('BUCKET_SECRET_ACCESS_KEY', None))

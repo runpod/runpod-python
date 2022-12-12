@@ -26,7 +26,11 @@ jobs:
         with:
           python-version: 3.11.0
 
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pylint
+
       - name: Pylint Source
         run: |
-          cd src
           find . -type f -name '*.py' | xargs pylint
