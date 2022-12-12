@@ -7,35 +7,24 @@ import os
 import zipfile
 
 # -------------------------- Import Model Predictors ------------------------- #
-try:
-    from predict import Predictor as SD  # pylint: disable=E0401
-except ImportError:
-    print('Stable Diffusion model not found, using Dreambooth instead.')
-
-try:
-    from predictor import Predictor as DB  # pylint: disable=E0401
-except ImportError:
-    print('Dreambooth model not found, using Stable Diffusion instead.')
+from predict import Predictor
 
 from .download import download_input_objects
 from .logging import log
 
-
 model_name = os.environ.get('MODEL', 'stable_diffusion')
-
-if model_name == 'stable_diffusion':
-    cog_predictor = SD()
-    cog_predictor.setup()
-    log('Stable Diffusion model loaded.')
-
-if model_name == 'dreambooth':
-    cog_predictor = DB()
-    cog_predictor.setup()
-    log('Dreambooth model loaded.')
 
 
 class Models:
     ''' Interface for the model.'''
+
+    def __init__(self):
+        '''
+        Loads the model.
+        '''
+        self.predictor = Predictor()
+        self.predictor.setup()
+        log('Model loaded.')
 
     def run(self, model_inputs):
         '''
@@ -53,7 +42,7 @@ class Models:
         '''
         Runs the stable diffusion model on the given inputs.
         '''
-        job_results = cog_predictor.predict(
+        job_results = self.predictor.predict(
             prompt=model_inputs["prompt"],
             width=model_inputs.get('width', 512),
             height=model_inputs.get('height', 512),
@@ -76,7 +65,7 @@ class Models:
         '''
         model_inputs["instance_data"] = download_input_objects(model_inputs["instance_data"])[0]
 
-        job_results = cog_predictor.predict(
+        job_results = self.predictor.predict(
             instance_prompt=model_inputs["instance_prompt"],
             class_prompt=model_inputs["class_prompt"],
             instance_data=model_inputs["instance_data"],
