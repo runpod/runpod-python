@@ -34,8 +34,33 @@ These are variables that are accessed from the RunPod container and not required
 RUNPOD_POD_ID= # Pod ID
 RUNPOD_API_KEY= # Pod API Key
 ```
+
 ## Error Handling
 
 If an error occurs, the worker will send a message to the API with the error message and the job will be marked as failed.
 
 To report a job error call `job.error(worker_id, job_id, error_message)`.
+
+---
+
+## Worker Lifecycle Management
+
+The duration of the worker is managed within the [lifecycle](../PodWorker/modules/lifecycle.py) module.
+
+The worker starts with a TTL as specified by the environment variable `TERMINATE_IDLE_TIME` or defaults to 60 seconds as specified with `self.ttl`. When a new job is received, a `work_in_progress` flag is set. When the job is completed, the `work_in_progress` flag is cleared and the TTL is reset. If the `work_in_progress` flag is not cleared within the `work_timeout` period, the worker will exit.
+
+ If the worker does not receive a new job within idle period, the worker will exit.
+
+## Tracking TTL
+
+On working initialization a time tracking thread is started, this thread monitors the workers TTL and exits the worker if the TTL has expired.
+
+## Worker Zero
+
+Worker zero can have a modified TTL behavior, to flag a worker as worker zero set `self.is_worker_zero` to `True`. Worker zero will not run the TTL check thread.
+
+## Worker Seppuku
+
+When the TTL of a worker has expired the function `self.seppuku` is called. On exit the following actions are taken:
+
+- RunPod API call to delete the pod
