@@ -10,6 +10,7 @@
 - [Installation](#installation)
 - [API Language Library](#api-language-library)
 - [SDK - Serverless Worker](#sdk---serverless-worker)
+  - [Quick Start](#quick-start)
 
 ## Installation
 
@@ -30,3 +31,15 @@ runpod.api_key = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ## SDK - Serverless Worker
 
 This python package can also be used to create a serverless worker that can be deployed to RunPod.
+
+### Quick Start
+
+Create an executable file called 'worker' in the root of your project that contains the following:
+
+```python
+#!/usr/bin/env python
+
+import runpod
+
+runpod.serverless.pod_worker()
+```
