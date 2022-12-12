@@ -2,7 +2,6 @@
 runpod | serverless | pod_worker.py
 Called to convert a container into a worker pod for the runpod serverless platform.
 '''
-# pylint disable=R0801
 
 import os
 import shutil

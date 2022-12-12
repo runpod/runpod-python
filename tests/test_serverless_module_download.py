@@ -4,7 +4,7 @@
 import unittest
 from unittest.mock import patch, mock_open
 
-from runpod.serverless.modules import download
+from runpod.serverless.modules.download import download_input_objects
 
 
 def mock_requests_get(*args, **kwargs):
@@ -36,7 +36,7 @@ class TestDownloadInputObjects(unittest.TestCase):
         '''
         Tests download_input_objects
         '''
-        objects = download.download_input_objects(
+        objects = download_input_objects(
             ['https://example.com/picture.jpg', ]
         )
 
