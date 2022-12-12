@@ -3,9 +3,6 @@ PodWorker | modules | inference.py
 Interacts with the model to make predictions.
 '''
 
-import os
-import zipfile
-
 # -------------------------- Import Model Predictors ------------------------- #
 from infer import Predictor
 

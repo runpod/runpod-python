@@ -1,4 +1,8 @@
-''' Template for the infer.py file. '''
+'''
+Template for the infer.py file.
+Input -> model perameters
+Output -> list of files
+'''
 
 
 class Predictor:
