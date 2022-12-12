@@ -1,8 +1,9 @@
 ''' Tests for runpod | serverless| modules | download.py '''
 
 import unittest
-from unittest import mock
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, mock_open
+
+from runpod import hello_world
 
 from runpod.serverless.modules.download import download_input_objects
 

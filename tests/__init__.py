@@ -1,1 +1,1 @@
-''' Allows the tests to be run from the top level directory.'''
+''' Allows tests to be imported as a module.'''
