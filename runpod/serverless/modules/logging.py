@@ -4,7 +4,8 @@ import os
 from dotenv import load_dotenv
 
 
-load_dotenv( )  # Load environment variables
+env_path = os.getcwd() + '/.env'
+load_dotenv(env_path)  # Load environment variables
 
 
 def log(message, level='INFO'):
