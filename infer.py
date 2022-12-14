@@ -3,6 +3,7 @@ Template for the infer.py file.
 Input -> model parameters
 Output -> list of files
 '''
+# pylint: disable=unused-argument,too-few-public-methods
 
 
 class Predictor:
