@@ -76,4 +76,4 @@ To test locally, create the file `test_inputs.json` in the root directory that c
 }
 ```
 
-The inputS should match the inputs your model would expect to see from the API.
+The inputs should match the inputs your model would expect to see from the API. Then set `TEST_LOCAL` to `true` in the .env file and run the worker.
