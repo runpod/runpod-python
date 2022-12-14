@@ -43,14 +43,12 @@ def start_worker():
             # -------------------------------- Job Cleanup ------------------------------- #
             shutil.rmtree("input_objects", ignore_errors=True)
             shutil.rmtree("output_objects", ignore_errors=True)
-            os.remove('output.zip') if os.path.exists('output.zip') else None
+
+            if os.path.exists('output.zip'):
+                os.remove('output.zip')
 
             worker_life.reset_worker_ttl()
 
         if os.environ.get('TEST_LOCAL', 'false') == 'true':
             log("Local testing complete, exiting.")
             break
-
-
-if __name__ == '__main__':
-    start_worker()
