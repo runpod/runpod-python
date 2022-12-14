@@ -33,15 +33,17 @@ def start_worker():
             worker_life.work_in_progress = True  # Rests when "reset_worker_ttl" is called
 
             try:
-                output_urls, job_duration_ms = job.run(next_job['id'], next_job['input'])
-                job.post(worker_life.worker_id, next_job['id'], output_urls, job_duration_ms)
+                output_urls, job_duration_ms = job.run(
+                    next_job['id'], next_job['input'])
+                job.post(worker_life.worker_id,
+                         next_job['id'], output_urls, job_duration_ms)
             except ValueError as err:
                 job.error(worker_life.worker_id, next_job['id'], str(err))
 
             # -------------------------------- Job Cleanup ------------------------------- #
             shutil.rmtree("input_objects", ignore_errors=True)
             shutil.rmtree("output_objects", ignore_errors=True)
-            os.remove('output.zip')
+            os.remove('output.zip') if os.path.exists('output.zip') else None
 
             worker_life.reset_worker_ttl()
 

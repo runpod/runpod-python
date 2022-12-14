@@ -64,3 +64,16 @@ Worker zero can have a modified TTL behavior, to flag a worker as worker zero se
 When the TTL of a worker has expired the function `self.seppuku` is called. On exit the following actions are taken:
 
 - RunPod API call to delete the pod
+
+## Local Testing
+
+To test locally, create the file `test_inputs.json` in the root directory that contains the following:
+
+```json
+{
+    "id": "LOCAL-TEST",
+    "input":{}
+}
+```
+
+The inputS should match the inputs your model would expect to see from the API.

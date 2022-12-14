@@ -24,4 +24,4 @@ class Models:
         '''
         Predicts the output of the model.
         '''
-        return self.predictor.predict(model_inputs)
+        return self.predictor.run(model_inputs)

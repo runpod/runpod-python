@@ -1,6 +1,6 @@
 '''
 Template for the infer.py file.
-Input -> model perameters
+Input -> model parameters
 Output -> list of files
 '''
 
@@ -11,7 +11,7 @@ class Predictor:
     def setup(self):
         ''' Loads the model. '''
 
-    def predict(self, model_inputs):
+    def run(self, model_inputs):
         '''
         Predicts the output of the model.
         '''
