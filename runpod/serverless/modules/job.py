@@ -18,6 +18,10 @@ def get(worker_id):
         "input": {job_input}
     }
     '''
+    if os.environ.get('WEBHOOK_GET_WORK', None) is None:
+        log('WEBHOOK_GET_WORK not set, switching to get_local', 'WARNING')
+        return get_local()
+
     get_work_url = str(os.environ.get('WEBHOOK_GET_WORK')
                        ).replace('$ID', worker_id)
 

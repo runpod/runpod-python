@@ -1,8 +1,10 @@
 <div align="center">
 <h1>RunPod | Python Library </h1>
+
+[![CI | Unit Tests](https://github.com/runpod/runpod-python/actions/workflows/CI_tests.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI_tests.yml)
 </div>
 
-🐍 | Python library for RunPod API &amp; SDK.
+Official Python library for RunPod API &amp; SDK.
 
 ## Table of Contents
 
