@@ -1,7 +1,10 @@
 <div align="center">
 <h1>RunPod | Python Library </h1>
 
+[![CI | Code Quality](https://github.com/runpod/runpod-python/actions/workflows/ci_pylint.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/ci_pylint.yml)
+&nbsp;
 [![CI | Unit Tests](https://github.com/runpod/runpod-python/actions/workflows/CI_tests.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI_tests.yml)
+
 </div>
 
 Official Python library for RunPod API &amp; SDK.
