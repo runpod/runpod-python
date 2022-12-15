@@ -7,10 +7,8 @@ To convert a Pod to a Worker, you need to add the following annotations to the P
 ```bash
 # Development
 DEBUG= # Set to 'true' to enable debug mode, otherwise leave blank
-TEST_LOCAL= # Set to 'true' to test locally, otherwise leave blank
 
 # Configurations
-MODEL= # Model to use (Default: stable_diffusion)
 EXECUTION_TIMEOUT= # Timeout for execution in milliseconds (Default: 300000)
 TERMINATE_IDLE_TIME= # Time in milliseconds to wait before terminating idle pods (Default: 60000)
 
@@ -78,4 +76,4 @@ To test locally, create the file `test_inputs.json` in the root directory that c
 }
 ```
 
-The inputs should match the inputs your model would expect to see from the API. Then set `TEST_LOCAL` to `true` in the .env file and run the worker.
+If the required webhook environment variables are not set, the worker will default to local testing.

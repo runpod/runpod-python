@@ -75,7 +75,7 @@ def post(worker_id, job_id, job_output, job_time):
     '''
     Complete the job.
     '''
-    if os.environ.get('TEST_LOCAL', 'false') == 'true':
+    if os.environ.get('WEBHOOK_POST_OUTPUT', None) is None:
         return
 
     job_data = {

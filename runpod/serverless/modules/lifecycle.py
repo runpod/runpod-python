@@ -72,7 +72,7 @@ class LifecycleManager:
         Check worker TTL.
         Reduce TTL or timeout by 1 every second.
         '''
-        if os.environ.get('TEST_LOCAL', 'false') != 'true':
+        if os.environ.get('RUNPOD_API_KEY', None) is not None:
             if self.ttl <= 0 or self.work_timeout <= 0:
                 self.seppuku()
 

@@ -21,13 +21,16 @@ boto_config = Config(
     }
 )
 
-boto_client = bucket_session.client(
-    's3',
-    endpoint_url=os.environ.get('BUCKET_ENDPOINT_URL', None),
-    aws_access_key_id=os.environ.get('BUCKET_ACCESS_KEY_ID', None),
-    aws_secret_access_key=os.environ.get('BUCKET_SECRET_ACCESS_KEY', None),
-    config=boto_config
-)
+if os.environ.get('BUCKET_ENDPOINT_URL', None) is not None:
+    boto_client = bucket_session.client(
+        's3',
+        endpoint_url=os.environ.get('BUCKET_ENDPOINT_URL', None),
+        aws_access_key_id=os.environ.get('BUCKET_ACCESS_KEY_ID', None),
+        aws_secret_access_key=os.environ.get('BUCKET_SECRET_ACCESS_KEY', None),
+        config=boto_config
+    )
+else:
+    boto_client = None
 
 
 # ---------------------------------------------------------------------------- #
@@ -37,7 +40,7 @@ def upload_image(job_id, job_results):
     '''
     Upload image to bucket storage.
     '''
-    if os.environ.get('TEST_LOCAL', 'false') == 'true':
+    if boto_client is None:
         # Save the output to a file
         for index, result in enumerate(job_results):
             output = BytesIO()
