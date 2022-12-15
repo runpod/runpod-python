@@ -90,9 +90,12 @@ class LifecycleManager:
         webhook_ping = os.environ.get('WEBHOOK_PING', None)
         ping_interval = int(os.environ.get('PING_INTERVAL', 10000))
 
-        ping_params = {
-            'job_id': self.job_id,
-        }
+        if self.job_id is not None:
+            ping_params = {
+                'job_id': self.job_id,
+            }
+        else:
+            ping_params = {}
 
         if webhook_ping is not None:
             webhook_ping = webhook_ping.replace('$RUNPOD_POD_ID', self.worker_id)
