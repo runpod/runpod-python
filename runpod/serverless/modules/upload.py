@@ -30,7 +30,7 @@ if os.environ.get('BUCKET_ENDPOINT_URL', None) is not None:
         config=boto_config
     )
 else:
-    boto_client = None
+    boto_client = None  # pylint: disable=invalid-name
 
 
 # ---------------------------------------------------------------------------- #
