@@ -31,6 +31,7 @@ def start_worker():
 
         if next_job is not None:
             worker_life.work_in_progress = True  # Rests when "reset_worker_ttl" is called
+            worker_life.job_id = next_job['id']
 
             try:
                 output_urls, job_duration_ms = job.run(

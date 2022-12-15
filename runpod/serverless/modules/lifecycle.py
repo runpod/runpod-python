@@ -33,6 +33,8 @@ class LifecycleManager:
         self.work_in_progress = False   # Flag to check if worker is busy
         self.work_timeout = int(os.environ.get('EXECUTION_TIMEOUT', 300000))
 
+        self.job_id = None
+
     def reset_worker_ttl(self):
         '''
         Resets the TTL of the worker
@@ -41,6 +43,8 @@ class LifecycleManager:
         self.work_timeout = int(os.environ.get('EXECUTION_TIMEOUT', 300000))
         self.work_in_progress = False
         log(f'Worker TTL extended. TTL: {self.ttl}')
+
+        self.job_id = None
 
     def seppuku(self):
         '''
@@ -78,3 +82,20 @@ class LifecycleManager:
                 self.work_timeout -= 1000
 
             threading.Timer(1, self.check_worker_ttl_thread).start()
+
+    def heartbeat_ping(self):
+        '''
+        Pings the heartbeat endpoint
+        '''
+        webhook_ping = os.environ.get('WEBHOOK_PING', None)
+        ping_interval = int(os.environ.get('PING_INTERVAL', 10000))
+
+        ping_params = {
+            'job_id': self.job_id,
+        }
+
+        if webhook_ping is not None:
+            webhook_ping = webhook_ping.replace('$RUNPOD_POD_ID', self.worker_id)
+            requests.get(webhook_ping, params=ping_params, timeout=ping_interval/1000)
+
+        threading.Timer(ping_interval/1000, self.heartbeat_ping).start()

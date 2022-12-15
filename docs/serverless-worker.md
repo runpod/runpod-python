@@ -18,6 +18,8 @@ TERMINATE_IDLE_TIME= # Time in milliseconds to wait before terminating idle pods
 AI_API_KEY= # Serverless API Key
 WEBHOOK_GET_WORK= # URL to get work from
 WEBHOOK_POST_OUTPUT= # URL to post output to
+WEBHOOK_PING= # URL to ping
+PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
 
 # S3 Bucket
 BUCKET_ENDPOINT_URL= # S3 bucket endpoint url
