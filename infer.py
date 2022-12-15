@@ -12,6 +12,15 @@ class Predictor:
     def setup(self):
         ''' Loads the model. '''
 
+    def inputs(self, model_inputs):
+        '''
+        Lists the expected inputs of the model, and their types.
+        '''
+        inputs = {
+            'prompt': str,
+        }
+        return inputs
+
     def run(self, model_inputs):
         '''
         Predicts the output of the model.
