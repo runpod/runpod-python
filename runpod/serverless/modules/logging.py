@@ -16,18 +16,18 @@ def log(message, level='INFO'):
         print(f'{level} | {message}')
 
 
-def log_secret(redacted_secret_name, secret, level='INFO'):
+def log_secret(secret_name, secret, level='INFO'):
     '''
     Censors secrets for logging
     Replaces everything except the first and last characters with *
     '''
     if secret is None:
         secret = 'Could not read environment variable.'
-        log(f"{redacted_secret_name}: {secret}", 'ERROR')
+        log(f"{secret_name}: {secret}", 'ERROR')
     else:
         secret = str(secret)
-        secret = secret[0] + '*' * len(secret) + secret[-1]
-        log(f"{redacted_secret_name}: {secret}", level)
+        redacted_secret = secret[0] + '*' * len(secret) + secret[-1]
+        log(f"{secret_name}: {redacted_secret}", level)
 
 
 log('Logging module loaded')
