@@ -33,7 +33,7 @@ def start_worker():
             try:
                 output_urls, job_duration_ms = job.run(next_job['id'], next_job['input'])
                 job.post(worker_life.worker_id, next_job['id'], output_urls, job_duration_ms)
-            except ValueError as err:
+            except (ValueError, RuntimeError) as err:
                 job.error(worker_life.worker_id, next_job['id'], str(err))
 
             # -------------------------------- Job Cleanup ------------------------------- #

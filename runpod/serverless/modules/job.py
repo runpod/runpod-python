@@ -60,8 +60,8 @@ def run(job_id, job_input):
 
     log(f"Started working on {job_id} at {time_job_started} UTC")
 
-    models = inference.Model()
-    job_output = models.run(job_input)
+    model = inference.Model()
+    job_output = model.run(job_input)
 
     object_urls = upload.upload_image(job_id, job_output)
 
