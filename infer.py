@@ -24,5 +24,6 @@ class Predictor:
     def run(self, model_inputs):
         '''
         Predicts the output of the model.
+        Returns output path, with the seed used to generate the image.
         '''
-        return None
+        return {"image": "/path/to/image.png", "seed": "1234"}

@@ -63,12 +63,13 @@ def run(job_id, job_input):
     model = inference.Model()
     job_output = model.run(job_input)
 
-    object_urls = upload.upload_image(job_id, job_output)
+    object_url = upload.upload_image(job_id, job_output["image"])
+    job_output["image"] = object_url
 
     job_duration = time.time() - time_job_started
     job_duration_ms = int(job_duration * 1000)
 
-    return object_urls, job_duration_ms
+    return job_output, job_duration_ms
 
 
 def post(worker_id, job_id, job_output, job_time):
