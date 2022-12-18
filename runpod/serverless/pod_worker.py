@@ -5,7 +5,6 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 
 import os
 import shutil
-import threading
 
 from .modules import lifecycle, job
 from .modules.logging import log
@@ -16,18 +15,12 @@ def start_worker():
     Starts the worker.
     '''
     worker_life = lifecycle.LifecycleManager()
-
-    if not worker_life.is_worker_zero:
-        log("Not worker zero, starting TTL timer thread.")
-        threading.Thread(target=worker_life.check_worker_ttl_thread).start()
-    else:
-        log("Worker zero, not starting TTL timer thread.")
+    worker_life.heartbeat_ping()
 
     while True:
         next_job = job.get(worker_life.worker_id)
 
         if next_job is not None:
-            worker_life.work_in_progress = True  # Rests when "reset_worker_ttl" is called
             worker_life.job_id = next_job['id']
 
             try:
@@ -43,7 +36,7 @@ def start_worker():
             if os.path.exists('output.zip'):
                 os.remove('output.zip')
 
-            worker_life.reset_worker_ttl()
+            worker_life.job_id = None
 
         if os.environ.get('WEBHOOK_GET_WORK', None) is None:
             log("Local testing complete, exiting.")

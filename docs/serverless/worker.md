@@ -8,10 +8,6 @@ To convert a Pod to a Worker, you need to add the following annotations to the P
 # Development
 DEBUG= # Set to 'true' to enable debug mode, otherwise leave blank
 
-# Configurations
-EXECUTION_TIMEOUT= # Timeout for execution in milliseconds (Default: 300000)
-TERMINATE_IDLE_TIME= # Time in milliseconds to wait before terminating idle pods (Default: 60000)
-
 # API Endpoints
 AI_API_KEY= # Serverless API Key
 WEBHOOK_GET_WORK= # URL to get work from

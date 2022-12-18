@@ -33,7 +33,7 @@ def get(worker_id):
         assigned_job = requests.get(
             get_work_url,
             headers=headers,
-            timeout=11
+            timeout=180
         )
     except requests.exceptions.Timeout:
         log("Timeout while requesting job", 'WARNING')
