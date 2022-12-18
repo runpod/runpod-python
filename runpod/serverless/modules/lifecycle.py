@@ -4,6 +4,7 @@ PodWorker | modules | lifecycle.py
 Performs the following lifecycle operations:
 - Shutting down the worker
 '''
+# pylint: disable=too-few-public-methods
 
 import os
 import uuid

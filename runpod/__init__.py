@@ -2,6 +2,6 @@
 
 from . import serverless
 
-api_key = None
+API_KEY = None
 
-api_url_base = "https://api.runpod.io"
+API_URL_BASE = "https://api.runpod.io"
