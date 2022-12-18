@@ -24,19 +24,22 @@ def start_worker():
             worker_life.job_id = next_job['id']
 
             try:
+                if 'input' not in next_job:
+                    raise ValueError("Job input not found.")
+
                 job_output, job_duration_ms = job.run(next_job['id'], next_job['input'])
                 job.post(worker_life.worker_id, next_job['id'], job_output, job_duration_ms)
-            except (ValueError, RuntimeError) as err:
+            except (KeyError, ValueError, RuntimeError) as err:
                 job.error(worker_life.worker_id, next_job['id'], str(err))
+            finally:
+                # -------------------------------- Job Cleanup ------------------------------- #
+                shutil.rmtree("input_objects", ignore_errors=True)
+                shutil.rmtree("output_objects", ignore_errors=True)
 
-            # -------------------------------- Job Cleanup ------------------------------- #
-            shutil.rmtree("input_objects", ignore_errors=True)
-            shutil.rmtree("output_objects", ignore_errors=True)
+                if os.path.exists('output.zip'):
+                    os.remove('output.zip')
 
-            if os.path.exists('output.zip'):
-                os.remove('output.zip')
-
-            worker_life.job_id = None
+                worker_life.job_id = None
 
         if os.environ.get('WEBHOOK_GET_WORK', None) is None:
             log("Local testing complete, exiting.")
