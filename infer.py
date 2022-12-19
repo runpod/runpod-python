@@ -12,14 +12,16 @@ class Predictor:
     def setup(self):
         ''' Loads the model. '''
 
-    def inputs(self, model_inputs):
+    def validator(self):
         '''
         Lists the expected inputs of the model, and their types.
         '''
-        inputs = {
-            'prompt': str,
+        return {
+            'prompt': {
+                'type': str,
+                'required': True
+            }
         }
-        return inputs
 
     def run(self, model_inputs):
         '''
