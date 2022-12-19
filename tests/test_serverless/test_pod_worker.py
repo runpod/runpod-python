@@ -9,7 +9,7 @@ from runpod.serverless import pod_worker
 class TestPodWorker(unittest.TestCase):
     ''' Tests for pod_worker '''
 
-    @patch('runpod.serverless.modules.lifecycle.heartbeat_ping')
+    @patch('runpod.serverless.modules.lifecycle.LifecycleManager.heartbeat_ping')
     @patch('runpod.serverless.modules.lifecycle.LifecycleManager')
     def test_start_worker(self, mock_lifecycle, mock_heartbeat_ping):
         '''
