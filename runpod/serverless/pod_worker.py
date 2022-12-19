@@ -16,6 +16,7 @@ def start_worker():
     '''
     worker_life = lifecycle.LifecycleManager()
     worker_life.heartbeat_ping()
+    log("Worker lifecycle manager started.")
 
     while True:
         next_job = job.get(worker_life.worker_id)
@@ -25,6 +26,7 @@ def start_worker():
 
             try:
                 if 'input' not in next_job:
+                    log("No input provided. Erroring out request.", "ERROR")
                     job.error(worker_life.worker_id, next_job['id'], "No input provided.")
                 else:
                     job_output, job_duration_ms = job.run(next_job['id'], next_job['input'])
