@@ -1,9 +1,9 @@
 ''' Tests for runpod | serverless| modules | pod_worker.py '''
 
 import unittest
-from unittest.mock import patch, mock_open
+from unittest.mock import patch
 
-from runpod.serverless.modules import pod_worker
+from runpod.serverless import pod_worker
 
 
 class TestPodWorker(unittest.TestCase):
