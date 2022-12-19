@@ -18,16 +18,16 @@ def get(worker_id):
         "input": {job_input}
     }
     '''
-    if os.environ.get('WEBHOOK_GET_WORK', None) is None:
-        log('WEBHOOK_GET_WORK not set, switching to get_local', 'WARNING')
+    if os.environ.get('RUNPOD_WEBHOOK_GET_WORK', None) is None:
+        log('RUNPOD_WEBHOOK_GET_WORK not set, switching to get_local', 'WARNING')
         return get_local()
 
-    get_work_url = str(os.environ.get('WEBHOOK_GET_WORK')
+    get_work_url = str(os.environ.get('RUNPOD_WEBHOOK_GET_WORK')
                        ).replace('$ID', worker_id)
 
     log(f"Requesting job from {get_work_url}")
 
-    headers = {"Authorization": f"{os.environ.get('AI_API_KEY')}"}
+    headers = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
     try:
         assigned_job = requests.get(
@@ -86,7 +86,7 @@ def post(worker_id, job_id, job_output, job_time):
     '''
     Complete the job.
     '''
-    if os.environ.get('WEBHOOK_POST_OUTPUT', None) is None:
+    if os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None) is None:
         return
 
     job_data = {
@@ -95,14 +95,14 @@ def post(worker_id, job_id, job_output, job_time):
 
     job_data = json.dumps(job_data, ensure_ascii=False)
 
-    job_done_url = str(os.environ.get('WEBHOOK_POST_OUTPUT'))
+    job_done_url = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
     job_done_url = job_done_url.replace('$ID', job_id)
     job_done_url = job_done_url.replace('$RUNPOD_POD_ID', worker_id)
 
     headers = {
         "charset": "utf-8",
         "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": f"{os.environ.get('AI_API_KEY')}"
+        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
     }
 
     try:
@@ -127,14 +127,14 @@ def error(worker_id, job_id, error_message):
 
     job_output = json.dumps(job_output, ensure_ascii=False)
 
-    job_error_url = str(os.environ.get('WEBHOOK_POST_OUTPUT'))
+    job_error_url = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
     job_error_url = job_error_url.replace('$ID', job_id)
     job_error_url = job_error_url.replace('$RUNPOD_POD_ID', worker_id)
 
     headers = {
         "charset": "utf-8",
         "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": f"{os.environ.get('AI_API_KEY')}"
+        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
     }
 
     try:

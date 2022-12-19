@@ -53,6 +53,6 @@ def start_worker():
 
                 worker_life.job_id = None
 
-        if os.environ.get('WEBHOOK_GET_WORK', None) is None:
+        if os.environ.get('RUNPOD_WEBHOOK_GET_WORK', None) is None:
             log("Local testing complete, exiting.")
             break

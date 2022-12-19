@@ -30,8 +30,8 @@ class LifecycleManager:
         '''
         Pings the heartbeat endpoint
         '''
-        webhook_ping = os.environ.get('WEBHOOK_PING', None)
-        ping_interval = int(os.environ.get('PING_INTERVAL', 10000))
+        webhook_ping = os.environ.get('RUNPOD_WEBHOOK_PING', None)
+        ping_interval = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))
 
         if self.job_id is not None:
             ping_params = {

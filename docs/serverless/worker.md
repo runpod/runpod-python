@@ -6,14 +6,14 @@ To convert a Pod to a Worker, you need to add the following annotations to the P
 
 ```bash
 # Development
-DEBUG= # Set to 'true' to enable debug mode, otherwise leave blank
+RUNPOD_DEBUG= # Set to 'true' to enable debug mode, otherwise leave blank
 
 # API Endpoints
-AI_API_KEY= # Serverless API Key
-WEBHOOK_GET_WORK= # URL to get work from
-WEBHOOK_POST_OUTPUT= # URL to post output to
-WEBHOOK_PING= # URL to ping
-PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
+RUNPOD_AI_API_KEY= # Serverless API Key
+RUNPOD_WEBHOOK_GET_WORK= # URL to get work from
+RUNPOD_WEBHOOK_POST_OUTPUT= # URL to post output to
+RUNPOD_WEBHOOK_PING= # URL to ping
+RUNPOD_PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
 
 # S3 Bucket
 BUCKET_ENDPOINT_URL= # S3 bucket endpoint url

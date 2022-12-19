@@ -12,7 +12,7 @@ def log(message, level='INFO'):
     '''
     Log message to stdout
     '''
-    if os.environ.get('DEBUG', 'False') == 'true':
+    if os.environ.get('RUNPOD_DEBUG', 'False') == 'true':
         print(f'{level} | {message}')
 
 
@@ -32,9 +32,9 @@ def log_secret(secret_name, secret, level='INFO'):
 
 log('Logging module loaded')
 
-log_secret('AI_API_KEY', os.environ.get('AI_API_KEY', None))
-log_secret('WEBHOOK_GET_WORK', os.environ.get('WEBHOOK_GET_WORK', None))
-log_secret('WEBHOOK_POST_OUTPUT', os.environ.get('WEBHOOK_POST_OUTPUT', None))
+log_secret('RUNPOD_AI_API_KEY', os.environ.get('RUNPOD_AI_API_KEY', None))
+log_secret('RUNPOD_WEBHOOK_GET_WORK', os.environ.get('RUNPOD_WEBHOOK_GET_WORK', None))
+log_secret('RUNPOD_WEBHOOK_POST_OUTPUT', os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None))
 
 log_secret('BUCKET_ENDPOINT_URL', os.environ.get('BUCKET_ENDPOINT_URL', None))
 log_secret('BUCKET_ACCESS_KEY_ID', os.environ.get('BUCKET_ACCESS_KEY_ID', None))
