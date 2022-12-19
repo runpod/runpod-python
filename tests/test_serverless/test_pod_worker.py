@@ -16,5 +16,5 @@ class TestPodWorker(unittest.TestCase):
         Tests start_worker
         '''
         pod_worker.start_worker()
-        mock_lifecycle.LifecycleManager.assert_called_once_with()
+        mock_lifecycle.assert_called_once_with()
         mock_heartbeat_ping.assert_called_once_with()
