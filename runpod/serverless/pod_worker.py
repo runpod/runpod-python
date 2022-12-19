@@ -29,8 +29,15 @@ def start_worker():
                     log("No input provided. Erroring out request.", "ERROR")
                     job.error(worker_life.worker_id, next_job['id'], "No input provided.")
                 else:
-                    job_output, job_duration_ms = job.run(next_job['id'], next_job['input'])
-                    job.post(worker_life.worker_id, next_job['id'], job_output, job_duration_ms)
+                    job_results = job.run(next_job['id'], next_job['input'])
+                    if 'error' in job_results:
+                        job.error(worker_life.worker_id, next_job['id'], job_results['error'])
+                    else:
+                        job.post(
+                            worker_life.worker_id,
+                            next_job['id'], job_results['output'],
+                            job_results['duration_ms']
+                        )
             except (KeyError, ValueError, RuntimeError) as err:
                 job.error(worker_life.worker_id, next_job['id'], str(err))
             finally:

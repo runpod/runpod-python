@@ -61,6 +61,13 @@ def run(job_id, job_input):
     log(f"Started working on {job_id} at {time_job_started} UTC")
 
     model = inference.Model()
+
+    input_errors = model.input_validation(job_input)
+    if input_errors:
+        return {
+            "error": input_errors
+        }
+
     job_output = model.run(job_input)
 
     object_url = upload.upload_image(job_id, job_output["image"])
@@ -69,7 +76,10 @@ def run(job_id, job_input):
     job_duration = time.time() - time_job_started
     job_duration_ms = int(job_duration * 1000)
 
-    return job_output, job_duration_ms
+    return {
+        "output": job_output,
+        "duration": job_duration_ms
+    }
 
 
 def post(worker_id, job_id, job_output, job_time):
