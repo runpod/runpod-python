@@ -119,10 +119,11 @@ def error(worker_id, job_id, error_message):
     '''
     Report an error to the job endpoint, marking the job as failed.
     '''
-    if os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None) is None:
-        return
-
     log(f"Reporting error for job {job_id}: {error_message}", 'ERROR')
+
+    if os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None) is None:
+        log("RUNPOD_WEBHOOK_POST_OUTPUT not set, skipping erroring job", 'WARNING')
+        return
 
     job_output = {
         "error": error_message
