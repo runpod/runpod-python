@@ -1,5 +1,6 @@
 ''' Tests for runpod | serverless| modules | pod_worker.py '''
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -15,6 +16,8 @@ class TestPodWorker(unittest.TestCase):
         '''
         Tests start_worker
         '''
+        os.environ['DEBUG'] = 'true'
+
         pod_worker.start_worker()
 
         # Return None from job.get
