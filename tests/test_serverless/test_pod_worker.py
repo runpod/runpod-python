@@ -16,6 +16,10 @@ class TestPodWorker(unittest.TestCase):
         Tests start_worker
         '''
         pod_worker.start_worker()
+
+        # Return None from job.get
+        mock_job_get.return_value = None
+
         mock_worker_life.assert_called_once_with()
         mock_worker_life.heartbeat_ping.assert_called_once_with()
         mock_job_get.assert_called_once_with(mock_worker_life.worker_id)
