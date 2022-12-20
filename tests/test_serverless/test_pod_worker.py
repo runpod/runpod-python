@@ -19,9 +19,7 @@ class TestPodWorker(unittest.TestCase):
         os.environ['DEBUG'] = 'true'
 
         pod_worker.start_worker()
-
-        # Return None from job.get
-        mock_job_get.return_value = None
+        print(os.environ.get('DEBUG', None))
 
         mock_worker_life.assert_called_once_with()
         mock_worker_life.heartbeat_ping.assert_called_once_with()
