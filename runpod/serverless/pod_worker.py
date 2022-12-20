@@ -48,7 +48,7 @@ def start_worker():
                 shutil.rmtree("input_objects", ignore_errors=True)
                 shutil.rmtree("output_objects", ignore_errors=True)
 
-                if os.path.isfile('output.zip'):
+                if os.path.exists('output.zip'):
                     os.remove('output.zip')
 
                 worker_life.job_id = None
