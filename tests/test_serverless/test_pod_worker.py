@@ -18,3 +18,4 @@ class TestPodWorker(unittest.TestCase):
         pod_worker.start_worker()
         mock_lifecycle.LifecycleManager.assert_called_once_with()
         mock_lifecycle.LifecycleManager.heartbeat_ping.assert_called_once_with()
+        mock_job.get.assert_called_once_with(mock_lifecycle.LifecycleManager.worker_id)
