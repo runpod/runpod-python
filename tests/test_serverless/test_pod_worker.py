@@ -19,4 +19,4 @@ class TestPodWorker(unittest.TestCase):
         mock_worker_life.assert_called_once_with()
         mock_worker_life.heartbeat_ping.assert_called_once_with()
         mock_worker_life.worker_id = '123'
-        mock_job_get.assert_called_once_with(mock_worker_life.worker_id)
+        mock_job_get.assert_called_once_with('123')
