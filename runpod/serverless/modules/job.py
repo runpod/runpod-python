@@ -18,11 +18,11 @@ def get(worker_id):
         "input": {job_input}
     }
     '''
-    if os.environ.get('RUNPOD_WEBHOOK_GET_WORK', None) is None:
-        log('RUNPOD_WEBHOOK_GET_WORK not set, switching to get_local', 'WARNING')
+    if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
+        log('RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local', 'WARNING')
         return get_local()
 
-    get_work_url = str(os.environ.get('RUNPOD_WEBHOOK_GET_WORK')
+    get_work_url = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')
                        ).replace('$ID', worker_id)
 
     log(f"Requesting job from {get_work_url}")

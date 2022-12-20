@@ -33,7 +33,7 @@ def log_secret(secret_name, secret, level='INFO'):
 log('Logging module loaded')
 
 log_secret('RUNPOD_AI_API_KEY', os.environ.get('RUNPOD_AI_API_KEY', None))
-log_secret('RUNPOD_WEBHOOK_GET_WORK', os.environ.get('RUNPOD_WEBHOOK_GET_WORK', None))
+log_secret('RUNPOD_WEBHOOK_GET_JOB', os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None))
 log_secret('RUNPOD_WEBHOOK_POST_OUTPUT', os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None))
 
 log_secret('BUCKET_ENDPOINT_URL', os.environ.get('BUCKET_ENDPOINT_URL', None))

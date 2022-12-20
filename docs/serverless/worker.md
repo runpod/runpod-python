@@ -10,7 +10,7 @@ RUNPOD_DEBUG= # Set to 'true' to enable debug mode, otherwise leave blank
 
 # API Endpoints
 RUNPOD_AI_API_KEY= # Serverless API Key
-RUNPOD_WEBHOOK_GET_WORK= # URL to get work from
+RUNPOD_WEBHOOK_GET_JOB= # URL to get job work from
 RUNPOD_WEBHOOK_POST_OUTPUT= # URL to post output to
 RUNPOD_WEBHOOK_PING= # URL to ping
 RUNPOD_PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
