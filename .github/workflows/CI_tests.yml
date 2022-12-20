@@ -3,10 +3,10 @@ name: CI | Unit Tests
 on:
   push:
     branches:
-      - '**'
-      - 'master'
-      - '!master-ci'
-      - '!release'
+      - "**"
+      - "master"
+      - "!master-ci"
+      - "!release"
 
   pull_request:
     branches:
@@ -31,7 +31,8 @@ jobs:
           python -m pip install --upgrade pip
           python setup.py install
           pip install pytest
+          pip install pytest-timeout
 
       - name: Run Tests
         run: |
-          pytest
+          pytest --timeout=60 --timeout_method=thread
