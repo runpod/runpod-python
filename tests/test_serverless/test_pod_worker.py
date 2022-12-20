@@ -10,7 +10,7 @@ from runpod.serverless import pod_worker
 class TestPodWorker(unittest.TestCase):
     ''' Tests for pod_worker '''
 
-    @patch('runpod.serverless.os.path.exists', return_value=False)
+    @patch('os.path.exists', return_value=False)
     @patch('runpod.serverless.modules.job.get')
     @patch('runpod.serverless.modules.lifecycle.LifecycleManager')
     def test_start_worker(self, mock_worker_life, mock_job_get, mock_os_path_exists):
