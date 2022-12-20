@@ -119,6 +119,9 @@ def error(worker_id, job_id, error_message):
     '''
     Report an error to the job endpoint, marking the job as failed.
     '''
+    if os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None) is None:
+        return
+
     log(f"Reporting error for job {job_id}: {error_message}", 'ERROR')
 
     job_output = {
@@ -141,6 +144,8 @@ def error(worker_id, job_id, error_message):
         requests.post(job_error_url, data=job_output, headers=headers, timeout=10)
     except requests.exceptions.Timeout:
         log(f"Timeout while erroring job {job_id}")
+
+    return
 
 
 # ------------------------------- Local Testing ------------------------------ #
