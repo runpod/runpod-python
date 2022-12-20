@@ -12,7 +12,7 @@ class TestPodWorker(unittest.TestCase):
 
     @patch('os.path.exists', return_value=False)
     @patch('shutil.rmtree')
-    @patch('runpod.serverless.modules.job.get')
+    @patch('runpod.serverless.modules.job.get', return_value=None)
     @patch('runpod.serverless.modules.lifecycle.LifecycleManager')
     def test_start_worker(self, mock_worker_life, mock_job_get, mock_rmtree, mock_os_path_exists):
         '''
