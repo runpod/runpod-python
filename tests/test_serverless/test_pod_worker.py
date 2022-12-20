@@ -10,12 +10,12 @@ class TestPodWorker(unittest.TestCase):
     ''' Tests for pod_worker '''
 
     @patch('runpod.serverless.modules.job')
-    @patch('runpod.serverless.modules.lifecycle')
+    @patch('runpod.serverless.modules.lifecycle.LifecycleManager')
     def test_start_worker(self, mock_lifecycle, mock_job):
         '''
         Tests start_worker
         '''
         pod_worker.start_worker()
-        mock_lifecycle.LifecycleManager.assert_called_once_with()
-        mock_lifecycle.LifecycleManager.heartbeat_ping.assert_called_once_with()
+        mock_lifecycle.assert_called_once_with()
+        mock_lifecycle.heartbeat_ping.assert_called_once_with()
         mock_job.get.assert_called_once_with(mock_lifecycle.LifecycleManager.worker_id)
