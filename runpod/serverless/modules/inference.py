@@ -27,14 +27,19 @@ class Model:
         Checks to see if the required inputs are included.
         '''
         log("Validating inputs.")
-        input_validations = self.predictor.validator()
+        if not hasattr(self.predictor, 'validator'):
+            log("No input validation function found. Skipping validation.")
+            return []
 
+        input_validations = self.predictor.validator()
         input_errors = []
 
+        log("Checking for required inputs.")
         for requirement in input_validations:
-            if requirement['required'] and requirement not in model_inputs:
+            if input_validations[requirement]['required'] and requirement not in model_inputs:
                 input_errors.append(f"{requirement} is a required input.")
 
+        log("Checking for unexpected inputs and input types.")
         for key, value in model_inputs.items():
             if key not in input_validations:
                 input_errors.append(f"Unexpected input. {key} is not a valid input option.")
@@ -49,4 +54,10 @@ class Model:
         '''
         Predicts the output of the model.
         '''
+        input_errors = self.input_validation(model_inputs)
+        if input_errors:
+            return {
+                "error": input_errors
+            }
+
         return self.predictor.run(model_inputs)

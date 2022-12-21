@@ -62,13 +62,12 @@ def run(job_id, job_input):
 
     model = inference.Model()
 
-    input_errors = model.input_validation(job_input)
-    if input_errors:
-        return {
-            "error": input_errors
-        }
-
     job_output = model.run(job_input)
+
+    if "error" in job_output:
+        return {
+            "error": job_output["error"]
+        }
 
     object_url = upload.upload_image(job_id, job_output["image"])
     job_output["image"] = object_url
