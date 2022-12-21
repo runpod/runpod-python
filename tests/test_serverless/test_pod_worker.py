@@ -21,7 +21,7 @@ class TestPodWorker(unittest.TestCase):
 
         mock_worker_life.assert_called_once_with()
         mwl_instance.heartbeat_ping.assert_called_once_with()
-        mock_job_get.assert_called_once_with(mock_worker_life.worker_id)
+        mock_job_get.assert_called_once_with(mwl_instance.worker_id)
 
     # @patch('os.path.exists', return_value=False)
     # @patch('shutil.rmtree')
