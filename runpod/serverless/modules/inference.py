@@ -35,9 +35,9 @@ class Model:
         input_errors = []
 
         log("Checking for required inputs.")
-        for requirement in input_validations:
-            if input_validations[requirement]['required'] and requirement not in model_inputs:
-                input_errors.append(f"{requirement} is a required input.")
+        for key, value in input_validations.items():
+            if value['required'] and key not in model_inputs:
+                input_errors.append(f"{key} is a required input.")
 
         log("Checking for unexpected inputs and input types.")
         for key, value in model_inputs.items():
