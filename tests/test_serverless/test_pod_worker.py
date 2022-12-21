@@ -1,6 +1,5 @@
 ''' Tests for runpod | serverless| modules | pod_worker.py '''
 
-import os
 import unittest
 from unittest.mock import patch
 
@@ -18,8 +17,10 @@ class TestPodWorker(unittest.TestCase):
         '''
         pod_worker.start_worker()
 
+        mwl_instance = mock_worker_life.return_value
+
         mock_worker_life.assert_called_once_with()
-        mock_worker_life.heartbeat_ping.assert_called_once_with()
+        mwl_instance.heartbeat_ping.assert_called_once_with()
         mock_job_get.assert_called_once_with(mock_worker_life.worker_id)
 
     # @patch('os.path.exists', return_value=False)
