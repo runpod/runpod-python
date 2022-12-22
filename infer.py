@@ -32,4 +32,4 @@ def run(model_inputs):
     # Return Errors
     # return {"error": "Error Message"}
 
-    return {"image": "/path/to/image.png", "seed": "1234"}
+    return {"images": ("/path/to/image.png"), "seed": "1234"}
