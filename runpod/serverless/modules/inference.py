@@ -4,7 +4,7 @@ Interacts with the model to make predictions.
 '''
 
 # -------------------------- Import Model Predictors ------------------------- #
-from infer import Predictor
+import infer
 
 from .logging import log
 
@@ -16,8 +16,6 @@ class Model:
         '''
         Loads the model.
         '''
-        self.predictor = Predictor()
-        self.predictor.setup()
         log('Model loaded.')
 
     def input_validation(self, model_inputs):
@@ -27,11 +25,11 @@ class Model:
         Checks to see if the required inputs are included.
         '''
         log("Validating inputs.")
-        if not hasattr(self.predictor, 'validator'):
+        if not hasattr(infer, 'validator'):
             log("No input validation function found. Skipping validation.")
             return []
 
-        input_validations = self.predictor.validator()
+        input_validations = infer.validator()
         input_errors = []
 
         log("Checking for required inputs.")
@@ -60,4 +58,4 @@ class Model:
                 "error": input_errors
             }
 
-        return self.predictor.run(model_inputs)
+        return infer.run(model_inputs)
