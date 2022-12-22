@@ -46,7 +46,7 @@ Create an executable file called 'worker' in the root of your project that conta
 
 import runpod
 
-runpod.serverless.pod_worker.start_worker()
+runpod.serverless.start_worker()
 ```
 
 Add the env variables found in [serverless-worker](docs/serverless-worker.md) to your project.
