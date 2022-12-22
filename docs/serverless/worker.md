@@ -16,9 +16,9 @@ RUNPOD_WEBHOOK_PING= # URL to ping
 RUNPOD_PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
 
 # S3 Bucket
-RUNPOD_BUCKET_ENDPOINT_URL= # S3 bucket endpoint url
-RUNPOD_BUCKET_ACCESS_KEY_ID= # S3 bucket access key id
-RUNPOD_BUCKET_SECRET_ACCESS_KEY= # S3 bucket secret access key
+BUCKET_ENDPOINT_URL= # S3 bucket endpoint url
+BUCKET_ACCESS_KEY_ID= # S3 bucket access key id
+BUCKET_SECRET_ACCESS_KEY= # S3 bucket secret access key
 ```
 
 ### Additional Variables
@@ -28,7 +28,6 @@ These are variables that are accessed from the RunPod container and not required
 ```bash
 # Pod Information
 RUNPOD_POD_ID= # Pod ID
-RUNPOD_API_KEY= # Pod API Key
 ```
 
 ## Error Handling

@@ -77,7 +77,7 @@ def run(job):
 
     return {
         "output": job_output,
-        "duration": job_duration_ms
+        "duration_ms": job_duration_ms
     }
 
 

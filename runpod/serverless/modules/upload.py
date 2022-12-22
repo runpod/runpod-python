@@ -21,12 +21,12 @@ boto_config = Config(
     }
 )
 
-if os.environ.get('RUNPOD_BUCKET_ENDPOINT_URL', None) is not None:
+if os.environ.get('BUCKET_ENDPOINT_URL', None) is not None:
     boto_client = bucket_session.client(
         's3',
-        endpoint_url=os.environ.get('RUNPOD_BUCKET_ENDPOINT_URL', None),
-        aws_access_key_id=os.environ.get('RUNPOD_BUCKET_ACCESS_KEY_ID', None),
-        aws_secret_access_key=os.environ.get('RUNPOD_BUCKET_SECRET_ACCESS_KEY', None),
+        endpoint_url=os.environ.get('BUCKET_ENDPOINT_URL', None),
+        aws_access_key_id=os.environ.get('BUCKET_ACCESS_KEY_ID', None),
+        aws_secret_access_key=os.environ.get('BUCKET_SECRET_ACCESS_KEY', None),
         config=boto_config
     )
 else:
