@@ -36,9 +36,6 @@ log_secret('RUNPOD_AI_API_KEY', os.environ.get('RUNPOD_AI_API_KEY', None))
 log_secret('RUNPOD_WEBHOOK_GET_JOB', os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None))
 log_secret('RUNPOD_WEBHOOK_POST_OUTPUT', os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None))
 
-log_secret('RUNPOD_BUCKET_ENDPOINT_URL', os.environ.get('RUNPOD_BUCKET_ENDPOINT_URL', None))
-log_secret('RUNPOD_BUCKET_ACCESS_KEY_ID', os.environ.get('RUNPOD_BUCKET_ACCESS_KEY_ID', None))
-log_secret(
-    'RUNPOD_BUCKET_SECRET_ACCESS_KEY',
-    os.environ.get('RUNPOD_BUCKET_SECRET_ACCESS_KEY', None)
-)
+log_secret('BUCKET_ENDPOINT_URL', os.environ.get('BUCKET_ENDPOINT_URL', None))
+log_secret('BUCKET_ACCESS_KEY_ID', os.environ.get('BUCKET_ACCESS_KEY_ID', None))
+log_secret('BUCKET_SECRET_ACCESS_KEY', os.environ.get('BUCKET_SECRET_ACCESS_KEY', None))
