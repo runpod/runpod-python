@@ -16,9 +16,9 @@ RUNPOD_WEBHOOK_PING= # URL to ping
 RUNPOD_PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
 
 # S3 Bucket
-BUCKET_ENDPOINT_URL= # S3 bucket endpoint url
-BUCKET_ACCESS_KEY_ID= # S3 bucket access key id
-BUCKET_SECRET_ACCESS_KEY= # S3 bucket secret access key
+RUNPOD_BUCKET_ENDPOINT_URL= # S3 bucket endpoint url
+RUNPOD_BUCKET_ACCESS_KEY_ID= # S3 bucket access key id
+RUNPOD_BUCKET_SECRET_ACCESS_KEY= # S3 bucket secret access key
 ```
 
 ### Additional Variables

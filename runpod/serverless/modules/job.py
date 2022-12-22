@@ -51,26 +51,26 @@ def get(worker_id):
     return None
 
 
-def run(job_id, job_input):
+def run(job):
     '''
     Run the job.
     Returns list of URLs and Job Time
     '''
     time_job_started = time.time()
 
-    log(f"Started working on {job_id} at {time_job_started} UTC")
+    log(f"Started working on {job['id']} at {time_job_started} UTC")
 
     model = inference.Model()
 
-    job_output = model.run(job_input)
+    job_output = model.run(job)
 
     if "error" in job_output:
         return {
             "error": job_output["error"]
         }
 
-    object_url = upload.upload_image(job_id, job_output["image"])
-    job_output["image"] = object_url
+    object_urls = upload.upload_image(job['id'], job_output["images"])
+    job_output["images"] = object_urls
 
     job_duration = time.time() - time_job_started
     job_duration_ms = int(job_duration * 1000)

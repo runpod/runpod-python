@@ -48,14 +48,14 @@ class Model:
 
         return input_errors
 
-    def run(self, model_inputs):
+    def run(self, job):
         '''
         Predicts the output of the model.
         '''
-        input_errors = self.input_validation(model_inputs)
+        input_errors = self.input_validation(job['input'])
         if input_errors:
             return {
                 "error": input_errors
             }
 
-        return infer.run(model_inputs)
+        return infer.run(job)

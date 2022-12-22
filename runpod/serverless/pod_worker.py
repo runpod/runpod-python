@@ -30,7 +30,7 @@ def start_worker():
                     job.error(worker_life.worker_id, next_job['id'], "No input provided.")
                     continue
 
-                job_results = job.run(next_job['id'], next_job['input'])
+                job_results = job.run(next_job)
 
                 if 'error' in job_results:
                     job.error(worker_life.worker_id, next_job['id'], job_results['error'])
