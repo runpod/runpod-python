@@ -39,14 +39,20 @@ This python package can also be used to create a serverless worker that can be d
 
 ### Quick Start
 
-Create an executable file called 'worker' in the root of your project that contains the following:
+Create an inference file the root of your project that contains your model definition and the RunPod worker start:
 
 ```python
 #!/usr/bin/env python
 
 import runpod
 
-runpod.serverless.start()
+MDOEL = 'YOUR_MODEL'
+
+def run(job):
+    # Your inference code here
+    return MDOEL.predict(job.input)
+
+runpod.serverless.start({"handler": run})
 ```
 
 Add the env variables found in [serverless-worker](docs/serverless-worker.md) to your project.

@@ -14,11 +14,6 @@ RUNPOD_WEBHOOK_GET_JOB= # URL to get job work from
 RUNPOD_WEBHOOK_POST_OUTPUT= # URL to post output to
 RUNPOD_WEBHOOK_PING= # URL to ping
 RUNPOD_PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
-
-# S3 Bucket
-BUCKET_ENDPOINT_URL= # S3 bucket endpoint url
-BUCKET_ACCESS_KEY_ID= # S3 bucket access key id
-BUCKET_SECRET_ACCESS_KEY= # S3 bucket secret access key
 ```
 
 ### Additional Variables
@@ -45,20 +40,6 @@ The duration of the worker is managed within the [lifecycle](../PodWorker/module
 The worker starts with a TTL as specified by the environment variable `TERMINATE_IDLE_TIME` or defaults to 60 seconds as specified with `self.ttl`. When a new job is received, a `work_in_progress` flag is set. When the job is completed, the `work_in_progress` flag is cleared and the TTL is reset. If the `work_in_progress` flag is not cleared within the `work_timeout` period, the worker will exit.
 
  If the worker does not receive a new job within idle period, the worker will exit.
-
-## Tracking TTL
-
-On working initialization a time tracking thread is started, this thread monitors the workers TTL and exits the worker if the TTL has expired.
-
-## Worker Zero
-
-Worker zero can have a modified TTL behavior, to flag a worker as worker zero set `self.is_worker_zero` to `True`. Worker zero will not run the TTL check thread.
-
-## Worker Seppuku
-
-When the TTL of a worker has expired the function `self.seppuku` is called. On exit the following actions are taken:
-
-- RunPod API call to delete the pod
 
 ## Local Testing
 

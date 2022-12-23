@@ -15,7 +15,7 @@ class TestPodWorker(unittest.TestCase):
         '''
         Tests start_worker
         '''
-        pod_worker.start_worker()
+        pod_worker.start_worker('handler')
 
         mwl_instance = mock_worker_life.return_value
 
