@@ -63,6 +63,7 @@ def run(job):
     model = inference.Model()
 
     job_output = model.run(job)
+    log(f"Job output: {job_output}")
 
     for index, output in enumerate(job_output):
         if "error" in output:
@@ -77,6 +78,8 @@ def run(job):
     job_duration = time.time() - time_job_started
     job_duration_ms = int(job_duration * 1000)
 
+    log(f"Returning as output: {job_output}")
+
     return {
         "output": job_output,
         "duration_ms": job_duration_ms
@@ -87,14 +90,15 @@ def post(worker_id, job_id, job_output, job_time):
     '''
     Complete the job.
     '''
-    if os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None) is None:
-        return
-
     job_data = {
         "output": job_output
     }
 
     job_data = json.dumps(job_data, ensure_ascii=False)
+
+    if os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None) is None:
+        log("RUNPOD_WEBHOOK_POST_OUTPUT not set, skipping completing job", 'WARNING')
+        return
 
     job_done_url = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
     job_done_url = job_done_url.replace('$ID', job_id)
