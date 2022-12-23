@@ -72,9 +72,9 @@ def run(job):
                 "error": output["error"]
             }
 
-        if "image" in output:
-            object_url = upload.upload_image(job['id'], output["image"], index)
-            output["image"] = object_url
+        # if "image" in output:
+        #     object_url = upload.upload_image(job['id'], output["image"], index)
+        #     output["image"] = object_url
 
     job_duration = time.time() - time_job_started
     job_duration_ms = int(job_duration * 1000)
