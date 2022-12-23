@@ -64,14 +64,15 @@ def run(job):
 
     job_output = model.run(job)
 
-    if "error" in job_output:
-        return {
-            "error": job_output["error"]
-        }
+    for index, output in enumerate(job_output):
+        if "error" in output:
+            return {
+                "error": output["error"]
+            }
 
-    if "images" in job_output:
-        object_urls = upload.upload_image(job['id'], job_output["images"])
-        job_output["images"] = object_urls
+        if "image" in job_output:
+            object_url = upload.upload_image(job['id'], output["image"], index)
+            output["image"] = object_url
 
     job_duration = time.time() - time_job_started
     job_duration_ms = int(job_duration * 1000)

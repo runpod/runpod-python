@@ -36,50 +36,45 @@ else:
 # ---------------------------------------------------------------------------- #
 #                                 Upload Image                                 #
 # ---------------------------------------------------------------------------- #
-def upload_image(job_id, job_results):
+def upload_image(job_id, job_result, result_index=0):
     '''
     Upload image to bucket storage.
     '''
     if boto_client is None:
         # Save the output to a file
-        for index, result in enumerate(job_results):
-            output = BytesIO()
-            img = Image.open(result)
-            img.save(output, format=img.format)
-
-            os.makedirs("uploaded", exist_ok=True)
-            with open(f"uploaded/{index}.png", "wb") as file_output:
-                file_output.write(output.getvalue())
-
-        return []
-
-    object_urls = []
-    for index, result in enumerate(job_results):
         output = BytesIO()
-        img = Image.open(result)
+        img = Image.open(job_result)
         img.save(output, format=img.format)
 
-        bucket = time.strftime('%m-%y')
+        os.makedirs("uploaded", exist_ok=True)
+        with open(f"uploaded/{result_index}.png", "wb") as file_output:
+            file_output.write(output.getvalue())
 
-        # Upload to S3
-        boto_client.put_object(
-            Bucket=f'{bucket}',
-            Key=f'{job_id}/{index}.png',
-            Body=output.getvalue(),
-            ContentType="image/png"
-        )
+        return None
 
-        output.close()
+    output = BytesIO()
+    img = Image.open(job_result)
+    img.save(output, format=img.format)
 
-        presigned_url = boto_client.generate_presigned_url(
-            'get_object',
-            Params={
-                'Bucket': f'{bucket}',
-                'Key': f'{job_id}/{index}.png'
-            }, ExpiresIn=604800)
+    bucket = time.strftime('%m-%y')
 
-        object_urls.append(presigned_url)
+    # Upload to S3
+    boto_client.put_object(
+        Bucket=f'{bucket}',
+        Key=f'{job_id}/{result_index}.png',
+        Body=output.getvalue(),
+        ContentType="image/png"
+    )
 
-        log(f"Presigned URL generated: {presigned_url}")
+    output.close()
 
-    return object_urls
+    presigned_url = boto_client.generate_presigned_url(
+        'get_object',
+        Params={
+            'Bucket': f'{bucket}',
+            'Key': f'{job_id}/{result_index}.png'
+        }, ExpiresIn=604800)
+
+    log(f"Presigned URL generated: {presigned_url}")
+
+    return presigned_url

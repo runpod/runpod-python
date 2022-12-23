@@ -54,8 +54,10 @@ class Model:
         '''
         input_errors = self.input_validation(job['input'])
         if input_errors:
-            return {
-                "error": input_errors
-            }
+            return [
+                {
+                    "error": input_errors
+                }
+            ]
 
         return infer.run(job)
