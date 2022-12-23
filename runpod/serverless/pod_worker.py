@@ -10,7 +10,7 @@ from .modules import lifecycle, job
 from .modules.logging import log
 
 
-def start_worker():
+def start_worker(config):
     '''
     Starts the worker.
     '''
@@ -30,7 +30,7 @@ def start_worker():
                     job.error(worker_life.worker_id, next_job['id'], "No input provided.")
                     continue
 
-                job_results = job.run(next_job)
+                job_results = job.run(next_job, config['handler'])
 
                 if 'error' in job_results:
                     job.error(worker_life.worker_id, next_job['id'], job_results['error'])

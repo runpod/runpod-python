@@ -6,7 +6,7 @@ import json
 import requests
 
 from .logging import log
-from . import inference
+# from . import inference
 
 
 def get(worker_id):
@@ -51,7 +51,7 @@ def get(worker_id):
     return None
 
 
-def run(job):
+def run(job, run_handler):
     '''
     Run the job.
     Returns list of URLs and Job Time
@@ -59,9 +59,11 @@ def run(job):
     time_job_started = time.time()
     log(f"Started working on {job['id']} at {time_job_started} UTC")
 
-    model = inference.Model()
+    # model = inference.Model()
 
-    job_output = model.run(job)
+    # job_output = model.run(job)
+    job_output = run_handler(job)
+
     log(f"Job output: {job_output}")
 
     for index, output in enumerate(job_output):

@@ -3,8 +3,8 @@
 from . import pod_worker
 
 
-def start():
+def start(config):
     '''
     Starts the serverless worker.
     '''
-    pod_worker.start_worker()
+    pod_worker.start_worker(config)
