@@ -50,7 +50,7 @@ def upload_image(job_id, job_result, result_index=0):
         with open(f"uploaded/{result_index}.png", "wb") as file_output:
             file_output.write(output.getvalue())
 
-        return None
+        return f"uploaded/{result_index}.png"
 
     output = BytesIO()
     img = Image.open(job_result)

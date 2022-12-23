@@ -57,7 +57,6 @@ def run(job):
     Returns list of URLs and Job Time
     '''
     time_job_started = time.time()
-
     log(f"Started working on {job['id']} at {time_job_started} UTC")
 
     model = inference.Model()
@@ -66,12 +65,14 @@ def run(job):
     log(f"Job output: {job_output}")
 
     for index, output in enumerate(job_output):
+        log(f"Output {index}: {output}")
+
         if "error" in output:
             return {
                 "error": output["error"]
             }
 
-        if "image" in job_output:
+        if "image" in output:
             object_url = upload.upload_image(job['id'], output["image"], index)
             output["image"] = object_url
 
