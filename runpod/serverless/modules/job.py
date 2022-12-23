@@ -6,7 +6,7 @@ import json
 import requests
 
 from .logging import log
-from . import upload, inference
+from . import inference
 
 
 def get(worker_id):
