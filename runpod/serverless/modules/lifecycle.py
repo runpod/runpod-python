@@ -32,18 +32,23 @@ class LifecycleManager:
         '''
         webhook_ping = os.environ.get('RUNPOD_WEBHOOK_PING', None)
         ping_interval = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))
+        headers = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
+        ping_params = None
         if self.job_id is not None:
             ping_params = {
                 'job_id': self.job_id,
             }
-        else:
-            ping_params = {}
 
         if webhook_ping is not None:
             webhook_ping = webhook_ping.replace('$RUNPOD_POD_ID', self.worker_id)
-            requests.get(webhook_ping, params=ping_params, timeout=ping_interval/1000)
+            requests.get(
+                webhook_ping,
+                headers=headers,
+                params=ping_params,
+                timeout=int(ping_interval/1000)
+            )
 
         log(f'Heartbeat sent to {webhook_ping} interval: {ping_interval}ms params: {ping_params}')
 
-        threading.Timer(ping_interval/1000, self.heartbeat_ping).start()
+        threading.Timer(int(ping_interval/1000), self.heartbeat_ping).start()

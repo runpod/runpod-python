@@ -8,7 +8,6 @@ from PIL import Image
 from boto3 import session
 from botocore.config import Config
 
-from .logging import log
 
 # --------------------------- S3 Bucket Connection --------------------------- #
 bucket_session = session.Session()
@@ -74,7 +73,5 @@ def upload_image(job_id, job_result, result_index=0):
             'Bucket': f'{bucket}',
             'Key': f'{job_id}/{result_index}.png'
         }, ExpiresIn=604800)
-
-    log(f"Presigned URL generated: {presigned_url}")
 
     return presigned_url

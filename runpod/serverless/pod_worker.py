@@ -36,11 +36,7 @@ def start_worker(config):
                     job.error(worker_life.worker_id, next_job['id'], job_results['error'])
                     continue
 
-                job.post(
-                    worker_life.worker_id,
-                    next_job['id'], job_results['output'],
-                    job_results['duration_ms']
-                )
+                job.post(worker_life.worker_id, next_job['id'], job_results['output'])
             except (KeyError, ValueError, RuntimeError) as err:
                 job.error(worker_life.worker_id, next_job['id'], str(err))
             finally:

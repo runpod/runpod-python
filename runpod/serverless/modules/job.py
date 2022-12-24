@@ -6,7 +6,6 @@ import json
 import requests
 
 from .logging import log
-# from . import inference
 
 
 def get(worker_id):
@@ -56,13 +55,15 @@ def run(job, run_handler):
     Run the job.
     Returns list of URLs and Job Time
     '''
-    time_job_started = time.time()
-    log(f"Started working on {job['id']} at {time_job_started} UTC")
+    log(f"Started working on {job['id']} at {time.time()} UTC")
 
-    # model = inference.Model()
-
-    # job_output = model.run(job)
-    job_output = run_handler(job)
+    try:
+        job_output = run_handler(job)
+    except ValueError as err:
+        log(f"Job {job['id']} failed with error: {err}", 'ERROR')
+        return {
+            "error": str(err)
+        }
 
     log(f"Job output: {job_output}")
 
@@ -74,22 +75,14 @@ def run(job, run_handler):
                 "error": output["error"]
             }
 
-        # if "image" in output:
-        #     object_url = upload.upload_image(job['id'], output["image"], index)
-        #     output["image"] = object_url
-
-    job_duration = time.time() - time_job_started
-    job_duration_ms = int(job_duration * 1000)
-
     log(f"Returning as output: {job_output}")
 
     return {
         "output": job_output,
-        "duration_ms": job_duration_ms
     }
 
 
-def post(worker_id, job_id, job_output, job_time):
+def post(worker_id, job_id, job_output):
     '''
     Complete the job.
     '''
@@ -118,7 +111,7 @@ def post(worker_id, job_id, job_output, job_time):
     except requests.exceptions.Timeout:
         log(f"Timeout while completing job {job_id}")
 
-    log(f"Completed job {job_id} in {job_time} ms")
+    log(f"Completed job {job_id}")
 
     return
 
