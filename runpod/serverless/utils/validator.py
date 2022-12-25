@@ -12,6 +12,10 @@ def validate(job_input, validation_source):
     '''
     input_errors = []
 
+    for key, value in job_input.items():
+        if key not in validation_source:
+            input_errors.append(f"Unexpected input. {key} is not a valid input option.")
+
     for key, value in validation_source.items():
         if value['required'] and key not in job_input:
             input_errors.append(f"{key} is a required input.")

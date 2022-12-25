@@ -4,7 +4,7 @@
 import unittest
 from unittest.mock import patch, mock_open
 
-from runpod.serverless.modules.download import download_input_objects
+from runpod.serverless.utils.download import download_input_objects
 
 
 def mock_requests_get(*args, **kwargs):

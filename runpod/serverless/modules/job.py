@@ -57,13 +57,7 @@ def run(job, run_handler):
     '''
     log(f"Started working on {job['id']} at {time.time()} UTC")
 
-    try:
-        job_output = run_handler(job)
-    except ValueError as err:
-        log(f"Job {job['id']} failed with error: {err}", 'ERROR')
-        return {
-            "error": str(err)
-        }
+    job_output = run_handler(job)
 
     log(f"Job output: {job_output}")
 
