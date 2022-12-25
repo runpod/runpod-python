@@ -7,6 +7,9 @@ import requests
 
 from .logging import log
 
+rp_session = requests.Session()
+rp_session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+
 
 def get(worker_id):
     '''
@@ -26,12 +29,12 @@ def get(worker_id):
 
     log(f"Requesting job from {get_work_url}")
 
-    headers = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+    # headers = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
     try:
-        assigned_job = requests.get(
+        assigned_job = rp_session.get(
             get_work_url,
-            headers=headers,
+            # headers=headers,
             timeout=180
         )
     except requests.exceptions.Timeout:
@@ -97,11 +100,11 @@ def post(worker_id, job_id, job_output):
     headers = {
         "charset": "utf-8",
         "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
+        # "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
     }
 
     try:
-        requests.post(job_done_url, data=job_data, headers=headers, timeout=10)
+        rp_session.post(job_done_url, data=job_data, headers=headers, timeout=10)
     except requests.exceptions.Timeout:
         log(f"Timeout while completing job {job_id}")
 
@@ -133,11 +136,11 @@ def error(worker_id, job_id, error_message):
     headers = {
         "charset": "utf-8",
         "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
+        # "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
     }
 
     try:
-        requests.post(job_error_url, data=job_output, headers=headers, timeout=10)
+        rp_session.post(job_error_url, data=job_output, headers=headers, timeout=10)
     except requests.exceptions.Timeout:
         log(f"Timeout while erroring job {job_id}")
 
