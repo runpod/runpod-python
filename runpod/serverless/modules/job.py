@@ -41,6 +41,11 @@ def get(worker_id):
                 log(f"TAKE_JOB URL response: {assigned_job.status_code}")
                 get_return = assigned_job.json()
 
+    # Status code 400
+    except requests.exceptions.HTTPError:
+        log("HTTPError while requesting job", 'WARNING')
+
+    # Status code 408
     except requests.exceptions.Timeout:
         log("Timeout while requesting job", 'WARNING')
 
@@ -113,6 +118,12 @@ def post(worker_id, job_id, job_output):
 
     try:
         rp_session.post(job_done_url, data=job_data, headers=headers, timeout=10)
+
+    # Status code 400
+    except requests.exceptions.HTTPError:
+        log(f"HTTPError while completing job {job_id}")
+
+    # Status code 408
     except requests.exceptions.Timeout:
         log(f"Timeout while completing job {job_id}")
 
