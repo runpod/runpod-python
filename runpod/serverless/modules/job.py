@@ -41,9 +41,6 @@ def get(worker_id):
                 log(f"TAKE_JOB URL response: {assigned_job.status_code}")
                 get_return = assigned_job.json()
 
-    except requests.exceptions.Timeout:
-        log("Timeout while requesting job", 'WARNING')
-
     finally:
         log(f"GET_JOB URL response: {get_return}", "DEBUG")
 
@@ -80,7 +77,7 @@ def run(job, run_handler):
             "error": str(err)
         }
 
-    finally:
+    finally:  # pylint: disable=lost-exception
         log(f"Finished working on {job['id']} at {time.time()} UTC", "INFO")
         log(f"Run Returning: {run_return}", "INFO")
 
