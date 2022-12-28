@@ -2,11 +2,11 @@
 
 import asyncio
 
-from . import pod_worker
+from . import work_loop
 
 
 def start(config):
     '''
     Starts the serverless worker.
     '''
-    asyncio.run(pod_worker.start_worker(config))
+    asyncio.run(work_loop.start_worker(config))

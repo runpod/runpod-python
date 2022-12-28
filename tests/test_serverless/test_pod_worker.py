@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch
 
-from runpod.serverless import pod_worker
+from runpod.serverless import work_loop
 
 
 class TestPodWorker(unittest.TestCase):
@@ -15,7 +15,7 @@ class TestPodWorker(unittest.TestCase):
         '''
         Tests start_worker
         '''
-        pod_worker.start_worker('handler')
+        work_loop.start_worker('handler')
 
         mwl_instance = mock_worker_life.return_value
 
