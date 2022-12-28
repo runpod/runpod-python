@@ -4,11 +4,14 @@ import os
 import time
 import json
 import requests
+import aiohttp
+import asyncio
 
 from .logging import log
 
 rp_session = requests.Session()
-rp_session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+rp_session.headers.update(
+    {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
 
 
 def get(worker_id):
@@ -28,7 +31,8 @@ def get(worker_id):
             get_return = get_local()
 
         else:
-            get_work_url = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', worker_id)
+            get_work_url = str(os.environ.get(
+                'RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', worker_id)
 
             log(f"Requesting job from {get_work_url}")
 
@@ -117,7 +121,8 @@ def post(worker_id, job_id, job_output):
     }
 
     try:
-        rp_session.post(job_done_url, data=job_data, headers=headers, timeout=10)
+        rp_session.post(job_done_url, data=job_data,
+                        headers=headers, timeout=10)
 
     # Status code 400
     except requests.exceptions.HTTPError:
@@ -159,7 +164,8 @@ def error(worker_id, job_id, error_message):
     }
 
     try:
-        rp_session.post(job_error_url, data=job_output, headers=headers, timeout=10)
+        rp_session.post(job_error_url, data=job_output,
+                        headers=headers, timeout=10)
     except requests.exceptions.Timeout:
         log(f"Timeout while erroring job {job_id}")
 

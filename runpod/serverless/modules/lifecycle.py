@@ -41,7 +41,8 @@ class LifecycleManager:
             }
 
         if webhook_ping is not None:
-            webhook_ping = webhook_ping.replace('$RUNPOD_POD_ID', self.worker_id)
+            webhook_ping = webhook_ping.replace(
+                '$RUNPOD_POD_ID', self.worker_id)
             requests.get(
                 webhook_ping,
                 headers=headers,
@@ -49,6 +50,6 @@ class LifecycleManager:
                 timeout=int(ping_interval/1000)
             )
 
-        log(f'Heartbeat sent to {webhook_ping} interval: {ping_interval}ms params: {ping_params}')
+        # log(f'Heartbeat sent to {webhook_ping} interval: {ping_interval}ms params: {ping_params}')
 
         threading.Timer(int(ping_interval/1000), self.heartbeat_ping).start()
