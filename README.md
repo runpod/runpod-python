@@ -42,8 +42,6 @@ This python package can also be used to create a serverless worker that can be d
 Create an python script in your project that contains your model definition and the RunPod worker start code. Run this python code as your default container start command:
 
 ```python
-#!/usr/bin/env python
-
 import runpod
 
 MODEL = 'YOUR_MODEL'
