@@ -51,7 +51,7 @@ def start_worker(config):
 
                 if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
                     log("Local testing complete, exiting.")
-                    break
+                    break  # pylint: disable=lost-exception
 
         if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
             log("Local testing complete, exiting.")
