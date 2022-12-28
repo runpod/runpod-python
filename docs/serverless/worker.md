@@ -7,6 +7,7 @@ To convert a Pod to a Worker, you need to add the following annotations to the P
 ```bash
 # Development
 RUNPOD_DEBUG= # Set to 'true' to enable debug mode, otherwise leave blank
+RUNPOD_DEBUG_LEVEL= # ERROR, WARN, INFO, DEBUG
 
 # API Endpoints
 RUNPOD_AI_API_KEY= # Serverless API Key

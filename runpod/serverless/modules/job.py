@@ -20,63 +20,71 @@ def get(worker_id):
         "input": {job_input}
     }
     '''
-    if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
-        log('RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local', 'WARNING')
-        return get_local()
-
-    get_work_url = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')
-                       ).replace('$ID', worker_id)
-
-    log(f"Requesting job from {get_work_url}")
-
-    # headers = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+    get_return = None
 
     try:
-        assigned_job = rp_session.get(
-            get_work_url,
-            # headers=headers,
-            timeout=180
-        )
+        if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
+            log('RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local', 'WARNING')
+            get_return = get_local()
+
+        else:
+            get_work_url = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', worker_id)
+
+            log(f"Requesting job from {get_work_url}")
+
+            assigned_job = rp_session.get(
+                get_work_url,
+                timeout=180
+            )
+
+            if assigned_job.status_code == 200:
+                log(f"TAKE_JOB URL response: {assigned_job.status_code}")
+                get_return = assigned_job.json()
+
     except requests.exceptions.Timeout:
         log("Timeout while requesting job", 'WARNING')
-        return None
 
-    if assigned_job.status_code == 200:
-        log(f"TAKE_JOB URL response: {assigned_job.status_code}")
-        return assigned_job.json()
+    finally:
+        log(f"GET_JOB URL response: {get_return}", "DEBUG")
 
-    if assigned_job.status_code == 204:
-        log(f"TAKE_JOB URL response: {assigned_job.status_code}")
-        return None
-
-    log(f"TAKE_JOB URL response: {assigned_job.status_code}", 'ERROR')
-    return None
+        return get_return
 
 
 def run(job, run_handler):
     '''
     Run the job.
-    Returns list of URLs and Job Time
+    Returns the job output.
     '''
-    log(f"Started working on {job['id']} at {time.time()} UTC")
+    log(f"Started working on {job['id']} at {time.time()} UTC", "INFO")
 
-    job_output = run_handler(job)
+    run_return = {
+        "error": "Failed to return job output or capture error."
+    }
 
-    log(f"Job output: {job_output}")
+    try:
+        job_output = run_handler(job)
 
-    for index, output in enumerate(job_output):
-        log(f"Output {index}: {output}")
-
-        if "error" in output:
-            return {
-                "error": output["error"]
+        if "error" in job_output:
+            run_return = {
+                "error": job_output['error']
+            }
+        else:
+            run_return = {
+                "output": job_output
             }
 
-    log(f"Returning as output: {job_output}")
+    except Exception as err:    # pylint: disable=broad-except
+        log(f"Error while running job {job['id']}: {err}", "ERROR")
 
-    return {
-        "output": job_output,
-    }
+        run_return = {
+            "error": str(err)
+        }
+
+    finally:
+        log(f"Finished working on {job['id']} at {time.time()} UTC", "INFO")
+        log(f"Run Returning: {run_return}", "INFO")
+
+        return run_return
 
 
 def post(worker_id, job_id, job_output):
