@@ -6,7 +6,7 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 import os
 import aiohttp
 import asyncio
-
+import json
 
 import runpod.serverless.modules.logging as log
 from .modules.heartbeat import heartbeat_ping
@@ -28,17 +28,25 @@ async def start_worker(config):
             # GET JOB
             job = await get_job(session)
 
-            if job is not None:
+            if job is not None and job["input"] is not None:
                 set_job_id(job["id"])
             else:
                 continue
 
-            job_result = run_job(config["handler"], job) if job else {
-                "error": "No input provided."
-            }
+            job_result = run_job(config["handler"], job)
+
+            job_data = None
+            try:
+                job_data = json.dumps(job_result, ensure_ascii=False)
+            except Exception as err:
+                log.error(
+                    f"Error while serializing job result {job['id']}: {err}")
+                job_data = json.dumps({
+                    "error": "unable to serialize job output"
+                })
 
             # SEND RESULTS
-            await send_result(session, job_result, job)
+            await send_result(session, job_data, job)
 
             set_job_id(None)
 

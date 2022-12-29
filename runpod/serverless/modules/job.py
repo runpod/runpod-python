@@ -1,10 +1,8 @@
 import time
-import json
-import asyncio
-import random
 
 import runpod.serverless.modules.logging as log
 from .worker_state import job_get_url, get_done_url
+from .retry import retry
 
 
 async def get_job(session):
@@ -51,29 +49,20 @@ def run_job(handler, job):
             f"Finished working on {job['id']} at {time.time()} UTC")
 
 
-async def send_result(session, result, job):
+@retry(max_attempts=3, base_delay=1, max_delay=3)
+async def retry_send_result(session, job_data):
+    headers = {
+        "charset": "utf-8",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    async with session.post(get_done_url(), data=job_data, headers=headers, raise_for_status=True) as resp:
+        await resp
+
+
+async def send_result(session, job_data, job):
     try:
-        job_data = json.dumps(result, ensure_ascii=False)
+        await retry_send_result(session, job_data)
     except Exception as err:
         log.error(
-            f"Error while serializing job result {job['id']}: {err}")
-        return
-
-    attempts = 1
-    success = False
-
-    while attempts <= 3 and success == False:
-        try:
-            headers = {
-                "charset": "utf-8",
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-
-            async with session.post(get_done_url(), data=job_data, headers=headers, raise_for_status=True) as resp:
-                print(await resp.text())
-            success = True
-        except Exception as err:
-            attempts += 1
-            await asyncio.sleep(random.randint(1, 3))
-            log.error(
-                f"Error while returning job result {job['id']}: {err}")
+            f"Error while returning job result {job['id']}: {err}")
