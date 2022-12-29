@@ -4,11 +4,20 @@ import os
 import time
 import json
 import requests
+from requests.adapters import HTTPAdapter, Retry
 
 from .logging import log
 
 rp_session = requests.Session()
 rp_session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+
+
+retries = Retry(total=5,
+                backoff_factor=0.1,
+                status_forcelist=[500, 502, 503, 504])
+
+# Applies to all https requests made with this session
+rp_session.mount('https://', HTTPAdapter(max_retries=retries))
 
 
 def get(worker_id):
@@ -117,15 +126,22 @@ def post(worker_id, job_id, job_output):
     }
 
     try:
-        rp_session.post(job_done_url, data=job_data, headers=headers, timeout=10)
+        rp_session.post(
+            job_done_url,
+            data=job_data,
+            headers=headers,
+            timeout=10)
 
     # Status code 400
     except requests.exceptions.HTTPError:
-        log(f"HTTPError while completing job {job_id}")
+        log(f"HTTPError while completing job {job_id}", 'ERROR')
 
     # Status code 408
     except requests.exceptions.Timeout:
-        log(f"Timeout while completing job {job_id}")
+        log(f"Timeout while completing job {job_id}", 'ERROR')
+
+    except requests.exceptions.ConnectionError as err:
+        log(f"ConnectionError while completing job {job_id}: {err}", 'ERROR')
 
     log(f"Completed job {job_id}")
 
