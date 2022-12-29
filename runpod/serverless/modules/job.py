@@ -57,7 +57,7 @@ async def retry_send_result(session, job_data):
     }
 
     async with session.post(get_done_url(), data=job_data, headers=headers, raise_for_status=True) as resp:
-        await resp
+        await resp.text()
 
 
 async def send_result(session, job_data, job):
