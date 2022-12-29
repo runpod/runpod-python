@@ -8,7 +8,7 @@ import os
 import shutil
 
 
-def clean(folder_list=[]):
+def clean(folder_list=None):
     '''
     Removes the downloads folder.
     '''
@@ -18,5 +18,6 @@ def clean(folder_list=[]):
     if os.path.exists('output.zip'):
         os.remove('output.zip')
 
-    for folder in folder_list:
-        shutil.rmtree(folder, ignore_errors=True)
+    if folder_list is not None:
+        for folder in folder_list:
+            shutil.rmtree(folder, ignore_errors=True)
