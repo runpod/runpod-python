@@ -4,7 +4,6 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 '''
 
 import os
-import shutil
 
 from .modules import lifecycle, job
 from .modules.logging import log
@@ -16,43 +15,37 @@ def start_worker(config):
     '''
     worker_life = lifecycle.LifecycleManager()
     worker_life.heartbeat_ping()
-    log("Worker lifecycle manager started.")
+    log("Worker lifecycle manager started.", "INFO")
 
     while True:
         next_job = job.get(worker_life.worker_id)
 
-        if next_job is not None:
-            worker_life.job_id = next_job['id']
+        try:
+            if next_job is None:
+                log("No job available before idle timeout.", "INFO")
+                continue
 
-            try:
-                if 'input' not in next_job:
-                    log("No input provided. Erroring out request.", "ERROR")
-                    job.error(worker_life.worker_id, next_job['id'], "No input provided.")
-                    continue
+            worker_life.job_id = next_job['id']  # Job ID is set by serverless platform.
 
-                job_results = job.run(next_job, config['handler'])
+            if 'input' not in next_job:
+                log("No input parameter provided. Erroring out request.", "ERROR")
+                job.error(worker_life.worker_id, next_job['id'], "No input provided.")
+                continue
 
-                if 'error' in job_results:
-                    job.error(worker_life.worker_id, next_job['id'], job_results['error'])
-                    continue
+            job_results = job.run(next_job, config['handler'])
 
-                job.post(worker_life.worker_id, next_job['id'], job_results['output'])
-            except (KeyError, ValueError, RuntimeError) as err:
-                job.error(worker_life.worker_id, next_job['id'], str(err))
-            finally:
-                # -------------------------------- Job Cleanup ------------------------------- #
-                shutil.rmtree("input_objects", ignore_errors=True)
-                shutil.rmtree("output_objects", ignore_errors=True)
+            if 'error' in job_results:
+                job.error(worker_life.worker_id, next_job['id'], job_results['error'])
+                continue
 
-                if os.path.exists('output.zip'):
-                    os.remove('output.zip')
+            job.post(worker_life.worker_id, next_job['id'], job_results['output'])
 
-                worker_life.job_id = None
+        except (KeyError, ValueError, RuntimeError) as err:
+            job.error(worker_life.worker_id, next_job['id'], str(err))
 
-                if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
-                    log("Local testing complete, exiting.")
-                    break  # pylint: disable=lost-exception
+        finally:
+            worker_life.job_id = None
 
-        if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
-            log("Local testing complete, exiting.")
-            break
+            if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
+                log("Local testing complete, exiting.")
+                break  # pylint: disable=lost-exception
