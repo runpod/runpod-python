@@ -51,7 +51,8 @@ class LifecycleManager:
                     timeout=int(ping_interval/1000)
                 )
 
-            log(f'Heartbeat sent to {webhook_ping} interval: {ping_interval}ms params: {ping_params}', "DEBUG")
+            log(f'Heartbeat URL: {webhook_ping} Interval: {ping_interval}ms', "DEBUG")
+            log(f"Heartbeat Params: {ping_params}", "DEBUG")
 
         finally:
             heartbeat_thread = threading.Timer(int(ping_interval/1000), self.heartbeat_ping)
