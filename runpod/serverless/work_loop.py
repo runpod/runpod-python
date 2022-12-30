@@ -4,9 +4,10 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 '''
 
 import os
-import aiohttp
-import asyncio
 import json
+import asyncio
+
+import aiohttp
 
 import runpod.serverless.modules.logging as log
 from .modules.heartbeat import heartbeat_ping
@@ -17,6 +18,9 @@ timeout = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
 
 async def start_worker(config):
+    '''
+    starts the worker loop
+    '''
     auth_header = {
         "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
     async with aiohttp.ClientSession(headers=auth_header) as session:
@@ -38,7 +42,7 @@ async def start_worker(config):
             job_data = None
             try:
                 job_data = json.dumps(job_result, ensure_ascii=False)
-            except Exception as err:
+            except Exception as err:  # pylint: disable=broad-except
                 log.error(
                     f"Error while serializing job result {job['id']}: {err}")
                 job_data = json.dumps({

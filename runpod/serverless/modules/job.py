@@ -51,6 +51,9 @@ def run_job(handler, job):
 
 @retry(max_attempts=3, base_delay=1, max_delay=3)
 async def retry_send_result(session, job_data):
+    '''
+    wrapper for sending results
+    '''
     headers = {
         "charset": "utf-8",
         "Content-Type": "application/x-www-form-urlencoded"
@@ -61,8 +64,11 @@ async def retry_send_result(session, job_data):
 
 
 async def send_result(session, job_data, job):
+    '''
+    try except wrapper
+    '''
     try:
         await retry_send_result(session, job_data)
-    except Exception as err:
+    except Exception as err:  # pylint: disable=broad-except
         log.error(
             f"Error while returning job result {job['id']}: {err}")

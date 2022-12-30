@@ -3,10 +3,10 @@
 import os
 from dotenv import load_dotenv
 
-log_level_error = 'ERROR'
-log_level_warning = 'WARNING'
-log_level_info = 'INFO'
-log_level_debug = 'DEBUG'
+LOG_LEVEL_ERROR = 'ERROR'
+LOG_LEVEL_WARN = 'WARNING'
+LOG_LEVEL_INFO = 'INFO'
+LOG_LEVEL_DEBUG = 'DEBUG'
 
 env_path = os.getcwd() + '/.env'
 load_dotenv(env_path)  # Load environment variables
@@ -35,19 +35,31 @@ def log_secret(secret_name, secret, level='INFO'):
 
 
 def error(message):
-    log(message, log_level_error)
+    '''
+    error log
+    '''
+    log(message, LOG_LEVEL_ERROR)
 
 
 def warn(message):
-    log(message, log_level_warning)
+    '''
+    warn log
+    '''
+    log(message, LOG_LEVEL_WARN)
 
 
 def info(message):
-    log(message, log_level_info)
+    '''
+    info log
+    '''
+    log(message, LOG_LEVEL_INFO)
 
 
 def debug(message):
-    log(message, log_level_debug)
+    '''
+    debug log
+    '''
+    log(message, LOG_LEVEL_DEBUG)
 
 
 log('Logging module loaded')
