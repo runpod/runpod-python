@@ -1,3 +1,6 @@
+'''
+job related helpers
+'''
 import time
 
 import runpod.serverless.modules.logging as log
@@ -6,13 +9,16 @@ from .retry import retry
 
 
 async def get_job(session):
+    '''
+    get the job from the queue
+    '''
     next_job = None
 
     try:
         async with session.get(job_get_url) as response:
             next_job = await response.json()
         log.info(next_job)
-    except Exception as err:
+    except Exception as err:  # pylint: disable=broad-except
         log.error(
             f"Error while getting job: {err}")
 
@@ -20,7 +26,9 @@ async def get_job(session):
 
 
 def run_job(handler, job):
-    # DO WORK
+    '''
+    run the handler and format the return
+    '''
     log.info(
         f"Started working on {job['id']} at {time.time()} UTC")
 
@@ -59,7 +67,10 @@ async def retry_send_result(session, job_data):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    async with session.post(get_done_url(), data=job_data, headers=headers, raise_for_status=True) as resp:
+    async with session.post(get_done_url(),
+                            data=job_data,
+                            headers=headers,
+                            raise_for_status=True) as resp:
         await resp.text()
 
 
