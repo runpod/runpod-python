@@ -4,7 +4,7 @@ job related helpers
 import time
 
 import runpod.serverless.modules.logging as log
-from .worker_state import job_get_url, get_done_url
+from .worker_state import JOB_GET_URL, get_done_url
 from .retry import retry
 
 
@@ -15,7 +15,7 @@ async def get_job(session):
     next_job = None
 
     try:
-        async with session.get(job_get_url) as response:
+        async with session.get(JOB_GET_URL) as response:
             next_job = await response.json()
         log.info(next_job)
     except Exception as err:  # pylint: disable=broad-except
