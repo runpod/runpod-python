@@ -1,10 +1,12 @@
 ''' Allows serverless to recognized as a package.'''
 
-from . import pod_worker
+import asyncio
+
+from . import work_loop
 
 
 def start(config):
     '''
     Starts the serverless worker.
     '''
-    pod_worker.start_worker(config)
+    asyncio.run(work_loop.start_worker(config))

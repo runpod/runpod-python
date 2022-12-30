@@ -1,194 +1,84 @@
-''' PodWorker | jobs.py '''
-
-import os
+'''
+job related helpers
+'''
 import time
-import json
-import requests
-from requests.adapters import HTTPAdapter, Retry
 
-from .logging import log
-
-rp_session = requests.Session()
-rp_session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+import runpod.serverless.modules.logging as log
+from .worker_state import JOB_GET_URL, get_done_url
+from .retry import retry
 
 
-retries = Retry(total=5,
-                backoff_factor=0.1,
-                status_forcelist=[500, 502, 503, 504])
-
-# Applies to all https requests made with this session
-rp_session.mount('https://', HTTPAdapter(max_retries=retries))
-
-
-def get(worker_id):
+async def get_job(session):
     '''
-    Get next job from job endpoint, returns job json.
-    The job format is:
-    {
-        "id": {job_id},
-        "input": {job_input}
-    }
+    get the job from the queue
     '''
-    get_return = None
+    next_job = None
 
     try:
-        if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
-            log('RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local', 'WARNING')
-            get_return = get_local()
+        async with session.get(JOB_GET_URL) as response:
+            next_job = await response.json()
+        log.info(next_job)
+    except Exception as err:  # pylint: disable=broad-except
+        log.error(
+            f"Error while getting job: {err}")
 
-        else:
-            get_work_url = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', worker_id)
-
-            log(f"Requesting job from {get_work_url}")
-
-            assigned_job = rp_session.get(
-                get_work_url,
-                timeout=180
-            )
-
-            if assigned_job.status_code == 200:
-                log(f"TAKE_JOB URL response: {assigned_job.status_code}")
-                get_return = assigned_job.json()
-
-    # Status code 400
-    except requests.exceptions.HTTPError:
-        log("HTTPError while requesting job", 'WARNING')
-
-    # Status code 408
-    except requests.exceptions.Timeout:
-        log("Timeout while requesting job", 'WARNING')
-
-    finally:
-        log(f"GET_JOB URL response: {get_return}", "DEBUG")
-
-        return get_return  # pylint: disable=lost-exception
+    return next_job
 
 
-def run(job, run_handler):
+def run_job(handler, job):
     '''
-    Run the job.
-    Returns the job output.
+    run the handler and format the return
     '''
-    log(f"Started working on {job['id']} at {time.time()} UTC", "INFO")
-
-    run_return = {
-        "error": "Failed to return job output or capture error."
-    }
+    log.info(
+        f"Started working on {job['id']} at {time.time()} UTC")
 
     try:
-        job_output = run_handler(job)
+        job_output = handler(job)
 
         if "error" in job_output:
-            run_return = {
+            return {
                 "error": job_output['error']
             }
-        else:
-            run_return = {
-                "output": job_output
-            }
+        return {
+            "output": job_output
+        }
 
     except Exception as err:    # pylint: disable=broad-except
-        log(f"Error while running job {job['id']}: {err}", "ERROR")
+        log.error(
+            f"Error while running job {job['id']}: {err}")
 
-        run_return = {
+        return {
             "error": str(err)
         }
 
     finally:
-        log(f"Finished working on {job['id']} at {time.time()} UTC", "INFO")
-        log(f"Run Returning: {run_return}", "INFO")
-
-        return run_return  # pylint: disable=lost-exception
+        log.info(
+            f"Finished working on {job['id']} at {time.time()} UTC")
 
 
-def post(worker_id, job_id, job_output):
+@retry(max_attempts=3, base_delay=1, max_delay=3)
+async def retry_send_result(session, job_data):
     '''
-    Complete the job.
+    wrapper for sending results
     '''
-    job_data = {
-        "output": job_output
-    }
-
-    job_data = json.dumps(job_data, ensure_ascii=False)
-
-    if os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None) is None:
-        log("RUNPOD_WEBHOOK_POST_OUTPUT not set, skipping completing job", 'WARNING')
-        return
-
-    job_done_url = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
-    job_done_url = job_done_url.replace('$ID', job_id)
-    job_done_url = job_done_url.replace('$RUNPOD_POD_ID', worker_id)
-
     headers = {
         "charset": "utf-8",
-        "Content-Type": "application/x-www-form-urlencoded",
-        # "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
+        "Content-Type": "application/x-www-form-urlencoded"
     }
 
+    async with session.post(get_done_url(),
+                            data=job_data,
+                            headers=headers,
+                            raise_for_status=True) as resp:
+        await resp.text()
+
+
+async def send_result(session, job_data, job):
+    '''
+    try except wrapper
+    '''
     try:
-        rp_session.post(
-            job_done_url,
-            data=job_data,
-            headers=headers,
-            timeout=10)
-
-    # Status code 400
-    except requests.exceptions.HTTPError:
-        log(f"HTTPError while completing job {job_id}", 'ERROR')
-
-    # Status code 408
-    except requests.exceptions.Timeout:
-        log(f"Timeout while completing job {job_id}", 'ERROR')
-
-    except requests.exceptions.ConnectionError as err:
-        log(f"ConnectionError while completing job {job_id}: {err}", 'ERROR')
-
-    log(f"Completed job {job_id}")
-
-    return
-
-
-def error(worker_id, job_id, error_message):
-    '''
-    Report an error to the job endpoint, marking the job as failed.
-    '''
-    log(f"Reporting error for job {job_id}: {error_message}", 'ERROR')
-
-    if os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None) is None:
-        log("RUNPOD_WEBHOOK_POST_OUTPUT not set, skipping erroring job", 'WARNING')
-        return
-
-    job_output = {
-        "error": error_message
-    }
-
-    job_output = json.dumps(job_output, ensure_ascii=False)
-
-    job_error_url = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
-    job_error_url = job_error_url.replace('$ID', job_id)
-    job_error_url = job_error_url.replace('$RUNPOD_POD_ID', worker_id)
-
-    headers = {
-        "charset": "utf-8",
-        "Content-Type": "application/x-www-form-urlencoded",
-        # "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
-    }
-
-    try:
-        rp_session.post(job_error_url, data=job_output, headers=headers, timeout=10)
-    except requests.exceptions.Timeout:
-        log(f"Timeout while erroring job {job_id}")
-
-    return
-
-
-# ------------------------------- Local Testing ------------------------------ #
-def get_local():
-    '''
-    Returns contents of test_inputs.json
-    '''
-    if not os.path.exists('test_inputs.json'):
-        return None
-
-    with open('test_inputs.json', 'r', encoding="UTF-8") as file:
-        return json.loads(file.read())
+        await retry_send_result(session, job_data)
+    except Exception as err:  # pylint: disable=broad-except
+        log.error(
+            f"Error while returning job result {job['id']}: {err}")
