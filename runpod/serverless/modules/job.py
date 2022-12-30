@@ -39,10 +39,9 @@ def run_job(handler, job):
             return {
                 "error": job_output['error']
             }
-        else:
-            return {
-                "output": job_output
-            }
+        return {
+            "output": job_output
+        }
 
     except Exception as err:    # pylint: disable=broad-except
         log.error(
