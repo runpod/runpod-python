@@ -12,8 +12,8 @@ async def send_ping(session):
             ping_params = {
                 'job_id': job_id,
             }
-        session.get(ping_url, params=ping_params,
-                    timeout=int(ping_interval/1000))
+        await session.get(ping_url, params=ping_params,
+                          timeout=int(ping_interval/1000))
     except Exception as err:
         log.warn(f"Error while sending heartbeat: {err}")
 
