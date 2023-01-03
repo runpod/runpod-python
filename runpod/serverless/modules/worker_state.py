@@ -10,17 +10,13 @@ CURRENT_JOB_ID = None
 worker_id = os.environ.get('RUNPOD_POD_ID', str(uuid.uuid4()))
 
 auth_header = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
-JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace(
-    '$ID', worker_id)
-JOB_DONE_URL = str(os.environ.get(
-    'RUNPOD_WEBHOOK_POST_OUTPUT'))
-JOB_DONE_URL = JOB_DONE_URL.replace(
-    '$RUNPOD_POD_ID', worker_id)
+JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', worker_id)
+JOB_DONE_URL = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
+JOB_DONE_URL = JOB_DONE_URL.replace('$RUNPOD_POD_ID', worker_id)
 
 webhook_ping = os.environ.get('RUNPOD_WEBHOOK_PING', None)
 ping_interval = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))
-ping_url = webhook_ping.replace(
-    '$RUNPOD_POD_ID', worker_id)
+ping_url = webhook_ping.replace('$RUNPOD_POD_ID', worker_id)
 
 
 def get_current_job_id():

@@ -2,6 +2,7 @@
 
 import os
 import time
+import threading
 from io import BytesIO
 
 from PIL import Image
@@ -75,3 +76,28 @@ def upload_image(job_id, job_result, result_index=0):
         }, ExpiresIn=604800)
 
     return presigned_url
+
+
+# ---------------------------------------------------------------------------- #
+#                                Files To Upload                               #
+# ---------------------------------------------------------------------------- #
+def files(job_id, file_list):
+    '''
+    Uploads a list of files in parallel.
+    Once all files are uploaded, the function returns the presigned URLs list.
+    '''
+    upload_progress = []
+
+    for index, file in enumerate(file_list):
+        new_upload = threading.Thread(
+            target=upload_image,
+            args=(job_id, file, index)
+        )
+
+        new_upload.start()
+        upload_progress.append(new_upload)
+
+    for upload in upload_progress:
+        upload.join()
+
+    return upload_progress

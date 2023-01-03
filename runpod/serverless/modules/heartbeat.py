@@ -13,12 +13,17 @@ async def send_ping(session):
     try:
         ping_params = None
         job_id = get_current_job_id()
+
         if job_id is not None:
             ping_params = {
                 'job_id': job_id,
             }
         await session.get(ping_url, params=ping_params,
                           timeout=int(ping_interval/1000))
+
+        log.debug(f'Heartbeat URL: {ping_url} Interval: {ping_interval}ms')
+        log.debug(f"Heartbeat Params: {ping_params}")
+
     except Exception as err:  # pylint: disable=broad-except
         log.warn(f"Error while sending heartbeat: {err}")
 
