@@ -5,12 +5,12 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 
 import os
 import json
-import asyncio
+from threading import Thread
 
 import aiohttp
 
 import runpod.serverless.modules.logging as log
-from .modules.heartbeat import heartbeat_ping
+from .modules.heartbeat import start_heartbeat
 from .modules.job import get_job, run_job, send_result
 from .modules.worker_state import set_job_id
 
@@ -27,7 +27,9 @@ async def start_worker(config):
 
     async with aiohttp.ClientSession(headers=auth_header) as session:
 
-        asyncio.create_task(heartbeat_ping(session))
+        heartbeat_thread = Thread(target=start_heartbeat, daemon=True)
+        heartbeat_thread.daemon = True
+        heartbeat_thread.start()
 
         while True:
             # GET JOB
@@ -49,8 +51,10 @@ async def start_worker(config):
             try:
                 job_data = json.dumps(job_result, ensure_ascii=False)
             except Exception as err:  # pylint: disable=broad-except
-                log.error(f"Error while serializing job result {job['id']}: {err}")
-                job_data = json.dumps({"error": "unable to serialize job output"})
+                log.error(
+                    f"Error while serializing job result {job['id']}: {err}")
+                job_data = json.dumps(
+                    {"error": "unable to serialize job output"})
 
             # SEND RESULTS
             await send_result(session, job_data, job)
