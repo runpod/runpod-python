@@ -67,7 +67,8 @@ async def retry_send_result(session, job_data):
                             data=job_data,
                             headers=headers,
                             raise_for_status=True) as resp:
-        await resp.text()
+        result = await resp.text()
+        log.debug(result)
 
 
 async def send_result(session, job_data, job):
