@@ -25,11 +25,13 @@ def heartbeat_ping(session):
                 'job_id': job_id,
             }
 
-            session.get(
+            result = session.get(
                 ping_url,
                 params=ping_params,
                 timeout=int(ping_interval/1000)
             )
+
+            log.info(result)
 
         log.info(
             f'Heartbeat sent to {ping_url} interval: {ping_interval}ms params: {ping_params}')
