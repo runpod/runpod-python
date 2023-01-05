@@ -36,14 +36,14 @@ else:
 # ---------------------------------------------------------------------------- #
 #                                 Upload Image                                 #
 # ---------------------------------------------------------------------------- #
-def upload_image(job_id, job_result, result_index=0):
+def upload_image(job_id, image_location, result_index=0, results_list=None):
     '''
     Upload image to bucket storage.
     '''
     if boto_client is None:
         # Save the output to a file
         output = BytesIO()
-        img = Image.open(job_result)
+        img = Image.open(image_location)
         img.save(output, format=img.format)
 
         os.makedirs("uploaded", exist_ok=True)
@@ -53,7 +53,7 @@ def upload_image(job_id, job_result, result_index=0):
         return f"uploaded/{result_index}.png"
 
     output = BytesIO()
-    img = Image.open(job_result)
+    img = Image.open(image_location)
     img.save(output, format=img.format)
 
     bucket = time.strftime('%m-%y')
@@ -75,6 +75,9 @@ def upload_image(job_id, job_result, result_index=0):
             'Key': f'{job_id}/{result_index}.png'
         }, ExpiresIn=604800)
 
+    if results_list is not None:
+        results_list[result_index] = presigned_url
+
     return presigned_url
 
 
@@ -86,18 +89,20 @@ def files(job_id, file_list):
     Uploads a list of files in parallel.
     Once all files are uploaded, the function returns the presigned URLs list.
     '''
-    upload_progress = []
+    upload_progress = []  # List of threads
+    file_urls = [None] * len(file_list)  # Resulting list of URLs for each file
 
     for index, file in enumerate(file_list):
         new_upload = threading.Thread(
             target=upload_image,
-            args=(job_id, file, index)
+            args=(job_id, file, index, file_urls)
         )
 
         new_upload.start()
         upload_progress.append(new_upload)
 
+    # Wait for all uploads to finish
     for upload in upload_progress:
         upload.join()
 
-    return upload_progress
+    return file_urls
