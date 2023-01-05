@@ -63,6 +63,7 @@ async def retry_send_result(session, job_data):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
+    log.info("result api call")
     async with session.post(get_done_url(),
                             data=job_data,
                             headers=headers,
@@ -70,12 +71,15 @@ async def retry_send_result(session, job_data):
         result = await resp.text()
         log.debug(result)
 
+    log.info("done with result api call")
+
 
 async def send_result(session, job_data, job):
     '''
     Return the job results.
     '''
     try:
+        log.info("sending results")
         await retry_send_result(session, job_data)
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
