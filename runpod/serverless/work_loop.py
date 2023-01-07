@@ -27,7 +27,7 @@ async def start_worker(config):
 
     async with aiohttp.ClientSession(headers=auth_header) as session:
 
-        heartbeat_thread = Thread(target=start_heartbeat, daemon=True)
+        heartbeat_thread = Thread(target=start_heartbeat)
         heartbeat_thread.daemon = True
         heartbeat_thread.start()
 
@@ -53,8 +53,7 @@ async def start_worker(config):
             except Exception as err:  # pylint: disable=broad-except
                 log.error(
                     f"Error while serializing job result {job['id']}: {err}")
-                job_data = json.dumps(
-                    {"error": "unable to serialize job output"})
+                job_data = json.dumps({"error": "unable to serialize job output"})
 
             # SEND RESULTS
             await send_result(session, job_data, job)

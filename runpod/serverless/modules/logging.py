@@ -14,9 +14,9 @@ load_dotenv(env_path)  # Load environment variables
 
 def log(message, level='INFO'):
     '''
-    Log message to stdout
+    Log message to stdout if RUNPOD_DEBUG is true.
     '''
-    if os.environ.get('RUNPOD_DEBUG', 'False') == 'true':
+    if os.environ.get('RUNPOD_DEBUG', 'true') == 'true':
         print(f'{level} | {message}')
 
 

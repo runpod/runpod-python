@@ -1,7 +1,10 @@
 '''
 job related helpers
 '''
+
+import os
 import time
+import json
 
 import runpod.serverless.modules.logging as log
 from .worker_state import JOB_GET_URL, get_done_url
@@ -15,8 +18,13 @@ async def get_job(session):
     next_job = None
 
     try:
-        async with session.get(JOB_GET_URL) as response:
-            next_job = await response.json()
+        if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
+            log.warn('RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local')
+            next_job = get_local()
+        else:
+            async with session.get(JOB_GET_URL) as response:
+                next_job = await response.json()
+
         log.info(next_job)
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while getting job: {err}")
@@ -83,3 +91,16 @@ async def send_result(session, job_data, job):
         await retry_send_result(session, job_data)
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
+
+
+# ------------------------------- Local Testing ------------------------------ #
+def get_local():
+    '''
+    Returns contents of test_inputs.json
+    '''
+    if not os.path.exists('test_inputs.json'):
+        log.warn('test_inputs.json not found, skipping local testing')
+        return None
+
+    with open('test_inputs.json', 'r', encoding="UTF-8") as file:
+        return json.loads(file.read())
