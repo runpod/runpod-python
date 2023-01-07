@@ -15,8 +15,12 @@ JOB_DONE_URL = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
 JOB_DONE_URL = JOB_DONE_URL.replace('$RUNPOD_POD_ID', worker_id)
 
 webhook_ping = os.environ.get('RUNPOD_WEBHOOK_PING', None)
+if webhook_ping is not None:
+    PING_URL = webhook_ping.replace('$RUNPOD_POD_ID', worker_id)
+else:
+    PING_URL = "PING_URL_NOT_SET"
+
 ping_interval = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))
-ping_url = webhook_ping.replace('$RUNPOD_POD_ID', worker_id)
 
 
 def get_current_job_id():

@@ -6,7 +6,7 @@ import os
 import requests
 
 import runpod.serverless.modules.logging as log
-from .worker_state import get_current_job_id, ping_url, ping_interval
+from .worker_state import get_current_job_id, PING_URL, ping_interval
 
 # COUNTER = 0
 
@@ -25,16 +25,18 @@ def heartbeat_ping(session):
                 'job_id': job_id,
             }
 
+        if PING_URL is not None:
             result = session.get(
-                ping_url,
+                PING_URL,
                 params=ping_params,
                 timeout=int(ping_interval/1000)
             )
 
             log.info(result)
 
-        log.info(
-            f'Heartbeat sent to {ping_url} interval: {ping_interval}ms params: {ping_params}')
+        log.info(f'Heartbeat URL: {PING_URL} Interval: {ping_interval}ms', "DEBUG")
+        log.info(f"Heartbeat Params: {ping_params}", "DEBUG")
+
     except Exception as err:  # pylint: disable=broad-except
         log.error(err)
 
