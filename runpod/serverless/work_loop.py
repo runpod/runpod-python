@@ -62,4 +62,4 @@ async def start_worker(config):
 
             if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
                 log.info("Local testing complete, exiting.")
-                return
+                break
