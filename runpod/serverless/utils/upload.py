@@ -42,15 +42,17 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
     '''
     if boto_client is None:
         # Save the output to a file
+        print("No bucket endpoint, saving to disk folder 'simulated_uploaded'")
+
         output = BytesIO()
         img = Image.open(image_location)
         img.save(output, format=img.format)
 
-        os.makedirs("uploaded", exist_ok=True)
-        with open(f"uploaded/{result_index}.png", "wb") as file_output:
+        os.makedirs("simulated_uploaded", exist_ok=True)
+        with open(f"simulated_uploaded/{result_index}.png", "wb") as file_output:
             file_output.write(output.getvalue())
 
-        return f"uploaded/{result_index}.png"
+        return f"simulated_uploaded/{result_index}.png"
 
     output = BytesIO()
     img = Image.open(image_location)
