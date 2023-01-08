@@ -8,8 +8,6 @@ import requests
 import runpod.serverless.modules.logging as log
 from .worker_state import get_current_job_id, PING_URL, ping_interval
 
-# COUNTER = 0
-
 
 def heartbeat_ping(session):
     '''
@@ -34,8 +32,8 @@ def heartbeat_ping(session):
 
             log.info(result)
 
-        log.info(f'Heartbeat URL: {PING_URL} Interval: {ping_interval}ms', "DEBUG")
-        log.info(f"Heartbeat Params: {ping_params}", "DEBUG")
+        log.info(f'Heartbeat URL: {PING_URL} Interval: {ping_interval}ms')
+        log.info(f"Heartbeat Params: {ping_params}")
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(err)
@@ -45,10 +43,9 @@ def start_heartbeat():
     '''
     manages heartbeat timing
     '''
-
     session = requests.Session()
-    session.headers.update({
-        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+    session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+
     while True:
         heartbeat_ping(session)
         time.sleep(ping_interval/1000)
