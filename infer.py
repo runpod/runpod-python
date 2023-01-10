@@ -5,6 +5,8 @@ Output -> list of files
 '''
 # pylint: disable=unused-argument,too-few-public-methods
 
+import runpod
+
 
 def validator():
     '''
@@ -38,3 +40,6 @@ def run(model_inputs):
             "seed": "1234"
         }
     ]
+
+
+runpod.serverless.start({"handler": run})

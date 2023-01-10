@@ -17,7 +17,7 @@ def log(message, level='INFO'):
     Log message to stdout if RUNPOD_DEBUG is true.
     '''
     if os.environ.get('RUNPOD_DEBUG', 'true') == 'true':
-        print(f'{level} | {message}')
+        print(f'{level} | {message}', flush=True)
 
 
 def log_secret(secret_name, secret, level='INFO'):
