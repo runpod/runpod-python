@@ -34,31 +34,31 @@ async def get_job(session):
 
 def run_job(handler, job):
     '''
-    run the handler and format the return
+    Run the job using the handler.
+    Returns the job output or error.
     '''
     log.info(f"Started working on {job['id']} at {time.time()} UTC")
+
+    run_result = {"error": "Failed to return job output or capture error."}
 
     try:
         job_output = handler(job)
 
         if "error" in job_output:
-            return {
-                "error": job_output['error']
-            }
-
-        return {
-            "output": job_output
-        }
+            run_result = {"error": job_output['error']}
+        else:
+            run_result = {"output": job_output}
 
     except Exception as err:    # pylint: disable=broad-except
         log.error(f"Error while running job {job['id']}: {err}")
 
-        return {
-            "error": str(err)
-        }
+        run_result = {"error": str(err)}
 
     finally:
         log.info(f"Finished working on {job['id']} at {time.time()} UTC")
+        log.info(f"Run result: {run_result}")
+
+        return run_result  # pylint: disable=lost-exception
 
 
 @retry(max_attempts=3, base_delay=1, max_delay=3)
