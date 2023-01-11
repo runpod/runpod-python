@@ -96,13 +96,13 @@ async def send_result(session, job_data, job):
 # ------------------------------- Local Testing ------------------------------ #
 def get_local():
     '''
-    Returns contents of test_inputs.json
+    Returns contents of test_input.json
     '''
-    if not os.path.exists('test_inputs.json'):
+    if not os.path.exists('test_input.json'):
         log.warn('test_inputs.json not found, skipping local testing')
         return None
 
-    with open('test_inputs.json', 'r', encoding="UTF-8") as file:
+    with open('test_input.json', 'r', encoding="UTF-8") as file:
         test_inputs = json.loads(file.read())
 
     if 'id' not in test_inputs:
