@@ -20,6 +20,10 @@ def download_input_objects(object_locations):
 
     objects = []
     for object_url in object_locations:
+        if object_url is None:
+            objects.append(None)
+            continue
+
         response = requests.get(object_url, timeout=5)
 
         file_name = os.path.basename(object_url)
