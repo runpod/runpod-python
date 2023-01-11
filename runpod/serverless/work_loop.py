@@ -47,16 +47,8 @@ async def start_worker(config):
 
             job_result = run_job(config["handler"], job)
 
-            job_data = None
-            try:
-                job_data = json.dumps(job_result, ensure_ascii=False)
-            except Exception as err:  # pylint: disable=broad-except
-                log.error(
-                    f"Error while serializing job result {job['id']}: {err}")
-                job_data = json.dumps({"error": "unable to serialize job output"})
-
             # SEND RESULTS
-            await send_result(session, job_data, job)
+            await send_result(session, job_result, job)
 
             set_job_id(None)
 

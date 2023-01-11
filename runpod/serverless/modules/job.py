@@ -87,10 +87,15 @@ async def send_result(session, job_data, job):
     Return the job results.
     '''
     try:
-        log.info("sending results")
+        job_data = json.dumps(job_data, ensure_ascii=False)
+
+        log.info(f"Sending job results: {job_data}")
         await retry_send_result(session, job_data)
+
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
+    else:
+        log.info(f"Successfully returned job result {job['id']}")
 
 
 # ------------------------------- Local Testing ------------------------------ #
