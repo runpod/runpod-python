@@ -23,7 +23,7 @@ def heartbeat_ping(session):
                 'job_id': job_id,
             }
 
-        if PING_URL is not None:
+        if PING_URL not in [None, 'PING_URL_NOT_SET']:
             result = session.get(
                 PING_URL,
                 params=ping_params,
