@@ -103,4 +103,9 @@ def get_local():
         return None
 
     with open('test_inputs.json', 'r', encoding="UTF-8") as file:
-        return json.loads(file.read())
+        test_inputs = json.loads(file.read())
+
+    if 'id' not in test_inputs:
+        test_inputs['id'] = 'local_test'
+
+    return test_inputs
