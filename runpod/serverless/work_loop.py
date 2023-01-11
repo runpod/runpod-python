@@ -4,7 +4,6 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 '''
 
 import os
-import json
 from threading import Thread
 
 import aiohttp
