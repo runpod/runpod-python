@@ -52,6 +52,9 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
         with open(f"simulated_uploaded/{result_index}.png", "wb") as file_output:
             file_output.write(output.getvalue())
 
+        if results_list is not None:
+            results_list[result_index] = f"simulated_uploaded/{result_index}.png"
+
         return f"simulated_uploaded/{result_index}.png"
 
     output = BytesIO()
