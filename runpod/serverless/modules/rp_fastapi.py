@@ -1,6 +1,7 @@
 ''' Used to launch the FastAPI web server when worker is running in API mode. '''
 
 import json
+import threading
 
 import uvicorn
 from fastapi import FastAPI
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 
 from .job import run_job
 from .worker_state import set_job_id
+from .heartbeat import start_heartbeat
 
 
 class Job(BaseModel):
@@ -22,13 +24,21 @@ class WorkerAPI:
     def __init__(self):
         '''
         Initializes the WorkerAPI class.
+        1. Starts the heartbeat thread.
+        2. Initializes the FastAPI web server.
         '''
+        heartbeat_thread = threading.Thread(target=start_heartbeat)
+        heartbeat_thread.daemon = True
+        heartbeat_thread.start()
+
         self.config = {"handler": None}
         self.rp_app = FastAPI()
         self.rp_app.add_api_route("/run", self.run, methods=["POST"])
 
     def start_uvicorn(self, api_port):
-        ''' Starts the Uvicorn server. '''
+        '''
+        Starts the Uvicorn server.
+        '''
         uvicorn.run(self.rp_app, port=int(api_port))
 
     async def run(self, job: Job):
