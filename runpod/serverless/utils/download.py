@@ -8,8 +8,9 @@ This directory is cleaned up after the job is complete.
 
 import os
 import uuid
-import requests
 from urllib.parse import urlparse
+
+import requests
 
 
 def download_input_objects(object_locations):
