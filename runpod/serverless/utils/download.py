@@ -9,6 +9,7 @@ This directory is cleaned up after the job is complete.
 import os
 import uuid
 import requests
+from urllib.parse import urlparse
 
 
 def download_input_objects(object_locations):
@@ -25,8 +26,9 @@ def download_input_objects(object_locations):
             continue
 
         response = requests.get(object_url, timeout=5)
+        object_path = urlparse(object_url).path
 
-        file_name = os.path.basename(object_url)
+        file_name = os.path.basename(object_path)
         file_extension = os.path.splitext(file_name)[1]
 
         object_name = f'{uuid.uuid4()}{file_extension}'
