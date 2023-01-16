@@ -39,7 +39,7 @@ class WorkerAPI:
         '''
         Starts the Uvicorn server.
         '''
-        uvicorn.run(self.rp_app, port=int(api_port))
+        uvicorn.run(self.rp_app, host='0.0.0.0', port=int(api_port))
 
     async def run(self, job: Job):
         '''
