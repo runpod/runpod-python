@@ -44,7 +44,9 @@ def run_job(handler, job):
     try:
         job_output = handler(job)
 
-        if "error" in job_output:
+        if isinstance(job_output, bool):
+            run_result = {"output": job_output}
+        elif "error" in job_output:
             run_result = {"error": job_output['error']}
         else:
             run_result = {"output": job_output}
@@ -89,8 +91,11 @@ async def send_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
 
-        log.info(f"Sending job results: {job_data}")
-        await retry_send_result(session, job_data)
+        if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is not None:
+            log.info(f"Sending job results: {job_data}")
+            await retry_send_result(session, job_data)
+        else:
+            log.warn(f"Local test job results: {job_data}")
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")

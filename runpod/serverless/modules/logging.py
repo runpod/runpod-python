@@ -3,10 +3,10 @@
 import os
 from dotenv import load_dotenv
 
-LOG_LEVEL_ERROR = 'ERROR'
+LOG_LEVEL_ERROR = 'ERROR  '
 LOG_LEVEL_WARN = 'WARNING'
-LOG_LEVEL_INFO = 'INFO'
-LOG_LEVEL_DEBUG = 'DEBUG'
+LOG_LEVEL_INFO = 'INFO   '
+LOG_LEVEL_DEBUG = 'DEBUG  '
 
 env_path = os.getcwd() + '/.env'
 load_dotenv(env_path)  # Load environment variables
