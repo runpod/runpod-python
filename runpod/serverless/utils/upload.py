@@ -136,6 +136,8 @@ def bucket_upload(job_id, file_list, bucket_creds):
         config=temp_boto_config
     )
 
+    bucket_urls = []
+
     for file in file_list:
         with open(file, 'rb') as file_data:
             temp_boto_client.put_object(
@@ -143,3 +145,8 @@ def bucket_upload(job_id, file_list, bucket_creds):
                 Key=f'{job_id}/{file}',
                 Body=file_data,
             )
+
+        bucket_urls.append(
+            f"{bucket_creds['endpointUrl']}/{bucket_creds['bucketName']}/{job_id}/{file}")
+
+    return bucket_urls
