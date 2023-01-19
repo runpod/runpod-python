@@ -137,8 +137,9 @@ def bucket_upload(job_id, file_list, bucket_creds):
     )
 
     for file in file_list:
-        temp_boto_client.put_object(
-            Bucket=str(bucket_creds['bucketName']),
-            Key=f'{job_id}/{file}',
-            Body=open(file, 'rb'),
-        )
+        with open(file, 'rb', encoding="UTF-8") as file_data:
+            temp_boto_client.put_object(
+                Bucket=str(bucket_creds['bucketName']),
+                Key=f'{job_id}/{file}',
+                Body=file_data,
+            )
