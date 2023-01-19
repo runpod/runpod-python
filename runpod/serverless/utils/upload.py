@@ -111,3 +111,34 @@ def files(job_id, file_list):
         upload.join()
 
     return file_urls
+
+
+# --------------------------- Custom Bucket Upload --------------------------- #
+def bucket_upload(job_id, file_list, bucket_creds):
+    '''
+    Uploads files to bucket storage.
+    '''
+    temp_bucket_session = session.Session()
+
+    temp_boto_config = Config(
+        signature_version='s3v4',
+        retries={
+            'max_attempts': 3,
+            'mode': 'standard'
+        }
+    )
+
+    temp_boto_client = temp_bucket_session.client(
+        's3',
+        endpoint_url=bucket_creds['endpointUrl'],
+        aws_access_key_id=bucket_creds['accessId'],
+        aws_secret_access_key=bucket_creds['accessSecret'],
+        config=temp_boto_config
+    )
+
+    for file in file_list:
+        temp_boto_client.put_object(
+            Bucket=str(bucket_creds['bucketName']),
+            Key=f'{job_id}/{file}',
+            Body=open(file, 'rb'),
+        )
