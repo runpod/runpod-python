@@ -44,7 +44,7 @@ The worker starts with a TTL as specified by the environment variable `TERMINATE
 
 ## Local Testing
 
-To test locally, create the file `test_inputs.json` in the root directory that contains the following:
+To test locally, create the file `test_input.json` in the root directory that contains the following:
 
 ```json
 {
