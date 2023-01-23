@@ -34,4 +34,4 @@ jobs:
 
       - name: Pylint Source
         run: |
-          find . -type f -name '*.py' | xargs pylint
+          find . -type f -name '*.py' | xargs pylint --extension-pkg-whitelist='pydantic'

@@ -1,7 +1,6 @@
 ''' Used to launch the FastAPI web server when worker is running in API mode. '''
 
 import os
-import json
 import threading
 
 import uvicorn
