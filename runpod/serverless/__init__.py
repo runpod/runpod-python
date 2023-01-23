@@ -11,7 +11,7 @@ def start(config):
     '''
     Starts the serverless worker.
     '''
-    api_port = os.environ.get('RUNPOD_API_PORT', None)
+    api_port = os.environ.get('RUNPOD_REALTIME_PORT', None)
 
     if api_port:
         api_server = rp_fastapi.WorkerAPI()
