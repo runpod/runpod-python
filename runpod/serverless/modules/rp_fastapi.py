@@ -1,10 +1,12 @@
 ''' Used to launch the FastAPI web server when worker is running in API mode. '''
 
+import os
 import json
 import threading
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 from .job import run_job
@@ -39,7 +41,10 @@ class WorkerAPI:
         '''
         Starts the Uvicorn server.
         '''
-        uvicorn.run(self.rp_app, host='0.0.0.0', port=int(api_port))
+        uvicorn.run(
+            self.rp_app, host='0.0.0.0', port=int(api_port),
+            workers=os.environ.get('RUNPOD_REALTIME_CONCURRENCY', 1)
+        )
 
     async def run(self, job: Job):
         '''
@@ -49,8 +54,6 @@ class WorkerAPI:
 
         job_results = run_job(self.config["handler"], job.__dict__)
 
-        job_data = json.dumps(job_results, ensure_ascii=False)
-
         set_job_id(None)
 
-        return job_data
+        return jsonable_encoder(job_results)

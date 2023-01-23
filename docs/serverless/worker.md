@@ -15,6 +15,10 @@ RUNPOD_WEBHOOK_GET_JOB= # URL to get job work from
 RUNPOD_WEBHOOK_POST_OUTPUT= # URL to post output to
 RUNPOD_WEBHOOK_PING= # URL to ping
 RUNPOD_PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
+
+# Realtime
+RUNPOD_REALTIME_PORT= # Port to listen on for realtime connections (Default: None)
+RUNPOD_REALTIME_CONCURRENCY= # Number of workers to spawn (Default: 1)
 ```
 
 ### Additional Variables
