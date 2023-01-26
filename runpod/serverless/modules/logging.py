@@ -18,7 +18,7 @@ def log(message, level='INFO'):
     '''
     set_level = os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG').upper()
 
-    if os.environ.get('RUNPOD_DEBUG', 'False') != 'true':
+    if os.environ.get('RUNPOD_DEBUG', 'true') != 'true':
         return
 
     if set_level == 'ERROR' and level != 'ERROR':
