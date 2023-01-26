@@ -47,7 +47,7 @@ def run_job(handler, job):
         if isinstance(job_output, bool):
             run_result = {"output": job_output}
         elif "error" in job_output:
-            run_result = {"error": job_output['error']}
+            run_result = {"error": str(job_output['error'])}
         else:
             run_result = {"output": job_output}
 

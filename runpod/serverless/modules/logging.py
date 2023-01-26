@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 
 LOG_LEVEL_ERROR = 'ERROR  '
-LOG_LEVEL_WARN = 'WARNING'
+LOG_LEVEL_WARN = 'WARN'
 LOG_LEVEL_INFO = 'INFO   '
 LOG_LEVEL_DEBUG = 'DEBUG  '
 
@@ -16,8 +16,22 @@ def log(message, level='INFO'):
     '''
     Log message to stdout if RUNPOD_DEBUG is true.
     '''
-    if os.environ.get('RUNPOD_DEBUG', 'true') == 'true':
-        print(f'{level} | {message}', flush=True)
+    set_level = os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG').upper()
+
+    if os.environ.get('RUNPOD_DEBUG', 'False') != 'true':
+        return
+
+    if set_level == 'ERROR' and level != 'ERROR':
+        return
+
+    if set_level == 'WARN' and level not in ['ERROR', 'WARN']:
+        return
+
+    if set_level == 'INFO' and level not in ['ERROR', 'WARN', 'INFO']:
+        return
+
+    print(f'{level} | {message}', flush=True)
+    return
 
 
 def log_secret(secret_name, secret, level='INFO'):
