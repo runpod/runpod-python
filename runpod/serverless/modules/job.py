@@ -109,7 +109,7 @@ def get_local():
     Returns contents of test_input.json
     '''
     if not os.path.exists('test_input.json'):
-        log.warn('test_inputs.json not found, skipping local testing')
+        log.warn('test_input.json not found, skipping local testing')
         return None
 
     with open('test_input.json', 'r', encoding="UTF-8") as file:
