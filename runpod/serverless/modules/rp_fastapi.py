@@ -34,7 +34,7 @@ class WorkerAPI:
 
         self.config = {"handler": None}
         self.rp_app = FastAPI()
-        self.rp_app.add_api_route(f"{os.environ.get('RUNPOD_ENDPOINT_ID')}/realtime",
+        self.rp_app.add_api_route(f"/{os.environ.get('RUNPOD_ENDPOINT_ID')}/realtime",
                                   self.run, methods=["POST"])
 
     def start_uvicorn(self, api_port):

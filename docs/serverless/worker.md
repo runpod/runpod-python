@@ -17,6 +17,7 @@ RUNPOD_WEBHOOK_PING= # URL to ping
 RUNPOD_PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000)
 
 RUNPOD_ENDPOINT_ID= # Endpoint ID
+RUNPOD_ENDPOINT_SECRET= # Endpoint Secret (SET BY RUNPOD Replaces RUNPOD_AI_API_KEY, not implemented yet)
 
 # Realtime
 RUNPOD_REALTIME_PORT= # Port to listen on for realtime connections (Default: None)
