@@ -37,13 +37,13 @@ class WorkerAPI:
         self.rp_app.add_api_route(f"/{os.environ.get('RUNPOD_ENDPOINT_ID')}/realtime",
                                   self.run, methods=["POST"])
 
-    def start_uvicorn(self, api_port):
+    def start_uvicorn(self, api_port, api_concurrency):
         '''
         Starts the Uvicorn server.
         '''
         uvicorn.run(
-            self.rp_app, host='0.0.0.0', port=int(api_port),
-            workers=os.environ.get('RUNPOD_REALTIME_CONCURRENCY', 1)
+            self.rp_app, host='0.0.0.0',
+            port=int(api_port), workers=int(api_concurrency)
         )
 
     async def run(self, job: Job):

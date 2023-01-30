@@ -3,11 +3,6 @@
 import os
 from dotenv import load_dotenv
 
-LOG_LEVEL_ERROR = 'ERROR  '
-LOG_LEVEL_WARN = 'WARN'
-LOG_LEVEL_INFO = 'INFO   '
-LOG_LEVEL_DEBUG = 'DEBUG  '
-
 env_path = os.getcwd() + '/.env'
 load_dotenv(env_path)  # Load environment variables
 
@@ -17,6 +12,7 @@ def log(message, level='INFO'):
     Log message to stdout if RUNPOD_DEBUG is true.
     '''
     set_level = os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG').upper()
+    level = level.ljust(7)
 
     if os.environ.get('RUNPOD_DEBUG', 'true') != 'true':
         return
@@ -30,7 +26,7 @@ def log(message, level='INFO'):
     if set_level == 'INFO' and level not in ['ERROR', 'WARN', 'INFO']:
         return
 
-    print(f'{level} | {message}', flush=True)
+    print(f'{level}| {message}', flush=True)
     return
 
 
@@ -52,34 +48,32 @@ def error(message):
     '''
     error log
     '''
-    log(message, LOG_LEVEL_ERROR)
+    log(message, 'ERROR')
 
 
 def warn(message):
     '''
     warn log
     '''
-    log(message, LOG_LEVEL_WARN)
+    log(message, 'WARN')
 
 
 def info(message):
     '''
     info log
     '''
-    log(message, LOG_LEVEL_INFO)
+    log(message, 'INFO')
 
 
 def debug(message):
     '''
     debug log
     '''
-    log(message, LOG_LEVEL_DEBUG)
+    log(message, 'DEBUG')
 
 
 log('Logging module loaded')
 
 log_secret('RUNPOD_AI_API_KEY', os.environ.get('RUNPOD_AI_API_KEY', None))
-log_secret('RUNPOD_WEBHOOK_GET_JOB', os.environ.get(
-    'RUNPOD_WEBHOOK_GET_JOB', None))
-log_secret('RUNPOD_WEBHOOK_POST_OUTPUT', os.environ.get(
-    'RUNPOD_WEBHOOK_POST_OUTPUT', None))
+log_secret('RUNPOD_WEBHOOK_GET_JOB', os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None))
+log_secret('RUNPOD_WEBHOOK_POST_OUTPUT', os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', None))

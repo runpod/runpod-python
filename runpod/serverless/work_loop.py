@@ -13,6 +13,7 @@ from .modules.heartbeat import start_heartbeat
 from .modules.job import get_job, run_job, send_result
 from .modules.worker_state import set_job_id
 
+
 timeout = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
 
@@ -20,9 +21,7 @@ async def start_worker(config):
     '''
     starts the worker loop
     '''
-    auth_header = {
-        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"
-    }
+    auth_header = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
     async with aiohttp.ClientSession(headers=auth_header) as session:
 
@@ -31,7 +30,6 @@ async def start_worker(config):
         heartbeat_thread.start()
 
         while True:
-            # GET JOB
             job = await get_job(session)
 
             if job is None:
@@ -46,7 +44,6 @@ async def start_worker(config):
 
             job_result = run_job(config["handler"], job)
 
-            # SEND RESULTS
             await send_result(session, job_result, job)
 
             set_job_id(None)

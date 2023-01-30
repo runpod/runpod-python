@@ -11,12 +11,14 @@ def start(config):
     '''
     Starts the serverless worker.
     '''
-    api_port = os.environ.get('RUNPOD_REALTIME_PORT', None)
+    realtime_port = os.environ.get('RUNPOD_REALTIME_PORT', None)
+    realtime_concurrency = os.environ.get('RUNPOD_REALTIME_CONCURRENCY', 1)
 
-    if api_port:
+    if realtime_port:
         api_server = rp_fastapi.WorkerAPI()
         api_server.config = config
 
-        api_server.start_uvicorn(api_port)
+        api_server.start_uvicorn(realtime_port, realtime_concurrency)
+
     else:
         asyncio.run(work_loop.start_worker(config))
