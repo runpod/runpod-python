@@ -4,12 +4,11 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 '''
 
 import os
-from threading import Thread
 
 import aiohttp
 
 import runpod.serverless.modules.logging as log
-from .modules.heartbeat import start_heartbeat
+from .modules.heartbeat import start_ping
 from .modules.job import get_job, run_job, send_result
 from .modules.worker_state import set_job_id
 
@@ -25,9 +24,7 @@ async def start_worker(config):
 
     async with aiohttp.ClientSession(headers=auth_header) as session:
 
-        heartbeat_thread = Thread(target=start_heartbeat)
-        heartbeat_thread.daemon = True
-        heartbeat_thread.start()
+        start_ping()
 
         while True:
             job = await get_job(session)

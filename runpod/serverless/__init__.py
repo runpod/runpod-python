@@ -22,3 +22,10 @@ def start(config):
 
     else:
         asyncio.run(work_loop.start_worker(config))
+
+
+def start_ping():
+    '''
+    Starts the serverless ping worker.
+    '''
+    asyncio.run(work_loop.start_ping_worker())

@@ -1,17 +1,20 @@
 '''enables heartbeats'''
 
-import time
 import os
+import threading
 
 import requests
 
 import runpod.serverless.modules.logging as log
 from .worker_state import get_current_job_id, PING_URL, ping_interval
 
+session = requests.Session()
+session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
 
-def heartbeat_ping(session):
+
+def start_ping():
     '''
-    Pings the heartbeat endpoint
+    Pings the heartbeat endpoint at the specified interval.
     '''
     ping_params = None
 
@@ -38,14 +41,7 @@ def heartbeat_ping(session):
     except Exception as err:  # pylint: disable=broad-except
         log.error(err)
 
-
-def start_heartbeat():
-    '''
-    manages heartbeat timing
-    '''
-    session = requests.Session()
-    session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
-
-    while True:
-        heartbeat_ping(session)
-        time.sleep(ping_interval/1000)
+    finally:
+        heartbeat_thread = threading.Timer(int(ping_interval/1000), start_ping)
+        heartbeat_thread.daemon = True
+        heartbeat_thread.start()
