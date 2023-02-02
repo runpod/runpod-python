@@ -8,6 +8,7 @@ This directory is cleaned up after the job is complete.
 
 import os
 import uuid
+import zipfile
 from urllib.parse import urlparse
 
 import requests
@@ -44,7 +45,8 @@ def download_input_objects(object_locations):
 
 def file(file_url):
     '''
-    Downloads a single file from a given URL, files are given a random name.
+    Downloads a single file from a given URL, file is given a random name.
+    If the file is a zip file, it is extracted into a directory with the same name.
 
     Returns an object that contains:
     - The absolute path to the downloaded file
@@ -59,13 +61,23 @@ def file(file_url):
     original_file_name = os.path.basename(download_path)
     file_type = os.path.splitext(original_file_name)[1].replace('.', '')
 
-    file_name = f'{uuid.uuid4()}.{file_type}'
+    file_name = f'{uuid.uuid4()}'
 
-    with open(f'job_files/{file_name}', 'wb') as output_file:
+    with open(f'job_files/{file_name}.{file_type}', 'wb') as output_file:
         output_file.write(download_response.content)
 
+    if file_type == 'zip':
+        unziped_directory = f'job_files/{file_name}'
+        os.makedirs(unziped_directory, exist_ok=True)
+        with zipfile.ZipFile(f'job_files/{file_name}.{file_type}', 'r') as zip_ref:
+            zip_ref.extractall(unziped_directory)
+        unziped_directory = os.path.abspath(unziped_directory)
+    else:
+        unziped_directory = None
+
     return {
-        "path": os.path.abspath(f'job_files/{file_name}'),
+        "file_path": os.path.abspath(f'job_files/{file_name}.{file_type}'),
         "type": file_type,
-        "original_name": original_file_name
+        "original_name": original_file_name,
+        "extracted_path": unziped_directory
     }
