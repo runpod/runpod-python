@@ -4,7 +4,7 @@
 import unittest
 from unittest.mock import patch, mock_open
 
-from runpod.serverless.utils.download import download_input_objects
+from runpod.serverless.utils.rp_download import download_input_objects
 
 URL_LIST = ['https://example.com/picture.jpg',
             'https://example.com/picture.jpg?X-Amz-Signature=123']

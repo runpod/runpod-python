@@ -40,3 +40,32 @@ def download_input_objects(object_locations):
         objects.append(f'input_objects/{object_name}')
 
     return objects
+
+
+def file(file_url):
+    '''
+    Downloads a single file from a given URL, files are given a random name.
+
+    Returns an object that contains:
+    - The absolute path to the downloaded file
+    - File type
+    - Original file name
+    '''
+    os.makedirs('job_files', exist_ok=True)
+
+    download_response = requests.get(file_url, timeout=30)
+    download_path = urlparse(file_url).path
+
+    original_file_name = os.path.basename(download_path)
+    file_type = os.path.splitext(original_file_name)[1].replace('.', '')
+
+    file_name = f'{uuid.uuid4()}.{file_type}'
+
+    with open(f'job_files/{file_name}', 'wb') as output_file:
+        output_file.write(download_response.content)
+
+    return {
+        "path": os.path.abspath(f'job_files/{file_name}'),
+        "type": file_type,
+        "original_name": original_file_name
+    }
