@@ -28,8 +28,8 @@ def validate(job_input, schema):
     for key, rules in schema.items():
         if rules['required'] and key not in job_input:
             error_list.append(f"{key} is a required input.")
-        elif key not in job_input:
-            job_input[key] = rules['default']
+        else:
+            job_input[key] = job_input.get(key, rules['default'])
 
     for key, rules in schema.items():
         # Check for the correct type.
