@@ -54,7 +54,7 @@ def run_job(handler, job):
     except Exception as err:    # pylint: disable=broad-except
         log.error(f"Error while running job {job['id']}: {err}")
 
-        run_result = {"error": str(err)}
+        run_result = {"error": f"handler: {str(err)} \ntraceback: {err.__traceback__}"}
 
     finally:
         log.info(f"Finished working on {job['id']} at {time.time()} UTC")
