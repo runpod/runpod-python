@@ -26,11 +26,13 @@ def validate(raw_input, schema):
 
     # Checks for missing required inputs or sets the default values.
     for key, rules in schema.items():
-        if rules['required'] and key not in raw_input:
+        if 'required' not in rules:
+            error_list.append(f"Schema error, missing 'required' for {key}.")
+        elif rules['required'] and key not in raw_input:
             error_list.append(f"{key} is a required input.")
         elif rules['required'] and key not in raw_input and "default" not in rules:
-            error_list.append(f"Schema does not contain a default value for {key}.")
-        else:
+            error_list.append(f"Schema error, missing default value for {key}.")
+        elif not rules['required'] and key not in raw_input:
             raw_input[key] = raw_input.get(key, rules['default'])
 
     for key, rules in schema.items():
