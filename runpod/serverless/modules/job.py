@@ -5,6 +5,7 @@ job related helpers
 import os
 import time
 import json
+import traceback
 
 import runpod.serverless.modules.logging as log
 from .worker_state import JOB_GET_URL, get_done_url
@@ -54,7 +55,7 @@ def run_job(handler, job):
     except Exception as err:    # pylint: disable=broad-except
         log.error(f"Error while running job {job['id']}: {err}")
 
-        run_result = {"error": f"handler: {str(err)} \ntraceback: {err.__traceback__}"}
+        run_result = {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
 
     finally:
         log.info(f"Finished working on {job['id']} at {time.time()} UTC")
