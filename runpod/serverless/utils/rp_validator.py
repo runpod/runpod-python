@@ -35,7 +35,7 @@ def validate(raw_input, schema):
 
     for key, rules in schema.items():
         # Check for the correct type.
-        if not isinstance(raw_input[key], rules['type']):
+        if not isinstance(raw_input[key], rules['type']) and raw_input[key] is not None:
             error_list.append(f"{key} should be {rules['type']} type, not {type(raw_input[key])}.")
 
         # Check lambda constraints.
