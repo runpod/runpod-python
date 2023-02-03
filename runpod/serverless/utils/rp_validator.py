@@ -28,7 +28,7 @@ def validate(raw_input, schema):
     for key, rules in schema.items():
         if rules['required'] and key not in raw_input:
             error_list.append(f"{key} is a required input.")
-        elif "default" not in rules:
+        elif rules['required'] and key not in raw_input and "default" not in rules:
             error_list.append(f"Schema does not contain a default value for {key}.")
         else:
             raw_input[key] = raw_input.get(key, rules['default'])
