@@ -97,10 +97,10 @@ def files(job_id, file_list):
     upload_progress = []  # List of threads
     file_urls = [None] * len(file_list)  # Resulting list of URLs for each file
 
-    for index, file in enumerate(file_list):
+    for index, selected_file in enumerate(file_list):
         new_upload = threading.Thread(
             target=upload_image,
-            args=(job_id, file, index, file_urls)
+            args=(job_id, selected_file, index, file_urls)
         )
 
         new_upload.start()
@@ -138,11 +138,11 @@ def bucket_upload(job_id, file_list, bucket_creds):
 
     bucket_urls = []
 
-    for file in file_list:
-        with open(file, 'rb') as file_data:
+    for selected_file in file_list:
+        with open(selected_file, 'rb') as file_data:
             temp_boto_client.put_object(
                 Bucket=str(bucket_creds['bucketName']),
-                Key=f'{job_id}/{file}',
+                Key=f'{job_id}/{selected_file}',
                 Body=file_data,
             )
 

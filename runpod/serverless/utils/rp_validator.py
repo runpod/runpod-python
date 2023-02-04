@@ -45,9 +45,8 @@ def validate(raw_input, schema):
             if not rules['constraints'](raw_input[key]):
                 error_list.append(f"{key} does not meet the constraints.")
 
+    validation_return = {"validated_input": raw_input}
     if error_list:
         validation_return = {"errors": error_list}
-    else:
-        validation_return = {"validated_input": raw_input}
 
     return validation_return
