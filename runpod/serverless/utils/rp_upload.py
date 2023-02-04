@@ -150,3 +150,43 @@ def bucket_upload(job_id, file_list, bucket_creds):
             f"{bucket_creds['endpointUrl']}/{bucket_creds['bucketName']}/{job_id}/{file}")
 
     return bucket_urls
+
+
+# ------------------------- Single File Bucket Upload ------------------------ #
+def file(file_name, file_location, bucket_creds):
+    '''
+    Uploads a single file to bucket storage.
+    '''
+    temp_bucket_session = session.Session()
+
+    temp_boto_config = Config(
+        signature_version='s3v4',
+        retries={
+            'max_attempts': 3,
+            'mode': 'standard'
+        }
+    )
+
+    temp_boto_client = temp_bucket_session.client(
+        's3',
+        endpoint_url=bucket_creds['endpointUrl'],
+        aws_access_key_id=bucket_creds['accessId'],
+        aws_secret_access_key=bucket_creds['accessSecret'],
+        config=temp_boto_config
+    )
+
+    with open(file_location, 'rb') as file_data:
+        temp_boto_client.put_object(
+            Bucket=str(bucket_creds['bucketName']),
+            Key=f'{file_name}',
+            Body=file_data,
+        )
+
+    presigned_url = temp_boto_client.generate_presigned_url(
+        'get_object',
+        Params={
+            'Bucket': f"{bucket_creds['bucketName']}",
+            'Key': f"{file_name}"
+        }, ExpiresIn=604800)
+
+    return presigned_url
