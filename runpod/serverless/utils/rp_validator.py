@@ -36,6 +36,10 @@ def validate(raw_input, schema):
             raw_input[key] = raw_input.get(key, rules['default'])
 
     for key, rules in schema.items():
+        # Enforce floats to be floats.
+        if rules['type'] is float and type(raw_input[key]) in [int, float]:
+            raw_input[key] = float(raw_input[key])
+
         # Check for the correct type.
         if not isinstance(raw_input[key], rules['type']) and raw_input[key] is not None:
             error_list.append(f"{key} should be {rules['type']} type, not {type(raw_input[key])}.")
