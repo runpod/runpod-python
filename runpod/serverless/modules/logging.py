@@ -72,6 +72,13 @@ def debug(message):
     log(message, 'DEBUG')
 
 
+def tip(message):
+    '''
+    tip log
+    '''
+    log(message, 'TIP')
+
+
 log('Logging module loaded')
 
 log_secret('RUNPOD_AI_API_KEY', os.environ.get('RUNPOD_AI_API_KEY', None))
