@@ -10,6 +10,7 @@ import traceback
 import runpod.serverless.modules.logging as log
 from .worker_state import JOB_GET_URL, get_done_url
 from .retry import retry
+from .rp_tips import check_return_size
 
 
 async def get_job(session):
@@ -52,6 +53,7 @@ def run_job(handler, job):
         else:
             run_result = {"output": job_output}
 
+        check_return_size(run_result)  # Checks the size of the return body.
     except Exception as err:    # pylint: disable=broad-except
         log.error(f"Error while running job {job['id']}: {err}")
 
