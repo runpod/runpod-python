@@ -9,6 +9,14 @@ To convert a Pod to a Worker, you need to add the following annotations to the P
 RUNPOD_DEBUG= # Set to 'true' to enable debug mode, otherwise leave blank
 RUNPOD_DEBUG_LEVEL= # ERROR, WARN, INFO, DEBUG
 
+# Realtime
+RUNPOD_REALTIME_PORT= # Port to listen on for realtime connections (Default: None)
+RUNPOD_REALTIME_CONCURRENCY= # Number of workers to spawn (Default: 1)
+```
+
+The following environment variables are set automatically by RunPod, you DO NOT need to set them manually:
+
+```bash
 # API Endpoints
 RUNPOD_AI_API_KEY= # Serverless API Key
 RUNPOD_WEBHOOK_GET_JOB= # URL to get job work from
@@ -18,10 +26,6 @@ RUNPOD_PING_INTERVAL= # Interval in milliseconds to ping the API (Default: 10000
 
 RUNPOD_ENDPOINT_ID= # Endpoint ID
 RUNPOD_ENDPOINT_SECRET= # Endpoint Secret (SET BY RUNPOD Replaces RUNPOD_AI_API_KEY, not implemented yet)
-
-# Realtime
-RUNPOD_REALTIME_PORT= # Port to listen on for realtime connections (Default: None)
-RUNPOD_REALTIME_CONCURRENCY= # Number of workers to spawn (Default: 1)
 ```
 
 ### Additional Variables
