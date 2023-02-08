@@ -2,6 +2,7 @@
 
 import os
 import time
+import uuid
 import threading
 from io import BytesIO
 
@@ -40,6 +41,8 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
     '''
     Upload image to bucket storage.
     '''
+    image_name = str(uuid.uuid4())[:8]
+
     if boto_client is None:
         # Save the output to a file
         print("No bucket endpoint, saving to disk folder 'simulated_uploaded'")
@@ -49,13 +52,13 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
         img.save(output, format=img.format)
 
         os.makedirs("simulated_uploaded", exist_ok=True)
-        with open(f"simulated_uploaded/{result_index}.png", "wb") as file_output:
+        with open(f"simulated_uploaded/{image_name}.png", "wb") as file_output:
             file_output.write(output.getvalue())
 
         if results_list is not None:
-            results_list[result_index] = f"simulated_uploaded/{result_index}.png"
+            results_list[result_index] = f"simulated_uploaded/{image_name}.png"
 
-        return f"simulated_uploaded/{result_index}.png"
+        return f"simulated_uploaded/{image_name}.png"
 
     output = BytesIO()
     img = Image.open(image_location)
@@ -66,7 +69,7 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
     # Upload to S3
     boto_client.put_object(
         Bucket=f'{bucket}',
-        Key=f'{job_id}/{result_index}.png',
+        Key=f'{job_id}/{image_name}.png',
         Body=output.getvalue(),
         ContentType="image/png"
     )
@@ -77,7 +80,7 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
         'get_object',
         Params={
             'Bucket': f'{bucket}',
-            'Key': f'{job_id}/{result_index}.png'
+            'Key': f'{job_id}/{image_name}.png'
         }, ExpiresIn=604800)
 
     if results_list is not None:
