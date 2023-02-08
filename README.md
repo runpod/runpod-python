@@ -13,9 +13,11 @@ Official Python library for RunPod API &amp; SDK.
 
 - [Table of Contents](#table-of-contents)
 - [Installation](#installation)
-- [API Language Library](#api-language-library)
 - [SDK - Serverless Worker](#sdk---serverless-worker)
   - [Quick Start](#quick-start)
+- [API Language Library](#api-language-library)
+- [Directory](#directory)
+- [Community and Contributing](#community-and-contributing)
 
 ## Installation
 
@@ -23,19 +25,9 @@ Official Python library for RunPod API &amp; SDK.
 pip install runpod
 ```
 
-## API Language Library
-
-When interacting with the RunPod API you can use this library to make requests to the API.
-
-```python
-import runpod
-
-runpod.api_key = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
-
 ## SDK - Serverless Worker
 
-This python package can also be used to create a serverless worker that can be deployed to RunPod.
+This python package can also be used to create a serverless worker that can be deployed to RunPod as a custom endpoint API.
 
 ### Quick Start
 
@@ -53,4 +45,35 @@ def run(job):
 runpod.serverless.start({"handler": run})
 ```
 
-Add the env variables found in [serverless-worker](docs/serverless-worker.md) to your project.
+Make sure that this file is ran when your container starts. This can be accomplished by calling it in the docker command when you setup a template at [runpod.io/console/serverless/user/templates](https://www.runpod.io/console/serverless/user/templates) or by setting it as the default command in your Dockerfile.
+
+See our [blog post](https://www.runpod.io/blog/serverless-create-a-basic-api) for creating a basic Serverless API, or view the [details docs](https://docs.runpod.io/serverless-ai/custom-apis) for more information.
+
+## API Language Library
+
+When interacting with the RunPod API you can use this library to make requests to the API.
+
+```python
+import runpod
+
+runpod.api_key = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+## Directory
+
+```
+.
+├── docs               # Documentation
+├── runpod             # Package source code
+└── tests              # Package tests
+```
+
+## Community and Contributing
+
+We welcome both pull requests and issues on [GitHub](https://github.com/runpod/runpod-python). Bug fixes and new features are encouraged.
+
+<div align="center">
+
+<a target="_blank" href="https://discord.gg/pJ3P2DbUUq">![Discord Banner 2](https://discordapp.com/api/guilds/912829806415085598/widget.png?style=banner2)</a>
+
+</div>
