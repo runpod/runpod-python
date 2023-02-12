@@ -15,6 +15,8 @@ def clean(folder_list=None):
     shutil.rmtree("input_objects", ignore_errors=True)
     shutil.rmtree("output_objects", ignore_errors=True)
 
+    shutil.rmtree("job_files", ignore_errors=True)
+
     if os.path.exists('output.zip'):
         os.remove('output.zip')
 
