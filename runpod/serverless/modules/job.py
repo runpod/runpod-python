@@ -50,6 +50,12 @@ def run_job(handler, job):
             run_result = {"output": job_output}
         elif "error" in job_output:
             run_result = {"error": str(job_output['error'])}
+        elif "refresh_worker" in job_output:
+            cleaned_output = job_output.pop("refresh_worker")
+            run_result = {
+                "stopPod": True,
+                "output": cleaned_output
+            }
         else:
             run_result = {"output": job_output}
 
