@@ -54,7 +54,7 @@ def run_job(handler, job):
             job_output.pop("refresh_worker")
             run_result = {
                 "stopPod": True,
-                "output": cleaned_output
+                "output": job_output
             }
         else:
             run_result = {"output": job_output}
