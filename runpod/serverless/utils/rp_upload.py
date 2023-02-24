@@ -8,6 +8,7 @@ from io import BytesIO
 
 from PIL import Image
 from boto3 import session
+from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 
 
@@ -170,6 +171,13 @@ def file(file_name, file_location, bucket_creds):
         }
     )
 
+    temp_transfer_config = TransferConfig(
+        multipart_threshold=1024 * 25,
+        max_concurrency=10,
+        multipart_chunksize=1024 * 25,
+        use_threads=True
+    )
+
     temp_boto_client = temp_bucket_session.client(
         's3',
         endpoint_url=bucket_creds['endpointUrl'],
@@ -179,10 +187,11 @@ def file(file_name, file_location, bucket_creds):
     )
 
     with open(file_location, 'rb') as file_data:
-        temp_boto_client.put_object(
+        temp_boto_client.upload_file(
             Bucket=str(bucket_creds['bucketName']),
             Key=f'{file_name}',
             Body=file_data,
+            Config=temp_transfer_config
         )
 
     presigned_url = temp_boto_client.generate_presigned_url(
