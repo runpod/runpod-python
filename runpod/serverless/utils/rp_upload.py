@@ -187,11 +187,17 @@ def file(file_name, file_location, bucket_creds):
     )
 
     with open(file_location, 'rb') as file_data:
-        temp_boto_client.upload_file(
+        # temp_boto_client.upload_file(
+        #     Bucket=str(bucket_creds['bucketName']),
+        #     Key=f'{file_name}',
+        #     Body=file_data,
+        #     Config=temp_transfer_config
+        # )
+
+        temp_boto_client.put_object(
             Bucket=str(bucket_creds['bucketName']),
             Key=f'{file_name}',
-            Body=file_data,
-            Config=temp_transfer_config
+            Body=file_data
         )
 
     presigned_url = temp_boto_client.generate_presigned_url(
