@@ -7,6 +7,7 @@ This directory is cleaned up after the job is complete.
 '''
 
 import os
+import re
 import uuid
 import zipfile
 from urllib.parse import urlparse
@@ -46,6 +47,7 @@ def download_input_objects(object_locations):
 def file(file_url):
     '''
     Downloads a single file from a given URL, file is given a random name.
+    First checks if the content-disposition header is set, if so, uses the file name from there.
     If the file is a zip file, it is extracted into a directory with the same name.
 
     Returns an object that contains:
@@ -56,9 +58,16 @@ def file(file_url):
     os.makedirs('job_files', exist_ok=True)
 
     download_response = requests.get(file_url, timeout=30)
-    download_path = urlparse(file_url).path
 
-    original_file_name = os.path.basename(download_path)
+    if "Content-Disposition" in download_response.headers.keys():
+        original_file_name = re.findall(
+            "filename=(.+)",
+            download_response.headers["Content-Disposition"]
+        )[0]
+    else:
+        download_path = urlparse(file_url).path
+        original_file_name = os.path.basename(download_path)
+
     file_type = os.path.splitext(original_file_name)[1].replace('.', '')
 
     file_name = f'{uuid.uuid4()}'
