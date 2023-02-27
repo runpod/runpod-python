@@ -59,6 +59,7 @@ def file(file_url):
 
     download_response = requests.get(file_url, timeout=30)
 
+    original_file_name = []
     if "Content-Disposition" in download_response.headers.keys():
         original_file_name = re.findall(
             "filename=(.+)",
