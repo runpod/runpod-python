@@ -63,7 +63,10 @@ def file(file_url):
         original_file_name = re.findall(
             "filename=(.+)",
             download_response.headers["Content-Disposition"]
-        )[0]
+        )
+
+    if len(original_file_name) > 0:
+        original_file_name = original_file_name[0]
     else:
         download_path = urlparse(file_url).path
         original_file_name = os.path.basename(download_path)
