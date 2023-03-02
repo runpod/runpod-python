@@ -1,7 +1,10 @@
 ''' Allows runpod to be imported as a module.'''
 
 from . import serverless
+from .endpoint import Endpoint
 
-API_KEY = None
+api_key = None  # pylint: disable=constant-name
 
-API_URL_BASE = "https://api.runpod.io"
+api_url_base = "https://api.runpod.io"  # pylint: disable=constant-name
+
+endpoint_url_base = "https://api.runpod.ai/v1"  # pylint: disable=constant-name
