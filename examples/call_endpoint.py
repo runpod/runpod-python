@@ -1,10 +1,10 @@
 import runpod
 
-runpod.api_key = "A30XBFAQVFY3SPRRTHF4GGPU6D3SWOIZYG13ICUT"
-endpoint = runpod.Endpoint("stable-diffusion-v1")
+runpod.api_key = "YOUR_API_KEY"
+endpoint = runpod.Endpoint("ENDPOINT_ID")
 
 run_request = endpoint.run(
-    {"prompt": "The quick brown fox jumps over the lazy dog."}
+    {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
 )
 
 # Check the status of the endpoint run request
