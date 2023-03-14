@@ -6,7 +6,7 @@ RunPod | Python | Endpoint Runner
 import time
 import requests
 
-import runpod
+from runpod import endpoint_url_base, api_key  # pylint: disable=import-error
 
 
 class Endpoint:
@@ -21,10 +21,10 @@ class Endpoint:
         '''
         Runs the endpoint.
         '''
-        endpoint_url = f"{runpod.endpoint_url_base}/{self.endpoint_id}/run"
+        endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {runpod.api_key}"
+            "Authorization": f"Bearer {api_key}"
         }
 
         job_input = {"input": endpoint_input}
@@ -47,10 +47,10 @@ class Job:
         '''
         Returns the status of the job request.
         '''
-        status_url = f"{runpod.endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
+        status_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {runpod.api_key}"
+            "Authorization": f"Bearer {api_key}"
         }
 
         status_request = requests.get(status_url, headers=headers, timeout=10)
@@ -65,10 +65,10 @@ class Job:
         while self.status() not in ["COMPLETED", "FAILED"]:
             time.sleep(.1)
 
-        output_url = f"{runpod.endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
+        output_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {runpod.api_key}"
+            "Authorization": f"Bearer {api_key}"
         }
 
         output_request = requests.get(output_url, headers=headers, timeout=10)
