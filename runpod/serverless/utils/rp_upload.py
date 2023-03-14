@@ -10,6 +10,7 @@ from PIL import Image
 from boto3 import session
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
+from tqdm_loggable.auto import tqdm
 
 
 # --------------------------- S3 Bucket Connection --------------------------- #
@@ -188,10 +189,13 @@ def file(file_name, file_location, bucket_creds):
         config=temp_boto_config
     )
 
-    temp_boto_client.upload_file(
-        file_location, str(bucket_creds['bucketName']), f'{file_name}',
-        Config=temp_transfer_config
-    )
+    file_size = os.path.getsize(file_location)
+    with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
+        temp_boto_client.upload_file(
+            file_location, str(bucket_creds['bucketName']), f'{file_name}',
+            Config=temp_transfer_config,
+            Callback=progress_bar.update
+        )
 
     presigned_url = temp_boto_client.generate_presigned_url(
         'get_object',
