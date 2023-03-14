@@ -1,6 +1,7 @@
 '''
 RunPod | Python | Endpoint Runner
 '''
+# pylint: disable=too-few-public-methods
 
 import time
 import requests

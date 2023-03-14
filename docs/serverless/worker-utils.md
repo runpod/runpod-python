@@ -9,6 +9,8 @@ BUCKET_ACCESS_KEY_ID= # S3 bucket access key id
 BUCKET_SECRET_ACCESS_KEY= # S3 bucket secret access key
 ```
 
+![RunPod Template Location](.docs/images/../../../images/env_var_location.png)
+
 ## Validator
 
 The validator utility allows you to define the expected inputs for your worker and validate them against the input data. It will return the errors if any are found and prevent the worker from running.
@@ -21,7 +23,3 @@ The schema is a nested dictionary that defines the validation rules for each inp
 - `default` (defaults `None`) - A default value to use if the input is not provided.
 - `type` (required) - The type of the input
 - `constraints` (optional) - A lambda function that takes in the input and returns true or false
-
-```Python
-
-```

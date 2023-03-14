@@ -46,7 +46,9 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
 
     if boto_client is None:
         # Save the output to a file
-        print("No bucket endpoint, saving to disk folder 'simulated_uploaded'")
+        print("No bucket endpoint set, saving to disk folder 'simulated_uploaded'")
+        print("If this is a live endpoint, please reference the following:")
+        print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker-utils.md")
 
         output = BytesIO()
         img = Image.open(image_location)
@@ -190,14 +192,6 @@ def file(file_name, file_location, bucket_creds):
         file_location, str(bucket_creds['bucketName']), f'{file_name}',
         Config=temp_transfer_config
     )
-
-    # Old method using put_object
-    # with open(file_location, 'rb') as file_data:
-    #     temp_boto_client.put_object(
-    #         Bucket=str(bucket_creds['bucketName']),
-    #         Key=f'{file_name}',
-    #         Body=file_data
-    #     )
 
     presigned_url = temp_boto_client.generate_presigned_url(
         'get_object',

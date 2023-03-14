@@ -32,10 +32,10 @@ def log(message, level='INFO'):
 
 def log_secret(secret_name, secret, level='INFO'):
     '''
-    Censors secrets for logging
+    Censors secrets for logging.
     Replaces everything except the first and last characters with *
     '''
-    if secret is None:
+    if secret is None and secret not in ['RUNPOD_AI_API_KEY', 'RUNPOD_WEBHOOK_GET_JOB', 'RUNPOD_WEBHOOK_POST_OUTPUT']:
         secret = 'Could not read environment variable.'
         log(f"{secret_name}: {secret}", 'ERROR')
     else:
@@ -78,8 +78,6 @@ def tip(message):
     '''
     log(message, 'TIP')
 
-
-log('Logging module loaded')
 
 log_secret('RUNPOD_AI_API_KEY', os.environ.get('RUNPOD_AI_API_KEY', None))
 log_secret('RUNPOD_WEBHOOK_GET_JOB', os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None))

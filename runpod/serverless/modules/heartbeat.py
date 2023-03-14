@@ -33,13 +33,12 @@ def start_ping():
                 timeout=int(ping_interval/1000)
             )
 
-            log.info(result)
-
-        log.info(f'Heartbeat URL: {PING_URL} Interval: {ping_interval}ms')
-        log.info(f"Heartbeat Params: {ping_params}")
+            log.info(f"Heartbeat Sent  URL: {PING_URL}  Status: {result.status_code}")
+            log.info(f"Heartbeat Sent  Interval: {ping_interval}ms  Params: {ping_params}")
 
     except Exception as err:  # pylint: disable=broad-except
-        log.error(err)
+        log.error(f"Heartbeat Failed  URL: {PING_URL}  Params: {ping_params}")
+        log.error(f"Heartbeat Fail  Error: {err}")
 
     finally:
         heartbeat_thread = threading.Timer(int(ping_interval/1000), start_ping)
