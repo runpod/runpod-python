@@ -2,7 +2,6 @@
 runpod-python | setup.py
 Called to setup the runpod-python package.
 '''
-# pylint: disable=cyclic-import
 
 from setuptools import setup
 
