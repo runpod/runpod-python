@@ -3,6 +3,8 @@
 import os
 import time
 import uuid
+import logging
+import datetime
 import threading
 from io import BytesIO
 
@@ -11,7 +13,9 @@ from boto3 import session
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from tqdm_loggable.auto import tqdm
+from tqdm_loggable.tqdm_logging import tqdm_logging
 
+logger = logging.getLogger(__name__)
 
 # --------------------------- S3 Bucket Connection --------------------------- #
 bucket_session = session.Session()
@@ -189,8 +193,20 @@ def file(file_name, file_location, bucket_creds):
         config=temp_boto_config
     )
 
+    fmt = f"%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
+    logging.basicConfig(level=logging.INFO, format=fmt, handlers=[logging.StreamHandler()])
+
+    # Set the log level to all tqdm-logging progress bars.
+    # Defaults to info - no need to set if you do not want to change the level
+    tqdm_logging.set_level(logging.INFO)
+
+    # Set the rate how often we update logs
+    # Defaults to 10 seconds - optional
+    tqdm_logging.set_log_rate(datetime.timedelta(seconds=10))
+
+    logger.info("This is an INFO test message using Python logging")
+
     file_size = os.path.getsize(file_location)
-    print(f"Uploading {file_name} ({file_size} bytes)")
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
         temp_boto_client.upload_file(
             file_location, str(bucket_creds['bucketName']), f'{file_name}',
