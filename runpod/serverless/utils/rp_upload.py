@@ -207,6 +207,8 @@ def file(file_name, file_location, bucket_creds):
     logger.info("This is an INFO test message using Python logging")
 
     file_size = os.path.getsize(file_location)
+    print(
+        f"Uploading {file_name} ({file_size} bytes) to {bucket_creds['endpointUrl']}/{bucket_creds['bucketName']}")
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
         temp_boto_client.upload_file(
             file_location, str(bucket_creds['bucketName']), f'{file_name}',
