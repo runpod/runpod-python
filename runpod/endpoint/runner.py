@@ -1,7 +1,6 @@
 '''
 RunPod | Python | Endpoint Runner
 '''
-# pylint: disable=too-few-public-methods
 
 import time
 import requests
@@ -17,21 +16,33 @@ class Endpoint:
 
         self.endpoint_id = endpoint_id
 
-    def run(self, endpoint_input):
-        '''
-        Runs the endpoint.
-        '''
-        endpoint_url = f"{runpod.endpoint_url_base}/{self.endpoint_id}/run"
-        headers = {
+        self.endpoint_url = f"{runpod.endpoint_url_base}/{self.endpoint_id}/run"
+        self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {runpod.api_key}"
         }
 
-        job_input = {"input": endpoint_input}
-
-        job_request = requests.post(endpoint_url, headers=headers, json=job_input, timeout=10)
+    def run(self, endpoint_input):
+        '''
+        Runs the endpoint.
+        '''
+        job_request = requests.post(
+            self.endpoint_url, headers=self.headers,
+            json={"input": endpoint_input}, timeout=10
+        )
 
         return Job(self.endpoint_id, job_request.json()["id"])
+
+    def run_sync(self, endpoint_input):
+        '''
+        Blocking run where the job results are returned with the call.
+        '''
+        job_return = requests.post(
+            self.endpoint_url, headers=self.headers,
+            json={"input": endpoint_input}, timeout=10
+        )
+
+        return job_return.json()
 
 
 class Job:
