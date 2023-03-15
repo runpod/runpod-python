@@ -39,7 +39,7 @@ class Endpoint:
         '''
         job_return = requests.post(
             self.endpoint_url, headers=self.headers,
-            json={"input": endpoint_input}, timeout=10
+            json={"input": endpoint_input}, timeout=100
         )
 
         return job_return.json()
