@@ -190,6 +190,7 @@ def file(file_name, file_location, bucket_creds):
     )
 
     file_size = os.path.getsize(file_location)
+    print(f"Uploading {file_name} ({file_size} bytes)")
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
         temp_boto_client.upload_file(
             file_location, str(bucket_creds['bucketName']), f'{file_name}',
