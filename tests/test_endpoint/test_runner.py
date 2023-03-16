@@ -14,7 +14,7 @@ class TestEndpoint(unittest.TestCase):
         '''
         Sets up the test environment.
         '''
-        self.endpoint_id = 'test_endpoint'
+        self.endpoint_id = None
         self.endpoint_url_base = 'https://api.runpod.ai/v1'
         self.api_key = 'my_api_key'
 
