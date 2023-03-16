@@ -16,6 +16,7 @@ Official Python library for RunPod API &amp; SDK.
 - [SDK - Serverless Worker](#sdk---serverless-worker)
   - [Quick Start](#quick-start)
 - [API Language Library](#api-language-library)
+  - [Endpoints](#endpoints)
 - [Directory](#directory)
 - [Community and Contributing](#community-and-contributing)
 
@@ -59,12 +60,43 @@ import runpod
 runpod.api_key = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
+### Endpoints
+
+You can interact with RunPod endpoints via a `run` or `run_sync` method.
+
+```python
+endpoint = runpod.Endpoint("ENDPOINT_ID")
+
+run_request = endpoint.run(
+    {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
+)
+
+# Check the status of the endpoint run request
+print(run_request.status())
+
+# Get the output of the endpoint run request, blocking until the endpoint run is complete.
+print(run_request.output())
+```
+
+```python
+endpoint = runpod.Endpoint("ENDPOINT_ID")
+
+run_request = endpoint.run_sync(
+    {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
+)
+
+# Returns the job results if completed within 90 seconds, otherwise, returns the job status.
+print(run_request )
+```
+
 ## Directory
 
 ```
 .
 ├── docs               # Documentation
 ├── runpod             # Package source code
+│   ├── endpoint       # Language library - Endpoints
+│   └── serverless     # SDK - Serverless Worker
 └── tests              # Package tests
 ```
 

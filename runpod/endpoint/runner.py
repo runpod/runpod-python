@@ -5,14 +5,14 @@ RunPod | Python | Endpoint Runner
 import time
 import requests
 
-from ..config import api_key, endpoint_url_base
-
 
 class Endpoint:
     ''' Creates a class to run an endpoint. '''
 
     def __init__(self, endpoint_id):
         ''' Initializes the class. '''
+
+        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
 
         self.endpoint_id = endpoint_id
 
@@ -22,6 +22,9 @@ class Endpoint:
             "Authorization": f"Bearer {api_key}"
         }
 
+        print(f"endpoint_url: {self.endpoint_url}")
+        print(f"headers: {self.headers}")
+
     def run(self, endpoint_input):
         '''
         Runs the endpoint.
@@ -30,6 +33,8 @@ class Endpoint:
             self.endpoint_url, headers=self.headers,
             json={"input": endpoint_input}, timeout=10
         )
+
+        print(f"return text: {job_request.text}")
 
         return Job(self.endpoint_id, job_request.json()["id"])
 
@@ -58,6 +63,8 @@ class Job:
         '''
         Returns the status of the job request.
         '''
+        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
+
         status_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
         headers = {
             "Content-Type": "application/json",
@@ -73,6 +80,8 @@ class Job:
         Gets the output of the endpoint run request.
         If blocking is True, the method will block until the endpoint run is complete.
         '''
+        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
+
         while self.status() not in ["COMPLETED", "FAILED"]:
             time.sleep(.1)
 

@@ -35,12 +35,12 @@ def log_secret(secret_name, secret, level='INFO'):
     Censors secrets for logging.
     Replaces everything except the first and last characters with *
     '''
-    if secret is None and os.environ.get('RUNPOD_POD_ID', False):
+    if secret is None and os.environ.get('RUNPOD_POD_ID', None) is not None:
         secret = 'Could not read environment variable.'
         log(f"{secret_name}: {secret}", 'ERROR')
-    else:
+    elif os.environ.get('RUNPOD_POD_ID', None) is not None:
         secret = str(secret)
-        redacted_secret = secret[0] + '*' * len(secret) + secret[-1]
+        redacted_secret = secret[0] + '*' * (len(secret)-2) + secret[-1]
         log(f"{secret_name}: {redacted_secret}", level)
 
 
