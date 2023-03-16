@@ -26,6 +26,10 @@ class TestEndpoint(unittest.TestCase):
         request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
         run_request = endpoint.run(request_data)
 
+        print("Response status code:", mock_response.status_code)
+        print("Response text:", mock_response.text)
+        print("JSON data:", mock_response.json())
+
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "in_progress")
 
