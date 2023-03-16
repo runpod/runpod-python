@@ -3,7 +3,7 @@ RunPod Test | Python | Endpoint Runner
 '''
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from runpod.endpoint import Endpoint, Job
 
 
@@ -36,7 +36,7 @@ class TestEndpoint(unittest.TestCase):
             f"https://my-endpoint-url/{self.endpoint_id}/run",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer my-api-key"
+                "Authorization": "Bearer my-api-key"
             },
             json={"input": "my-input"},
             timeout=10
@@ -62,10 +62,10 @@ class TestEndpoint(unittest.TestCase):
         mock_status.assert_called()
         mock_sleep.assert_called()
         mock_get.assert_called_once_with(
-            f"https://my-endpoint-url/my-endpoint-id/status/my-job-id",
+            "https://my-endpoint-url/my-endpoint-id/status/my-job-id",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer my-api-key"
+                "Authorization": "Bearer my-api-key"
             },
             timeout=10
         )
