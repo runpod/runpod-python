@@ -22,18 +22,12 @@ class TestEndpoint(unittest.TestCase):
             "status": "in_progress"
         }
         mock_post.return_value = mock_response
+        mock_get.return_value = mock_response
 
         endpoint = runpod.Endpoint("ENDPOINT_ID")
 
         request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
         run_request = endpoint.run(request_data)
-
-        mock_get_response = Mock()
-        mock_get_response.json.return_value = {
-            "id": "123",
-            "status": "in_progress"
-        }
-        mock_get.return_value = mock_get_response
 
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "in_progress")
@@ -56,4 +50,8 @@ class TestEndpoint(unittest.TestCase):
         request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
         run_request = endpoint.run_sync(request_data)
 
-        self.assertEqual(run_request, {"result": "YOUR_MODEL_OUTPUT_VALUE"})
+        self.assertEqual(run_request, {
+            "id": "123",
+            "status": "completed",
+            "output": {"result": "YOUR_MODEL_OUTPUT_VALUE"}
+        })
