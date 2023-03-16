@@ -4,11 +4,7 @@ Unit tests for the endpoint module
 
 import unittest
 from unittest.mock import patch, MagicMock
-import runpod
 from runpod.endpoint import Endpoint, Job
-
-runpod.api_key = 'my_api_key'
-runpod.endpoint_url_base = 'https://example.com/api'
 
 
 class TestEndpoint(unittest.TestCase):
@@ -19,7 +15,7 @@ class TestEndpoint(unittest.TestCase):
         Sets up the test environment.
         '''
         self.endpoint_id = 'test_endpoint'
-        self.endpoint_url_base = 'https://example.com/api'
+        self.endpoint_url_base = 'https://api.runpod.ai/v1'
         self.api_key = 'my_api_key'
 
     def test_endpoint_run(self):
