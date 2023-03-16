@@ -4,7 +4,12 @@ RunPod Test | Python | Endpoint Runner
 
 import unittest
 from unittest.mock import patch
+import runpod
 from runpod.endpoint import Endpoint, Job
+
+# Update the endpoint URL and API key
+runpod.endpoint_url_base = "https://my-endpoint-url"
+runpod.api_key = "my-api-key"
 
 
 class TestEndpoint(unittest.TestCase):
