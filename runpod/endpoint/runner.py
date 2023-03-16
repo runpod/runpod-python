@@ -5,7 +5,7 @@ RunPod | Python | Endpoint Runner
 import time
 import requests
 
-from .. config import api_key, endpoint_url_base
+from ..config import api_key, endpoint_url_base
 
 
 class Endpoint:

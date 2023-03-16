@@ -16,7 +16,7 @@ class TestEndpoint(unittest.TestCase):
         '''
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "job_id": "123",
+            "id": "123",
             "status": "in_progress"
         }
         mock_post.return_value = mock_response
@@ -36,7 +36,7 @@ class TestEndpoint(unittest.TestCase):
         '''
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "job_id": "123",
+            "id": "123",
             "status": "completed",
             "output": {"result": "YOUR_MODEL_OUTPUT_VALUE"}
         }
