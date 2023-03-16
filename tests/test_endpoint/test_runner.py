@@ -3,11 +3,6 @@ Tests for runpod | endpoint | modules | endpoint.py
 '''
 
 import unittest
-from unittest.mock import patch, MagicMock
-import runpod
-
-
-import unittest
 from unittest.mock import patch, Mock
 import runpod
 
@@ -15,8 +10,9 @@ import runpod
 class TestEndpoint(unittest.TestCase):
     ''' Tests for Endpoint '''
 
+    @patch('runpod.endpoint.runner.requests.get')
     @patch('runpod.endpoint.runner.requests.post')
-    def test_run(self, mock_post):
+    def test_run(self, mock_post, mock_get):
         '''
         Tests Endpoint.run
         '''
@@ -32,9 +28,12 @@ class TestEndpoint(unittest.TestCase):
         request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
         run_request = endpoint.run(request_data)
 
-        print("Response status code:", mock_response.status_code)
-        print("Response text:", mock_response.text)
-        print("JSON data:", mock_response.json())
+        mock_get_response = Mock()
+        mock_get_response.json.return_value = {
+            "id": "123",
+            "status": "in_progress"
+        }
+        mock_get.return_value = mock_get_response
 
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "in_progress")
