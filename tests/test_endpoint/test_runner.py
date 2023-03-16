@@ -7,7 +7,8 @@ from unittest.mock import patch
 from requests.exceptions import Timeout
 
 from runpod import api_key, endpoint_url_base
-from runpod.endpoint.runner import Endpoint, Job
+from runpod.endpoint import Endpoint
+from runpod.endpoint.runner import Job
 
 
 class TestEndpoint(unittest.TestCase):
