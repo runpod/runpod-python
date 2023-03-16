@@ -63,7 +63,7 @@ class Job:
         '''
         Returns the status of the job request.
         '''
-        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
+        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel,cyclic-import
 
         status_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
         headers = {
@@ -80,7 +80,7 @@ class Job:
         Gets the output of the endpoint run request.
         If blocking is True, the method will block until the endpoint run is complete.
         '''
-        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
+        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel,cyclic-import
 
         while self.status() not in ["COMPLETED", "FAILED"]:
             time.sleep(.1)
