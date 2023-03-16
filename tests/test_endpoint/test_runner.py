@@ -35,9 +35,11 @@ class TestEndpoint(unittest.TestCase):
         mock_post.return_value.status_code = 200
 
         endpoint_input = {"input": "test_input"}
-        expected_job = Job(self.endpoint_id, "test_job_id")
 
-        self.assertEqual(self.endpoint.run(endpoint_input), expected_job)
+        returned_job = self.endpoint.run(endpoint_input)
+        expected_job = Job(self.endpoint_id, returned_job.job_id)
+
+        self.assertEqual(returned_job, expected_job)
         mock_post.assert_called_once_with(
             self.endpoint_url, headers=self.headers, json=endpoint_input, timeout=10
         )
