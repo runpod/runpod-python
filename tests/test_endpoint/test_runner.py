@@ -24,8 +24,8 @@ class TestEndpoint(unittest.TestCase):
                          f"https://my-endpoint-url/{self.endpoint_id}/run")
 
     @patch('runpod.endpoint.requests.post')
-    @patch('runpod.endpoint.api_key', 'my-api-key')
-    @patch('runpod.endpoint.endpoint_url_base', 'https://my-endpoint-url')
+    @patch('runpod.api_key', 'my-api-key')
+    @patch('runpod.endpoint_url_base', 'https://my-endpoint-url')
     def test_run(self, mock_post):
         """Test the run method of the Endpoint object"""
         mock_post.return_value.json.return_value = {"id": "my-job-id"}
@@ -49,8 +49,8 @@ class TestEndpoint(unittest.TestCase):
     @patch('runpod.endpoint.time.sleep')
     @patch.object(Job, 'status', side_effect=["STARTED", "STARTED", "COMPLETED"])
     @patch('runpod.endpoint.requests.get')
-    @patch('runpod.endpoint.api_key', 'my-api-key')
-    @patch('runpod.endpoint.endpoint_url_base', 'https://my-endpoint-url')
+    @patch('runpod.api_key', 'my-api-key')
+    @patch('runpod.endpoint_url_base', 'https://my-endpoint-url')
     def test_output(self, mock_get, mock_status, mock_sleep):
         """Test the output method of the Job object"""
         mock_get.return_value.json.return_value = {"output": "my-output"}
