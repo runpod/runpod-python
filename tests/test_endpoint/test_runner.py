@@ -23,7 +23,7 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(self.endpoint.endpoint_url,
                          f"https://my-endpoint-url/{self.endpoint_id}/run")
 
-    @patch('runpod.endpoint.requests.post')
+    @patch('runpod.endpoint.runner.requests.post')
     @patch('runpod.api_key', 'my-api-key')
     @patch('runpod.endpoint_url_base', 'https://my-endpoint-url')
     def test_run(self, mock_post):
@@ -48,7 +48,7 @@ class TestEndpoint(unittest.TestCase):
 
     @patch('runpod.endpoint.time.sleep')
     @patch.object(Job, 'status', side_effect=["STARTED", "STARTED", "COMPLETED"])
-    @patch('runpod.endpoint.requests.get')
+    @patch('runpod.endpoint.runner.requests.get')
     @patch('runpod.api_key', 'my-api-key')
     @patch('runpod.endpoint_url_base', 'https://my-endpoint-url')
     def test_output(self, mock_get, mock_status, mock_sleep):
