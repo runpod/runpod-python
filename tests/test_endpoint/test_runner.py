@@ -24,7 +24,7 @@ class TestEndpoint(unittest.TestCase):
                          f"https://my-endpoint-url/{self.endpoint_id}/run")
 
     @patch('runpod.endpoint.runner.requests.post')
-    @patch('runpod.api_key', 'my-api-key')
+    @patch('runpod.endpoint.runner.api_key', 'my-api-key')
     @patch('runpod.endpoint_url_base', 'https://my-endpoint-url')
     def test_run(self, mock_post):
         """Test the run method of the Endpoint object"""
@@ -46,7 +46,7 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(job.endpoint_id, self.endpoint_id)
         self.assertEqual(job.job_id, "my-job-id")
 
-    @patch('runpod.endpoint.time.sleep')
+    @patch('runpod.endpoint.runner.time.sleep')
     @patch.object(Job, 'status', side_effect=["STARTED", "STARTED", "COMPLETED"])
     @patch('runpod.endpoint.runner.requests.get')
     @patch('runpod.api_key', 'my-api-key')
