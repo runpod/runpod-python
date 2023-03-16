@@ -25,7 +25,7 @@ class TestEndpoint(unittest.TestCase):
         }
         self.endpoint = Endpoint(self.endpoint_id)
 
-    @patch('runpod.runner.requests.post')
+    @patch('runpod.endpoint.runner.requests.post')
     def test_run(self, mock_post):
         '''
         Tests the run method.
@@ -41,7 +41,7 @@ class TestEndpoint(unittest.TestCase):
             self.endpoint_url, headers=self.headers, json=endpoint_input, timeout=10
         )
 
-    @patch('runpod.runner.requests.post')
+    @patch('runpod.endpoint.runner.requests.post')
     def test_run_timeout(self, mock_post):
         '''
         Tests the run method with a timeout.
@@ -56,7 +56,7 @@ class TestEndpoint(unittest.TestCase):
             self.endpoint_url, headers=self.headers, json=endpoint_input, timeout=10
         )
 
-    @patch('runpod.runner.requests.post')
+    @patch('runpod.endpoint.runner.requests.post')
     def test_run_sync(self, mock_post):
         '''
         Tests the run_sync method.
@@ -71,7 +71,7 @@ class TestEndpoint(unittest.TestCase):
             self.endpoint_url, headers=self.headers, json=endpoint_input, timeout=100
         )
 
-    @patch('runpod.runner.requests.get')
+    @patch('runpod.endpoint.runner.requests.get')
     def test_status(self, mock_get):
         '''
         Tests the status method.
@@ -88,8 +88,8 @@ class TestEndpoint(unittest.TestCase):
             headers=self.headers, timeout=10
         )
 
-    @patch('runpod.runner.time.sleep')
-    @patch('runpod.runner.requests.get')
+    @patch('runpod.endpoint.runner.time.sleep')
+    @patch('runpod.endpoint.runner.requests.get')
     def test_output(self, mock_get, mock_sleep):
         '''
         Tests the output method.
