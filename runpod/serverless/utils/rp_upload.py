@@ -14,8 +14,8 @@ from botocore.config import Config
 from tqdm_loggable.auto import tqdm
 
 logger = logging.getLogger("runpod upload utility")
-fmt = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
-logging.basicConfig(level=logging.INFO, format=fmt, handlers=[logging.StreamHandler()])
+FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
+logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHandler()])
 
 # --------------------------- S3 Bucket Connection --------------------------- #
 bucket_session = session.Session()

@@ -11,7 +11,12 @@ from runpod.endpoint.runner import Endpoint, Job
 
 
 class TestEndpoint(unittest.TestCase):
+    ''' Tests for the Endpoint class. '''
+
     def setUp(self):
+        '''
+        Sets up the test.
+        '''
         self.endpoint_id = "test_endpoint"
         self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
         self.headers = {
@@ -22,6 +27,9 @@ class TestEndpoint(unittest.TestCase):
 
     @patch('runpod.runner.requests.post')
     def test_run(self, mock_post):
+        '''
+        Tests the run method.
+        '''
         mock_post.return_value.json.return_value = {"id": "test_job_id"}
         mock_post.return_value.status_code = 200
 
@@ -35,6 +43,9 @@ class TestEndpoint(unittest.TestCase):
 
     @patch('runpod.runner.requests.post')
     def test_run_timeout(self, mock_post):
+        '''
+        Tests the run method with a timeout.
+        '''
         mock_post.side_effect = Timeout
 
         endpoint_input = {"input": "test_input"}
@@ -47,6 +58,9 @@ class TestEndpoint(unittest.TestCase):
 
     @patch('runpod.runner.requests.post')
     def test_run_sync(self, mock_post):
+        '''
+        Tests the run_sync method.
+        '''
         mock_post.return_value.json.return_value = {"output": "test_output"}
         mock_post.return_value.status_code = 200
 
@@ -59,6 +73,9 @@ class TestEndpoint(unittest.TestCase):
 
     @patch('runpod.runner.requests.get')
     def test_status(self, mock_get):
+        '''
+        Tests the status method.
+        '''
         mock_get.return_value.json.return_value = {"status": "COMPLETED"}
         mock_get.return_value.status_code = 200
 
@@ -74,6 +91,9 @@ class TestEndpoint(unittest.TestCase):
     @patch('runpod.runner.time.sleep')
     @patch('runpod.runner.requests.get')
     def test_output(self, mock_get, mock_sleep):
+        '''
+        Tests the output method.
+        '''
         mock_get.return_value.json.side_effect = [
             {"status": "RUNNING"},
             {"status": "COMPLETED", "output": "test_output"}

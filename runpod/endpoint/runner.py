@@ -12,7 +12,7 @@ class Endpoint:
     def __init__(self, endpoint_id):
         ''' Initializes the class. '''
 
-        from runpod import api_key, endpoint_url_base
+        from runpod import api_key, endpoint_url_base # pylint: disable=import-outside-toplevel
         self.api_key = api_key
         self.endpoint_url_base = endpoint_url_base
 
@@ -53,7 +53,7 @@ class Job:
     def __init__(self, endpoint_id, job_id):
         ''' Initializes the class. '''
 
-        from runpod import api_key, endpoint_url_base
+        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
         self.api_key = api_key
         self.endpoint_url_base = endpoint_url_base
 
