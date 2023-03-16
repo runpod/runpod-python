@@ -1,5 +1,5 @@
 '''
-Unit tests for the endpoint module
+RunPod Test | Python | Endpoint Runner
 '''
 
 import unittest
@@ -8,68 +8,64 @@ from runpod.endpoint import Endpoint, Job
 
 
 class TestEndpoint(unittest.TestCase):
-    ''' Tests the endpoint module.'''
+    ''' Tests the Endpoint class.'''
 
     def setUp(self):
         '''
-        Sets up the test environment.
+        Sets up the test.
         '''
-        self.endpoint_id = None
-        self.endpoint_url_base = 'https://api.runpod.ai/v1'
-        self.api_key = 'my_api_key'
+        self.endpoint_id = "my-endpoint-id"
+        self.endpoint = Endpoint(self.endpoint_id)
 
-    def test_endpoint_run(self):
-        '''
-        Tests the endpoint run method.
-        '''
-        job_id = 'job_id_123'
-        endpoint_input = {'input_1': 1, 'input_2': 2}
-        mock_post = MagicMock(return_value=MagicMock(json=lambda: {'id': job_id}))
-        with patch('requests.post', mock_post):
-            endpoint = Endpoint(self.endpoint_id)
-            job = endpoint.run(endpoint_input)
-            mock_post.assert_called_once_with(
-                f'{self.endpoint_url_base}/{self.endpoint_id}/run',
-                headers={'Content-Type': 'application/json',
-                         'Authorization': f'Bearer {self.api_key}'},
-                json={'input': endpoint_input},
-                timeout=10
-            )
-            self.assertEqual(job.endpoint_id, self.endpoint_id)
-            self.assertEqual(job.job_id, job_id)
+    def test_endpoint_initialized_correctly(self):
+        """Test that the Endpoint object is initialized correctly"""
+        self.assertEqual(self.endpoint.endpoint_id, self.endpoint_id)
+        self.assertEqual(self.endpoint.endpoint_url,
+                         f"https://my-endpoint-url/{self.endpoint_id}/run")
 
-    def test_job_status(self):
-        '''
-        Tests the job status method.
-        '''
-        job_id = 'job_id_123'
-        expected_status = 'COMPLETED'
-        mock_get = MagicMock(return_value=MagicMock(json=lambda: {'status': expected_status}))
-        with patch('requests.get', mock_get):
-            job = Job(self.endpoint_id, job_id)
-            status = job.status()
-            mock_get.assert_called_once_with(
-                f'{self.endpoint_url_base}/{self.endpoint_id}/status/{job_id}',
-                headers={'Content-Type': 'application/json',
-                         'Authorization': f'Bearer {self.api_key}'},
-                timeout=10
-            )
-            self.assertEqual(status, expected_status)
+    @patch('runpod.endpoint.requests.post')
+    @patch('runpod.endpoint.api_key', 'my-api-key')
+    def test_run(self, mock_post):
+        """Test the run method of the Endpoint object"""
+        mock_post.return_value.json.return_value = {"id": "my-job-id"}
 
-    def test_job_output(self):
-        '''
-        Tests the job output method.
-        '''
-        job_id = 'job_id_123'
-        expected_output = {'output_1': 1, 'output_2': 2}
-        mock_get = MagicMock(return_value=MagicMock(json=lambda: {'output': expected_output}))
-        with patch('requests.get', mock_get):
-            job = Job(self.endpoint_id, job_id)
-            output = job.output()
-            mock_get.assert_called_once_with(
-                f'{self.endpoint_url_base}/{self.endpoint_id}/status/{job_id}',
-                headers={'Content-Type': 'application/json',
-                         'Authorization': f'Bearer {self.api_key}'},
-                timeout=10
-            )
-            self.assertEqual(output, expected_output)
+        job = self.endpoint.run("my-input")
+
+        mock_post.assert_called_once_with(
+            f"https://my-endpoint-url/{self.endpoint_id}/run",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer my-api-key"
+            },
+            json={"input": "my-input"},
+            timeout=10
+        )
+
+        self.assertIsInstance(job, Job)
+        self.assertEqual(job.endpoint_id, self.endpoint_id)
+        self.assertEqual(job.job_id, "my-job-id")
+
+    @patch('runpod.endpoint.time.sleep')
+    @patch.object(Job, 'status', side_effect=["STARTED", "STARTED", "COMPLETED"])
+    @patch('runpod.endpoint.requests.get')
+    @patch('runpod.endpoint.api_key', 'my-api-key')
+    def test_output(self, mock_get, mock_status, mock_sleep):
+        """Test the output method of the Job object"""
+        mock_get.return_value.json.return_value = {"output": "my-output"}
+
+        job = Job("my-endpoint-id", "my-job-id")
+
+        output = job.output()
+
+        mock_status.assert_called()
+        mock_sleep.assert_called()
+        mock_get.assert_called_once_with(
+            f"https://my-endpoint-url/my-endpoint-id/status/my-job-id",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer my-api-key"
+            },
+            timeout=10
+        )
+
+        self.assertEqual(output, "my-output")
