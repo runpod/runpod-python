@@ -1,8 +1,14 @@
-''' Tests for runpod | serverless | modules | endpoint.py '''
-# pylint: disable=R0903,W0613
+'''
+Tests for runpod | endpoint | modules | endpoint.py
+'''
 
 import unittest
 from unittest.mock import patch, MagicMock
+import runpod
+
+
+import unittest
+from unittest.mock import patch, Mock
 import runpod
 
 
@@ -14,7 +20,7 @@ class TestEndpoint(unittest.TestCase):
         '''
         Tests Endpoint.run
         '''
-        mock_response = MagicMock()
+        mock_response = Mock()
         mock_response.json.return_value = {
             "id": "123",
             "status": "in_progress"
@@ -38,7 +44,7 @@ class TestEndpoint(unittest.TestCase):
         '''
         Tests Endpoint.run_sync
         '''
-        mock_response = MagicMock()
+        mock_response = Mock()
         mock_response.json.return_value = {
             "id": "123",
             "status": "completed",
