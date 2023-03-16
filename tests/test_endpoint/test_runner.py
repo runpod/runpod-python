@@ -9,7 +9,7 @@ import runpod
 class TestEndpoint(unittest.TestCase):
     ''' Tests for Endpoint '''
 
-    @patch('runpod.serverless.modules.endpoint.requests.post')
+    @patch('runpod.endpoint.runner.requests.post')
     def test_run(self, mock_post):
         '''
         Tests Endpoint.run
@@ -29,7 +29,7 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "in_progress")
 
-    @patch('runpod.serverless.modules.endpoint.requests.post')
+    @patch('runpod.endpoint.runner.requests.post')
     def test_run_sync(self, mock_post):
         '''
         Tests Endpoint.run_sync
