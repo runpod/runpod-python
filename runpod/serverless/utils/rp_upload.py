@@ -4,7 +4,6 @@ import os
 import time
 import uuid
 import logging
-import datetime
 import threading
 from io import BytesIO
 
@@ -13,10 +12,9 @@ from boto3 import session
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from tqdm_loggable.auto import tqdm
-from tqdm_loggable.tqdm_logging import tqdm_logging
 
 logger = logging.getLogger("runpod upload utility")
-fmt = f"%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
+fmt = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
 logging.basicConfig(level=logging.INFO, format=fmt, handlers=[logging.StreamHandler()])
 
 # --------------------------- S3 Bucket Connection --------------------------- #
