@@ -5,6 +5,8 @@ RunPod | Python | Endpoint Runner
 import time
 import requests
 
+from .. config import api_key, endpoint_url_base
+
 
 class Endpoint:
     ''' Creates a class to run an endpoint. '''
@@ -12,16 +14,12 @@ class Endpoint:
     def __init__(self, endpoint_id):
         ''' Initializes the class. '''
 
-        from runpod import api_key, endpoint_url_base # pylint: disable=import-outside-toplevel
-        self.api_key = api_key
-        self.endpoint_url_base = endpoint_url_base
-
         self.endpoint_id = endpoint_id
 
         self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {api_key}"
         }
 
     def run(self, endpoint_input):
@@ -53,10 +51,6 @@ class Job:
     def __init__(self, endpoint_id, job_id):
         ''' Initializes the class. '''
 
-        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
-        self.api_key = api_key
-        self.endpoint_url_base = endpoint_url_base
-
         self.endpoint_id = endpoint_id
         self.job_id = job_id
 
@@ -64,10 +58,10 @@ class Job:
         '''
         Returns the status of the job request.
         '''
-        status_url = f"{self.endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
+        status_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {api_key}"
         }
 
         status_request = requests.get(status_url, headers=headers, timeout=10)
@@ -82,10 +76,10 @@ class Job:
         while self.status() not in ["COMPLETED", "FAILED"]:
             time.sleep(.1)
 
-        output_url = f"{self.endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
+        output_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {api_key}"
         }
 
         output_request = requests.get(output_url, headers=headers, timeout=10)
