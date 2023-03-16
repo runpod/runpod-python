@@ -4,7 +4,11 @@ Unit tests for the endpoint module
 
 import unittest
 from unittest.mock import patch, MagicMock
+import runpod
 from runpod.endpoint import Endpoint, Job
+
+runpod.api_key = 'my_api_key'
+runpod.endpoint_url_base = 'https://example.com/api'
 
 
 class TestEndpoint(unittest.TestCase):
@@ -22,7 +26,6 @@ class TestEndpoint(unittest.TestCase):
         '''
         Tests the endpoint run method.
         '''
-        expected_output = {'output_1': 1, 'output_2': 2}
         job_id = 'job_id_123'
         endpoint_input = {'input_1': 1, 'input_2': 2}
         mock_post = MagicMock(return_value=MagicMock(json=lambda: {'id': job_id}))
