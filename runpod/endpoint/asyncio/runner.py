@@ -1,3 +1,9 @@
+'''
+Author: Oleg Rybalko
+Github: https://github.com/SkullMag
+Date: 2023-03-27
+'''
+
 import asyncio
 import os
 
