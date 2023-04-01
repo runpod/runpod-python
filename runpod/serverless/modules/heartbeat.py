@@ -6,7 +6,7 @@ import threading
 import requests
 
 import runpod.serverless.modules.logging as log
-from .worker_state import get_current_job_id, PING_URL, ping_interval
+from .worker_state import get_current_job_id, PING_URL, PING_INTERVAL
 
 _session = requests.Session()
 _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
@@ -18,11 +18,11 @@ def _send_ping(ping_params=None):
             result = _session.get(
                 PING_URL,
                 params=ping_params,
-                timeout=int(ping_interval / 1000)
+                timeout=int(PING_INTERVAL / 1000)
             )
 
             log.info(f"Heartbeat Sent  URL: {PING_URL}  Status: {result.status_code}")
-            log.info(f"Heartbeat Sent  Interval: {ping_interval}ms  Params: {ping_params}")
+            log.info(f"Heartbeat Sent  Interval: {PING_INTERVAL}ms  Params: {ping_params}")
 
         except Exception as err:  # pylint: disable=broad-except
             log.error(f"Heartbeat Failed  URL: {PING_URL}  Params: {ping_params}")
@@ -41,6 +41,6 @@ def start_ping():
 
     _send_ping(ping_params)
 
-    heartbeat_thread = threading.Timer(int(ping_interval / 1000), start_ping)
+    heartbeat_thread = threading.Timer(int(PING_INTERVAL / 1000), start_ping)
     heartbeat_thread.daemon = True
     heartbeat_thread.start()

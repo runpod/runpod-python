@@ -2,17 +2,15 @@ name: CI | Code Quality
 
 on:
   push:
-    branches:
-      - "**"
-      - "master"
-      - "!master-ci"
-      - "!release"
-
+    branches-ignore:
+      - "master-ci"
+      - "release"
   pull_request:
     branches:
       - master
 
   workflow_dispatch:
+    name: Run code quality checks manually
 
 jobs:
   lint:

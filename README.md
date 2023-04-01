@@ -98,7 +98,7 @@ print(run_request )
 
 ## Directory
 
-```
+```BASH
 .
 ├── docs               # Documentation
 ├── runpod             # Package source code
