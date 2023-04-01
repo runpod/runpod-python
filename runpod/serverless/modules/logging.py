@@ -3,7 +3,7 @@
 import os
 from dotenv import load_dotenv
 
-env_path = os.getcwd() + '/.env'
+env_path = os.path.join(os.getcwd(), '.env')
 load_dotenv(env_path)  # Load environment variables
 
 
@@ -14,7 +14,7 @@ def log(message, level='INFO'):
     set_level = os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG').upper()
     level = level.ljust(7)
 
-    if os.environ.get('RUNPOD_DEBUG', 'true') != 'true':
+    if os.environ.get('RUNPOD_DEBUG', 'true').lower() != 'true':
         return
 
     if set_level == 'ERROR' and level != 'ERROR':
@@ -35,13 +35,14 @@ def log_secret(secret_name, secret, level='INFO'):
     Censors secrets for logging.
     Replaces everything except the first and last characters with *
     '''
-    if secret is None and os.environ.get('RUNPOD_POD_ID', None) is not None:
-        secret = 'Could not read environment variable.'
-        log(f"{secret_name}: {secret}", 'ERROR')
-    elif os.environ.get('RUNPOD_POD_ID', None) is not None:
-        secret = str(secret)
-        redacted_secret = secret[0] + '*' * (len(secret)-2) + secret[-1]
-        log(f"{secret_name}: {redacted_secret}", level)
+    if os.environ.get('RUNPOD_POD_ID', None) is not None:
+        if secret is None:
+            secret = 'Could not read environment variable.'
+            log(f"{secret_name}: {secret}", 'ERROR')
+        else:
+            secret = str(secret)
+            redacted_secret = secret[0] + '*' * (len(secret)-2) + secret[-1]
+            log(f"{secret_name}: {redacted_secret}", level)
 
 
 def error(message):

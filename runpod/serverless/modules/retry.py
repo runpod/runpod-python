@@ -8,7 +8,15 @@ from functools import wraps
 
 def retry(max_attempts, base_delay, max_delay):
     '''
-    decorator to retry async functions
+    A decorator to retry async functions in case of exceptions.
+
+    Args:
+        max_attempts: The maximum number of attempts to retry.
+        base_delay: The base delay in seconds between retries.
+        max_delay: The maximum delay in seconds between retries.
+
+    Returns:
+        A decorated async function with retry capabilities.
     '''
     def decorator(func):
         @wraps(func)

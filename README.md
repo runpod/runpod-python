@@ -37,13 +37,20 @@ Create an python script in your project that contains your model definition and 
 ```python
 import runpod
 
-MODEL = 'YOUR_MODEL'
+def is_even(job):
 
-def run(job):
-    # Your inference code here
-    return MODEL.predict(job.input)
+    job_input = job["input"]
+    the_number = job_input["number"]
 
-runpod.serverless.start({"handler": run})
+    if not isinstance(the_number, int):
+        return {"error": "Silly human, you need to pass an integer."}
+
+    if the_number % 2 == 0:
+        return True
+
+    return False
+
+runpod.serverless.start({"handler": is_even})
 ```
 
 Make sure that this file is ran when your container starts. This can be accomplished by calling it in the docker command when you setup a template at [runpod.io/console/serverless/user/templates](https://www.runpod.io/console/serverless/user/templates) or by setting it as the default command in your Dockerfile.
@@ -57,7 +64,7 @@ When interacting with the RunPod API you can use this library to make requests t
 ```python
 import runpod
 
-runpod.api_key = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+runpod.api_key = "your_runpod_api_key_found_under_settings"
 ```
 
 ### Endpoints
@@ -68,7 +75,7 @@ You can interact with RunPod endpoints via a `run` or `run_sync` method.
 endpoint = runpod.Endpoint("ENDPOINT_ID")
 
 run_request = endpoint.run(
-    {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
+    {"your_model_input_key": "your_model_input_value"}
 )
 
 # Check the status of the endpoint run request
@@ -82,7 +89,7 @@ print(run_request.output())
 endpoint = runpod.Endpoint("ENDPOINT_ID")
 
 run_request = endpoint.run_sync(
-    {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
+    {"your_model_input_key": "your_model_input_value"}
 )
 
 # Returns the job results if completed within 90 seconds, otherwise, returns the job status.
