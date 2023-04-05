@@ -2,6 +2,7 @@
 
 from . import serverless
 from .endpoint import Endpoint
+from .endpoint import AsyncioEndpoint, AsyncioJob
 
 api_key = None  # pylint: disable=invalid-name
 
