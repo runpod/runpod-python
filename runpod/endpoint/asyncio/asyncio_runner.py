@@ -5,12 +5,12 @@ Date: 2023-03-27
 '''
 
 import asyncio
-import os
-
 import aiohttp
 
 
 class Job:
+    """Class representing a job for an asynchronous endpoint"""
+
     def __init__(self, endpoint_id: str, job_id: str, session: aiohttp.ClientSession):
         from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel,cyclic-import
 
@@ -25,7 +25,7 @@ class Job:
 
     async def status(self) -> str:
         """Gets jobs' status
-        
+
         Returns:
             COMPLETED, FAILED or IN_PROGRESS
         """
@@ -34,11 +34,11 @@ class Job:
 
     async def output(self) -> any:
         """Waits for serverless API job to complete or fail
-        
+
         Returns:
             Output of job
         Raises:
-            KeyError if job Failed    
+            KeyError if job Failed
         """
         while await self.status() not in ["COMPLETED", "FAILED"]:
             await asyncio.sleep(1)
@@ -49,7 +49,7 @@ class Job:
 
 class Endpoint:
     """Class for running endpoint"""
-    
+
     def __init__(self, endpoint_id: str, session: aiohttp.ClientSession):
         from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
 
@@ -63,10 +63,10 @@ class Endpoint:
 
     async def run(self, endpoint_input: dict) -> Job:
         """Runs endpoint with specified input
-        
+
         Args:
             endpoint_input: any dictionary with input
-        
+
         Returns:
             Newly created job
         """
