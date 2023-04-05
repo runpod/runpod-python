@@ -1,7 +1,7 @@
-'''
+"""
 runpod | serverless | worker_loop.py
 Called to convert a container into a worker pod for the runpod serverless platform.
-'''
+"""
 
 import os
 
@@ -12,17 +12,24 @@ from .modules.heartbeat import start_ping
 from .modules.job import get_job, run_job, send_result
 from .modules.worker_state import set_job_id
 
+_TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
-timeout = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
+
+def _get_auth_header() -> dict:
+    return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+
+
+def _is_local_testing() -> bool:
+    return os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
 
 
 async def start_worker(config):
-    '''
-    starts the worker loop
-    '''
-    auth_header = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+    """
+    Starts the worker loop.
+    """
+    auth_header = _get_auth_header()
 
-    async with aiohttp.ClientSession(headers=auth_header) as session:
+    async with aiohttp.ClientSession(headers=auth_header, timeout=_TIMEOUT) as session:
 
         start_ping()
 
@@ -45,6 +52,6 @@ async def start_worker(config):
 
             set_job_id(None)
 
-            if os.environ.get('RUNPOD_WEBHOOK_GET_JOB', None) is None:
+            if _is_local_testing():
                 log.info("Local testing complete, exiting.")
                 break

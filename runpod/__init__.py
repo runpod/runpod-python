@@ -1,4 +1,4 @@
-''' Allows runpod to be imported as a module.'''
+""" Allows runpod to be imported as a module. """
 
 from . import serverless
 from .endpoint import Endpoint

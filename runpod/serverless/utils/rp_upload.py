@@ -55,46 +55,40 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
         print("If this is a live endpoint, please reference the following:")
         print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker-utils.md")
 
-        output = BytesIO()
-        img = Image.open(image_location)
-        img.save(output, format=img.format)
-
         os.makedirs("simulated_uploaded", exist_ok=True)
-        with open(f"simulated_uploaded/{image_name}.png", "wb") as file_output:
-            file_output.write(output.getvalue())
+        sim_upload_location = f"simulated_uploaded/{image_name}.png"
+        with Image.open(image_location) as img, open(sim_upload_location, "wb") as file_output:
+            img.save(file_output, format=img.format)
 
         if results_list is not None:
-            results_list[result_index] = f"simulated_uploaded/{image_name}.png"
+            results_list[result_index] = sim_upload_location
 
-        return f"simulated_uploaded/{image_name}.png"
+        return sim_upload_location
 
-    output = BytesIO()
-    img = Image.open(image_location)
-    img.save(output, format=img.format)
+    with Image.open(image_location) as img:
+        output = BytesIO()
+        img.save(output, format=img.format)
+        output.seek(0)
 
-    bucket = time.strftime('%m-%y')
+        bucket = time.strftime('%m-%y')
+        boto_client.put_object(
+            Bucket=f'{bucket}',
+            Key=f'{job_id}/{image_name}.png',
+            Body=output.getvalue(),
+            ContentType="image/png"
+        )
 
-    # Upload to S3
-    boto_client.put_object(
-        Bucket=f'{bucket}',
-        Key=f'{job_id}/{image_name}.png',
-        Body=output.getvalue(),
-        ContentType="image/png"
-    )
+        presigned_url = boto_client.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': f'{bucket}',
+                'Key': f'{job_id}/{image_name}.png'
+            }, ExpiresIn=604800)
 
-    output.close()
+        if results_list is not None:
+            results_list[result_index] = presigned_url
 
-    presigned_url = boto_client.generate_presigned_url(
-        'get_object',
-        Params={
-            'Bucket': f'{bucket}',
-            'Key': f'{job_id}/{image_name}.png'
-        }, ExpiresIn=604800)
-
-    if results_list is not None:
-        results_list[result_index] = presigned_url
-
-    return presigned_url
+        return presigned_url
 
 
 # ---------------------------------------------------------------------------- #
