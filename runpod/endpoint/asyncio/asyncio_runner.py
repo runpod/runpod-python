@@ -3,6 +3,7 @@ Author: Oleg Rybalko
 Github: https://github.com/SkullMag
 Date: 2023-03-27
 '''
+# pylint: disable=too-few-public-methods,R0801
 
 import asyncio
 import aiohttp

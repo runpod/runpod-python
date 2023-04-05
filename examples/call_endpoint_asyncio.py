@@ -2,10 +2,11 @@
 Example of calling an endpoint using asyncio.
 """
 
-import runpod
-from runpod import AsyncioEndpoint, AsyncioJob
 import aiohttp
 import asyncio
+
+import runpod
+from runpod import AsyncioEndpoint, AsyncioJob
 
 asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # For Windows Users
 
