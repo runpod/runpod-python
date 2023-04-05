@@ -10,7 +10,8 @@ def _add_error(error_list: List[str], message: str) -> None:
     error_list.append(message)
 
 
-def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Union[Dict[str, Any], List[str]]]:
+def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]
+             ) -> Dict[str, Union[Dict[str, Any], List[str]]]:
     '''
     Validates the input.
     Checks to see if the provided inputs match the expected types.

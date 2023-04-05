@@ -56,13 +56,14 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
         print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker-utils.md")
 
         os.makedirs("simulated_uploaded", exist_ok=True)
-        with Image.open(image_location) as img, open(f"simulated_uploaded/{image_name}.png", "wb") as file_output:
+        sim_upload_location = f"simulated_uploaded/{image_name}.png"
+        with Image.open(image_location) as img, open(sim_upload_location, "wb") as file_output:
             img.save(file_output, format=img.format)
 
         if results_list is not None:
-            results_list[result_index] = f"simulated_uploaded/{image_name}.png"
+            results_list[result_index] = sim_upload_location
 
-        return f"simulated_uploaded/{image_name}.png"
+        return sim_upload_location
 
     with Image.open(image_location) as img:
         output = BytesIO()
