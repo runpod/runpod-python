@@ -8,7 +8,7 @@ import os
 import shutil
 
 
-def clean(folder_list=None):
+def clean(folder_list: list[str] = None):
     '''
     Removes the downloads folder.
     '''

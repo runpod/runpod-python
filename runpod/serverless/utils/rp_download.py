@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import requests
 
 
-def download_input_objects(object_locations):
+def download_input_objects(object_locations: list[str]) -> list[str]:
     '''
     Cycles through the object locations and downloads them.
     Returns the list of downloaded objects paths.
@@ -36,15 +36,16 @@ def download_input_objects(object_locations):
 
         object_name = f'{uuid.uuid4()}{file_extension}'
 
-        with open(f'input_objects/{object_name}', 'wb') as output_file:
+        output_file_path = os.path.join('input_objects', object_name)
+        with open(output_file_path, 'wb') as output_file:
             output_file.write(response.content)
 
-        objects.append(f'input_objects/{object_name}')
+        objects.append(output_file_path)
 
     return objects
 
 
-def file(file_url):
+def file(file_url: str) -> dict:
     '''
     Downloads a single file from a given URL, file is given a random name.
     First checks if the content-disposition header is set, if so, uses the file name from there.
@@ -76,20 +77,21 @@ def file(file_url):
 
     file_name = f'{uuid.uuid4()}'
 
-    with open(f'job_files/{file_name}.{file_type}', 'wb') as output_file:
+    output_file_path = os.path.join('job_files', f'{file_name}.{file_type}')
+    with open(output_file_path, 'wb') as output_file:
         output_file.write(download_response.content)
 
     if file_type == 'zip':
-        unziped_directory = f'job_files/{file_name}'
+        unziped_directory = os.path.join('job_files', file_name)
         os.makedirs(unziped_directory, exist_ok=True)
-        with zipfile.ZipFile(f'job_files/{file_name}.{file_type}', 'r') as zip_ref:
+        with zipfile.ZipFile(output_file_path, 'r') as zip_ref:
             zip_ref.extractall(unziped_directory)
         unziped_directory = os.path.abspath(unziped_directory)
     else:
         unziped_directory = None
 
     return {
-        "file_path": os.path.abspath(f'job_files/{file_name}.{file_type}'),
+        "file_path": os.path.abspath(output_file_path),
         "type": file_type,
         "original_name": original_file_name,
         "extracted_path": unziped_directory
