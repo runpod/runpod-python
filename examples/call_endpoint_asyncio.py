@@ -2,8 +2,8 @@
 Example of calling an endpoint using asyncio.
 """
 
-import aiohttp
 import asyncio
+import aiohttp
 
 import runpod
 from runpod import AsyncioEndpoint, AsyncioJob
