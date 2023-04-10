@@ -8,41 +8,60 @@ This directory is cleaned up after the job is complete.
 
 import os
 import re
+import cgi
 import uuid
 import zipfile
+from typing import List, Union
 from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
 
+import backoff
 import requests
 
 
-def download_input_objects(object_locations: list[str]) -> list[str]:
+def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[str]:
     '''
-    Cycles through the object locations and downloads them.
-    Returns the list of downloaded objects paths.
+    Accepts a single URL or a list of URLs and downloads the files.
+    Returns the list of downloaded file absolute paths.
+    Saves the files in a directory called "downloaded_files" in the job directory.
     '''
-    os.makedirs('input_objects', exist_ok=True)
+    download_directory = os.path.join('jobs', job_id, 'downloaded_files')
+    os.makedirs(download_directory, exist_ok=True)
 
-    objects = []
-    for object_url in object_locations:
-        if object_url is None:
-            objects.append(None)
-            continue
+    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=3)
+    def download_file(url: str) -> bytes:
+        with requests.get(url, timeout=5) as response:
+            response.raise_for_status()
+            content_disposition = response.headers.get('Content-Disposition')
+            _, params = cgi.parse_header(content_disposition) if content_disposition else (None, {})
+            file_extension = os.path.splitext(params.get('filename', ''))[1]
+            return response.content, file_extension
 
-        response = requests.get(object_url, timeout=5)
-        object_path = urlparse(object_url).path
+    def download_file_to_path(url: str) -> str:
+        if url is None:
+            return None
 
-        file_name = os.path.basename(object_path)
-        file_extension = os.path.splitext(file_name)[1]
+        try:
+            file_data, file_extension = download_file(url)
+        except requests.exceptions.RequestException as err:
+            print(f"Failed to download {url}: {err}")
+            return None
 
-        object_name = f'{uuid.uuid4()}{file_extension}'
+        file_name = f'{uuid.uuid4()}{file_extension}'
+        output_file_path = os.path.join(download_directory, file_name)
 
-        output_file_path = os.path.join('input_objects', object_name)
         with open(output_file_path, 'wb') as output_file:
-            output_file.write(response.content)
+            output_file.write(file_data)
 
-        objects.append(output_file_path)
+        return os.path.abspath(output_file_path)
 
-    return objects
+    if isinstance(urls, str):
+        urls = [urls]
+
+    with ThreadPoolExecutor() as executor:
+        downloaded_files = list(executor.map(download_file_to_path, urls))
+
+    return downloaded_files
 
 
 def file(file_url: str) -> dict:

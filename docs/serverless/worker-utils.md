@@ -29,7 +29,3 @@ The schema is a nested dictionary that defines the validation rules for each inp
 ## Cleanup Utility (rp_cleanup.py)
 
 The cleanup utility provides a `clean` function to remove specified folders and files after a job is completed. By default, it removes the `input_objects`, `output_objects`, and `job_files` folders, as well as the `output.zip` file. You can also provide an optional list of folders to be removed.
-
-## Download Utility (rp_download.py)
-
-The download utility provides functions to download files or objects from given URLs. The `download_input_objects` function takes a list of object locations (URLs) and downloads them into a temporary directory called `input_objects`. The `file` function downloads a single file from a given URL and saves it with a random name. If the downloaded file is a zip file, it is extracted into a directory with the same name.
