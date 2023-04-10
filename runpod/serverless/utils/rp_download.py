@@ -25,7 +25,7 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
     Returns the list of downloaded file absolute paths.
     Saves the files in a directory called "downloaded_files" in the job directory.
     '''
-    download_directory = os.path.join('jobs', job_id, 'downloaded_files')
+    download_directory = os.path.abspath(os.path.join('jobs', job_id, 'downloaded_files'))
     os.makedirs(download_directory, exist_ok=True)
 
     @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=3)

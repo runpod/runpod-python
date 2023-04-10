@@ -1,7 +1,6 @@
 ''' Tests for runpod | serverless | modules | download.py '''
 # pylint: disable=R0903,W0613
 
-import os
 import unittest
 from unittest.mock import patch, mock_open
 
@@ -70,8 +69,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         # Check that the url was called with requests.get
         self.assertIn('https://example.com/picture.jpg', mock_get.call_args_list[0][0])
 
-        mock_open_file.assert_called_once_with(os.path.abspath(
-            os.path.join('jobs', JOB_ID, 'downloaded_files', downloaded_files[0])), 'wb')
+        mock_open_file.assert_called_once_with(downloaded_files[0], 'wb')
         mock_makedirs.assert_called_once_with(f'jobs/{JOB_ID}/downloaded_files', exist_ok=True)
 
     @patch('os.makedirs', return_value=None)
