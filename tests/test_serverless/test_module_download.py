@@ -72,7 +72,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
 
         mock_open_file.assert_called_once_with(downloaded_files[0], 'wb')
         mock_makedirs.assert_called_once_with(os.path.abspath(
-            'jobs/{JOB_ID}/downloaded_files'), exist_ok=True)
+            f'jobs/{JOB_ID}/downloaded_files'), exist_ok=True)
 
     @patch('os.makedirs', return_value=None)
     @patch('requests.get', side_effect=mock_requests_get)
