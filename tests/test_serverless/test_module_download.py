@@ -9,7 +9,7 @@ from runpod.serverless.utils.rp_download import download_files_from_urls
 URL_LIST = ['https://example.com/picture.jpg',
             'https://example.com/picture.jpg?X-Amz-Signature=123']
 
-job_id = "job_123"
+JOB_ID = "job_123"
 
 
 def mock_requests_get(*args, **kwargs):
@@ -25,6 +25,19 @@ def mock_requests_get(*args, **kwargs):
             '''
             self.content = content
             self.status_code = status_code
+
+        def raise_for_status(self):
+            '''
+            Mocks raise_for_status function
+            '''
+            if 400 <= self.status_code < 600:
+                raise requests.exceptions.RequestException(f"Status code: {self.status_code}")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
 
     if args[0] in URL_LIST:
         return MockResponse(b'nothing', 200)
@@ -43,7 +56,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         Tests download_files_from_urls
         '''
         downloaded_files = download_files_from_urls(
-            job_id, ['https://example.com/picture.jpg', ]
+            JOB_ID, ['https://example.com/picture.jpg', ]
         )
 
         self.assertEqual(len(downloaded_files), 1)
@@ -52,7 +65,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         self.assertIn('https://example.com/picture.jpg', mock_get.call_args_list[0][0])
 
         mock_open_file.assert_called_once_with(downloaded_files[0], 'wb')
-        mock_makedirs.assert_called_once_with(f'jobs/{job_id}/downloaded_files', exist_ok=True)
+        mock_makedirs.assert_called_once_with(f'jobs/{JOB_ID}/downloaded_files', exist_ok=True)
 
     @patch('os.makedirs', return_value=None)
     @patch('requests.get', side_effect=mock_requests_get)
@@ -62,7 +75,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         Tests download_files_from_urls with signed urls
         '''
         downloaded_files = download_files_from_urls(
-            job_id, ['https://example.com/picture.jpg?X-Amz-Signature=123', ]
+            JOB_ID, ['https://example.com/picture.jpg?X-Amz-Signature=123', ]
         )
 
         # Confirms that the same number of files were downloaded as urls provided
@@ -72,4 +85,4 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         self.assertIn(URL_LIST[1], mock_get.call_args_list[0][0])
 
         mock_open_file.assert_called_once_with(downloaded_files[0], 'wb')
-        mock_makedirs.assert_called_once_with(f'jobs/{job_id}/downloaded_files', exist_ok=True)
+        mock_makedirs.assert_called_once_with(f'jobs/{JOB_ID}/downloaded_files', exist_ok=True)

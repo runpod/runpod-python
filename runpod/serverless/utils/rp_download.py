@@ -8,11 +8,11 @@ This directory is cleaned up after the job is complete.
 
 import os
 import re
-import cgi
 import uuid
 import zipfile
 from typing import List, Union
 from urllib.parse import urlparse
+from email import message_from_string
 from concurrent.futures import ThreadPoolExecutor
 
 import backoff
@@ -33,7 +33,8 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
         with requests.get(url, timeout=5) as response:
             response.raise_for_status()
             content_disposition = response.headers.get('Content-Disposition')
-            _, params = cgi.parse_header(content_disposition) if content_disposition else (None, {})
+            msg = message_from_string(f'Content-Disposition: {content_disposition}')
+            params = dict(msg.items()) if content_disposition else {}
             file_extension = os.path.splitext(params.get('filename', ''))[1]
             return response.content, file_extension
 
