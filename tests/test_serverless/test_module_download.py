@@ -1,6 +1,7 @@
 ''' Tests for runpod | serverless | modules | download.py '''
 # pylint: disable=R0903,W0613
 
+import requests
 import unittest
 from unittest.mock import patch, mock_open
 
