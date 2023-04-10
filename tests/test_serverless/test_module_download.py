@@ -1,9 +1,10 @@
 ''' Tests for runpod | serverless | modules | download.py '''
 # pylint: disable=R0903,W0613
 
-import requests
 import unittest
 from unittest.mock import patch, mock_open
+
+import requests
 
 from runpod.serverless.utils.rp_download import download_files_from_urls
 
@@ -17,20 +18,23 @@ def mock_requests_get(*args, **kwargs):
     '''
     Mocks requests.get
     '''
+    headers = {
+        'Content-Disposition': 'attachment; filename="picture.jpg"'
+    }
+
     class MockResponse:
         ''' Mocks requests.get response '''
 
-        def __init__(self, content, status_code):
+        def __init__(self, content, status_code, headers=None):
             '''
             Mocks requests.get response
             '''
             self.content = content
             self.status_code = status_code
+            self.headers = headers or {}
 
         def raise_for_status(self):
-            '''
-            Mocks raise_for_status function
-            '''
+            ''' Mocks raise_for_status function '''
             if 400 <= self.status_code < 600:
                 raise requests.exceptions.RequestException(f"Status code: {self.status_code}")
 
@@ -41,7 +45,7 @@ def mock_requests_get(*args, **kwargs):
             pass
 
     if args[0] in URL_LIST:
-        return MockResponse(b'nothing', 200)
+        return MockResponse(b'nothing', 200, headers)
 
     return MockResponse(None, 404)
 
