@@ -1,6 +1,7 @@
 ''' Tests for my_module | bucket utilities '''
 
 import io
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -10,7 +11,6 @@ BUCKET_CREDENTIALS = {
     'endpointUrl': 'https://your-bucket-endpoint-url.com',
     'accessId': 'your_access_key_id',
     'accessSecret': 'your_secret_access_key',
-    'bucketName': 'your_bucket_name'
 }
 
 
@@ -41,7 +41,7 @@ class TestUploadUtility(unittest.TestCase):
 
         # Check if upload_file was called with the correct arguments
         mock_boto_client.upload_file.assert_called_once_with(
-            file_location, BUCKET_CREDENTIALS['bucketName'], file_name,
+            file_location, str(time.strftime('%m-%y')), file_name,
             Config=mock_transfer_config,
             Callback=unittest.mock.ANY
         )
@@ -50,7 +50,7 @@ class TestUploadUtility(unittest.TestCase):
         mock_boto_client.generate_presigned_url.assert_called_once_with(
             'get_object',
             Params={
-                'Bucket': BUCKET_CREDENTIALS['bucketName'],
+                'Bucket': str(time.strftime('%m-%y')),
                 'Key': file_name
             }, ExpiresIn=604800
         )
@@ -77,7 +77,7 @@ class TestUploadUtility(unittest.TestCase):
 
         # Check if upload_fileobj was called with the correct arguments
         mock_boto_client.upload_fileobj.assert_called_once_with(
-            unittest.mock.ANY, BUCKET_CREDENTIALS['bucketName'], file_name,
+            unittest.mock.ANY, str(time.strftime('%m-%y')), file_name,
             Config=mock_transfer_config,
             Callback=unittest.mock.ANY
         )
@@ -90,7 +90,7 @@ class TestUploadUtility(unittest.TestCase):
         mock_boto_client.generate_presigned_url.assert_called_once_with(
             'get_object',
             Params={
-                'Bucket': BUCKET_CREDENTIALS['bucketName'],
+                'Bucket': str(time.strftime('%m-%y')),
                 'Key': file_name
             }, ExpiresIn=604800
         )
