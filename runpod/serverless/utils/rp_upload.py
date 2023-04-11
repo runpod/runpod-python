@@ -186,7 +186,9 @@ def bucket_upload(job_id, file_list, bucket_creds):
 
 
 # ------------------------- Single File Bucket Upload ------------------------ #
-def upload_file_to_bucket(file_name: str, file_location: str, bucket_creds: Optional[dict] = None) -> str:
+def upload_file_to_bucket(
+        file_name: str, file_location: str,
+        bucket_creds: Optional[dict] = None) -> str:
     '''
     Uploads a single file to bucket storage and returns a presigned URL.
     '''
@@ -211,7 +213,9 @@ def upload_file_to_bucket(file_name: str, file_location: str, bucket_creds: Opti
 
 
 # --------------------------- Upload Memory Object --------------------------- #
-def upload_in_memory_object(file_name: str, file_data: bytes, bucket_creds: Optional[dict] = None) -> str:
+def upload_in_memory_object(
+        file_name: str, file_data: bytes,
+        bucket_creds: Optional[dict] = None) -> str:
     '''
     Uploads an in-memory object (bytes) to bucket storage and returns a presigned URL.
     '''
