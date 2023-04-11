@@ -46,7 +46,8 @@ async def get_job(session):
             async with session.get(JOB_GET_URL) as response:
                 next_job = await response.json()
 
-        log.info(next_job)
+        if next_job is not None:
+            log.info(f"Received job: {next_job['id']}")
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while getting job: {err}")
 
