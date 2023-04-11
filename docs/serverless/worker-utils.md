@@ -1,18 +1,3 @@
-## S3 Uploader
-
-.env variables:
-
-```bash
-# S3 Bucket
-BUCKET_ENDPOINT_URL= # S3 bucket endpoint url
-BUCKET_ACCESS_KEY_ID= # S3 bucket access key id
-BUCKET_SECRET_ACCESS_KEY= # S3 bucket secret access key
-```
-
-*Note: The upload utilitiy utilizes the Virtual-hosted-style URL with the bucket name in the host name. For example, `https://bucket-name.s3.amazonaws.com`.*
-
-![RunPod Template Location](.docs/images/../../../images/env_var_location.png)
-
 ## Validator Utility (rp_validator.py)
 
 The validator utility allows you to define the expected inputs for your worker and validate them against the input data. It will return the errors if any are found and prevent the worker from running.

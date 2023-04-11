@@ -1,12 +1,16 @@
 ''' PodWorker | modules | upload.py '''
 
 import os
+import io
 import time
 import uuid
 import logging
 import threading
+import multiprocessing
 from io import BytesIO
+from typing import Optional, Tuple
 
+import boto3
 from PIL import Image
 from boto3 import session
 from boto3.s3.transfer import TransferConfig
@@ -17,27 +21,50 @@ logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
 logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHandler()])
 
+
 # --------------------------- S3 Bucket Connection --------------------------- #
-bucket_session = session.Session()
+def get_boto_client(bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]:
+    '''
+    Returns a boto3 client and transfer config for the bucket.
+    '''
+    bucket_session = session.Session()
 
-boto_config = Config(
-    signature_version='s3v4',
-    retries={
-        'max_attempts': 3,
-        'mode': 'standard'
-    }
-)
-
-if os.environ.get('BUCKET_ENDPOINT_URL', None) is not None:
-    boto_client = bucket_session.client(
-        's3',
-        endpoint_url=os.environ.get('BUCKET_ENDPOINT_URL', None),
-        aws_access_key_id=os.environ.get('BUCKET_ACCESS_KEY_ID', None),
-        aws_secret_access_key=os.environ.get('BUCKET_SECRET_ACCESS_KEY', None),
-        config=boto_config
+    boto_config = Config(
+        signature_version='s3v4',
+        retries={
+            'max_attempts': 3,
+            'mode': 'standard'
+        }
     )
-else:
-    boto_client = None  # pylint: disable=invalid-name
+
+    transfer_config = TransferConfig(
+        multipart_threshold=1024 * 25,
+        max_concurrency=multiprocessing.cpu_count(),
+        multipart_chunksize=1024 * 25,
+        use_threads=True
+    )
+
+    if bucket_creds:
+        endpoint_url = bucket_creds['endpointUrl']
+        access_key_id = bucket_creds['accessId']
+        secret_access_key = bucket_creds['accessSecret']
+    else:
+        endpoint_url = os.environ.get('BUCKET_ENDPOINT_URL', None)
+        access_key_id = os.environ.get('BUCKET_ACCESS_KEY_ID', None)
+        secret_access_key = os.environ.get('BUCKET_SECRET_ACCESS_KEY', None)
+
+    if endpoint_url and access_key_id and secret_access_key:
+        boto_client = bucket_session.client(
+            's3',
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            config=boto_config
+        )
+    else:
+        boto_client = None
+
+    return boto_client, transfer_config
 
 
 # ---------------------------------------------------------------------------- #
@@ -48,6 +75,7 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
     Upload image to bucket storage.
     '''
     image_name = str(uuid.uuid4())[:8]
+    boto_client, _ = get_boto_client()
 
     if boto_client is None:
         # Save the output to a file
@@ -158,44 +186,46 @@ def bucket_upload(job_id, file_list, bucket_creds):
 
 
 # ------------------------- Single File Bucket Upload ------------------------ #
-def file(file_name, file_location, bucket_creds):
+def upload_file_to_bucket(file_name: str, file_location: str, bucket_creds: dict) -> str:
     '''
-    Uploads a single file to bucket storage.
+    Uploads a single file to bucket storage and returns a presigned URL.
     '''
-    temp_bucket_session = session.Session()
-
-    temp_boto_config = Config(
-        signature_version='s3v4',
-        retries={
-            'max_attempts': 3,
-            'mode': 'standard'
-        }
-    )
-
-    temp_transfer_config = TransferConfig(
-        multipart_threshold=1024 * 25,
-        max_concurrency=10,
-        multipart_chunksize=1024 * 25,
-        use_threads=True
-    )
-
-    temp_boto_client = temp_bucket_session.client(
-        's3',
-        endpoint_url=bucket_creds['endpointUrl'],
-        aws_access_key_id=bucket_creds['accessId'],
-        aws_secret_access_key=bucket_creds['accessSecret'],
-        config=temp_boto_config
-    )
+    boto_client, transfer_config = get_boto_client(bucket_creds)
 
     file_size = os.path.getsize(file_location)
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
-        temp_boto_client.upload_file(
+        boto_client.upload_file(
             file_location, str(bucket_creds['bucketName']), f'{file_name}',
-            Config=temp_transfer_config,
+            Config=transfer_config,
             Callback=progress_bar.update
         )
 
-    presigned_url = temp_boto_client.generate_presigned_url(
+    presigned_url = boto_client.generate_presigned_url(
+        'get_object',
+        Params={
+            'Bucket': f"{bucket_creds['bucketName']}",
+            'Key': f"{file_name}"
+        }, ExpiresIn=604800)
+
+    return presigned_url
+
+
+# --------------------------- Upload Memory Object --------------------------- #
+def upload_in_memory_object(file_name: str, file_data: bytes, bucket_creds: dict) -> str:
+    '''
+    Uploads an in-memory object (bytes) to bucket storage and returns a presigned URL.
+    '''
+    boto_client, transfer_config = get_boto_client(bucket_creds)
+
+    file_size = len(file_data)
+    with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
+        boto_client.upload_fileobj(
+            io.BytesIO(file_data), str(bucket_creds['bucketName']), f'{file_name}',
+            Config=transfer_config,
+            Callback=progress_bar.update
+        )
+
+    presigned_url = boto_client.generate_presigned_url(
         'get_object',
         Params={
             'Bucket': f"{bucket_creds['bucketName']}",
