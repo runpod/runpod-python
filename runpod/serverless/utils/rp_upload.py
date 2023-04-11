@@ -180,7 +180,7 @@ def bucket_upload(job_id, file_list, bucket_creds):
             )
 
         bucket_urls.append(
-            f"{bucket_creds['endpointUrl']}/{bucket_creds['bucketName']}/{job_id}/{file}")
+            f"{bucket_creds['endpointUrl']}/{bucket_creds['bucketName']}/{job_id}/{selected_file}")
 
     return bucket_urls
 

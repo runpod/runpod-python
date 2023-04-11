@@ -17,7 +17,7 @@ BUCKET_CREDENTIALS = {
 class TestUploadUtility(unittest.TestCase):
     ''' Tests for upload utility '''
 
-    @patch('my_module.get_boto_client')
+    @patch('runpod.serverless.utils.rp_upload.get_boto_client')
     def test_upload_file_to_bucket(self, mock_get_boto_client):
         '''
         Tests upload_file_to_bucket
@@ -55,7 +55,10 @@ class TestUploadUtility(unittest.TestCase):
             }, ExpiresIn=604800
         )
 
-    @patch('my_module.get_boto_client')
+        # Check to see if the presigned url is a string
+        self.assertIsInstance(presigned_url, str)
+
+    @patch('runpod.serverless.utils.rp_upload.get_boto_client')
     def test_upload_in_memory_object(self, mock_get_boto_client):
         '''
         Tests upload_in_memory_object
@@ -94,3 +97,6 @@ class TestUploadUtility(unittest.TestCase):
                 'Key': file_name
             }, ExpiresIn=604800
         )
+
+        # Check to see if the presigned url is a string
+        self.assertIsInstance(presigned_url, str)
