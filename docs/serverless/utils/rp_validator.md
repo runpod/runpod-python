@@ -10,7 +10,3 @@ The schema is a nested dictionary that defines the validation rules for each inp
 - `default` (defaults `None`) - A default value to use if the input is not provided.
 - `type` (required) - The type of the input
 - `constraints` (optional) - A lambda function that takes in the input and returns true or false
-
-## Cleanup Utility (rp_cleanup.py)
-
-The cleanup utility provides a `clean` function to remove specified folders and files after a job is completed. By default, it removes the `input_objects`, `output_objects`, and `job_files` folders, as well as the `output.zip` file. You can also provide an optional list of folders to be removed.

@@ -188,16 +188,23 @@ def bucket_upload(job_id, file_list, bucket_creds):
 # ------------------------- Single File Bucket Upload ------------------------ #
 def upload_file_to_bucket(
         file_name: str, file_location: str,
-        bucket_creds: Optional[dict] = None) -> str:
+        bucket_creds: Optional[dict] = None,
+        bucket_name: Optional[str] = None,
+        prefix: Optional[str] = None) -> str:
     '''
     Uploads a single file to bucket storage and returns a presigned URL.
     '''
     boto_client, transfer_config = get_boto_client(bucket_creds)
 
+    if not bucket_name:
+        bucket_name = time.strftime('%m-%y')
+
+    key = f"{prefix}/{file_name}" if prefix else file_name
+
     file_size = os.path.getsize(file_location)
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
         boto_client.upload_file(
-            file_location, str(bucket_creds['bucketName']), f'{file_name}',
+            file_location, bucket_name, key,
             Config=transfer_config,
             Callback=progress_bar.update
         )
@@ -205,8 +212,8 @@ def upload_file_to_bucket(
     presigned_url = boto_client.generate_presigned_url(
         'get_object',
         Params={
-            'Bucket': f"{bucket_creds['bucketName']}",
-            'Key': f"{file_name}"
+            'Bucket': bucket_name,
+            'Key': key
         }, ExpiresIn=604800)
 
     return presigned_url
@@ -215,16 +222,23 @@ def upload_file_to_bucket(
 # --------------------------- Upload Memory Object --------------------------- #
 def upload_in_memory_object(
         file_name: str, file_data: bytes,
-        bucket_creds: Optional[dict] = None) -> str:
+        bucket_creds: Optional[dict] = None,
+        bucket_name: Optional[str] = None,
+        prefix: Optional[str] = None) -> str:
     '''
     Uploads an in-memory object (bytes) to bucket storage and returns a presigned URL.
     '''
     boto_client, transfer_config = get_boto_client(bucket_creds)
 
+    if not bucket_name:
+        bucket_name = time.strftime('%m-%y')
+
+    key = f"{prefix}/{file_name}" if prefix else file_name
+
     file_size = len(file_data)
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
         boto_client.upload_fileobj(
-            io.BytesIO(file_data), str(bucket_creds['bucketName']), f'{file_name}',
+            io.BytesIO(file_data), bucket_name, key,
             Config=transfer_config,
             Callback=progress_bar.update
         )
@@ -232,8 +246,8 @@ def upload_in_memory_object(
     presigned_url = boto_client.generate_presigned_url(
         'get_object',
         Params={
-            'Bucket': f"{bucket_creds['bucketName']}",
-            'Key': f"{file_name}"
+            'Bucket': bucket_name,
+            'Key': key
         }, ExpiresIn=604800)
 
     return presigned_url
