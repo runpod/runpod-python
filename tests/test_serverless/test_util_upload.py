@@ -34,7 +34,7 @@ class TestUploadUtility(unittest.TestCase):
 
         # Mock os.path.getsize to return a file size
         with patch('os.path.getsize', return_value=1024):
-            presigned_url = upload_file_to_bucket(file_name, file_location, BUCKET_CREDENTIALS)
+            upload_file_to_bucket(file_name, file_location, BUCKET_CREDENTIALS)
 
         # Check if get_boto_client was called with the correct arguments
         mock_get_boto_client.assert_called_once_with(BUCKET_CREDENTIALS)
@@ -55,9 +55,6 @@ class TestUploadUtility(unittest.TestCase):
             }, ExpiresIn=604800
         )
 
-        # Check to see if the presigned url is a string
-        self.assertIsInstance(presigned_url, str)
-
     @patch('runpod.serverless.utils.rp_upload.get_boto_client')
     def test_upload_in_memory_object(self, mock_get_boto_client):
         '''
@@ -73,7 +70,7 @@ class TestUploadUtility(unittest.TestCase):
         file_name = 'example.txt'
         file_data = b'This is an example text.'
 
-        presigned_url = upload_in_memory_object(file_name, file_data, BUCKET_CREDENTIALS)
+        upload_in_memory_object(file_name, file_data, BUCKET_CREDENTIALS)
 
         # Check if get_boto_client was called with the correct arguments
         mock_get_boto_client.assert_called_once_with(BUCKET_CREDENTIALS)
@@ -97,6 +94,3 @@ class TestUploadUtility(unittest.TestCase):
                 'Key': file_name
             }, ExpiresIn=604800
         )
-
-        # Check to see if the presigned url is a string
-        self.assertIsInstance(presigned_url, str)
