@@ -37,20 +37,21 @@ async def start_worker(config):
             job = await get_job(session)
 
             if job is None:
-                log.info("No job available before idle timeout.")
+                log.info("No job available, waiting for the next one.")
                 continue
 
             if job["input"] is None:
-                log.error("No input parameter provided. Erroring out request.")
+                log.error(f"Job {job['id']} has no input parameter provided. Skipping this job.")
                 continue
 
             set_job_id(job["id"])
 
+            log.info(f"Processing job {job['id']}")
             job_result = run_job(config["handler"], job)
 
             # If refresh_worker is set, pod will be reset after job is complete.
             if config.get("refresh_worker", False):
-                log.info("Refresh worker flag set, stopping pod after job.")
+                log.info(f"Refresh worker flag set, stopping pod after job {job['id']}.")
                 job_result["stopPod"] = True
 
             await send_result(session, job_result, job)

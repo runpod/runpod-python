@@ -29,6 +29,7 @@ def _get_local():
     if "id" not in test_inputs:
         test_inputs["id"] = "local_test"
 
+    log.debug(f"Retrieved local job: {test_inputs}")
     return test_inputs
 
 
@@ -45,6 +46,7 @@ async def get_job(session):
         else:
             async with session.get(JOB_GET_URL) as response:
                 next_job = await response.json()
+                log.debug(f"Retrieved remote job: {next_job}")
 
         if next_job is not None:
             log.info(f"Received job: {next_job['id']}")
@@ -59,12 +61,14 @@ def run_job(handler, job):
     Run the job using the handler.
     Returns the job output or error.
     """
-    log.info(f'Started working on {job["id"]} at {time.time()} UTC')
+    start_time = time.time()
+    log.info(f'Started working on job {job["id"]} at {start_time} UTC')
 
     run_result = {"error": "Failed to return job output or capture error."}
 
     try:
         job_output = handler(job)
+        log.debug(f'Job {job["id"]} handler output: {job_output}')
 
         if isinstance(job_output, bool):
             run_result = {"output": job_output}
@@ -82,12 +86,12 @@ def run_job(handler, job):
         check_return_size(run_result)  # Checks the size of the return body.
     except Exception as err:    # pylint: disable=broad-except
         log.error(f'Error while running job {job["id"]}: {err}')
-
         run_result = {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
-
     finally:
-        log.info(f'Finished working on {job["id"]} at {time.time()} UTC')
-        log.info(f"Run result: {run_result}")
+        end_time = time.time()
+        log.info(f'Finished working on job {job["id"]} at {end_time} UTC')
+        log.info(f"Job {job['id']} took {end_time - start_time} seconds to complete")
+        log.debug(f"Run result: {run_result}")
 
         return run_result  # pylint: disable=lost-exception
 
@@ -102,15 +106,15 @@ async def retry_send_result(session, job_data):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    log.info("result api call")
+    log.debug("Initiating result API call")
     async with session.post(get_done_url(),
                             data=job_data,
                             headers=headers,
                             raise_for_status=True) as resp:
         result = await resp.text()
-        log.debug(result)
+        log.debug(f"Result API response: {result}")
 
-    log.info("done with result api call")
+    log.info("Completed result API call")
 
 
 async def send_result(session, job_data, job):
@@ -120,10 +124,10 @@ async def send_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not _IS_LOCAL_TEST:
-            log.info(f"Sending job results: {job_data}")
+            log.info(f"Sending job results for {job['id']}: {job_data}")
             await retry_send_result(session, job_data)
         else:
-            log.warn(f"Local test job results: {job_data}")
+            log.warn(f"Local test job results for {job['id']}: {job_data}")
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")

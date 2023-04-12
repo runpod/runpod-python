@@ -41,6 +41,7 @@ def start_ping():
 
     _send_ping(ping_params)
 
+    log.debug(f"Scheduling next heartbeat in {PING_INTERVAL}ms")
     heartbeat_thread = threading.Timer(int(PING_INTERVAL / 1000), start_ping)
     heartbeat_thread.daemon = True
     heartbeat_thread.start()

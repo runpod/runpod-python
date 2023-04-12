@@ -1,5 +1,19 @@
 # The Serverless Worker
 
+## Logging
+
+The worker outputs logs to the console at different points in the workers lifecycle. These logs can be used to debug issues with the worker or handler. There are four logging levels that can be used to control the verbosity of the logs:
+
+   1. `DEBUG` (Default) - Outputs all logs, including debug logs.
+
+   2. `INFO` - Outputs all logs except debug logs.
+
+   3. `WARNING` - Outputs only warning and error logs.
+
+   4. `ERROR` - Outputs only error logs.
+
+To set the logging level, set the `RUNPOD_DEBUG_LEVEL` environment variable to one of the above logging levels. For example, to set the logging level to `INFO`, set the `RUNPOD_DEBUG_LEVEL` environment variable to `INFO`.
+
 ## Error Handling
 
 The worker is designed to handle errors raised by the handler gracefully. If the handler raises an error, the worker will capture this error and return it as the job output along with the stack trace.
