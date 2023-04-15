@@ -3,6 +3,7 @@
 from . import serverless
 from .endpoint import Endpoint
 from .endpoint import AsyncioEndpoint, AsyncioJob
+from .api_wrapper.ctl_commands import get_gpus, get_gpu, create_pod
 
 api_key = None  # pylint: disable=invalid-name
 
