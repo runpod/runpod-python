@@ -1,6 +1,7 @@
 """
 RunPod | API Wrapper | CTL Commands
 """
+# pylint: disable=too-many-arguments
 
 from .queries import gpus
 from .graphql import run_graphql_query

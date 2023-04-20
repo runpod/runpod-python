@@ -1,6 +1,7 @@
 """
 RunPod | API Wrapper | Mutations | Pods
 """
+# pylint: disable=too-many-arguments, too-many-locals, too-many-branches
 
 
 def generate_pod_deployment_mutation(
@@ -98,6 +99,9 @@ def generate_pod_resume_mutation(pod_id: str, gpu_count: int) -> str:
 
 
 def generate_pod_terminate_mutation(pod_id: str) -> str:
+    '''
+    Generates a mutation to terminate a pod.
+    '''
     return f"""
     mutation {{
         podTerminate(input: {{ podId: "{pod_id}" }})
