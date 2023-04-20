@@ -1,3 +1,7 @@
+''''
+GraphQL wrapper for the RunPod API
+'''
+
 import time
 import runpod
 
@@ -37,5 +41,4 @@ print("Waiting for pod to be resumed...")
 time.sleep(10)
 
 # Terminate a pod
-pod = runpod.terminate_pod(pod["id"])
-print(pod)
+runpod.terminate_pod(pod["id"])
