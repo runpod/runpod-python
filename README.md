@@ -17,6 +17,7 @@ Official Python library for RunPod API &amp; SDK.
   - [Quick Start](#quick-start)
 - [API Language Library](#api-language-library)
   - [Endpoints](#endpoints)
+  - [GPU Pod Control](#gpu-pod-control)
 - [Directory](#directory)
 - [Community and Contributing](#community-and-contributing)
 
@@ -94,6 +95,26 @@ run_request = endpoint.run_sync(
 
 # Returns the job results if completed within 90 seconds, otherwise, returns the job status.
 print(run_request )
+```
+
+### GPU Pod Control
+
+```python
+import runpod
+
+runpod.api_key = "your_runpod_api_key_found_under_settings"
+
+# Create a pod
+pod = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
+
+# Stop the pod
+runpod.stop_pod(pod.id)
+
+# Start the pod
+runpod.start_pod(pod.id)
+
+# Terminate the pod
+runpod.terminate_pod(pod.id)
 ```
 
 ## Directory
