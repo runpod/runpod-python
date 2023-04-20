@@ -41,3 +41,36 @@ def create_pod(name, image_name, gpu_type_id, cloud_type="ALL", gpu_count=1, vol
 
     cleaned_response = raw_response["data"]["podFindAndDeployOnDemand"]
     return cleaned_response
+
+
+def stop_pod(pod_id: str):
+    '''
+    Stop a pod
+    '''
+    raw_response = run_graphql_query(
+        pods.generate_pod_stop_mutation(pod_id)
+    )
+
+    cleaned_response = raw_response["data"]["podStop"]
+    return cleaned_response
+
+
+def resume_pod(pod_id: str, gpu_count: int):
+    '''
+    Resume a pod
+    '''
+    raw_response = run_graphql_query(
+        pods.generate_pod_resume_mutation(pod_id, gpu_count)
+    )
+
+    cleaned_response = raw_response["data"]["podResume"]
+    return cleaned_response
+
+
+def terminate_pod(pod_id: str):
+    '''
+    Terminate a pod
+    '''
+    run_graphql_query(
+        pods.generate_pod_terminate_mutation(pod_id)
+    )

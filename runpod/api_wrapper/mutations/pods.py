@@ -61,3 +61,45 @@ def generate_pod_deployment_mutation(
       }}
     }}
     """
+
+
+def generate_pod_stop_mutation(pod_id: str) -> str:
+    '''
+    Generates a mutation to stop a pod.
+    '''
+    return f"""
+    mutation {{
+        podStop(input: {{ podId: "{pod_id}" }}) {{
+            id
+            desiredStatus
+        }}
+    }}
+    """
+
+
+def generate_pod_resume_mutation(pod_id: str, gpu_count: int) -> str:
+    '''
+    Generates a mutation to resume a pod.
+    '''
+    return f"""
+    mutation {{
+        podResume(input: {{ podId: "{pod_id}", gpuCount: {gpu_count} }}) {{
+            id
+            desiredStatus
+            imageName
+            env
+            machineId
+            machine {{
+                podHostId
+            }}
+        }}
+    }}
+    """
+
+
+def generate_pod_terminate_mutation(pod_id: str) -> str:
+    return f"""
+    mutation {{
+        podTerminate(input: {{ podId: "{pod_id}" }})
+    }}
+    """
