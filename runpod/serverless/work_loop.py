@@ -4,6 +4,7 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 """
 
 import os
+import sys
 
 import aiohttp
 
@@ -59,5 +60,9 @@ async def start_worker(config):
             set_job_id(None)
 
             if _is_local_testing():
-                log.info("Local testing complete, exiting.")
-                break
+                if "error" in job_result:
+                    log.error(f"Job {job['id']} failed with error: {job_result['error']}")
+                    sys.exit(1)
+                else:
+                    log.info("Local testing complete, exiting.")
+                    sys.exit(0)
