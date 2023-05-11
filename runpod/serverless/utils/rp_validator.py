@@ -79,7 +79,7 @@ def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]
 
         # Check lambda constraints.
         if "constraints" in rules:
-            if not rules['constraints'](raw_input[key]):
+            if not rules['constraints'](validated_input[key]):
                 _add_error(error_list, CONSTRAINTS_ERROR.format(key))
 
     validation_return = {"validated_input": validated_input}
