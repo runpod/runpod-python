@@ -69,8 +69,8 @@ def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]
 
     for key, rules in schema.items():
         # Enforce floats to be floats.
-        if rules['type'] is float and type(raw_input[key]) in [int, float]:
-            validated_input[key] = float(raw_input[key])
+        if rules['type'] is float and type(validated_input[key]) in [int, float]:
+            validated_input[key] = float(validated_input[key])
 
         # Check for the correct type.
         if not isinstance(validated_input[key], rules['type']) and raw_input.get(key, False):
