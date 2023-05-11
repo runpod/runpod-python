@@ -73,7 +73,7 @@ def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]
             validated_input[key] = float(raw_input[key])
 
         # Check for the correct type.
-        if not isinstance(validated_input[key], rules['type']) and raw_input.get(key, None) is not None:
+        if not isinstance(validated_input[key], rules['type']) and raw_input.get(key, False):
             _add_error(
                 error_list, f"{key} should be {rules['type']} type, not {type(raw_input[key])}.")
 
