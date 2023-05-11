@@ -11,7 +11,7 @@ def log(message, level='INFO'):
     '''
     Log message to stdout if RUNPOD_DEBUG is true.
     '''
-    set_level = os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG').upper()
+    set_level = os.environ.get('RUNPOD_DEBUG_LEVEL', 'INFO').upper()
     level = level.ljust(7)
 
     if os.environ.get('RUNPOD_DEBUG', 'true').lower() != 'true':
