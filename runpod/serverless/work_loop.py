@@ -35,7 +35,7 @@ async def start_worker(config):
         start_ping()
 
         while True:
-            job = await get_job(session)
+            job = await get_job(session, config)
 
             if job is None:
                 log.info("No job available, waiting for the next one.")

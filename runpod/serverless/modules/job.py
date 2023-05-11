@@ -33,7 +33,7 @@ def _get_local():
     return test_inputs
 
 
-async def get_job(session):
+async def get_job(session, config):
     """
     Get the job from the queue.
     """
@@ -43,6 +43,9 @@ async def get_job(session):
         if _IS_LOCAL_TEST:
             log.warn("RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local")
             next_job = _get_local()
+        elif config.get("test_input", None) is not None:
+            log.warn("test_input set, using test_input as job input")
+            next_job = config["test_input"]
         else:
             async with session.get(JOB_GET_URL) as response:
                 next_job = await response.json()

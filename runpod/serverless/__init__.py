@@ -2,9 +2,14 @@
 
 import os
 import asyncio
+import argparse
 
 from . import work_loop
 from .modules import rp_fastapi
+
+# Grab runtime arguments
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_input", type=str, default=None)
 
 
 def _get_realtime_port() -> int:
@@ -23,6 +28,12 @@ def start(config):
     """
     Starts the serverless worker.
     """
+    args = parser.parse_args()
+
+    # Set test input, if provided
+    if args.test_input is not None:
+        config["test_input"] = args.test_input
+
     realtime_port = _get_realtime_port()
     realtime_concurrency = _get_realtime_concurrency()
 
