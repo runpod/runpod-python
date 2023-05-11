@@ -1,6 +1,7 @@
 """Allows serverless to be recognized as a package."""
 
 import os
+import json
 import asyncio
 import argparse
 
@@ -32,7 +33,7 @@ def start(config):
 
     # Set test input, if provided
     if args.test_input is not None:
-        config["test_input"] = args.test_input
+        config["test_input"] = json.loads(args.test_input)
 
     realtime_port = _get_realtime_port()
     realtime_concurrency = _get_realtime_concurrency()
