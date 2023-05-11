@@ -40,12 +40,12 @@ async def get_job(session, config):
     next_job = None
 
     try:
-        if _IS_LOCAL_TEST:
-            log.warn("RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local")
-            next_job = _get_local()
-        elif config.get("test_input", None) is not None:
+        if config.get("test_input", None) is not None:
             log.warn("test_input set, using test_input as job input")
             next_job = config["test_input"]
+        elif _IS_LOCAL_TEST:
+            log.warn("RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local")
+            next_job = _get_local()
         else:
             async with session.get(JOB_GET_URL) as response:
                 next_job = await response.json()
