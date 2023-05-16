@@ -1,6 +1,7 @@
 """Allows serverless to be recognized as a package."""
 
 import os
+import sys
 import json
 import asyncio
 import argparse
@@ -10,7 +11,8 @@ from .modules import rp_fastapi
 
 # Grab runtime arguments
 parser = argparse.ArgumentParser()
-parser.add_argument("--test_input", type=str, default=None)
+parser.add_argument("--test_input", type=str, default=None,
+                    help="Test input for the worker, formatted as JSON.")
 
 
 def _get_realtime_port() -> int:
@@ -29,7 +31,13 @@ def start(config):
     """
     Starts the serverless worker.
     """
-    args = parser.parse_args()
+    logging_level = os.environ.get("RUNPOD_DEBUG_LEVEL", "INFO").upper()
+    print(f"RunPod serverless working starting. | Log level: {logging_level}")
+
+    args, unknown = parser.parse_known_args()
+
+    # Modify sys.argv to remove the recognized arguments
+    sys.argv = [sys.argv[0]] + unknown
 
     # Set test input, if provided
     if args.test_input is not None:
