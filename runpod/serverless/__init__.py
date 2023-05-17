@@ -31,9 +31,6 @@ def start(config):
     """
     Starts the serverless worker.
     """
-    logging_level = os.environ.get("RUNPOD_DEBUG_LEVEL", "INFO").upper()
-    print(f"RunPod serverless working starting. | Log level: {logging_level}")
-
     args, unknown = parser.parse_known_args()
 
     # Modify sys.argv to remove the recognized arguments
