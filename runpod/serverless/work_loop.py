@@ -41,7 +41,7 @@ async def start_worker(config):
                 log.info("No job available, waiting for the next one.")
                 continue
 
-            if job["input"] is None:
+            if "input" not in job or job["input"] is None:
                 log.error(f"Job {job['id']} has no input parameter provided. Skipping this job.")
                 continue
 
