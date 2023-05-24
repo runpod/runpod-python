@@ -41,14 +41,15 @@ async def start_worker(config):
                 log.info("No job available, waiting for the next one.")
                 continue
 
-            if job["input"] is None:
-                log.error(f"Job {job['id']} has no input parameter provided. Skipping this job.")
-                continue
-
             set_job_id(job["id"])
-
             log.info(f"Processing job {job['id']}")
-            job_result = run_job(config["handler"], job)
+
+            if job.get('input') is None:
+                error_msg = f"Job {job['id']} has no input parameter. Unable to run."
+                log.error(error_msg)
+                job_result = {"error": error_msg}
+            else:
+                job_result = run_job(config["handler"], job)
 
             # If refresh_worker is set, pod will be reset after job is complete.
             if config.get("refresh_worker", False):
