@@ -52,6 +52,10 @@ async def get_job(session, config):
                 next_job = await response.json()
                 log.debug(f"Retrieved remote job: {next_job}")
 
+        if next_job.get("id", None) is None:
+            log.error("Job has no id, unable to process.")
+            next_job = None
+
         if next_job is not None:
             log.info(f"Received job: {next_job['id']}")
     except Exception as err:  # pylint: disable=broad-except

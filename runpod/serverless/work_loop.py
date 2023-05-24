@@ -44,7 +44,7 @@ async def start_worker(config):
             set_job_id(job["id"])
             log.info(f"Processing job {job['id']}")
 
-            if job.get('input') is None:
+            if job.get('input', None) is None:
                 error_msg = f"Job {job['id']} has no input parameter. Unable to run."
                 log.error(error_msg)
                 job_result = {"error": error_msg}
