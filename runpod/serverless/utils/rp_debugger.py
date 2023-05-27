@@ -42,16 +42,9 @@ class Checkpoints:
             Checkpoints.__instance = object.__new__(cls)
         return Checkpoints.__instance
 
-    def __init__(self, checkpoint_list=None):
+    def __init__(self):
         self.checkpoints = []
         self.name_lookup = {}
-
-        self.persistent_checkpoints = checkpoint_list if checkpoint_list else []
-
-        if checkpoint_list is not None:
-
-            for checkpoint in checkpoint_list:
-                self.add(checkpoint['name'])
 
     def add(self, name):
         '''
@@ -113,26 +106,42 @@ class Checkpoints:
         self.checkpoints = []
         self.name_lookup = {}
 
-        for name in self.persistent_checkpoints:
-            self.add(name)
 
-
-def benchmark(function):
+class LineTimer:
     '''
-    A decorator to benchmark a function.
+    A utility that can be used to time code execution using the with statement.
+    When used the times should be added to the checkpoints object.
     '''
-    def wrapper(*args, **kwargs):
-        checkpoints = Checkpoints()
-        checkpoints.add(function.__name__)
-        checkpoints.start(function.__name__)
 
-        result = function(*args, **kwargs)
+    def __init__(self, name):
+        self.checkpoints = Checkpoints()
+        self.name = name
 
-        checkpoints.stop(function.__name__)
+    def __enter__(self):
+        self.checkpoints.start(self.name)
+
+    def __exit__(self, *args):
+        self.checkpoints.stop(self.name)
+
+
+class FunctionTimer:
+    '''
+    A class-based decorator to benchmark a function.
+    '''
+
+    def __init__(self, function):
+        self.function = function
+        self.checkpoints = Checkpoints()
+
+    def __call__(self, *args, **kwargs):
+        self.checkpoints.add(self.function.__name__)
+        self.checkpoints.start(self.function.__name__)
+
+        result = self.function(*args, **kwargs)
+
+        self.checkpoints.stop(self.function.__name__)
 
         return result
-
-    return wrapper
 
 
 def get_debugger_output():
