@@ -4,6 +4,9 @@ Handles getting stuff from environment variables and updating the global state l
 
 import os
 import uuid
+import time
+
+REFERENCE_COUNT_ZERO = time.perf_counter()
 
 CURRENT_JOB_ID = None
 

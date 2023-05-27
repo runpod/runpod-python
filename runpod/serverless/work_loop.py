@@ -11,7 +11,7 @@ import aiohttp
 import runpod.serverless.modules.logging as log
 from .modules.heartbeat import start_ping
 from .modules.job import get_job, run_job, send_result
-from .modules.worker_state import set_job_id
+from .modules.worker_state import REFERENCE_COUNT_ZERO, set_job_id
 from .utils import rp_debugger
 
 
@@ -69,6 +69,9 @@ async def start_worker(config):
 
                 # IMPORTANT: Should be stored at top level of job_result
                 job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
+
+                worker_start_time = job_result["output"]["rp_debugger"]["worker_start_time"]
+                job_result["output"]["rp_debugger"]["initialization_time"] = worker_start_time
 
             await send_result(session, job_result, job)
 

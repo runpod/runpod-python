@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import time
 import asyncio
 import argparse
 
@@ -58,6 +59,7 @@ def start(config):
     """
     Starts the serverless worker.
     """
+    config["reference_counter_start"] = time.perf_counter()
     config = _set_config_args(config)
 
     realtime_port = _get_realtime_port()
