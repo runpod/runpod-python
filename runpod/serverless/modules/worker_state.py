@@ -6,7 +6,7 @@ import os
 import uuid
 import time
 
-REFERENCE_COUNT_ZERO = time.perf_counter()
+REF_COUNT_ZERO = time.perf_counter()
 
 CURRENT_JOB_ID = None
 
