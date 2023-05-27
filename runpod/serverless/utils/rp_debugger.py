@@ -5,7 +5,9 @@ A collection of functions to help with debugging.
 '''
 
 import time
+import datetime
 import platform
+import cpuinfo
 
 
 class Checkpoints:
@@ -71,6 +73,7 @@ class Checkpoints:
 
         index = self.name_lookup[name]
         self.checkpoints[index]['start'] = time.perf_counter()
+        self.checkpoints[index]['start_utc'] = datetime.datetime.utcnow().isoformat() + 'Z'
 
     def stop(self, name):
         '''
@@ -85,6 +88,7 @@ class Checkpoints:
             raise KeyError('Checkpoint has not been started.')
 
         self.checkpoints[index]['end'] = time.perf_counter()
+        self.checkpoints[index]['stop_utc'] = datetime.datetime.utcnow().isoformat() + 'Z'
 
     def get_checkpoints(self):
         '''
@@ -94,8 +98,9 @@ class Checkpoints:
         for checkpoint in self.checkpoints:
             if 'start' not in checkpoint or 'end' not in checkpoint:
                 continue
-
-            checkpoint['duration_ms'] = checkpoint['end'] - checkpoint['start']
+            start_time = checkpoint['start']
+            end_time = checkpoint['end']
+            checkpoint['duration_ms'] = (end_time - start_time) * 1000
             results.append(checkpoint)
 
         return results
@@ -159,7 +164,7 @@ def get_debugger_output():
 
     system_info = {
         'os': f"{platform.system()} {platform.release()}",
-        'processor': platform.processor(),
+        'processor': cpuinfo.get_cpu_info()['brand_raw'],
         'python_version': platform.python_version(),
     }
 

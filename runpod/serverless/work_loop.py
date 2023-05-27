@@ -66,7 +66,9 @@ async def start_worker(config):
 
             if config["rp_args"].get("rp_debugger", False):
                 log.debug("rp_debugger flag set, return debugger output.")
-                job_result["rp_debugger"] = rp_debugger.get_debugger_output()
+
+                # IMPORTANT: Should be stored at top level of job_result
+                job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
 
             await send_result(session, job_result, job)
 
