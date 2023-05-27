@@ -97,6 +97,7 @@ class Checkpoints:
             checkpoint['duration_ms'] = checkpoint['end'] - checkpoint['start']
             results.append(checkpoint)
 
+        print(f"results: {results}")
         return results
 
     def clear(self):

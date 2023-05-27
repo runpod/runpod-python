@@ -1,6 +1,7 @@
 '''
 Unit tests for the debugger utility functions.
 '''
+# pylint: disable=missing-docstring
 
 import time
 import unittest
