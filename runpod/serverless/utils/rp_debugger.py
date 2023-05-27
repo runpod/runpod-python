@@ -5,6 +5,7 @@ A collection of functions to help with debugging.
 '''
 
 import time
+import platform
 
 
 class Checkpoints:
@@ -150,10 +151,19 @@ class FunctionTimer:  # pylint: disable=too-few-public-methods
 
 def get_debugger_output():
     '''
-    Get the debugger output.
+    Return the debugger output.
     '''
     checkpoints = Checkpoints()
     ckpt_results = checkpoints.get_checkpoints()
     checkpoints.clear()
 
-    return ckpt_results
+    system_info = {
+        'os': f"{platform.system()} {platform.release()}",
+        'processor': platform.processor(),
+        'python_version': platform.python_version(),
+    }
+
+    return {
+        'system_info': system_info,
+        'checkpoints': ckpt_results,
+    }

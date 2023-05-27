@@ -49,10 +49,11 @@ async def get_job(session, config):
             next_job = _get_local()
         else:
             async with session.get(JOB_GET_URL) as response:
-
-                log.debug(f"Retrieved job response: {response}")  # TESTING
                 if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
+                    return None
+                elif response.status == 204:
+                    log.debug("No job found")
                     return None
 
                 next_job = await response.json()
