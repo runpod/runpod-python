@@ -70,8 +70,8 @@ async def start_worker(config):
                 # IMPORTANT: Should be stored at top level of job_result
                 job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
 
-                ready_delay = job_result["output"]["rp_debugger"]["worker_start_time"] - REF_COUNT_ZERO
-                job_result["output"]["rp_debugger"]["ready_delay"] = ready_delay
+                ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
+                job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
 
             await send_result(session, job_result, job)
 
