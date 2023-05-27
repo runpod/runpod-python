@@ -42,19 +42,19 @@ async def get_job(session, config):
     try:
         if config["rp_args"].get("test_input", None):
             log.warn("test_input set, using test_input as job input")
-            next_job = config["test_input"]
+            next_job = config["rp_args"]["test_input"]
             next_job["id"] = "test_input_provided"
         elif _IS_LOCAL_TEST:
             log.warn("RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local")
             next_job = _get_local()
         else:
             async with session.get(JOB_GET_URL) as response:
-                if response.status != 200:
-                    log.error(f"Failed to get job, status code: {response.status}")
+                if response.status == 204:
+                    log.debug("No content, no job to process.")
                     return None
 
-                if response.status == 204:
-                    log.debug("No job found")
+                if response.status != 200:
+                    log.error(f"Failed to get job, status code: {response.status}")
                     return None
 
                 next_job = await response.json()
