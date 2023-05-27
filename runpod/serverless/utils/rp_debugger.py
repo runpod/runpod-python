@@ -10,6 +10,14 @@ import platform
 import cpuinfo
 
 
+# ---------------------------------------------------------------------------- #
+#                                  System Info                                 #
+# ---------------------------------------------------------------------------- #
+OS_INFO = f"{platform.system()} {platform.release()}"
+PROCESSOR = cpuinfo.get_cpu_info()['brand_raw']
+PYTHON_VERSION = platform.python_version()
+
+
 class Checkpoints:
     '''
     A singleton class to store checkpoint times.
@@ -167,12 +175,12 @@ def get_debugger_output():
     checkpoints.clear()
 
     system_info = {
-        'os': f"{platform.system()} {platform.release()}",
-        'processor': cpuinfo.get_cpu_info()['brand_raw'],
-        'python_version': platform.python_version(),
+        'os': OS_INFO,
+        'processor': PROCESSOR,
+        'python_version': PYTHON_VERSION,
     }
 
     return {
         'system_info': system_info,
-        'checkpoints': ckpt_results,
+        'timestamps': ckpt_results,
     }
