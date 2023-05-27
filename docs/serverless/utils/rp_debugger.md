@@ -1,64 +1,99 @@
-# rp_debugger.py
+# runpod.serverless.rp_debugger
 
-The `rp_debugger.py` module provides a collection of debugging tools for the RunPod serverless platform. It includes a `Checkpoints` class for time management, a decorator for function benchmarking, and a function to fetch debugger output.
+The `runpod.serverless.rp_debugger` module provides a set of classes and functions to help with debugging your serverless functions.
 
-Here's how you can use them in your code:
+## System Info
+
+This script automatically gathers system information including the Operating System, Processor, and Python version.
 
 ## Checkpoints
 
-The `Checkpoints` class is a singleton that provides a way to manage and store timestamps associated with named checkpoints.
+This is a singleton class to store checkpoint times. Each checkpoint records the start and end time (as `perf_counter` time and as UTC time), and calculates the duration in milliseconds. You can add, start, and stop checkpoints using the methods `add`, `start`, and `stop`.
+
+### Example Usage:
 
 ```python
 from rp_debugger import Checkpoints
 
-# Initialize Checkpoints
 checkpoints = Checkpoints()
 
 # Add a checkpoint
 checkpoints.add('checkpoint_name')
 
-# Start the checkpoint
+# Start a checkpoint
 checkpoints.start('checkpoint_name')
 
-# Stop the checkpoint
+# Stop a checkpoint
 checkpoints.stop('checkpoint_name')
-
-# Get the results
-results = checkpoints.get_checkpoints()
 ```
 
-### Methods
+## LineTimer
 
-- `add(name: str)`: Adds a new checkpoint with the given name.
+This is a context manager that you can use with the `with` statement to time the execution of a specific block of code. When used, the times should be added to the `Checkpoints` object.
 
-- `start(name: str)`: Starts the timing for the checkpoint with the given name.
-
-- `stop(name: str)`: Stops the timing for the checkpoint with the given name.
-
-- `get_checkpoints()`: Returns the list of checkpoints, including their durations.
-
-## benchmark(function)
-
-This is a decorator that can be used to automatically time a function's execution.
+### Example Usage:
 
 ```python
-from rp_debugger import benchmark
+from rp_debugger import LineTimer
 
-@benchmark
-def my_function():
+with LineTimer('my_block_of_code'):
     # Your code here
+    pass
 ```
 
-The `benchmark` decorator automatically starts and stops a checkpoint with the same name as the function, and adds the duration to the checkpoints list.
+## FunctionTimer
 
-## get_debugger_output()
+This is a class-based decorator that you can use to measure the time it takes for a function to execute.
 
-This function returns the current state of the debugger, which includes a list of all checkpoints and their durations. You can call this function at any point in your code to see the current debugger state.
+### Example Usage:
+
+```python
+from rp_debugger import FunctionTimer
+
+@FunctionTimer
+def my_function():
+    # Your code here
+    pass
+```
+
+## get_debugger_output
+
+This function returns the debugger output, including system information and timestamps of all the checkpoints.
+
+### Example Usage:
 
 ```python
 from rp_debugger import get_debugger_output
 
-debugger_output = get_debugger_output()
+output = get_debugger_output()
 ```
 
-This would return the list of checkpoints with their respective durations.
+## Example with all combined:
+
+```python
+from rp_debugger import Checkpoints, LineTimer, FunctionTimer, get_debugger_output
+
+checkpoints = Checkpoints()
+
+checkpoints.add('checkpoint_name')
+checkpoints.start('checkpoint_name')
+
+with LineTimer('my_block_of_code'):
+    # Your code here
+    pass
+
+checkpoints.stop('checkpoint_name')
+
+@FunctionTimer
+def my_function():
+    # Your code here
+    pass
+
+my_function()
+
+output = get_debugger_output()
+
+print(output)
+```
+
+In the above example, `output` will be a dictionary containing system information and checkpoint timings. The `Checkpoints` object can be reused multiple times across your code, and the timings will be aggregated until you call `get_debugger_output`, at which point they will be cleared.
