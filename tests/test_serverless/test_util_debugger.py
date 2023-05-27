@@ -1,6 +1,12 @@
+'''
+Unit tests for the debugger utility functions.
+'''
+
 import time
 import unittest
-from runpod.serverless import Checkpoints, LineTimer, FunctionTimer, get_debugger_output
+from runpod.serverless.utils.rp_debugger import(
+    Checkpoints, LineTimer, FunctionTimer, get_debugger_output
+)
 
 
 class TestDebugger(unittest.TestCase):
