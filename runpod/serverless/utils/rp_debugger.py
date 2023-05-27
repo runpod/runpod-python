@@ -98,6 +98,13 @@ class Checkpoints:
 
         return results
 
+    def clear(self):
+        '''
+        Clear the checkpoints.
+        '''
+        self.checkpoints = []
+        self.name_lookup = {}
+
 
 def benchmark(function):
     '''
@@ -122,4 +129,7 @@ def get_debugger_output():
     Get the debugger output.
     '''
     checkpoints = Checkpoints()
-    return checkpoints.get_checkpoints()
+    ckpt_results = checkpoints.get_checkpoints()
+    checkpoints.clear()
+
+    return ckpt_results
