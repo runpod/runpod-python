@@ -116,6 +116,7 @@ class LineTimer:
     def __init__(self, name):
         self.checkpoints = Checkpoints()
         self.name = name
+        self.checkpoints.add(self.name)
 
     def __enter__(self):
         self.checkpoints.start(self.name)
@@ -124,7 +125,7 @@ class LineTimer:
         self.checkpoints.stop(self.name)
 
 
-class FunctionTimer:
+class FunctionTimer:  # pylint: disable=too-few-public-methods
     '''
     A class-based decorator to benchmark a function.
     '''
