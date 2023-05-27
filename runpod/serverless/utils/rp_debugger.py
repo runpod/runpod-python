@@ -94,6 +94,7 @@ class Checkpoints:
         '''
         results = []
         for checkpoint in self.checkpoints:
+            print(f"checkpoint: {checkpoint}")
             if 'start' not in checkpoint or 'end' not in checkpoint:
                 continue
 
