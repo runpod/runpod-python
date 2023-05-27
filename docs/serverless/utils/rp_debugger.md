@@ -1,6 +1,6 @@
 # runpod.serverless.rp_debugger
 
-The `runpod.serverless.rp_debugger` module provides a set of classes and functions to help with debugging your serverless functions.
+The `runpod.serverless.rp_debugger` module provides a set of classes and functions to help with debugging your serverless functions. To enable the debugger and return the results with you job output, set the argument flag `--rp_debugger` when launching the file containing your serverless handler.
 
 ## System Info
 
