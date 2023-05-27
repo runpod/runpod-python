@@ -40,7 +40,7 @@ async def get_job(session, config):
     next_job = None
 
     try:
-        if config.get("test_input", None) is not None:
+        if config["rp_args"].get("test_input", None):
             log.warn("test_input set, using test_input as job input")
             next_job = config["test_input"]
             next_job["id"] = "test_input_provided"
@@ -62,7 +62,7 @@ async def get_job(session, config):
             log.error("Job has no id, unable to process.")
             next_job = None
 
-        if next_job is not None:
+        if next_job:
             log.info(f"Received job: {next_job['id']}")
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while getting job: {err}")

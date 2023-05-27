@@ -12,15 +12,23 @@ import runpod.serverless.modules.logging as log
 from .modules.heartbeat import start_ping
 from .modules.job import get_job, run_job, send_result
 from .modules.worker_state import set_job_id
+from .utils import rp_debugger
+
 
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
 
 def _get_auth_header() -> dict:
+    '''
+    Returns the authorization header for the worker.
+    '''
     return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
 
 def _is_local_testing() -> bool:
+    '''
+    Returns True if the environment variable RUNPOD_WEBHOOK_GET_JOB is not set.
+    '''
     return os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
 
 
@@ -55,6 +63,10 @@ async def start_worker(config):
             if config.get("refresh_worker", False):
                 log.info(f"Refresh worker flag set, stopping pod after job {job['id']}.")
                 job_result["stopPod"] = True
+
+            if config["rp_args"].get("rp_debugger", False):
+                log.debug("rp_debugger flag set, return debugger output.")
+                job_result["rp_debugger"] = rp_debugger.get_debugger_output()
 
             await send_result(session, job_result, job)
 
