@@ -59,6 +59,8 @@ class Checkpoints:
             'name': name
         })
 
+        print(f"checkpoints after add: {self.checkpoints}")
+
         index = len(self.checkpoints) - 1
         self.name_lookup[name] = index
 
