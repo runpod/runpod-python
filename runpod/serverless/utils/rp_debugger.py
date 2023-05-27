@@ -76,7 +76,7 @@ class Checkpoints:
         Stop a checkpoint.
         '''
         if name not in self.name_lookup:
-            raise KeyError('Checkpoint name does not exist.')
+            raise KeyError(f"Checkpoint name '{name}' does not exist.")
 
         index = self.name_lookup[name]
 
@@ -136,11 +136,13 @@ class FunctionTimer:  # pylint: disable=too-few-public-methods
 
     def __call__(self, *args, **kwargs):
         self.checkpoints.add(self.function.__name__)
-        self.checkpoints.start(self.function.__name__)
 
-        result = self.function(*args, **kwargs)
-
-        self.checkpoints.stop(self.function.__name__)
+        try:
+            self.checkpoints.start(self.function.__name__)
+            result = self.function(*args, **kwargs)
+        finally:
+            if self.function.__name__ in self.checkpoints.name_lookup:
+                self.checkpoints.stop(self.function.__name__)
 
         return result
 
