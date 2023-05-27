@@ -51,6 +51,7 @@ class Checkpoints:
         Add a checkpoint.
         Returns the index of the checkpoint.
         '''
+        print(f"add: {name}")
         if name in self.name_lookup:
             raise KeyError('Checkpoint name already exists.')
 
@@ -65,6 +66,7 @@ class Checkpoints:
         '''
         Start a checkpoint.
         '''
+        print(f"start: {name}")
         if name not in self.name_lookup:
             raise KeyError('Checkpoint name does not exist.')
 
@@ -75,6 +77,7 @@ class Checkpoints:
         '''
         Stop a checkpoint.
         '''
+        print(f"stop: {name}")
         if name not in self.name_lookup:
             raise KeyError(f"Checkpoint name '{name}' does not exist.")
 
