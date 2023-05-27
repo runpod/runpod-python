@@ -101,6 +101,10 @@ class Checkpoints:
             start_time = checkpoint['start']
             end_time = checkpoint['end']
             checkpoint['duration_ms'] = (end_time - start_time) * 1000
+
+            checkpoint.pop('start')
+            checkpoint.pop('end')
+
             results.append(checkpoint)
 
         return results
