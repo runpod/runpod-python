@@ -51,16 +51,12 @@ class Checkpoints:
         Add a checkpoint.
         Returns the index of the checkpoint.
         '''
-        print(f'add: Instance ID: {id(self)}')
-        print(f"add: {name}")
         if name in self.name_lookup:
             raise KeyError('Checkpoint name already exists.')
 
         self.checkpoints.append({
             'name': name
         })
-
-        print(f"checkpoints after add: {self.checkpoints}")
 
         index = len(self.checkpoints) - 1
         self.name_lookup[name] = index
@@ -69,8 +65,6 @@ class Checkpoints:
         '''
         Start a checkpoint.
         '''
-        print(f'start: Instance ID: {id(self)}')
-        print(f"start: {name}")
         if name not in self.name_lookup:
             raise KeyError('Checkpoint name does not exist.')
 
@@ -81,8 +75,6 @@ class Checkpoints:
         '''
         Stop a checkpoint.
         '''
-        print(f'stop: Instance ID: {id(self)}')
-        print(f"stop: {name}")
         if name not in self.name_lookup:
             raise KeyError(f"Checkpoint name '{name}' does not exist.")
 
@@ -97,25 +89,20 @@ class Checkpoints:
         '''
         Get the results of the checkpoints.
         '''
-        print(f'get_checkpoints: Instance ID: {id(self)}')
         results = []
-        print(f"checkpoints: {self.checkpoints}")
         for checkpoint in self.checkpoints:
-            print(f"checkpoint: {checkpoint}")
             if 'start' not in checkpoint or 'end' not in checkpoint:
                 continue
 
             checkpoint['duration_ms'] = checkpoint['end'] - checkpoint['start']
             results.append(checkpoint)
 
-        print(f"results: {results}")
         return results
 
     def clear(self):
         '''
         Clear the checkpoints.
         '''
-        print(f'clear: Instance ID: {id(self)}')
         self.checkpoints = []
         self.name_lookup = {}
 
@@ -153,6 +140,7 @@ class FunctionTimer:  # pylint: disable=too-few-public-methods
         try:
             self.checkpoints.start(self.function.__name__)
             result = self.function(*args, **kwargs)
+
         finally:
             if self.function.__name__ in self.checkpoints.name_lookup:
                 self.checkpoints.stop(self.function.__name__)
