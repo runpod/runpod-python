@@ -93,6 +93,7 @@ class Checkpoints:
         Get the results of the checkpoints.
         '''
         results = []
+        print(f"checkpoints: {self.checkpoints}")
         for checkpoint in self.checkpoints:
             print(f"checkpoint: {checkpoint}")
             if 'start' not in checkpoint or 'end' not in checkpoint:
