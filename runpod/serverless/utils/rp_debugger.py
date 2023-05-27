@@ -37,13 +37,21 @@ class Checkpoints:
     '''
     __instance = None
 
-    checkpoints = []
-    name_lookup = {}
-
     def __new__(cls):
         if Checkpoints.__instance is None:
             Checkpoints.__instance = object.__new__(cls)
         return Checkpoints.__instance
+
+    def __init__(self, checkpoint_list=None):
+        self.checkpoints = []
+        self.name_lookup = {}
+
+        self.persistent_checkpoints = checkpoint_list if checkpoint_list else []
+
+        if checkpoint_list is not None:
+
+            for checkpoint in checkpoint_list:
+                self.add(checkpoint['name'])
 
     def add(self, name):
         '''
@@ -104,6 +112,9 @@ class Checkpoints:
         '''
         self.checkpoints = []
         self.name_lookup = {}
+
+        for name in self.persistent_checkpoints:
+            self.add(name)
 
 
 def benchmark(function):
