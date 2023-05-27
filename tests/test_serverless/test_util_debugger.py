@@ -21,7 +21,7 @@ class TestDebugger(unittest.TestCase):
         time.sleep(0.1)
         self.checkpoints.stop('checkpoint1')
 
-        output = get_debugger_output()
+        output = get_debugger_output()['checkpoints']
 
         self.assertEqual(len(output), 1)
         self.assertEqual(output[0]['name'], 'checkpoint1')
@@ -39,7 +39,7 @@ class TestDebugger(unittest.TestCase):
         with LineTimer('line_timer'):
             time.sleep(0.1)
 
-        output = get_debugger_output()
+        output = get_debugger_output()['checkpoints']
 
         self.assertEqual(len(output), 1)
         self.assertEqual(output[0]['name'], 'line_timer')
@@ -52,7 +52,7 @@ class TestDebugger(unittest.TestCase):
 
         func_to_time()
 
-        output = get_debugger_output()
+        output = get_debugger_output()['checkpoints']
 
         self.assertEqual(len(output), 1)
         self.assertEqual(output[0]['name'], 'func_to_time')
