@@ -52,7 +52,8 @@ async def get_job(session, config):
                 if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
                     return None
-                elif response.status == 204:
+
+                if response.status == 204:
                     log.debug("No job found")
                     return None
 
