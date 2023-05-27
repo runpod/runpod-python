@@ -36,16 +36,15 @@ class Checkpoints:
     checkpoints.stop('checkpoint_name')
     '''
     __instance = None
+    checkpoints = []
+    name_lookup = {}
 
     def __new__(cls):
         if Checkpoints.__instance is None:
             Checkpoints.__instance = object.__new__(cls)
+            Checkpoints.__instance.checkpoints = []
+            Checkpoints.__instance.name_lookup = {}
         return Checkpoints.__instance
-
-    def __init__(self):
-        self.checkpoints = []
-        self.name_lookup = {}
-        print(f'__init__: Instance ID: {id(self)}')
 
     def add(self, name):
         '''
