@@ -25,10 +25,10 @@ def calculate_chunk_size(file_size: int) -> int:
     '''
     if file_size <= 1024*1024:  # 1 MB
         return 1024  # 1 KB
-    elif file_size <= 1024*1024*1024:  # 1 GB
+    if file_size <= 1024*1024*1024:  # 1 GB
         return 1024*1024  # 1 MB
-    else:
-        return 1024*1024*10  # 10 MB
+
+    return 1024*1024*10  # 10 MB
 
 
 def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[str]:
