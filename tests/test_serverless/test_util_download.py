@@ -20,7 +20,8 @@ def mock_requests_get(*args, **kwargs):
     Mocks requests.get
     '''
     headers = {
-        'Content-Disposition': 'attachment; filename="picture.jpg"'
+        'Content-Disposition': 'attachment; filename="picture.jpg"',
+        'Content-Length': '1000'
     }
 
     class MockResponse:
