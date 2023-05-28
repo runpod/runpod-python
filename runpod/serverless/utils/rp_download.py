@@ -20,41 +20,45 @@ import requests
 
 
 def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[str]:
-    '''
+    """
     Accepts a single URL or a list of URLs and downloads the files.
     Returns the list of downloaded file absolute paths.
     Saves the files in a directory called "downloaded_files" in the job directory.
-    '''
+    """
     download_directory = os.path.abspath(os.path.join('jobs', job_id, 'downloaded_files'))
     os.makedirs(download_directory, exist_ok=True)
 
     @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=3)
-    def download_file(url: str) -> bytes:
-        with requests.get(url, timeout=5) as response:
+    def download_file(url: str, path_to_save: str) -> str:
+        with requests.get(url, stream=True, timeout=5) as response:
             response.raise_for_status()
             content_disposition = response.headers.get('Content-Disposition')
             msg = message_from_string(f'Content-Disposition: {content_disposition}')
             params = dict(msg.items()) if content_disposition else {}
             file_extension = os.path.splitext(params.get('filename', ''))[1]
-            return response.content, file_extension
+
+            # write the content in chunks to the file
+            with open(path_to_save, 'wb') as file_path:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:  # filter out keep-alive chunks
+                        file_path.write(chunk)
+
+            return file_extension
 
     def download_file_to_path(url: str) -> str:
         if url is None:
             return None
 
+        file_name = f'{uuid.uuid4()}'
+        output_file_path = os.path.join(download_directory, file_name)
+
         try:
-            file_data, file_extension = download_file(url)
+            file_extension = download_file(url, output_file_path)
         except requests.exceptions.RequestException as err:
             print(f"Failed to download {url}: {err}")
             return None
 
-        file_name = f'{uuid.uuid4()}{file_extension}'
-        output_file_path = os.path.join(download_directory, file_name)
-
-        with open(output_file_path, 'wb') as output_file:
-            output_file.write(file_data)
-
-        return os.path.abspath(output_file_path)
+        return os.path.abspath(f"{output_file_path}{file_extension}")
 
     if isinstance(urls, str):
         urls = [urls]
