@@ -39,6 +39,12 @@ def mock_requests_get(*args, **kwargs):
             if 400 <= self.status_code < 600:
                 raise requests.exceptions.RequestException(f"Status code: {self.status_code}")
 
+        def iter_content(self, chunk_size=1024):
+            ''' Mocks iter_content method '''
+            length = len(self.content)
+            for i in range(0, length, chunk_size):
+                yield self.content[i:min(i + chunk_size, length)]
+
         def __enter__(self):
             return self
 
