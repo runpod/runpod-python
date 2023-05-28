@@ -19,6 +19,18 @@ import backoff
 import requests
 
 
+def calculate_chunk_size(file_size: int) -> int:
+    '''
+    Calculates the chunk size based on the file size.
+    '''
+    if file_size <= 1024*1024:  # 1 MB
+        return 1024  # 1 KB
+    elif file_size <= 1024*1024*1024:  # 1 GB
+        return 1024*1024  # 1 MB
+    else:
+        return 1024*1024*10  # 10 MB
+
+
 def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[str]:
     """
     Accepts a single URL or a list of URLs and downloads the files.
@@ -37,9 +49,12 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
             params = dict(msg.items()) if content_disposition else {}
             file_extension = os.path.splitext(params.get('filename', ''))[1]
 
+            file_size = int(response.headers.get('Content-Length', 0))
+            chunk_size = calculate_chunk_size(file_size)
+
             # write the content in chunks to the file
             with open(path_to_save, 'wb') as file_path:
-                for chunk in response.iter_content(chunk_size=1024):
+                for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:  # filter out keep-alive chunks
                         file_path.write(chunk)
 
