@@ -1,6 +1,7 @@
 aiohttp >= 3.8.4
 backoff == 2.2.1
 boto3 >= 1.26.142
+importlib-metadata == 6.6.0
 pillow >= 9.3.0
 py-cpuinfo == 9.0.0
 python-dotenv >= 0.21.0
