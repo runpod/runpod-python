@@ -189,3 +189,11 @@ def get_debugger_output():
         'system_info': system_info,
         'timestamps': ckpt_results,
     }
+
+
+def clear_debugger_output():
+    '''
+    Clear the debugger output.
+    '''
+    checkpoints = Checkpoints()
+    checkpoints.clear()

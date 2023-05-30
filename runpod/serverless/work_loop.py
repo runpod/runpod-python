@@ -66,12 +66,13 @@ async def start_worker(config):
 
             if config["rp_args"].get("rp_debugger", False):
                 log.debug("rp_debugger flag set, return debugger output.")
-
-                # IMPORTANT: Should be stored at top level of job_result
                 job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
 
                 ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
                 job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
+            else:
+                log.debug("rp_debugger flag not set, skipping debugger output.")
+                rp_debugger.clear_debugger_output()
 
             await send_result(session, job_result, job)
 

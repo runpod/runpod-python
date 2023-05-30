@@ -91,7 +91,8 @@ def _validate_input_against_schema(schema, validated_input, error_list):
                 validated_input[key] = float(validated_input[key])
 
             # Check for the correct type.
-            if validated_input[key] is not None and not isinstance(validated_input[key], rules['type']):
+            is_instance = isinstance(validated_input[key], rules['type'])
+            if validated_input[key] is not None and not is_instance:
                 _add_error(
                     error_list,
                     f"{key} should be {rules['type']} type, not {type(validated_input[key])}."
