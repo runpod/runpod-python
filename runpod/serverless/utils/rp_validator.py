@@ -93,7 +93,9 @@ def _validate_input_against_schema(schema, validated_input, error_list):
             # Check for the correct type.
             if not isinstance(validated_input[key], rules['type']):
                 _add_error(
-                    error_list, f"{key} should be {rules['type']} type, not {type(validated_input[key])}.")
+                    error_list,
+                    f"{key} should be {rules['type']} type, not {type(validated_input[key])}."
+                )
 
         # Check lambda constraints.
         if "constraints" in rules and not rules['constraints'](validated_input.get(key)):
