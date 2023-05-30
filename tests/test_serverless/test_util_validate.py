@@ -28,7 +28,7 @@ class TestValidator(unittest.TestCase):
         self.assertNotIn("errors", result)
         expected_output = self.raw_input.copy()
         expected_output["w"] = self.schema["w"]["default"]
-        self.assertEqual(result["validated_input"], self.raw_input)
+        self.assertEqual(result["validated_input"], expected_output)
 
     def test_validate_constraints_error(self):
         '''

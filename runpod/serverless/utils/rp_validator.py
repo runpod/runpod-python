@@ -76,8 +76,11 @@ def _validate_required_inputs_and_set_defaults(raw_input, schema, validated_inpu
             _add_error(error_list, MISSING_REQUIRED_ERROR.format(key))
         elif rules['required'] and key not in raw_input:
             _add_error(error_list, MISSING_REQUIRED_ERROR.format(key))
-        elif not rules['required'] and key not in raw_input and "default" in rules:
-            validated_input[key] = rules['default']
+        elif not rules['required'] and key not in raw_input:
+            if "default" in rules:
+                validated_input[key] = rules['default']
+            else:
+                _add_error(error_list, MISSING_DEFAULT_ERROR.format(key))
 
 
 def _validate_input_against_schema(schema, validated_input, error_list):
