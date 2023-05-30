@@ -9,13 +9,15 @@ import sys
 import aiohttp
 
 import runpod.serverless.modules.logging as log
-from .modules.heartbeat import start_ping
+from .modules.heartbeat import HeartbeatSender
 from .modules.job import get_job, run_job, send_result
 from .modules.worker_state import REF_COUNT_ZERO, set_job_id
 from .utils import rp_debugger
 
 
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
+
+heartbeat = HeartbeatSender()
 
 
 def _get_auth_header() -> dict:
@@ -40,7 +42,7 @@ async def start_worker(config):
 
     async with aiohttp.ClientSession(headers=auth_header, timeout=_TIMEOUT) as session:
 
-        start_ping()
+        heartbeat.start_ping()
 
         while True:
             job = await get_job(session, config)

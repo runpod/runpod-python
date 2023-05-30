@@ -9,7 +9,10 @@ from pydantic import BaseModel
 
 from .job import run_job
 from .worker_state import set_job_id
-from .heartbeat import start_ping
+from .heartbeat import HeartbeatSender
+
+
+heartbeat = HeartbeatSender()
 
 
 class Job(BaseModel):
@@ -29,7 +32,7 @@ class WorkerAPI:
         3. Sets the handler for processing jobs.
         '''
         # Start the heartbeat thread.
-        start_ping()
+        heartbeat.start_ping()
 
         # Set the handler for processing jobs.
         self.config = {"handler": handler}

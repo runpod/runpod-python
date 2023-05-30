@@ -1,6 +1,7 @@
 """Enables heartbeats."""
 
 import os
+import time
 import threading
 
 import requests
@@ -12,36 +13,47 @@ _session = requests.Session()
 _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
 
 
-def _send_ping(ping_params=None):
-    if PING_URL not in [None, 'PING_URL_NOT_SET']:
-        try:
-            result = _session.get(
-                PING_URL,
-                params=ping_params,
-                timeout=int(PING_INTERVAL / 1000)
-            )
+class HeartbeatSender:
+    ''' Sends heartbeats to the Runpod server. '''
 
-            log.info(f"Heartbeat Sent  URL: {PING_URL}  Status: {result.status_code}")
-            log.info(f"Heartbeat Sent  Interval: {PING_INTERVAL}ms  Params: {ping_params}")
+    def __init__(self):
+        self._thread = threading.Thread(target=self._run, daemon=True)
 
-        except Exception as err:  # pylint: disable=broad-except
-            log.error(f"Heartbeat Failed  URL: {PING_URL}  Params: {ping_params}")
-            log.error(f"Heartbeat Fail  Error: {err}")
+    def start_ping(self):
+        '''
+        Starts the heartbeat thread.
+        '''
+        self._thread.start()
 
+    def _run(self):
+        '''
+        Sends heartbeats to the Runpod server.
+        '''
+        while True:
+            self._send_ping()
+            time.sleep(int(PING_INTERVAL / 1000))
 
-def start_ping():
-    """
-    Pings the heartbeat endpoint at the specified interval.
-    """
-    job_id = get_current_job_id()
+    def _send_ping(self):
+        '''
+        Sends a heartbeat to the Runpod server.
+        '''
+        job_id = get_current_job_id()
 
-    ping_params = {
-        'job_id': job_id,
-    } if job_id is not None else None
+        ping_params = {
+            'job_id': job_id,
+        } if job_id is not None else None
 
-    _send_ping(ping_params)
+        if PING_URL not in [None, 'PING_URL_NOT_SET']:
+            try:
+                result = _session.get(
+                    PING_URL,
+                    params=ping_params,
+                    timeout=int(PING_INTERVAL / 1000)
+                )
 
-    log.debug(f"Scheduling next heartbeat in {PING_INTERVAL}ms")
-    heartbeat_thread = threading.Timer(int(PING_INTERVAL / 1000), start_ping)
-    heartbeat_thread.daemon = True
-    heartbeat_thread.start()
+                log.info(f"Heartbeat Sent  URL: {PING_URL}  Status: {result.status_code}")
+                log.info(f"Heartbeat Sent  Interval: {PING_INTERVAL}ms  Params: {ping_params}")
+
+            except Exception as err:  # pylint: disable=broad-except
+                log.error(f"Heartbeat Failed  URL: {PING_URL}  Params: {ping_params}")
+                log.error(f"Heartbeat Fail  Error: {err}")

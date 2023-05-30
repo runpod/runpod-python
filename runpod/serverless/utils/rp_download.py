@@ -13,15 +13,12 @@ import zipfile
 from typing import List, Union
 from urllib.parse import urlparse
 from email import message_from_string
-from importlib.metadata import version
 from concurrent.futures import ThreadPoolExecutor
 
 import backoff
 import requests
 
-HEADERS = {
-    "User-Agent": f"runpod-python/{version('runpod-python')} (https://runpod.io; support@runpod.io)"
-}
+HEADERS = {"User-Agent": "runpod-python/0.0.0 (https://runpod.io; support@runpod.io)"}
 
 
 def calculate_chunk_size(file_size: int) -> int:
