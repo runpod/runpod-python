@@ -21,8 +21,9 @@ def _add_error(error_list: List[str], message: str) -> None:
     error_list.append(message)
 
 
-def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]
-             ) -> Dict[str, Union[Dict[str, Any], List[str]]]:
+def validate(
+    raw_input: Dict[str, Any], schema: Dict[str, Any]
+) -> Dict[str, Union[Dict[str, Any], List[str]]]:
     '''
     Validates the input.
     Checks to see if the provided inputs match the expected types.
@@ -38,12 +39,26 @@ def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]
     error_list = []
     validated_input = raw_input.copy()
 
-    # Check for unexpected inputs.
+    # Separate the process into functions for better readability
+    _check_for_unexpected_inputs(raw_input, schema, error_list)
+    _validate_and_transform_schema_items(schema, error_list)
+    _validate_required_inputs_and_set_defaults(raw_input, schema, validated_input, error_list)
+    _validate_input_against_schema(schema, validated_input, error_list)
+
+    validation_return = {"validated_input": validated_input}
+    if error_list:
+        validation_return = {"errors": error_list}
+
+    return validation_return
+
+
+def _check_for_unexpected_inputs(raw_input, schema, error_list):
     for key in raw_input:
         if key not in schema:
             _add_error(error_list, UNEXPECTED_INPUT_ERROR.format(key))
 
-    # Check that items are dictionaries.
+
+def _validate_and_transform_schema_items(schema, error_list):
     for key, rules in schema.items():
         if not isinstance(rules, dict):
             try:
@@ -51,7 +66,8 @@ def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]
             except json.decoder.JSONDecodeError:
                 _add_error(error_list, SCHEMA_ERROR.format(key))
 
-    # Checks for missing required inputs or sets the default values.
+
+def _validate_required_inputs_and_set_defaults(raw_input, schema, validated_input, error_list):
     for key, rules in schema.items():
         if 'type' not in rules:
             _add_error(error_list, MISSING_TYPE_ERROR.format(key))
@@ -60,30 +76,22 @@ def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]
             _add_error(error_list, MISSING_REQUIRED_ERROR.format(key))
         elif rules['required'] and key not in raw_input:
             _add_error(error_list, MISSING_REQUIRED_ERROR.format(key))
-        elif rules['required'] and key not in raw_input and "default" not in rules:
-            _add_error(error_list, MISSING_DEFAULT_ERROR.format(key))
-        elif not rules['required'] and key not in raw_input and "default" not in rules:
-            _add_error(error_list, MISSING_DEFAULT_ERROR.format(key))
-        elif not rules['required'] and key not in raw_input:
-            validated_input[key] = raw_input.get(key, rules['default'])
+        elif not rules['required'] and key not in raw_input and "default" in rules:
+            validated_input[key] = rules['default']
 
+
+def _validate_input_against_schema(schema, validated_input, error_list):
     for key, rules in schema.items():
-        # Enforce floats to be floats.
-        if rules['type'] is float and type(validated_input[key]) in [int, float]:
-            validated_input[key] = float(validated_input[key])
+        if key in validated_input:
+            # Enforce floats to be floats.
+            if rules['type'] is float and type(validated_input[key]) in [int, float]:
+                validated_input[key] = float(validated_input[key])
 
-        # Check for the correct type.
-        if not isinstance(validated_input[key], rules['type']) and raw_input.get(key, False):
-            _add_error(
-                error_list, f"{key} should be {rules['type']} type, not {type(raw_input[key])}.")
+            # Check for the correct type.
+            if not isinstance(validated_input[key], rules['type']):
+                _add_error(
+                    error_list, f"{key} should be {rules['type']} type, not {type(validated_input[key])}.")
 
         # Check lambda constraints.
-        if "constraints" in rules:
-            if not rules['constraints'](validated_input[key]):
-                _add_error(error_list, CONSTRAINTS_ERROR.format(key))
-
-    validation_return = {"validated_input": validated_input}
-    if error_list:
-        validation_return = {"errors": error_list}
-
-    return validation_return
+        if "constraints" in rules and not rules['constraints'](validated_input.get(key)):
+            _add_error(error_list, CONSTRAINTS_ERROR.format(key))
