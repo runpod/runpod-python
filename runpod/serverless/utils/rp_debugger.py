@@ -14,7 +14,12 @@ import cpuinfo
 #                                  System Info                                 #
 # ---------------------------------------------------------------------------- #
 OS_INFO = f"{platform.system()} {platform.release()}"
-PROCESSOR = cpuinfo.get_cpu_info()['brand_raw']
+
+try:
+    PROCESSOR = cpuinfo.get_cpu_info()['brand_raw']
+except KeyError:
+    PROCESSOR = 'Unable to get processor info.'
+
 PYTHON_VERSION = platform.python_version()
 
 
