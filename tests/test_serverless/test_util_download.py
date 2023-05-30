@@ -77,6 +77,9 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         # Check that the url was called with requests.get
         self.assertIn('https://example.com/picture.jpg', mock_get.call_args_list[0][0])
 
+        # Check that the file has the correct extension
+        self.assertTrue(downloaded_files[0].endswith('.jpg'))
+
         mock_open_file.assert_called_once_with(downloaded_files[0], 'wb')
         mock_makedirs.assert_called_once_with(os.path.abspath(
             f'jobs/{JOB_ID}/downloaded_files'), exist_ok=True)
@@ -97,6 +100,9 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
 
         # Check that the url was called with requests.get
         self.assertIn(URL_LIST[1], mock_get.call_args_list[0][0])
+
+        # Check that the file has the correct extension
+        self.assertTrue(downloaded_files[0].endswith('.jpg'))
 
         mock_open_file.assert_called_once_with(downloaded_files[0], 'wb')
         mock_makedirs.assert_called_once_with(os.path.abspath(

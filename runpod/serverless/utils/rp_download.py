@@ -13,10 +13,15 @@ import zipfile
 from typing import List, Union
 from urllib.parse import urlparse
 from email import message_from_string
+from importlib.metadata import version
 from concurrent.futures import ThreadPoolExecutor
 
 import backoff
 import requests
+
+HEADERS = {
+    "User-Agent": f"runpod-python/{version('runpod-python')} (https://runpod.io; support@runpod.io)"
+}
 
 
 def calculate_chunk_size(file_size: int) -> int:
@@ -42,18 +47,24 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
 
     @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=3)
     def download_file(url: str, path_to_save: str) -> str:
-        with requests.get(url, stream=True, timeout=5) as response:
+        with requests.get(url, headers=HEADERS, stream=True, timeout=5) as response:
             response.raise_for_status()
             content_disposition = response.headers.get('Content-Disposition')
-            msg = message_from_string(f'Content-Disposition: {content_disposition}')
-            params = dict(msg.items()) if content_disposition else {}
-            file_extension = os.path.splitext(params.get('filename', ''))[1]
+            file_extension = ''
+            if content_disposition:
+                msg = message_from_string(f'Content-Disposition: {content_disposition}')
+                params = dict(msg.items())
+                file_extension = os.path.splitext(params.get('filename', ''))[1]
+
+            # If no extension could be determined from 'Content-Disposition', get it from the URL
+            if not file_extension:
+                file_extension = os.path.splitext(urlparse(url).path)[1]
 
             file_size = int(response.headers.get('Content-Length', 0))
             chunk_size = calculate_chunk_size(file_size)
 
             # write the content in chunks to the file
-            with open(path_to_save, 'wb') as file_path:
+            with open(path_to_save + file_extension, 'wb') as file_path:
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:  # filter out keep-alive chunks
                         file_path.write(chunk)
@@ -97,7 +108,7 @@ def file(file_url: str) -> dict:
     '''
     os.makedirs('job_files', exist_ok=True)
 
-    download_response = requests.get(file_url, timeout=30)
+    download_response = requests.get(file_url, headers=HEADERS, timeout=30)
 
     original_file_name = []
     if "Content-Disposition" in download_response.headers.keys():
