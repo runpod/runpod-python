@@ -68,7 +68,7 @@ class Checkpoints:
         Returns the index of the checkpoint.
         '''
         if name in self.name_lookup:
-            raise KeyError('Checkpoint name already exists.')
+            raise KeyError(f'Checkpoint name "{name}" already exists.')
 
         self.checkpoints.append({
             'name': name
@@ -82,7 +82,7 @@ class Checkpoints:
         Start a checkpoint.
         '''
         if name not in self.name_lookup:
-            raise KeyError('Checkpoint name does not exist.')
+            raise KeyError(f"Checkpoint name '{name}' does not exist.")
 
         index = self.name_lookup[name]
         self.checkpoints[index]['start'] = time.perf_counter()
