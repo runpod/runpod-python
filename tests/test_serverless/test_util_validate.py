@@ -1,7 +1,7 @@
 ''' Tests for runpod.serverless.utils.validate '''
 import unittest
 from unittest.mock import Mock
-from runpod.serverless.utils import rp_validate
+from runpod.serverless.utils import rp_validator
 
 
 class TestValidator(unittest.TestCase):
@@ -12,7 +12,10 @@ class TestValidator(unittest.TestCase):
         self.schema = {
             "x": {"type": int, "required": True},
             "y": {"type": int, "required": True, "default": 5},
-            "z": {"type": int, "required": False, "default": 5, "constraints": Mock(return_value=True)},
+            "z": {
+                "type": int, "required": False,
+                "default": 5, "constraints": Mock(return_value=True)
+            },
             "w": {"type": int, "required": False, "default": 5}
         }
 
@@ -20,7 +23,7 @@ class TestValidator(unittest.TestCase):
         '''
         Tests validate
         '''
-        result = rp_validate.validate(self.raw_input, self.schema)
+        result = rp_validator.validate(self.raw_input, self.schema)
 
         self.assertNotIn("errors", result)
         self.assertEqual(result["validated_input"], self.raw_input)
@@ -32,7 +35,7 @@ class TestValidator(unittest.TestCase):
         # Now add a constraint that the 'x' value must be less than 10
         self.schema["x"]["constraints"] = Mock(return_value=False)
 
-        result = rp_validate.validate(self.raw_input, self.schema)
+        result = rp_validator.validate(self.raw_input, self.schema)
 
         self.assertIn("errors", result)
         self.assertIn("x does not meet the constraints.", result["errors"])
@@ -42,7 +45,7 @@ class TestValidator(unittest.TestCase):
         Tests validate with missing required input
         '''
         del self.raw_input["x"]
-        result = rp_validate.validate(self.raw_input, self.schema)
+        result = rp_validator.validate(self.raw_input, self.schema)
 
         self.assertIn("errors", result)
         self.assertIn("x is a required input.", result["errors"])
@@ -52,7 +55,7 @@ class TestValidator(unittest.TestCase):
         Tests validate with unexpected input
         '''
         self.raw_input["unexpected"] = "unexpected"
-        result = rp_validate.validate(self.raw_input, self.schema)
+        result = rp_validator.validate(self.raw_input, self.schema)
 
         self.assertIn("errors", result)
         self.assertIn("Unexpected input. unexpected is not a valid input option.", result["errors"])
@@ -62,7 +65,7 @@ class TestValidator(unittest.TestCase):
         Tests validate with missing default
         '''
         del self.schema["w"]["default"]
-        result = rp_validate.validate(self.raw_input, self.schema)
+        result = rp_validator.validate(self.raw_input, self.schema)
 
         self.assertIn("errors", result)
         self.assertIn("Schema error, missing default value for w.", result["errors"])
@@ -72,7 +75,7 @@ class TestValidator(unittest.TestCase):
         Tests validate with invalid type
         '''
         self.raw_input["x"] = "invalid"
-        result = rp_validate.validate(self.raw_input, self.schema)
+        result = rp_validator.validate(self.raw_input, self.schema)
 
         self.assertIn("errors", result)
         self.assertIn("x should be <class 'int'> type, not <class 'str'>.", result["errors"])
