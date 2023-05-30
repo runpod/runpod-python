@@ -1,4 +1,5 @@
 """Enables heartbeats."""
+# pylint: disable=too-few-public-methods
 
 import os
 import time
