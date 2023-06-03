@@ -74,6 +74,15 @@ class Job:
 
         status_request = requests.get(status_url, headers=headers, timeout=10)
 
+        try:
+            status_request.json()
+        except requests.exceptions.JSONDecodeError:
+            raise ValueError(
+                "Error decoding response json " +
+                f"Status Code: {status_request.status_code} " +
+                f"Raw Response: '{status_request.text}'"
+            )
+
         if "error" in status_request.json():
             raise RuntimeError(status_request.json()["error"])
         elif "status" not in status_request.json():
