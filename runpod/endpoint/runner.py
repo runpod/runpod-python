@@ -76,7 +76,7 @@ class Job:
 
         if "error" in status_request.json():
             raise RuntimeError(status_request.json()["error"])
-        else:
+        elif "status" not in status_request.json():
             raise ValueError(f"Unexpected response from server: {status_request.json()}")
 
         return status_request.json()
