@@ -93,4 +93,10 @@ class Job:
 
         output_request = requests.get(output_url, headers=headers, timeout=10)
 
+        if "output" not in output_request.json():
+            if "error" in output_request.json():
+                raise RuntimeError(output_request.json()["error"])
+            else:
+                raise ValueError(f"Unexpected response from server: {output_request.json()}")
+
         return output_request.json()["output"]
