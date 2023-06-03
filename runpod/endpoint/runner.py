@@ -78,8 +78,8 @@ class Job:
             status_request.json()
         except requests.exceptions.JSONDecodeError:
             raise ValueError(
-                "Error decoding response json " +
-                f"Status Code: {status_request.status_code} " +
+                "Error decoding response json. " +
+                f"Status Code: {status_request.status_code}, " +
                 f"Raw Response: '{status_request.text}'"
             )
 
