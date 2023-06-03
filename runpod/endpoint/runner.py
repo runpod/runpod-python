@@ -6,6 +6,10 @@ import time
 import requests
 
 
+class TooManyRequestsError(Exception):
+    pass
+
+
 class Endpoint:
     ''' Creates a class to run an endpoint. '''
 
@@ -77,11 +81,14 @@ class Job:
         try:
             status_request.json()
         except requests.exceptions.JSONDecodeError:
-            raise ValueError(
-                "Error decoding response json. " +
-                f"Status Code: {status_request.status_code}, " +
-                f"Raw Response: '{status_request.text}'"
-            )
+            if status_request.status_code == 429:
+                raise TooManyRequestsError()
+            else:
+                raise ValueError(
+                    "Error decoding response json. " +
+                    f"Status Code: {status_request.status_code}, " +
+                    f"Raw Response: '{status_request.text}'"
+                )
 
         if "error" in status_request.json():
             raise RuntimeError(status_request.json()["error"])
@@ -89,6 +96,7 @@ class Job:
             raise ValueError(f"Unexpected response from server: {status_request.json()}")
 
         return status_request.json()
+
 
     def status(self):
         '''
@@ -102,7 +110,20 @@ class Job:
         Gets the output of the endpoint run request.
         If blocking is True, the method will block until the endpoint run is complete.
         '''
-        while self.status() not in ["COMPLETED", "FAILED"]:
+        sleep_time = 0.1
+        while True:
+            try:
+                status = self.status()
+            except TooManyRequestsError as e:
+                sleep_time += 0.3
+                if sleep_time > 10:  # don't sleep more than 10 seconds
+                    raise e
+                time.sleep(sleep_time)
+            else:
+                sleep_time = 0.1
+
+            if status not in ["COMPLETED", "FAILED"]:
+                break
             time.sleep(.1)
 
         return self._status_json()["output"]
