@@ -59,10 +59,11 @@ class Job:
         self.endpoint_id = endpoint_id
         self.job_id = job_id
 
-    def status(self):
-        '''
-        Returns the status of the job request.
-        '''
+
+    def _status_json(self):
+        """
+        Returns the raw json of the status, raises an exception if invalid
+        """
         from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel,cyclic-import
 
         status_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
@@ -73,30 +74,26 @@ class Job:
 
         status_request = requests.get(status_url, headers=headers, timeout=10)
 
-        return status_request.json()["status"]
+        if "error" in status_request.json():
+            raise RuntimeError(status_request.json()["error"])
+        else:
+            raise ValueError(f"Unexpected response from server: {status_request.json()}")
+
+        return status_request.json()
+
+    def status(self):
+        '''
+        Returns the status of the job request.
+        '''
+        return self._status_json()["status"]
+
 
     def output(self):
         '''
         Gets the output of the endpoint run request.
         If blocking is True, the method will block until the endpoint run is complete.
         '''
-        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel,cyclic-import
-
         while self.status() not in ["COMPLETED", "FAILED"]:
             time.sleep(.1)
 
-        output_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-
-        output_request = requests.get(output_url, headers=headers, timeout=10)
-
-        if "output" not in output_request.json():
-            if "error" in output_request.json():
-                raise RuntimeError(output_request.json()["error"])
-            else:
-                raise ValueError(f"Unexpected response from server: {output_request.json()}")
-
-        return output_request.json()["output"]
+        return self._status_json()["output"]
