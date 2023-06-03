@@ -105,7 +105,7 @@ class Job:
         return self._status_json()["status"]
 
 
-    def output(self):
+    def output(self, max_wait=10):
         '''
         Gets the output of the endpoint run request.
         If blocking is True, the method will block until the endpoint run is complete.
@@ -116,13 +116,13 @@ class Job:
                 status = self.status()
             except TooManyRequestsError as e:
                 sleep_time += 0.3
-                if sleep_time > 10:  # don't sleep more than 10 seconds
+                if sleep_time > max_wait:  # don't sleep more than max_wait
                     raise e
                 time.sleep(sleep_time)
             else:
                 sleep_time = 0.1
 
-            if status not in ["COMPLETED", "FAILED"]:
+            if status in ["COMPLETED", "FAILED"]:
                 break
             time.sleep(.1)
 
