@@ -119,6 +119,7 @@ class Job:
                 if sleep_time > max_wait:  # don't sleep more than max_wait
                     raise e
                 time.sleep(sleep_time)
+                continue
             else:
                 sleep_time = 0.1
 
