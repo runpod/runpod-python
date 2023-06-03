@@ -108,7 +108,7 @@ class Job:
     def output(self, max_wait=10):
         '''
         Gets the output of the endpoint run request.
-        If blocking is True, the method will block until the endpoint run is complete.
+        max_wait defines the maximum time to wait for retry if returning 429
         '''
         sleep_time = 0.1
         while True:
