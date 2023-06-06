@@ -6,9 +6,10 @@ import os
 import time
 import json
 import traceback
+import types
 
 import runpod.serverless.modules.logging as log
-from .worker_state import JOB_GET_URL, get_done_url
+from .worker_state import JOB_GET_URL, get_done_url, get_stream_url
 from .retry import retry
 from .rp_tips import check_return_size
 
@@ -86,7 +87,12 @@ def run_job(handler, job):
         job_output = handler(job)
         log.debug(f'Job {job["id"]} handler output: {job_output}')
 
-        if isinstance(job_output, bool):
+        if isinstance(job_output, types.GeneratorType):
+            # should this emit the whole job stream to this point?
+            for ji_partial in job_output:
+                yield {"output": ji_partial}
+            return
+        elif isinstance(job_output, bool):
             run_result = {"output": job_output}
         elif "error" in job_output:
             run_result = {"error": str(job_output["error"])}
@@ -113,7 +119,7 @@ def run_job(handler, job):
 
 
 @retry(max_attempts=3, base_delay=1, max_delay=3)
-async def retry_send_result(session, job_data):
+async def retry_send_result(session, job_data, url):
     """
     Wrapper for sending results.
     """
@@ -123,7 +129,7 @@ async def retry_send_result(session, job_data):
     }
 
     log.debug("Initiating result API call")
-    async with session.post(get_done_url(),
+    async with session.post(url,
                             data=job_data,
                             headers=headers,
                             raise_for_status=True) as resp:
@@ -141,7 +147,25 @@ async def send_result(session, job_data, job):
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not _IS_LOCAL_TEST:
             log.info(f"Sending job results for {job['id']}: {job_data}")
-            await retry_send_result(session, job_data)
+            await retry_send_result(session, job_data, get_done_url())
+        else:
+            log.warn(f"Local test job results for {job['id']}: {job_data}")
+
+    except Exception as err:  # pylint: disable=broad-except
+        log.error(f"Error while returning job result {job['id']}: {err}")
+    else:
+        log.info(f"Successfully returned job result {job['id']}")
+
+
+async def send_stream_result(session, job_data, job):
+    '''
+    Return the stream job results.
+    '''
+    try:
+        job_data = json.dumps(job_data, ensure_ascii=False)
+        if not _IS_LOCAL_TEST:
+            log.info(f"Sending job results for {job['id']}: {job_data}")
+            await retry_send_result(session, job_data, get_stream_url())
         else:
             log.warn(f"Local test job results for {job['id']}: {job_data}")
 

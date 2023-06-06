@@ -5,12 +5,13 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 
 import os
 import sys
+import types
 
 import aiohttp
 
 import runpod.serverless.modules.logging as log
 from .modules.heartbeat import HeartbeatSender
-from .modules.job import get_job, run_job, send_result
+from .modules.job import get_job, run_job, send_result, send_stream_result
 from .modules.worker_state import REF_COUNT_ZERO, set_job_id
 from .utils import rp_debugger
 
@@ -60,6 +61,10 @@ async def start_worker(config):
                 job_result = {"error": error_msg}
             else:
                 job_result = run_job(config["handler"], job)
+                # check if job result is a generator
+                if isinstance(job_result, types.GeneratorType):
+                    for job_stream in job_result:
+                        await send_stream_result(session, job_stream, job)
 
             # If refresh_worker is set, pod will be reset after job is complete.
             if config.get("refresh_worker", False):

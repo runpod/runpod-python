@@ -24,6 +24,9 @@ JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKE
 JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
 JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
+JOB_STREAM_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_STREAM'))
+JOB_STREAM_URL_TEMPLATE = JOB_STREAM_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
+
 WEBHOOK_PING = os.environ.get('RUNPOD_WEBHOOK_PING', None)
 if WEBHOOK_PING is not None:
     PING_URL = WEBHOOK_PING.replace('$RUNPOD_POD_ID', WORKER_ID)
@@ -45,6 +48,13 @@ def get_done_url():
     Constructs the done URL using the current job id.
     '''
     return JOB_DONE_URL_TEMPLATE.replace('$ID', CURRENT_JOB_ID)
+
+
+def get_stream_url():
+    '''
+    Constructs the stream URL using the current job id.
+    '''
+    return JOB_STREAM_URL_TEMPLATE.replace('$ID', CURRENT_JOB_ID)
 
 
 def set_job_id(new_job_id):
