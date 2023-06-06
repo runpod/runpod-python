@@ -65,6 +65,7 @@ async def start_worker(config):
                 if isinstance(job_result, types.GeneratorType):
                     for job_stream in job_result:
                         await send_stream_result(session, job_stream, job)
+                    job_result = None
 
             # If refresh_worker is set, pod will be reset after job is complete.
             if config.get("refresh_worker", False):

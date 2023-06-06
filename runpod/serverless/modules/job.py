@@ -88,7 +88,6 @@ def run_job(handler, job):
         log.debug(f'Job {job["id"]} handler output: {job_output}')
 
         if isinstance(job_output, types.GeneratorType):
-            # should this emit the whole job stream to this point?
             for ji_partial in job_output:
                 yield {"output": ji_partial}
             return
