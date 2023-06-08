@@ -18,11 +18,13 @@ class Job:
         self.endpoint_id = endpoint_id
         self.job_id = job_id
         self.status_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
-        self.headers = {
+        self.cancel_url = f"{endpoint_url_base}/{self.endpoint_id}/cancel/{self.job_id}"
+        headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}"
         }
         self.session = session
+        self.session.headers = headers
 
     async def status(self) -> str:
         """Gets jobs' status
@@ -30,7 +32,7 @@ class Job:
         Returns:
             COMPLETED, FAILED or IN_PROGRESS
         """
-        async with self.session.get(self.status_url, headers=self.headers) as resp:
+        async with self.session.get(self.status_url) as resp:
             return (await resp.json())["status"]
 
     async def output(self) -> any:
@@ -44,9 +46,19 @@ class Job:
         while await self.status() not in ["COMPLETED", "FAILED"]:
             await asyncio.sleep(1)
 
-        async with self.session.get(self.status_url, headers=self.headers) as resp:
+        async with self.session.get(self.status_url) as resp:
             return (await resp.json())["output"]
+    
+    async def cancel(self) -> dict:
+        """Cancels current job
+        
+        Returns:
+            Output of cancel operation
+        """
 
+        async with self.session.post(self.cancel_url) as resp:
+            return await resp.json()
+    
 
 class Endpoint:
     """Class for running endpoint"""
@@ -56,11 +68,12 @@ class Endpoint:
 
         self.endpoint_id = endpoint_id
         self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
-        self.headers = {
+        headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}"
         }
         self.session = session
+        self.session.headers = headers
 
     async def run(self, endpoint_input: dict) -> Job:
         """Runs endpoint with specified input
@@ -72,7 +85,7 @@ class Endpoint:
             Newly created job
         """
         async with self.session.post(
-            self.endpoint_url, headers=self.headers, json={"input": endpoint_input}
+            self.endpoint_url, json={"input": endpoint_input}
         ) as resp:
             json_resp = await resp.json()
 
