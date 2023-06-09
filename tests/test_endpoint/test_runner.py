@@ -17,7 +17,7 @@ class TestEndpoint(unittest.TestCase):
         Tests Endpoint.run
         '''
         mock_response = Mock()
-        mock_response.json.return_value = {
+        mock_response.json = {
             "id": "123",
             "status": "in_progress"
         }
@@ -38,7 +38,7 @@ class TestEndpoint(unittest.TestCase):
         Tests Endpoint.run_sync
         '''
         mock_response = Mock()
-        mock_response.json.return_value = {
+        mock_response.json = {
             "id": "123",
             "status": "completed",
             "output": {"result": "YOUR_MODEL_OUTPUT_VALUE"}
