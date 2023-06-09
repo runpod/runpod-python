@@ -16,7 +16,7 @@ class RunPodClient:
         '''
         Initialize the client.
         '''
-        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
+        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel, cyclic-import
 
         self.rp_session = requests.Session()
         retries = Retry(total=5, backoff_factor=0.1, status_forcelist=[429])
@@ -108,7 +108,8 @@ class Job:
 
         if "error" in request_json:
             raise RuntimeError(f"Error from RunPod Server: '{request_json['error']}'")
-        elif "status" not in request_json:
+
+        if "status" not in request_json:
             raise ValueError(f"Unexpected response from server: {request_json}")
 
         return request_json
