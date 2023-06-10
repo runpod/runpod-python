@@ -5,13 +5,14 @@ Tests for runpod | endpoint | modules | endpoint.py
 import unittest
 from unittest.mock import patch, Mock
 import runpod
+import requests
 
 
 class TestEndpoint(unittest.TestCase):
     ''' Tests for Endpoint '''
 
-    @patch.object('runpod.endpoint.runner.requests.Session', 'get')
-    @patch.object('runpod.endpoint.runner.requests.Session', 'post')
+    @patch.object(requests.Session, 'get')
+    @patch.object(requests.Session, 'post')
     def test_run(self, mock_post, mock_get):
         '''
         Tests Endpoint.run
@@ -32,7 +33,7 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "in_progress")
 
-    @patch('runpod.endpoint.runner.requests.Session', 'post')
+    @patch.object(requests.Session, 'post')
     def test_run_sync(self, mock_post):
         '''
         Tests Endpoint.run_sync
