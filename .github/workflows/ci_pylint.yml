@@ -3,11 +3,11 @@ name: CI | Code Quality
 on:
   push:
     branches-ignore:
-      - "master-ci"
+      - "main-ci"
       - "release"
   pull_request:
     branches:
-      - master
+      - main
 
   workflow_dispatch:
     name: Run code quality checks manually
@@ -17,10 +17,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: 3.11.0
 

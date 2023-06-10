@@ -4,8 +4,9 @@ Tests for runpod | endpoint | modules | endpoint.py
 
 import unittest
 from unittest.mock import patch, Mock
-import runpod
 import requests
+
+import runpod
 
 
 class TestEndpoint(unittest.TestCase):
