@@ -2,6 +2,7 @@
 RunPod | Python | Endpoint Runner
 '''
 
+import time
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
@@ -55,6 +56,8 @@ class Endpoint:
         '''
         self.endpoint_id = endpoint_id
         self.rp_client = RunPodClient()
+
+        print(f"Initialized endpoint {self.endpoint_id}")
 
     def run(self, endpoint_input):
         '''
@@ -120,13 +123,13 @@ class Job:
         '''
         return self._status_json()["status"]
 
-    def output(self):
+    def output(self, timeout=60):
         '''
         Gets the output of the endpoint run request.
         '''
-        status = self.status()
-        if status not in ["COMPLETED", "FAILED"]:
-            return None
+        while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
+            time.sleep(.1)
+            timeout -= .1
 
         if self.job_output is None:
             status_json = self._status_json()
