@@ -57,7 +57,7 @@ class Endpoint:
         self.endpoint_id = endpoint_id
         self.rp_client = RunPodClient()
 
-        print(f"Initialized endpoint {self.endpoint_id}")
+        print(f"Initialized endpoint: {self.endpoint_id}")
 
     def run(self, endpoint_input):
         '''
@@ -68,6 +68,8 @@ class Endpoint:
             data={"input": endpoint_input},
             timeout=10
         )
+
+        print(f"Started job: {job_request.json()['id']}")
 
         return Job(self.endpoint_id, job_request.json()["id"])
 
