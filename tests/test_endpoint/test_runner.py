@@ -2,9 +2,9 @@
 Tests for runpod | endpoint | modules | endpoint.py
 '''
 
-import requests
 import unittest
 from unittest.mock import patch, Mock
+import requests
 
 import runpod
 
