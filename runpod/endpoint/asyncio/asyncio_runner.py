@@ -47,17 +47,17 @@ class Job:
 
         async with self.session.get(self.status_url, headers=self.headers) as resp:
             return (await resp.json())["output"]
-    
+
     async def cancel(self) -> dict:
         """Cancels current job
-        
+
         Returns:
             Output of cancel operation
         """
 
         async with self.session.post(self.cancel_url, headers=self.headers) as resp:
             return await resp.json()
-    
+
 
 class Endpoint:
     """Class for running endpoint"""
