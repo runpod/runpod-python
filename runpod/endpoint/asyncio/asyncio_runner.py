@@ -18,6 +18,7 @@ class Job:
         self.endpoint_id = endpoint_id
         self.job_id = job_id
         self.status_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
+        self.cancel_url = f"{endpoint_url_base}/{self.endpoint_id}/cancel/{self.job_id}"
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}"
@@ -46,7 +47,17 @@ class Job:
 
         async with self.session.get(self.status_url, headers=self.headers) as resp:
             return (await resp.json())["output"]
+    
+    async def cancel(self) -> dict:
+        """Cancels current job
+        
+        Returns:
+            Output of cancel operation
+        """
 
+        async with self.session.post(self.cancel_url, headers=self.headers) as resp:
+            return await resp.json()
+    
 
 class Endpoint:
     """Class for running endpoint"""
