@@ -11,7 +11,8 @@ import aiohttp
 
 import runpod.serverless.modules.logging as log
 from .modules.heartbeat import HeartbeatSender
-from .modules.job import get_job, run_job, send_result, send_stream_result
+from .modules.job import get_job, run_job
+from .modules.rp_http import send_result, stream_result
 from .modules.worker_state import REF_COUNT_ZERO, set_job_id
 from .utils import rp_debugger
 
@@ -61,10 +62,11 @@ async def start_worker(config):
                 job_result = {"error": error_msg}
             else:
                 job_result = run_job(config["handler"], job)
+
                 # check if job result is a generator
                 if isinstance(job_result, types.GeneratorType):
                     for job_stream in job_result:
-                        await send_stream_result(session, job_stream, job)
+                        await stream_result(session, job_stream, job)
                     job_result = None
 
             # If refresh_worker is set, pod will be reset after job is complete.
