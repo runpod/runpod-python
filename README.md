@@ -24,7 +24,11 @@ Official Python library for RunPod API &amp; SDK.
 ## Installation
 
 ```bash
+# Install the latest release version
 pip install runpod
+
+# Install the latest development version (main branch)
+pip install git+https://github.com/runpod/runpod-python/archive/main.zip
 ```
 
 ## SDK - Serverless Worker
