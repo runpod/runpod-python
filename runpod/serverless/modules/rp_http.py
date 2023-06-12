@@ -4,8 +4,8 @@
 
 import json
 
-from .retry import retry
 import runpod.serverless.modules.logging as log
+from .retry import retry
 from .worker_state import IS_LOCAL_TEST, get_done_url, get_stream_url
 
 

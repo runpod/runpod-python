@@ -88,18 +88,21 @@ def run_job(handler, job):
         if isinstance(job_output, types.GeneratorType):
             for output_partial in job_output:
                 yield {"output": output_partial}
-            return
+            run_result = None
 
-        if isinstance(job_output, bool):
+        elif isinstance(job_output, bool):
             run_result = {"output": job_output}
+
         elif "error" in job_output:
             run_result = {"error": str(job_output["error"])}
+
         elif "refresh_worker" in job_output:
             job_output.pop("refresh_worker")
             run_result = {
                 "stopPod": True,
                 "output": job_output
             }
+
         else:
             run_result = {"output": job_output}
 
