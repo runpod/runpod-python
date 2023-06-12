@@ -6,13 +6,11 @@ import os
 import time
 import json
 import traceback
+import types
 
 import runpod.serverless.modules.logging as log
-from .worker_state import JOB_GET_URL, get_done_url
-from .retry import retry
+from .worker_state import IS_LOCAL_TEST, JOB_GET_URL
 from .rp_tips import check_return_size
-
-_IS_LOCAL_TEST = os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
 
 
 def _get_local():
@@ -44,7 +42,7 @@ async def get_job(session, config):
             log.warn("test_input set, using test_input as job input")
             next_job = config["rp_args"]["test_input"]
             next_job["id"] = "test_input_provided"
-        elif _IS_LOCAL_TEST:
+        elif IS_LOCAL_TEST:
             log.warn("RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local")
             next_job = _get_local()
         else:
@@ -86,16 +84,25 @@ def run_job(handler, job):
         job_output = handler(job)
         log.debug(f'Job {job["id"]} handler output: {job_output}')
 
-        if isinstance(job_output, bool):
+        # Generator type is used for streaming jobs.
+        if isinstance(job_output, types.GeneratorType):
+            for output_partial in job_output:
+                yield {"output": output_partial}
+            run_result = None
+
+        elif isinstance(job_output, bool):
             run_result = {"output": job_output}
+
         elif "error" in job_output:
             run_result = {"error": str(job_output["error"])}
+
         elif "refresh_worker" in job_output:
             job_output.pop("refresh_worker")
             run_result = {
                 "stopPod": True,
                 "output": job_output
             }
+
         else:
             run_result = {"output": job_output}
 
@@ -110,42 +117,3 @@ def run_job(handler, job):
         log.debug(f"Run result: {run_result}")
 
         return run_result  # pylint: disable=lost-exception
-
-
-@retry(max_attempts=3, base_delay=1, max_delay=3)
-async def retry_send_result(session, job_data):
-    """
-    Wrapper for sending results.
-    """
-    headers = {
-        "charset": "utf-8",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-
-    log.debug("Initiating result API call")
-    async with session.post(get_done_url(),
-                            data=job_data,
-                            headers=headers,
-                            raise_for_status=True) as resp:
-        result = await resp.text()
-        log.debug(f"Result API response: {result}")
-
-    log.info("Completed result API call")
-
-
-async def send_result(session, job_data, job):
-    '''
-    Return the job results.
-    '''
-    try:
-        job_data = json.dumps(job_data, ensure_ascii=False)
-        if not _IS_LOCAL_TEST:
-            log.info(f"Sending job results for {job['id']}: {job_data}")
-            await retry_send_result(session, job_data)
-        else:
-            log.warn(f"Local test job results for {job['id']}: {job_data}")
-
-    except Exception as err:  # pylint: disable=broad-except
-        log.error(f"Error while returning job result {job['id']}: {err}")
-    else:
-        log.info(f"Successfully returned job result {job['id']}")
