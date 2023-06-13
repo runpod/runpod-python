@@ -5,7 +5,7 @@ Provides some of the torch.cuda functionality without requiring torch.
 import subprocess
 
 
-def is_cuda_available():
+def is_available():
     '''
     Returns True if CUDA is available, False otherwise.
     '''
