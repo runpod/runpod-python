@@ -41,7 +41,9 @@ class TestUploadUtility(unittest.TestCase):
 
         # Check if upload_file was called with the correct arguments
         mock_boto_client.upload_file.assert_called_once_with(
-            file_location, str(time.strftime('%m-%y')), file_name,
+            Filename=file_location,
+            Bucket=str(time.strftime('%m-%y')),
+            Key=file_name,
             Config=mock_transfer_config,
             Callback=unittest.mock.ANY
         )
@@ -77,7 +79,9 @@ class TestUploadUtility(unittest.TestCase):
 
         # Check if upload_fileobj was called with the correct arguments
         mock_boto_client.upload_fileobj.assert_called_once_with(
-            unittest.mock.ANY, str(time.strftime('%m-%y')), file_name,
+            Filename=unittest.mock.ANY,
+            Bucket=str(time.strftime('%m-%y')),
+            Key=file_name,
             Config=mock_transfer_config,
             Callback=unittest.mock.ANY
         )

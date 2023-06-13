@@ -207,9 +207,9 @@ def upload_file_to_bucket(
     file_size = os.path.getsize(file_location)
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
         upload_file_args = {
-            "file_location": file_location,
-            "bucket_name": bucket_name,
-            "key": key,
+            "Filename": file_location,
+            "Bucket": bucket_name,
+            "Key": key,
             "Config": transfer_config,
             "Callback": progress_bar.update
         }
