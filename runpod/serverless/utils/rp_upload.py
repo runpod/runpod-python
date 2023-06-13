@@ -217,7 +217,7 @@ def upload_file_to_bucket(
         if extra_args:
             upload_file_args["ExtraArgs"] = extra_args
 
-        boto_client.upload_file(upload_file_args)
+        boto_client.upload_file(**upload_file_args)
 
     presigned_url = boto_client.generate_presigned_url(
         'get_object',
