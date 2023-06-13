@@ -192,7 +192,8 @@ def upload_file_to_bucket(
         bucket_creds: Optional[dict] = None,
         bucket_name: Optional[str] = None,
         prefix: Optional[str] = None,
-        extra_args: Optional[dict] = None) -> str:
+        # extra_args: Optional[dict] = None
+) -> str:
     '''
     Uploads a single file to bucket storage and returns a presigned URL.
     '''
@@ -209,7 +210,7 @@ def upload_file_to_bucket(
             file_location, bucket_name, key,
             Config=transfer_config,
             Callback=progress_bar.update,
-            ExtraArgs=extra_args
+            # ExtraArgs=extra_args
         )
 
     presigned_url = boto_client.generate_presigned_url(
