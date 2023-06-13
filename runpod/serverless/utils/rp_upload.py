@@ -191,7 +191,7 @@ def upload_file_to_bucket(
         bucket_creds: Optional[dict] = None,
         bucket_name: Optional[str] = None,
         prefix: Optional[str] = None,
-        extra_args: Optional[dict] = None) -> str:
+        extra_args: Optional[dict] = None) -> str:  # pylint: disable=too-many-arguments
     '''
     Uploads a single file to bucket storage and returns a presigned URL.
     '''
