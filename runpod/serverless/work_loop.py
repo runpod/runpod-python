@@ -65,6 +65,7 @@ async def start_worker(config):
 
                 # check if job result is a generator
                 if isinstance(job_result, types.GeneratorType):
+                    log.debug("Job result is a generator, streaming output.")
                     for job_stream in job_result:
                         await stream_result(session, job_stream, job)
                     job_result = None

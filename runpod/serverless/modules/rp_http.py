@@ -37,7 +37,7 @@ async def send_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not IS_LOCAL_TEST:
-            log.info(f"Sending job results for {job['id']}: {job_data}")
+            log.debug(f"send_results | {job['id']} | {job_data}")
             await transmit(session, job_data, get_done_url())
         else:
             log.warn(f"Local test job results for {job['id']}: {job_data}")
@@ -55,7 +55,7 @@ async def stream_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not IS_LOCAL_TEST:
-            log.info(f"Sending job results for {job['id']}: {job_data}")
+            log.debug(f"stream_results | {job['id']} | {job_data}")
             await transmit(session, job_data, get_stream_url())
         else:
             log.warn(f"Local test job results for {job['id']}: {job_data}")
