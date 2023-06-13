@@ -43,8 +43,7 @@ class TestUploadUtility(unittest.TestCase):
         mock_boto_client.upload_file.assert_called_once_with(
             file_location, str(time.strftime('%m-%y')), file_name,
             Config=mock_transfer_config,
-            Callback=unittest.mock.ANY,
-            ExtraArgs=unittest.mock.ANY
+            Callback=unittest.mock.ANY
         )
 
         # Check if generate_presigned_url was called with the correct arguments
@@ -80,8 +79,7 @@ class TestUploadUtility(unittest.TestCase):
         mock_boto_client.upload_fileobj.assert_called_once_with(
             unittest.mock.ANY, str(time.strftime('%m-%y')), file_name,
             Config=mock_transfer_config,
-            Callback=unittest.mock.ANY,
-            ExtraArgs=unittest.mock.ANY
+            Callback=unittest.mock.ANY
         )
 
         # Check if BytesIO was called with the correct arguments

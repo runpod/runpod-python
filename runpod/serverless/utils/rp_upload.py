@@ -206,12 +206,18 @@ def upload_file_to_bucket(
 
     file_size = os.path.getsize(file_location)
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
-        boto_client.upload_file(
-            file_location, bucket_name, key,
-            Config=transfer_config,
-            Callback=progress_bar.update,
-            ExtraArgs={} if extra_args is None else extra_args
-        )
+        upload_file_args = {
+            "file_location": file_location,
+            "bucket_name": bucket_name,
+            "key": key,
+            "Config": transfer_config,
+            "Callback": progress_bar.update
+        }
+
+        if extra_args:
+            upload_file_args["ExtraArgs"] = extra_args
+
+        boto_client.upload_file(upload_file_args)
 
     presigned_url = boto_client.generate_presigned_url(
         'get_object',
