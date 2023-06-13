@@ -47,7 +47,6 @@ class TestUploadUtility(unittest.TestCase):
             'Config': mock_transfer_config,
             'Callback': unittest.mock.ANY
         }
-
         mock_boto_client.upload_file.assert_called_once_with(**upload_file_args)
 
         # Check if generate_presigned_url was called with the correct arguments

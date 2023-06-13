@@ -86,6 +86,7 @@ def run_job(handler, job):
 
         # Generator type is used for streaming jobs.
         if isinstance(job_output, types.GeneratorType):
+            log.debug("Handler returned a generator, streaming job.")
             for output_partial in job_output:
                 yield {"output": output_partial}
             run_result = None
