@@ -40,13 +40,15 @@ class TestUploadUtility(unittest.TestCase):
         mock_get_boto_client.assert_called_once_with(BUCKET_CREDENTIALS)
 
         # Check if upload_file was called with the correct arguments
-        mock_boto_client.upload_file.assert_called_once_with(
-            Filename=file_location,
-            Bucket=str(time.strftime('%m-%y')),
-            Key=file_name,
-            Config=mock_transfer_config,
-            Callback=unittest.mock.ANY
-        )
+        upload_file_args = {
+            'Filename': file_location,
+            'Bucket': str(time.strftime('%m-%y')),
+            'Key': file_name,
+            'Config': mock_transfer_config,
+            'Callback': unittest.mock.ANY
+        }
+
+        mock_boto_client.upload_file.assert_called_once_with(**upload_file_args)
 
         # Check if generate_presigned_url was called with the correct arguments
         mock_boto_client.generate_presigned_url.assert_called_once_with(
