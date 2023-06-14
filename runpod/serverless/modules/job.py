@@ -56,14 +56,14 @@ async def get_job(session, config):
                     return None
 
                 next_job = await response.json()
-                log.debug(f"Retrieved remote job: {next_job}")
+                log.debug(f"{next_job} | Job Received")
 
         if next_job.get("id", None) is None:
             log.error("Job has no id, unable to process.")
             next_job = None
 
         if next_job:
-            log.info(f"Received job: {next_job['id']}")
+            log.debug(f"{next_job['id']} | Job Confirmed")
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while getting job: {err}")
 
@@ -85,8 +85,7 @@ def run_job(handler, job):
         log.debug(f'Job {job["id"]} handler output: {job_output}')
 
         # Generator type is used for streaming jobs.
-        if isinstance(job_output, types.GeneratorType):
-            log.debug("Handler returned a generator, streaming job.")
+        if isinstance(handler, types.GeneratorType):
             for output_partial in job_output:
                 yield {"output": output_partial}
             run_result = None

@@ -50,11 +50,11 @@ async def start_worker(config):
             job = await get_job(session, config)
 
             if job is None:
-                log.info("No job available, waiting for the next one.")
+                log.debug("No job available, waiting for the next one.")
                 continue
 
             set_job_id(job["id"])
-            log.info(f"Processing job {job['id']}")
+            log.info(f"{job['id']} | Set Job ID")
 
             if job.get('input', None) is None:
                 error_msg = f"Job {job['id']} has no input parameter. Unable to run."
@@ -64,8 +64,8 @@ async def start_worker(config):
                 job_result = run_job(config["handler"], job)
 
                 # check if job result is a generator
-                if isinstance(job_result, types.GeneratorType):
-                    log.debug("Job result is a generator, streaming output.")
+                if isinstance(config["handler"], types.GeneratorType):
+                    log.debug("Handler is a generator, streaming results.")
                     for job_stream in job_result:
                         await stream_result(session, job_stream, job)
                     job_result = None
