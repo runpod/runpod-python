@@ -72,21 +72,22 @@ async def start_worker(config: Dict[str, Any]) -> None:
 
             # If refresh_worker is set, pod will be reset after job is complete.
             if config.get("refresh_worker", False):
-                log.info(f"Refresh worker flag set, stopping pod after job {job['id']}.")
+                log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
                 job_result["stopPod"] = True
 
             if config["rp_args"].get("rp_debugger", False):
-                log.debug("rp_debugger flag set, return debugger output.")
+                log.debug("rp_debugger | Flag set, return debugger output.")
                 job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
 
                 ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
                 job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
             else:
-                log.debug("rp_debugger flag not set, skipping debugger output.")
+                log.debug("rp_debugger | Flag not set, skipping debugger output.")
                 rp_debugger.clear_debugger_output()
 
             await send_result(session, job_result, job)
 
+            log.info(f'{job["id"]} | Finished')
             set_job_id(None)
 
             if _is_local_testing():

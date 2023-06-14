@@ -107,7 +107,6 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         run_result = {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
         log.debug(f'{job["id"]} | Run result: {run_result}')
-        log.info(f'{job["id"]} | Finished')
 
         return run_result  # pylint: disable=lost-exception
 
