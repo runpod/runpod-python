@@ -6,6 +6,7 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 import os
 import sys
 import types
+from typing import Dict, Any, Optional
 
 import aiohttp
 
@@ -16,13 +17,12 @@ from .modules.rp_http import send_result, stream_result
 from .modules.worker_state import REF_COUNT_ZERO, set_job_id
 from .utils import rp_debugger
 
-
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
 heartbeat = HeartbeatSender()
 
 
-def _get_auth_header() -> dict:
+def _get_auth_header() -> Dict[str, str]:
     '''
     Returns the authorization header for the worker.
     '''
@@ -36,7 +36,7 @@ def _is_local_testing() -> bool:
     return os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
 
 
-async def start_worker(config):
+async def start_worker(config: Dict[str, Any]) -> None:
     """
     Starts the worker loop.
     """
@@ -47,7 +47,7 @@ async def start_worker(config):
         heartbeat.start_ping()
 
         while True:
-            job = await get_job(session, config)
+            job: Optional[Dict[str, Any]] = await get_job(session, config)
 
             if job is None:
                 log.debug("No job available, waiting for the next one.")

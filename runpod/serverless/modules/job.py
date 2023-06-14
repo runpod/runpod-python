@@ -2,6 +2,8 @@
 Job related helpers.
 """
 
+from typing import Any, Dict, Generator, Optional, Union
+
 import os
 import time
 import json
@@ -10,9 +12,10 @@ import traceback
 import runpod.serverless.modules.logging as log
 from .worker_state import IS_LOCAL_TEST, JOB_GET_URL
 from .rp_tips import check_return_size
+from aiohttp import ClientSession
 
 
-def _get_local():
+def _get_local() -> Optional[Dict[str, Any]]:
     """
     Returns contents of test_input.json.
     """
@@ -30,7 +33,7 @@ def _get_local():
     return test_inputs
 
 
-async def get_job(session, config):
+async def get_job(session: ClientSession, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
     """
@@ -69,7 +72,7 @@ async def get_job(session, config):
     return next_job
 
 
-def run_job(handler, job):
+def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     """
     Run the job using the handler.
     Returns the job output or error.
@@ -112,7 +115,7 @@ def run_job(handler, job):
         return run_result  # pylint: disable=lost-exception
 
 
-def run_job_generator(handler, job):
+def run_job_generator(handler: Callable, job: Dict[str, Any]) -> Generator[Dict[str, Union[str, Any]], None, None]:
     '''
     Run generator job.
     '''
