@@ -6,7 +6,6 @@ import os
 import time
 import json
 import traceback
-import types
 
 import runpod.serverless.modules.logging as log
 from .worker_state import IS_LOCAL_TEST, JOB_GET_URL
