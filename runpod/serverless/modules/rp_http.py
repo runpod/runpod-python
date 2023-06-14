@@ -19,15 +19,14 @@ async def transmit(session, job_data, url):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    log.debug("Initiating result API call")
+    log.debug(f"Initiating result API call to {url} with job data: {job_data}")
     async with session.post(url,
                             data=job_data,
                             headers=headers,
                             raise_for_status=True) as resp:
         result = await resp.text()
-        log.debug(f"Result API response: {result}")
 
-    log.info("Completed result API call")
+    log.debug(f"Completed result API call to {url}. Response: {result}")
 
 
 async def send_result(session, job_data, job):
@@ -37,15 +36,13 @@ async def send_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not IS_LOCAL_TEST:
-            log.debug(f"send_results | {job['id']} | {job_data}")
             await transmit(session, job_data, get_done_url())
+            log.debug(f"{job['id']} | Results sent.")
         else:
             log.warn(f"Local test job results for {job['id']}: {job_data}")
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
-    else:
-        log.info(f"Successfully returned job result {job['id']}")
 
 
 async def stream_result(session, job_data, job):
@@ -55,12 +52,9 @@ async def stream_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not IS_LOCAL_TEST:
-            log.debug(f"stream_results | {job['id']} | {job_data}")
             await transmit(session, job_data, get_stream_url())
         else:
             log.warn(f"Local test job results for {job['id']}: {job_data}")
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
-    else:
-        log.info(f"Successfully returned job result {job['id']}")

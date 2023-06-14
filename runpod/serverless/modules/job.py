@@ -5,7 +5,6 @@ Job related helpers.
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
-import time
 import json
 import traceback
 from aiohttp import ClientSession
@@ -77,8 +76,7 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     Run the job using the handler.
     Returns the job output or error.
     """
-    start_time = time.time()
-    log.info(f'Started working on job {job["id"]} at {start_time} UTC')
+    log.info(f'{job["id"]} | Started')
 
     run_result = {"error": "Failed to return job output or capture error."}
 
@@ -107,9 +105,7 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         log.error(f'Error while running job {job["id"]}: {err}')
         run_result = {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
-        end_time = time.time()
-        log.info(f'Finished working on job {job["id"]} at {end_time} UTC')
-        log.info(f"Job {job['id']} took {end_time - start_time} seconds to complete")
+        log.info(f'{job["id"]} | Finished')
         log.debug(f"Run result: {run_result}")
 
         return run_result  # pylint: disable=lost-exception
@@ -129,6 +125,6 @@ def run_job_generator(
         log.error(f'Error while running job {job["id"]}: {err}')
         yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
-        log.info(f'Finished working on job {job["id"]}')
+        log.info(f'{job["id"]} | Finished ')
 
         return None  # pylint: disable=lost-exception

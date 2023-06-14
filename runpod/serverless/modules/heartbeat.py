@@ -52,8 +52,8 @@ class HeartbeatSender:
                     timeout=int(PING_INTERVAL / 1000)
                 )
 
-                log.info(f"Heartbeat Sent  URL: {PING_URL}  Status: {result.status_code}")
-                log.info(f"Heartbeat Sent  Interval: {PING_INTERVAL}ms  Params: {ping_params}")
+                log.debug(f"Heartbeat Sent | URL: {PING_URL} | Status: {result.status_code}")
+                log.debug(f"Heartbeat | Interval: {PING_INTERVAL}ms | Params: {ping_params}")
 
             except Exception as err:  # pylint: disable=broad-except
                 log.error(f"Heartbeat Failed  URL: {PING_URL}  Params: {ping_params}")
