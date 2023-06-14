@@ -56,7 +56,7 @@ async def get_job(session, config):
                     return None
 
                 next_job = await response.json()
-                log.debug(f"{next_job} | Job Received")
+                log.debug(f"Received Job | {next_job}")
 
         if next_job.get("id", None) is None:
             log.error("Job has no id, unable to process.")
@@ -117,3 +117,20 @@ def run_job(handler, job):
         log.debug(f"Run result: {run_result}")
 
         return run_result  # pylint: disable=lost-exception
+
+
+def run_job_generator(handler, job):
+    '''
+    Run generator job.
+    '''
+    try:
+        job_output = handler(job)
+        for output_partial in job_output:
+            yield {"output": output_partial}
+    except Exception as err:    # pylint: disable=broad-except
+        log.error(f'Error while running job {job["id"]}: {err}')
+        yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
+    finally:
+        log.info(f'Finished working on job {job["id"]}')
+
+        return None  # pylint: disable=lost-exception
