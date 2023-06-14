@@ -1,0 +1,18 @@
+name: Notify runpod-workers of new release
+
+on:
+  release:
+    types: [published]
+
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@v1
+        with:
+          token: ${{ secrets.RUNPOD_WORKERS_PAT }}
+          repository: runpod-workers/worker-faster_whisper
+          event-type: python-package-release
