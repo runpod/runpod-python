@@ -61,6 +61,8 @@ async def start_worker(config):
                 log.error(error_msg)
                 job_result = {"error": error_msg}
             elif isinstance(config["handler"], types.GeneratorType):
+                job_result = run_job_generator(config["handler"], job)
+
                 log.debug("Handler is a generator, streaming results.")
                 for job_stream in job_result:
                     await stream_result(session, job_stream, job)
