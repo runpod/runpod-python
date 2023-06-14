@@ -115,7 +115,9 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         return run_result  # pylint: disable=lost-exception
 
 
-def run_job_generator(handler: Callable, job: Dict[str, Any]) -> Generator[Dict[str, Union[str, Any]], None, None]:
+def run_job_generator(
+        handler: Callable,
+        job: Dict[str, Any]) -> Generator[Dict[str, Union[str, Any]], None, None]:
     '''
     Run generator job.
     '''
