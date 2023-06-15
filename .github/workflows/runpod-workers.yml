@@ -27,6 +27,7 @@ jobs:
             "runpod-workers/worker-iseven",
             "runpod-workers/worker-controlnet",
             "runpod-workers/worker-blip",
+            "runpod-workers/worker-deforum",
           ]
 
     runs-on: ubuntu-latest
