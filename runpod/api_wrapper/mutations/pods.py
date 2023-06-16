@@ -8,7 +8,7 @@ def generate_pod_deployment_mutation(
         name, image_name, gpu_type_id, cloud_type=None, gpu_count=None,
         volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
-        env=None):
+        env=None, support_public_ip=None):
     '''
     Generates a mutation to deploy a pod on demand.
     '''
@@ -42,6 +42,8 @@ def generate_pod_deployment_mutation(
         env_string = ", ".join(
             [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()])
         input_fields.append(f"env: [{env_string}]")
+    if support_public_ip is not None:
+        input_fields.append(f"supportPublicIp: {support_public_ip}")
 
     input_string = ", ".join(input_fields)
 
