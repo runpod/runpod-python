@@ -69,6 +69,8 @@ class Endpoint:
             timeout=10
         )
 
+        if job_request.status_code == 401: 
+            raise RuntimeError("Unauthorized; make sure Runpod API key is set.")
         print(f"Started job: {job_request.json()['id']}")
 
         return Job(self.endpoint_id, job_request.json()["id"])
