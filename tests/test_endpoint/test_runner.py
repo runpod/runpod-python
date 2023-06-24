@@ -16,7 +16,8 @@ class TestEndpoint(unittest.TestCase):
         '''
         Tests Endpoint.run without api_key
         '''
-        self.assertRaises(RuntimeError, runpod.Endpoint("ENDPOINT_ID"))
+        with self.assertRaises(RuntimeError):
+            runpod.Endpoint("ENDPOINT_ID")
 
     @patch.object(requests.Session, 'get')
     @patch.object(requests.Session, 'post')
