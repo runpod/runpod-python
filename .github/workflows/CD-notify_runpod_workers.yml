@@ -1,4 +1,4 @@
-name: Notify runpod-workers of new release
+name: CD | Notify runpod-workers of new release
 
 on:
   release:
