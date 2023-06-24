@@ -85,13 +85,11 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         run_result = {"output": job_output}
 
         if isinstance(job_output, dict):
-            error = job_output.get("error", None)
-            refresh_worker = job_output.get("refresh_worker", None)
 
-            if error is not None:
+            if job_output.get("error", False):
                 run_result = {"error": str(job_output["error"])}
 
-            if refresh_worker is not None:
+            if job_output.get("refresh_worker", False):
                 job_output.pop("refresh_worker")
                 run_result = {
                     "stopPod": True,
@@ -103,10 +101,21 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
         check_return_size(run_result)  # Checks the size of the return body.
     except Exception as err:    # pylint: disable=broad-except
-        log.error(f'Error while running job {job["id"]}: {err}')
-        run_result = {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
+        error_content = json.dumps(
+            {
+                "error_type": str(type(err)),
+                "error_message": str(err),
+                "error_traceback": traceback.format_exc(),
+                "host_name": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
+                "pod_id": os.environ.get("RUNPOD_POD_ID", "unknown")
+            }, indent=4)
+
+        log.error(f'{job["id"]} | Captured Handler Exception')
+        log.error(error_content)
+
+        run_result = {"error": error_content}
     finally:
-        log.debug(f'{job["id"]} | Run result: {run_result}')
+        log.debug(f'{job["id"]} | run_job return: {run_result}')
 
         return run_result  # pylint: disable=lost-exception
 

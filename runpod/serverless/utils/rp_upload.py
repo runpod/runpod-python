@@ -5,6 +5,7 @@ import os
 import io
 import time
 import uuid
+import shutil
 import logging
 import threading
 import multiprocessing
@@ -203,6 +204,17 @@ def upload_file_to_bucket(
         bucket_name = time.strftime('%m-%y')
 
     key = f"{prefix}/{file_name}" if prefix else file_name
+
+    if boto_client is None:
+        print("No bucket endpoint set, saving to disk folder 'local_upload'")
+        print("If this is a live endpoint, please reference the following:")
+        print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md")  # pylint: disable=line-too-long
+
+        os.makedirs("local_upload", exist_ok=True)
+        local_upload_location = f"local_upload/{file_name}"
+        shutil.copyfile(file_location, local_upload_location)
+
+        return local_upload_location
 
     file_size = os.path.getsize(file_location)
     with tqdm(total=file_size, unit='B', unit_scale=True, desc=file_name) as progress_bar:
