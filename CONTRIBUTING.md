@@ -2,13 +2,9 @@
 
 Thank you for your interest in contributing to the runpod-python project! This document is a set of guidelines for contributing to this project on GitHub. These are guidelines, not rules. This guide is meant to make it easy for you to get involved.
 
-## Code of Conduct
-
-This project and everyone participating in it is governed by the [runpod-python Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
-
 ## Reporting Bugs and Suggesting Enhancements
 
-If you have found a bug or would like to suggest a new feature or enhancement, please start by checking if there is an existing [issue](https://github.com/yourusername/runpod-python/issues) for it. If there isn't one, you can create one, clearly describing the bug or feature, with as much detail as possible.
+If you have found a bug or would like to suggest a new feature or enhancement, please start by checking if there is an existing [issue](https://github.com/runpod/runpod-python/issues) for it. If there isn't one, you can create one, clearly describing the bug or feature, with as much detail as possible.
 
 ## Code Contributions
 
@@ -68,6 +64,6 @@ Before submitting a pull request, please make sure your changes pass all tests. 
 
 ## Getting Help
 
-If you have any questions or need help with contributing, feel free to reach out on the [issue tracker](https://github.com/yourusername/runpod-python/issues) or open a new issue. We're here to help!
+If you have any questions or need help with contributing, feel free to reach out on the [issue tracker](https://github.com/runpod/runpod-python/issues) or open a new issue. We're here to help!
 
 Thank you for contributing!
