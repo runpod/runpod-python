@@ -18,7 +18,13 @@ class RunPodClient:
         Initialize the client.
         '''
         from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel, cyclic-import
-
+        if api_key is None:
+            raise RuntimeError(
+                "Expected `run_pod.api_key` to be initialized. "
+                "You can solve this by running `run_pod.api_key = 'your-key'. "
+                "An API key can be generated at "
+                "https://www.runpod.io/console/user/settings"
+            )
         self.rp_session = requests.Session()
         retries = Retry(total=5, backoff_factor=0.1, status_forcelist=[429])
         self.rp_session.mount('http://', HTTPAdapter(max_retries=retries))
