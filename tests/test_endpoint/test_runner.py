@@ -12,6 +12,12 @@ import runpod
 class TestEndpoint(unittest.TestCase):
     ''' Tests for Endpoint '''
 
+    def test_missing_api_key(self):
+        '''
+        Tests Endpoint.run without api_key
+        '''
+        self.assertRaises(RuntimeError, runpod.Endpoint("ENDPOINT_ID"))
+
     @patch.object(requests.Session, 'get')
     @patch.object(requests.Session, 'post')
     def test_run(self, mock_post, mock_get):
@@ -26,6 +32,7 @@ class TestEndpoint(unittest.TestCase):
         mock_post.return_value = mock_response
         mock_get.return_value = mock_response
 
+        runpod.api_key = "MOCK_API_KEY"
         endpoint = runpod.Endpoint("ENDPOINT_ID")
 
         request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
@@ -47,6 +54,7 @@ class TestEndpoint(unittest.TestCase):
         }
         mock_post.return_value = mock_response
 
+        runpod.api_key = "MOCK_API_KEY"
         endpoint = runpod.Endpoint("ENDPOINT_ID")
 
         request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
