@@ -14,7 +14,7 @@ The schema is a nested dictionary that defines the validation rules for each inp
 ## Example Usage
 
 ```python
-from runpod.serverless.utils.validator import validate
+from runpod.serverless.utils.rp_validator import validate
 
 # Define the schema for the expected inputs
 schema = {
