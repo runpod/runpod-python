@@ -1,7 +1,7 @@
 """
 RunPod | API Wrapper | CTL Commands
 """
-# pylint: disable=too-many-arguments
+# pylint: disable=too-many-arguments,too-many-locals
 
 from .queries import gpus
 from .graphql import run_graphql_query
@@ -26,7 +26,8 @@ def get_gpu(gpu_id):
     return cleaned_return
 
 
-def create_pod(name, image_name, gpu_type_id, cloud_type="ALL", data_center_id=None, gpu_count=1, volume_in_gb=0,
+def create_pod(name, image_name, gpu_type_id,
+               cloud_type="ALL", data_center_id=None, gpu_count=1, volume_in_gb=0,
                container_disk_in_gb=5, min_vcpu_count=1, min_memory_in_gb=1, docker_args="",
                ports=None, volume_mount_path="/workspace", env=None):
     '''
