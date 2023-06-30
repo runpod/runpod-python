@@ -5,8 +5,8 @@ RunPod | API Wrapper | Mutations | Pods
 
 
 def generate_pod_deployment_mutation(
-        name, image_name, gpu_type_id, cloud_type=None, data_center_id=None, gpu_count=None,
-        volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
+        name, image_name, gpu_type_id, cloud_type=None, data_center_id=None, country_code=None,
+        gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
         env=None, support_public_ip=None):
     '''
@@ -18,6 +18,8 @@ def generate_pod_deployment_mutation(
         input_fields.append(f"cloudType: {cloud_type}")
     if data_center_id is not None:
         input_fields.append(f'dataCenterId: "{data_center_id}"')
+    if country_code is not None:
+        input_fields.append(f'countryCode: "{country_code}"')
     if gpu_count is not None:
         input_fields.append(f"gpuCount: {gpu_count}")
     if volume_in_gb is not None:
