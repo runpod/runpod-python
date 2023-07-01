@@ -3,7 +3,9 @@ RunPod Tips
 '''
 
 import sys
-import runpod.serverless.modules.logging as log
+import runpod.serverless.modules.rp_logger as RunPodLogger
+
+log = RunPodLogger.RunPodLogger()
 
 
 def check_return_size(return_body):
