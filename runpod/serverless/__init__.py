@@ -9,15 +9,25 @@ import argparse
 
 from . import work_loop
 from .modules import rp_fastapi
+from .modules.rp_logger import RunPodLogger
+
+log = RunPodLogger()
 
 # ---------------------------------------------------------------------------- #
 #                              Run Time Arguments                              #
 # ---------------------------------------------------------------------------- #
-parser = argparse.ArgumentParser()
+# Arguments will be passed in with the config under the key "rp_args"
+parser = argparse.ArgumentParser(
+    prog="runpod",
+    description="Runpod Serverless Worker Arguments."
+)
 parser.add_argument("--test_input", type=str, default=None,
                     help="Test input for the worker, formatted as JSON.")
 parser.add_argument("--rp_debugger", action="store_true", default=None,
                     help="Flag to enable the Debugger.")
+parser.add_argument("rp_log_level", default=None,
+                    help="""Controls what level of logs are printed to the console.
+                    Options: ERROR, WARN, INFO, and DEBUG.""")
 
 
 def _set_config_args(config) -> dict:
@@ -34,6 +44,10 @@ def _set_config_args(config) -> dict:
     # Parse the test input from JSON
     if config["rp_args"]["test_input"]:
         config["rp_args"]["test_input"] = json.loads(config["rp_args"]["test_input"])
+
+    # Set the log level
+    if config["rp_args"]["rp_log_level"]:
+        log.set_level(config["rp_args"]["rp_debug_level"])
 
     return config
 

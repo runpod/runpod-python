@@ -10,12 +10,14 @@ from typing import Dict, Any, Optional
 
 import aiohttp
 
-import runpod.serverless.modules.logging as log
+from runpod.serverless.modules.rp_logger import RunPodLogger
 from .modules.heartbeat import HeartbeatSender
 from .modules.job import get_job, run_job, run_job_generator
 from .modules.rp_http import send_result, stream_result
 from .modules.worker_state import REF_COUNT_ZERO, set_job_id
 from .utils import rp_debugger
+
+log = RunPodLogger()
 
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 

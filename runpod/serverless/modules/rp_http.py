@@ -4,9 +4,11 @@
 
 import json
 
-import runpod.serverless.modules.logging as log
+from runpod.serverless.modules.rp_logger import RunPodLogger
 from .retry import retry
 from .worker_state import IS_LOCAL_TEST, get_done_url, get_stream_url
+
+log = RunPodLogger()
 
 
 @retry(max_attempts=3, base_delay=1, max_delay=3)
