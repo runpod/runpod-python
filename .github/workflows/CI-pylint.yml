@@ -10,7 +10,6 @@ on:
       - main
 
   workflow_dispatch:
-    name: Run code quality checks manually
 
 jobs:
   lint:

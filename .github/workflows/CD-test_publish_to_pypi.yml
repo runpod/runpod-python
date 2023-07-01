@@ -1,16 +1,9 @@
 name: CD | Test Publish Python 🐍 distributions 📦 to TestPyPI
 
 on:
-  #   push:
-  #     branches:
-  #       - "**"
-  #       - "main"
-  #       - "!main-ci"
-  #       - "!release"
-
-  #   pull_request:
-  #     branches:
-  #       - main
+  push:
+    branches:
+      - "staging"
 
   workflow_dispatch:
 
