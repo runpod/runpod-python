@@ -175,7 +175,7 @@ def get_debugger_output():
     '''
     Return the debugger output.
     '''
-    import runpod  # pylint: disable=import-outside-toplevel
+    import runpod  # pylint: disable=import-outside-toplevel, cyclic-import
 
     checkpoints = Checkpoints()
     ckpt_results = checkpoints.get_checkpoints()
