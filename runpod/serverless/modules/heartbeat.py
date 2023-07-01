@@ -7,8 +7,10 @@ import threading
 
 import requests
 
-import runpod.serverless.modules.logging as log
+from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import get_current_job_id, PING_URL, PING_INTERVAL
+
+log = RunPodLogger()
 
 _session = requests.Session()
 _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})

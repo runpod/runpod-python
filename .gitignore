@@ -2,6 +2,7 @@ env
 .env
 .vscode
 test_wrapper.py
+test_logging.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

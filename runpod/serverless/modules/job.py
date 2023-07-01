@@ -9,9 +9,11 @@ import json
 import traceback
 from aiohttp import ClientSession
 
-import runpod.serverless.modules.logging as log
+from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import IS_LOCAL_TEST, JOB_GET_URL
 from .rp_tips import check_return_size
+
+log = RunPodLogger()
 
 
 def _get_local() -> Optional[Dict[str, Any]]:
