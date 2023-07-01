@@ -5,6 +5,7 @@ Job related helpers.
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
+import sys
 import json
 import traceback
 from aiohttp import ClientSession
@@ -21,8 +22,8 @@ def _get_local() -> Optional[Dict[str, Any]]:
     Returns contents of test_input.json.
     """
     if not os.path.exists("test_input.json"):
-        log.warn("test_input.json not found, skipping local testing")
-        return None
+        log.warn("test_input.json not found, exiting.")
+        sys.exit(1)
 
     with open("test_input.json", "r", encoding="UTF-8") as file:
         test_inputs = json.loads(file.read())
