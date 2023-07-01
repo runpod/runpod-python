@@ -1,8 +1,16 @@
 name: CD | Publish Python 🐍 distributions 📦 to TestPyPI
 
 on:
-  release:
-    types: [published]
+  #   push:
+  #     branches:
+  #       - "**"
+  #       - "main"
+  #       - "!main-ci"
+  #       - "!release"
+
+  #   pull_request:
+  #     branches:
+  #       - main
 
   workflow_dispatch:
 
@@ -13,10 +21,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python 3.9
+      - name: Set up Python 3.11.0
         uses: actions/setup-python@v4.3.1
         with:
-          python-version: 3.9
+          python-version: 3.11.0
 
       - name: Install pypa/build
         run: >-
