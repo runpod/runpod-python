@@ -63,7 +63,7 @@ class WorkerAPI:
         # Initialize the FastAPI web server.
 
         try:
-            import runpod  # pylint: disable=import-outside-toplevel
+            import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
             runpod_version = runpod.__version__
         except AttributeError:
             runpod_version = "0.0.0"
