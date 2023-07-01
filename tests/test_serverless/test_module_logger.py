@@ -1,7 +1,7 @@
 ''' Tests for runpod.serverless.modules.rp_logger '''
 
 import unittest
-from unittest.mock import Mock
+from unittest.mock import patch
 
 from runpod.serverless.modules import rp_logger
 
@@ -44,7 +44,7 @@ class TestLogger(unittest.TestCase):
         '''
         log = rp_logger.RunPodLogger()
 
-        with Mock.patch("log.log") as mock_log:
+        with patch("log.log") as mock_log:
 
             log.warn("Test log message")
 
