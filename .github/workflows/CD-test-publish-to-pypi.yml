@@ -1,4 +1,4 @@
-name: CD | Publish Python 🐍 distributions 📦 to TestPyPI
+name: CD | Test Publish Python 🐍 distributions 📦 to TestPyPI
 
 on:
   #   push:
