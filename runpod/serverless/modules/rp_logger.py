@@ -1,7 +1,7 @@
 '''
 PodWorker | modules | logging.py
 
-Debug Levels (Level - Value - Description)
+Log Levels (Level - Value - Description)
 
 NOTSET - 0 - No logging is configured, the logging system is effectively disabled.
 DEBUG - 1 - Detailed information, typically of interest only when diagnosing problems. (Default)
@@ -16,35 +16,35 @@ from dotenv import load_dotenv
 env_path = os.path.join(os.getcwd(), '.env')
 load_dotenv(env_path)  # Load environment variables
 
-DEBUG_LEVELS = ['NOTSET', 'DEBUG', 'INFO', 'WARN', 'ERROR']
+LOG_LEVELS = ['NOTSET', 'DEBUG', 'INFO', 'WARN', 'ERROR']
 
 
-def _validate_debug_level(debug_level):
+def _validate_log_level(log_level):
     '''
     Checks the debug level and returns the debug level name.
     '''
-    if isinstance(debug_level, str):
-        debug_level = debug_level.upper()
+    if isinstance(log_level, str):
+        log_level = log_level.upper()
 
-        if debug_level not in DEBUG_LEVELS:
-            raise ValueError(f'Invalid debug level: {debug_level}')
+        if log_level not in LOG_LEVELS:
+            raise ValueError(f'Invalid debug level: {log_level}')
 
-        return debug_level
+        return log_level
 
-    if isinstance(debug_level, int):
-        if debug_level < 0 or debug_level > 4:
-            raise ValueError(f'Invalid debug level: {debug_level}')
+    if isinstance(log_level, int):
+        if log_level < 0 or log_level > 4:
+            raise ValueError(f'Invalid debug level: {log_level}')
 
-        return DEBUG_LEVELS[debug_level]
+        return LOG_LEVELS[log_level]
 
-    raise ValueError(f'Invalid debug level: {debug_level}')
+    raise ValueError(f'Invalid debug level: {log_level}')
 
 
 class RunPodLogger:
     '''Singleton class for logging.'''
 
     __instance = None
-    debug_level = _validate_debug_level(os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG'))
+    level = _validate_log_level(os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG'))
 
     def __new__(cls):
         if RunPodLogger.__instance is None:
@@ -56,16 +56,18 @@ class RunPodLogger:
         Set the debug level for logging.
         Can be set to the name or value of the debug level.
         '''
-        self.debug_level = _validate_debug_level(new_level)
+        self.level = _validate_log_level(new_level)
+        self.info(f'Log level set to {self.level}')
 
     def log(self, message, message_level='INFO'):
         '''
         Log message to stdout if RUNPOD_DEBUG is true.
         '''
-        if DEBUG_LEVELS[self.debug_level] == 'NOTSET':
+        if self.level == 'NOTSET':
             return
 
-        if self.debug_level > DEBUG_LEVELS.index(message_level) and message_level != 'TIP':
+        level_index = LOG_LEVELS.index(self.level)
+        if level_index > LOG_LEVELS.index(message_level) and message_level != 'TIP':
             return
 
         print(f'{message_level.ljust(7)}| {message}', flush=True)
