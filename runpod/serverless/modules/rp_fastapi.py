@@ -7,7 +7,6 @@ from fastapi import FastAPI, APIRouter
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
-import runpod
 from .job import run_job
 from .worker_state import set_job_id
 from .heartbeat import HeartbeatSender
@@ -27,10 +26,6 @@ The URLs provided are named to match the endpoints that you will be provided whe
 *Note: When running your worker on the RunPod platform, this API server will not be used.*
 """
 
-try:
-    RUNPOD_VERSION = runpod.__version__
-except AttributeError:
-    RUNPOD_VERSION = "0.0.0"
 
 heartbeat = HeartbeatSender()
 
@@ -66,10 +61,17 @@ class WorkerAPI:
         self.config = {"handler": handler}
 
         # Initialize the FastAPI web server.
+
+        try:
+            import runpod  # pylint: disable=import-outside-toplevel
+            runpod_version = runpod.__version__
+        except AttributeError:
+            runpod_version = "0.0.0"
+
         self.rp_app = FastAPI(
             title="RunPod | Test Worker | API",
             description=DESCRIPTION,
-            version=RUNPOD_VERSION,
+            version=runpod_version,
         )
 
         # Create an APIRouter and add the route for processing jobs.
