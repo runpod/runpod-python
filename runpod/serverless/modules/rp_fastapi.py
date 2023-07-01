@@ -62,16 +62,12 @@ class WorkerAPI:
 
         # Initialize the FastAPI web server.
 
-        try:
-            import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
-            runpod_version = runpod.__version__
-        except AttributeError:
-            runpod_version = "0.0.0"
+        import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
 
         self.rp_app = FastAPI(
             title="RunPod | Test Worker | API",
             description=DESCRIPTION,
-            version=runpod_version,
+            version=runpod.__version__,
         )
 
         # Create an APIRouter and add the route for processing jobs.
