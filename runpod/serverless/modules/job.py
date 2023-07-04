@@ -55,7 +55,7 @@ async def get_job(session: ClientSession, config: Dict[str, Any]) -> Optional[Di
                     log.debug("No content, no job to process.")
                     return None
 
-                if response.status != 200:
+                if response.status not in [200, 400]:
                     log.error(f"Failed to get job, status code: {response.status}")
                     return None
 
