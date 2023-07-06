@@ -33,6 +33,7 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
           pip install pytest-timeout
+          pip install pytest-cov
 
       - name: Run Tests
         run: |
