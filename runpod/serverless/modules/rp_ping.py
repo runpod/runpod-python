@@ -8,7 +8,12 @@ import threading
 import requests
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import get_current_job_id, PING_URL, PING_INTERVAL
+from .worker_state import get_current_job_id, WORKER_ID
+
+# --------------------------------- Variables -------------------------------- #
+PING_URL = os.environ.get('RUNPOD_WEBHOOK_PING', "PING_NOT_SET")
+PING_URL = PING_URL.replace('$RUNPOD_POD_ID', WORKER_ID)
+PING_INTERVAL = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))
 
 log = RunPodLogger()
 

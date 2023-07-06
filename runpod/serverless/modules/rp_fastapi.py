@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from .job import run_job
 from .worker_state import set_job_id
-from .heartbeat import HeartbeatSender
+from .rp_ping import HeartbeatSender
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 

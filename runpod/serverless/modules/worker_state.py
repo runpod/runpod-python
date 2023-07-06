@@ -20,14 +20,6 @@ JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_I
 JOB_STREAM_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_STREAM'))
 JOB_STREAM_URL_TEMPLATE = JOB_STREAM_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
-WEBHOOK_PING = os.environ.get('RUNPOD_WEBHOOK_PING', None)
-if WEBHOOK_PING is not None:
-    PING_URL = WEBHOOK_PING.replace('$RUNPOD_POD_ID', WORKER_ID)
-else:
-    PING_URL = "PING_URL_NOT_SET"
-
-PING_INTERVAL = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))
-
 
 # ----------------------------------- Flags ---------------------------------- #
 IS_LOCAL_TEST = os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
