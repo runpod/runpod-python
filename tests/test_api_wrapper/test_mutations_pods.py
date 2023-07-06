@@ -1,6 +1,8 @@
+''' Test API Wrapper Pod Mutations '''
+
 import unittest
 
-from runpod.api_wrapper.mutations.pods import generate_pod_deployment_mutation, generate_pod_stop_mutation, generate_pod_resume_mutation, generate_pod_terminate_mutation
+from runpod.api_wrapper.mutations import pods
 
 class TestPodMutations(unittest.TestCase):
     ''' Test API Wrapper Pod Mutations '''
@@ -9,7 +11,7 @@ class TestPodMutations(unittest.TestCase):
         '''
         Test generate_pod_deployment_mutation
         '''
-        result = generate_pod_deployment_mutation(
+        result = pods.generate_pod_deployment_mutation(
             name="test",
             image_name="test_image",
             gpu_type_id="1",
@@ -34,7 +36,7 @@ class TestPodMutations(unittest.TestCase):
         '''
         Test generate_pod_stop_mutation
         '''
-        result = generate_pod_stop_mutation("pod_id")
+        result = pods.generate_pod_stop_mutation("pod_id")
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
 
@@ -42,7 +44,7 @@ class TestPodMutations(unittest.TestCase):
         '''
         Test generate_pod_resume_mutation
         '''
-        result = generate_pod_resume_mutation("pod_id", 1)
+        result = pods.generate_pod_resume_mutation("pod_id", 1)
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
 
@@ -50,7 +52,7 @@ class TestPodMutations(unittest.TestCase):
         '''
         Test generate_pod_terminate_mutation
         '''
-        result = generate_pod_terminate_mutation("pod_id")
+        result = pods.generate_pod_terminate_mutation("pod_id")
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
 
