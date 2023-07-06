@@ -2,11 +2,11 @@ name: CI | Unit Tests
 
 on:
   push:
+    branches-ignore:
+      - main-ci
+      - release
     branches:
       - "**"
-      - "main"
-      - "!main-ci"
-      - "!release"
 
   pull_request:
     branches:
@@ -43,5 +43,5 @@ jobs:
       - name: Get Cover
         uses: orgoro/coverage@v3.1
         with:
-          converageFile: ./coverage.xml
+          coverageFile: ./coverage.xml
           token: ${{ secrets.GITHUB_TOKEN }}
