@@ -1,6 +1,7 @@
 ''' Tests for runpod.serverless.modules.rp_ping '''
 
 import os
+import imp
 
 import unittest
 
@@ -18,6 +19,8 @@ class TestPing(unittest.TestCase):
 
         os.environ["RUNPOD_WEBHOOK_PING"] = "https://test.com/ping"
         os.environ["RUNPOD_PING_INTERVAL"] = "20000"
+
+        imp.reload(rp_ping)
 
         self.assertEqual(rp_ping.PING_URL, "https://test.com/ping")
         self.assertEqual(rp_ping.PING_INTERVAL, 20000)
