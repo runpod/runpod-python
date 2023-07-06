@@ -2,11 +2,9 @@ name: CI | Unit Tests
 
 on:
   push:
-    branches:
-      - "**"
-      - "main"
-      - "!main-ci"
-      - "!release"
+    branches-ignore:
+      - main-ci
+      - release
 
   pull_request:
     branches:
@@ -35,7 +33,14 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
           pip install pytest-timeout
+          pip install pytest-cov
 
       - name: Run Tests
         run: |
-          pytest --timeout=60 --timeout_method=thread
+          pytest --timeout=60 --timeout_method=thread --cov=runpod --cov-report=xml --cov-report=term-missing --cov-fail-under=100
+
+      - name: Get Cover
+        uses: orgoro/coverage@v3.1
+        with:
+          coverageFile: ./coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
