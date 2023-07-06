@@ -8,7 +8,7 @@ import threading
 import requests
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import get_current_job_id, WORKER_ID
+from .worker_state import Jobs, WORKER_ID
 
 # --------------------------------- Variables -------------------------------- #
 PING_URL = os.environ.get('RUNPOD_WEBHOOK_PING', "PING_NOT_SET")
@@ -16,6 +16,7 @@ PING_URL = PING_URL.replace('$RUNPOD_POD_ID', WORKER_ID)
 PING_INTERVAL = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))
 
 log = RunPodLogger()
+jobs = Jobs()
 
 _session = requests.Session()
 _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
@@ -45,11 +46,11 @@ class HeartbeatSender:
         '''
         Sends a heartbeat to the Runpod server.
         '''
-        job_id = get_current_job_id()
+        job_ids = jobs.get_job_list()
 
         ping_params = {
-            'job_id': job_id,
-        } if job_id is not None else None
+            'job_id': job_ids,
+        } if job_ids is not None else None
 
         if PING_URL not in [None, 'PING_URL_NOT_SET']:
             try:

@@ -11,8 +11,10 @@ import traceback
 from aiohttp import ClientSession
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import IS_LOCAL_TEST, JOB_GET_URL
+from .worker_state import WORKER_ID, IS_LOCAL_TEST
 from .rp_tips import check_return_size
+
+JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
 
 log = RunPodLogger()
 

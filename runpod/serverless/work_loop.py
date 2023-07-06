@@ -14,10 +14,11 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 from .modules.rp_ping import HeartbeatSender
 from .modules.job import get_job, run_job, run_job_generator
 from .modules.rp_http import send_result, stream_result
-from .modules.worker_state import REF_COUNT_ZERO, set_job_id
+from .modules.worker_state import REF_COUNT_ZERO, Jobs
 from .utils import rp_debugger
 
 log = RunPodLogger()
+job_list = Jobs()
 
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
@@ -55,7 +56,7 @@ async def start_worker(config: Dict[str, Any]) -> None:
                 log.debug("No job available, waiting for the next one.")
                 continue
 
-            set_job_id(job["id"])
+            job_list.add_job(job["id"])
             log.debug(f"{job['id']} | Set Job ID")
 
             if job.get('input', None) is None:
@@ -90,7 +91,7 @@ async def start_worker(config: Dict[str, Any]) -> None:
             await send_result(session, job_result, job)
 
             log.info(f'{job["id"]} | Finished')
-            set_job_id(None)
+            job_list.remove_job(job["id"])
 
             if _is_local_testing():
                 if "error" in job_result:

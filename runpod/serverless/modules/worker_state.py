@@ -10,16 +10,6 @@ REF_COUNT_ZERO = time.perf_counter()  # Used for benchmarking with the debugger.
 
 WORKER_ID = os.environ.get('RUNPOD_POD_ID', str(uuid.uuid4()))
 
-CURRENT_JOB_ID = None
-
-JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
-
-JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
-JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
-
-JOB_STREAM_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_STREAM'))
-JOB_STREAM_URL_TEMPLATE = JOB_STREAM_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
-
 
 # ----------------------------------- Flags ---------------------------------- #
 IS_LOCAL_TEST = os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
@@ -32,30 +22,36 @@ def get_auth_header():
     return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
 
-def get_current_job_id():
-    '''
-    Returns the current job id.
-    '''
-    return CURRENT_JOB_ID
 
+class Jobs:
+    ''' Track the state of current jobs.'''
 
-def get_done_url():
-    '''
-    Constructs the done URL using the current job id.
-    '''
-    return JOB_DONE_URL_TEMPLATE.replace('$ID', CURRENT_JOB_ID)
+    _instance = None
+    jobs = []
 
+    def __new__(cls):
+        if Jobs._instance is None:
+            Jobs._instance = object.__new__(cls)
+            Jobs._instance.jobs = []
+        return Jobs._instance
 
-def get_stream_url():
-    '''
-    Constructs the stream URL using the current job id.
-    '''
-    return JOB_STREAM_URL_TEMPLATE.replace('$ID', CURRENT_JOB_ID)
+    def add_job(self, job_id):
+        '''
+        Adds a job to the list of jobs.
+        '''
+        self.jobs.append(job_id)
 
+    def remove_job(self, job_id):
+        '''
+        Removes a job from the list of jobs.
+        '''
+        self.jobs.remove(job_id)
 
-def set_job_id(new_job_id):
-    '''
-    Sets the current job id.
-    '''
-    global CURRENT_JOB_ID  # pylint: disable=global-statement
-    CURRENT_JOB_ID = new_job_id
+    def get_job_list(self):
+        '''
+        Returns the list of jobs as a string.
+        '''
+        if len(self.jobs) == 0:
+            return None
+
+        return ','.join(self.jobs)

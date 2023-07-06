@@ -8,7 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 from .job import run_job
-from .worker_state import set_job_id
+from .worker_state import Jobs
 from .rp_ping import HeartbeatSender
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
@@ -26,6 +26,7 @@ The URLs provided are named to match the endpoints that you will be provided whe
 *Note: When running your worker on the RunPod platform, this API server will not be used.*
 """
 
+job_list = Jobs()
 
 heartbeat = HeartbeatSender()
 
@@ -101,13 +102,13 @@ class WorkerAPI:
             return {"error": "Handler not provided"}
 
         # Set the current job ID.
-        set_job_id(job.id)
+        job_list.add_job(job.id)
 
         # Process the job using the provided handler.
         job_results = run_job(self.config["handler"], job.__dict__)
 
         # Reset the job ID.
-        set_job_id(None)
+        job_list.remove_job(job.id)
 
         # Return the results of the job processing.
         return jsonable_encoder(job_results)
@@ -120,13 +121,13 @@ class WorkerAPI:
             return {"error": "Handler not provided"}
 
         # Set the current job ID.
-        set_job_id(job.id)
+        job_list.add_job(job.id)
 
         job_results = run_job(self.config["handler"], job.__dict__)
 
         job_results["id"] = job.id
 
         # Reset the job ID.
-        set_job_id(None)
+        job_list.remove_job(job.id)
 
         return jsonable_encoder(job_results)
