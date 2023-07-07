@@ -1,8 +1,10 @@
 env
 .env
+.env310
 .vscode
 test_wrapper.py
 test_logging.py
+/ignore
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
