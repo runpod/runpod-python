@@ -34,6 +34,7 @@ jobs:
           pip install pytest
           pip install pytest-timeout
           pip install pytest-cov
+          pip install pytest-asyncio
 
       - name: Run Tests
         run: |
