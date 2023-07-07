@@ -1,4 +1,6 @@
 ''' Unit tests for the asyncio_runner module. '''
+# pylint: disable=too-few-public-methods
+
 
 import tracemalloc
 import asyncio
