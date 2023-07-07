@@ -27,19 +27,19 @@ class Jobs:
     ''' Track the state of current jobs.'''
 
     _instance = None
-    jobs = []
+    jobs = set()
 
     def __new__(cls):
         if Jobs._instance is None:
             Jobs._instance = object.__new__(cls)
-            Jobs._instance.jobs = []
+            Jobs._instance.jobs = set()
         return Jobs._instance
 
     def add_job(self, job_id):
         '''
         Adds a job to the list of jobs.
         '''
-        self.jobs.append(job_id)
+        self.jobs.add(job_id)
 
     def remove_job(self, job_id):
         '''
@@ -54,4 +54,4 @@ class Jobs:
         if len(self.jobs) == 0:
             return None
 
-        return ','.join(self.jobs)
+        return ','.join(list(self.jobs))
