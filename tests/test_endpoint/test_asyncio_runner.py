@@ -1,14 +1,13 @@
 ''' Unit tests for the asyncio_runner module. '''
 
+import tracemalloc
 import asyncio
-import pytest
 import unittest
-from unittest import mock
 from unittest.mock import patch, MagicMock
 from unittest import IsolatedAsyncioTestCase
-from runpod.endpoint.asyncio.asyncio_runner import Job, Endpoint
+import pytest
 
-import tracemalloc
+from runpod.endpoint.asyncio.asyncio_runner import Job, Endpoint
 
 tracemalloc.start()
 
@@ -45,8 +44,7 @@ class TestJob(IsolatedAsyncioTestCase):
             async def json_side_effect():
                 if mock_sleep.call_count == 0:
                     return {"status": "IN_PROGRESS"}
-                else:
-                    return {"output": "OUTPUT", "status": "COMPLETED"}
+                return {"output": "OUTPUT", "status": "COMPLETED"}
 
             mock_resp.json = json_side_effect
             mock_session.get.return_value.__aenter__.return_value = mock_resp

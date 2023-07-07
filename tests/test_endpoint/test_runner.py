@@ -87,6 +87,8 @@ class TestEndpoint(unittest.TestCase):
 
 
 class TestJob(unittest.TestCase):
+    ''' Tests for Job '''
+
     @patch.object(runner.RunPodClient, 'get')
     def test_status(self, mock_get):
         '''
