@@ -25,6 +25,6 @@ def test_is_available_exception():
     '''
     Test that is_available returns False when nvidia-smi raises an exception
     '''
-    with patch("subprocess.check_output", side_effect=Exception("Command not found")) as mock_check_output:
+    with patch("subprocess.check_output", side_effect=Exception("Bad Command")) as mock_check:
         assert rp_cuda.is_available() is False
-    mock_check_output.assert_called_once_with("nvidia-smi", shell=True)
+    mock_check.assert_called_once_with("nvidia-smi", shell=True)

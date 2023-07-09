@@ -2,10 +2,9 @@
 Test Serverless Job Module
 '''
 
-import types
-from typing import Dict, Any, Generator, Union, Callable
-import pytest
 import unittest
+
+import pytest
 from aiohttp import ClientResponse
 from aiohttp.test_utils import make_mocked_coro
 from unittest.mock import Mock, patch, mock_open
@@ -32,7 +31,6 @@ class TestJob:
 
         with patch("aiohttp.ClientSession") as mock_session, \
             patch("runpod.serverless.modules.job.log", new_callable=Mock) as mock_log, \
-            patch("runpod.serverless.modules.job._get_local", new_callable=Mock) as mock_get_local, \
             patch("runpod.serverless.modules.job.IS_LOCAL_TEST", False), \
             patch("runpod.serverless.modules.job.JOB_GET_URL", "http://mock.url"):
 
@@ -45,7 +43,6 @@ class TestJob:
             assert mock_log.debug.call_count == 1
             assert mock_log.warn.call_count == 1
             assert mock_log.error.call_count == 0
-            assert mock_get_local.call_count == 0
 
 
     @pytest.mark.asyncio
@@ -93,7 +90,6 @@ class TestJob:
 
         with patch("aiohttp.ClientSession") as mock_session, \
             patch("runpod.serverless.modules.job.log", new_callable=Mock) as mock_log, \
-            patch("runpod.serverless.modules.job._get_local", new_callable=Mock) as mock_get_local, \
             patch("runpod.serverless.modules.job.IS_LOCAL_TEST", False), \
             patch("runpod.serverless.modules.job.JOB_GET_URL", "http://mock.url"):
 
@@ -105,7 +101,6 @@ class TestJob:
             assert mock_log.debug.call_count == 2
             assert mock_log.warn.call_count == 0
             assert mock_log.error.call_count == 0
-            assert mock_get_local.call_count == 0
 
     @pytest.mark.asyncio
     async def test_get_job_204(self):
@@ -157,7 +152,6 @@ class TestJob:
 
         with patch("aiohttp.ClientSession") as mock_session, \
             patch("runpod.serverless.modules.job.log", new_callable=Mock) as mock_log, \
-            patch("runpod.serverless.modules.job._get_local", new_callable=Mock) as mock_get_local, \
             patch("runpod.serverless.modules.job.IS_LOCAL_TEST", False), \
             patch("runpod.serverless.modules.job.JOB_GET_URL", "http://mock.url"):
 
@@ -169,7 +163,6 @@ class TestJob:
             # Assertions for the case when the job doesn't have an id
             assert job is None
             assert mock_log.error.call_count == 1
-            assert mock_get_local.call_count == 0
 
     @pytest.mark.asyncio
     async def test_get_job_exception(self):
@@ -182,7 +175,6 @@ class TestJob:
 
         with patch("aiohttp.ClientSession") as mock_session_exception, \
             patch("runpod.serverless.modules.job.log", new_callable=Mock) as mock_log, \
-            patch("runpod.serverless.modules.job._get_local", new_callable=Mock) as mock_get_local, \
             patch("runpod.serverless.modules.job.IS_LOCAL_TEST", False), \
             patch("runpod.serverless.modules.job.JOB_GET_URL", "http://mock.url"):
 
@@ -191,7 +183,6 @@ class TestJob:
 
             assert job is None
             assert mock_log.error.call_count == 1
-            assert mock_get_local.call_count == 0
 
 class TestRunJob(unittest.TestCase):
 
