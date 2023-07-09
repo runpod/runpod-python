@@ -16,7 +16,7 @@ PING_URL = PING_URL.replace('$RUNPOD_POD_ID', WORKER_ID)
 PING_INTERVAL = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))
 
 log = RunPodLogger()
-jobs = Jobs()
+jobs = Jobs() # Contains the list of jobs that are currently running.
 
 _session = requests.Session()
 _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
@@ -25,14 +25,21 @@ _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')
 class HeartbeatSender:
     ''' Sends heartbeats to the Runpod server. '''
 
-    def __init__(self):
-        self._thread = threading.Thread(target=self._run, daemon=True)
+    _instance = None
+    _thread = None
+
+    def __new__(cls):
+        if HeartbeatSender._instance is None:
+            HeartbeatSender._instance = object.__new__(cls)
+            HeartbeatSender._thread = threading.Thread(target=HeartbeatSender._instance._run, daemon=True)
+        return HeartbeatSender._instance
 
     def start_ping(self):
         '''
         Starts the heartbeat thread.
         '''
-        self._thread.start()
+        if not self._thread.is_alive():
+            self._thread.start()
 
     def _run(self):
         '''

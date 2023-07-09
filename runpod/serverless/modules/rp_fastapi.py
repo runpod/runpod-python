@@ -31,6 +31,7 @@ job_list = Jobs()
 heartbeat = HeartbeatSender()
 
 
+# ------------------------------- Input Objects ------------------------------ #
 class Job(BaseModel):
     ''' Represents a job. '''
     id: str
@@ -75,9 +76,9 @@ class WorkerAPI:
         api_router = APIRouter()
 
         if RUNPOD_ENDPOINT_ID:
-            api_router.add_api_route(f"/{RUNPOD_ENDPOINT_ID}/realtime", self.run, methods=["POST"])
+            api_router.add_api_route(f"/{RUNPOD_ENDPOINT_ID}/realtime", self._run, methods=["POST"])
 
-        api_router.add_api_route("/runsync", self.test_run, methods=["POST"])
+        api_router.add_api_route("/runsync", self._debug_run, methods=["POST"])
 
         # Include the APIRouter in the FastAPI application.
         self.rp_app.include_router(api_router)
@@ -93,7 +94,7 @@ class WorkerAPI:
             access_log=False
         )
 
-    async def run(self, job: Job):
+    async def _run(self, job: Job):
         '''
         Performs model inference on the input data using the provided handler.
         If handler is not provided, returns an error message.
@@ -113,7 +114,7 @@ class WorkerAPI:
         # Return the results of the job processing.
         return jsonable_encoder(job_results)
 
-    async def test_run(self, job: TestJob):
+    async def _debug_run(self, job: TestJob):
         '''
         Performs model inference on the input data using the provided handler.
         '''

@@ -1,0 +1,85 @@
+''' Tests for runpod.serverless.modules.rp_fastapi.py '''
+
+import os
+import json
+import asyncio
+import pytest
+
+import unittest
+from unittest.mock import patch, Mock
+
+import runpod
+from runpod.serverless.modules import rp_fastapi
+
+class TestFastAPI(unittest.TestCase):
+    ''' Tests the FastAPI '''
+
+    def setUp(self) -> None:
+        self.handler = Mock()
+        self.handler.return_value = {"result": "success"}
+
+    def test_start_serverless_with_realtime(self):
+        '''
+        Tests the start_serverless() method with the realtime option.
+        '''
+        with patch("runpod.serverless.modules.rp_fastapi.HeartbeatSender.start_ping", Mock()) as mock_ping, \
+            patch("runpod.serverless.modules.rp_fastapi.FastAPI", Mock()) as mock_fastapi, \
+            patch("runpod.serverless.modules.rp_fastapi.APIRouter", return_value=Mock()) as mock_router, \
+            patch("runpod.serverless.modules.rp_fastapi.uvicorn", Mock()) as mock_uvicorn:
+
+
+            rp_fastapi.RUNPOD_REALTIME_PORT = '1111'
+            rp_fastapi.RUNPOD_ENDPOINT_ID = 'test_endpoint_id'
+
+            os.environ["RUNPOD_REALTIME_PORT"] = '1111'
+            os.environ["RUNPOD_ENDPOINT_ID"] = 'test_endpoint_id'
+
+            runpod.serverless.start({"handler": self.handler})
+
+            self.assertTrue(mock_ping.called)
+
+            self.assertTrue(mock_fastapi.called)
+            self.assertTrue(mock_router.called)
+
+            self.assertTrue(rp_fastapi.RUNPOD_ENDPOINT_ID == 'test_endpoint_id')
+            self.assertTrue(mock_router.return_value.add_api_route.called)
+
+            self.assertTrue(mock_uvicorn.run.called)
+
+
+    @pytest.mark.asyncio
+    def test_run(self):
+        loop = asyncio.get_event_loop()
+
+        with patch("runpod.serverless.modules.rp_fastapi.HeartbeatSender.start_ping", Mock()) as mock_ping, \
+            patch("runpod.serverless.modules.rp_fastapi.FastAPI", Mock()) as mock_fastapi, \
+            patch("runpod.serverless.modules.rp_fastapi.APIRouter", return_value=Mock()) as mock_router, \
+            patch("runpod.serverless.modules.rp_fastapi.uvicorn", Mock()) as mock_uvicorn:
+
+                job_object = rp_fastapi.Job(
+                    id="test_job_id",
+                    input={"test_input": "test_input"}
+                )
+
+                # Test without handler
+                worker_api_without_handler = rp_fastapi.WorkerAPI()
+
+                handlerless_run_return = asyncio.run(worker_api_without_handler._run(job_object))
+                assert handlerless_run_return == {"error": "Handler not provided"}
+
+                handlerless_debug_run_return = asyncio.run(worker_api_without_handler._debug_run(job_object))
+                assert handlerless_debug_run_return == {"error": "Handler not provided"}
+
+                # Test with handler
+                worker_api = rp_fastapi.WorkerAPI(handler=self.handler)
+
+                run_return = asyncio.run(worker_api._run(job_object))
+                assert run_return == {"output": {"result": "success"}}
+
+                debug_run_return = asyncio.run(worker_api._debug_run(job_object))
+                assert debug_run_return == {
+                            "id": "test_job_id",
+                            "output": {"result": "success"}
+                        }
+
+        loop.close()
