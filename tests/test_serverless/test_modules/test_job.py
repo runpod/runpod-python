@@ -268,7 +268,7 @@ class TestRunJobGenerator(unittest.TestCase):
         '''
         Test handler that raises an exception
         '''
-        raise Exception("Test Exception") # pylint: disable=broad-except-reraise
+        raise Exception("Test Exception") # pylint: disable=broad-exception-raised
 
     def test_run_job_generator_success(self):
         '''
