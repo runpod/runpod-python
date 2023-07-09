@@ -37,16 +37,20 @@ def _get_local() -> Optional[Dict[str, Any]]:
     return test_inputs
 
 
-async def get_job(session: ClientSession, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+async def get_job(session: ClientSession, rp_args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
+
+    Inputs:
+    - session | The aiohttp session
+    - rp_args | Arguments passed to the worker
     """
     next_job = None
 
     try:
-        if config["rp_args"].get("test_input", None):
+        if rp_args.get("test_input", None):
             log.warn("test_input set, using test_input as job input")
-            next_job = config["rp_args"]["test_input"]
+            next_job = rp_args["test_input"]
             next_job["id"] = "test_input_provided"
         elif IS_LOCAL_TEST:
             log.warn("RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local")
@@ -130,6 +134,7 @@ def run_job_generator(
         job: Dict[str, Any]) -> Generator[Dict[str, Union[str, Any]], None, None]:
     '''
     Run generator job.
+    Yields output partials from the generator.
     '''
     try:
         job_output = handler(job)

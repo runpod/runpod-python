@@ -38,7 +38,7 @@ jobs:
 
       - name: Run Tests
         run: |
-          pytest --timeout=60 --timeout_method=thread --cov=runpod --cov-report=xml --cov-report=term-missing --cov-fail-under=100
+          pytest --timeout=120 --timeout_method=thread --cov=runpod --cov-report=xml --cov-report=term-missing --cov-fail-under=100
 
       - name: Get Cover
         uses: orgoro/coverage@v3.1

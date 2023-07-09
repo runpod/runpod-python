@@ -50,7 +50,7 @@ async def start_worker(config: Dict[str, Any]) -> None:
         heartbeat.start_ping()
 
         while True:
-            job: Optional[Dict[str, Any]] = await get_job(session, config)
+            job: Optional[Dict[str, Any]] = await get_job(session, config['rp_args'])
 
             if job is None:
                 log.debug("No job available, waiting for the next one.")
