@@ -257,14 +257,14 @@ class TestRunJob(unittest.TestCase):
 class TestRunJobGenerator(unittest.TestCase):
     ''' Tests the run_job_generator function '''
 
-    def handler_success(self):
+    def handler_success(self, job): # pylint: disable=unused-argument
         '''
         Test handler that returns a generator
         '''
         yield "partial_output_1"
         yield "partial_output_2"
 
-    def handler_fail(self):
+    def handler_fail(self, job):
         '''
         Test handler that raises an exception
         '''
