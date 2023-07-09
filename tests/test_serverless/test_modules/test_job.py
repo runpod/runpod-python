@@ -3,11 +3,11 @@ Test Serverless Job Module
 '''
 
 import unittest
+from unittest.mock import Mock, patch, mock_open
 
 import pytest
 from aiohttp import ClientResponse
 from aiohttp.test_utils import make_mocked_coro
-from unittest.mock import Mock, patch, mock_open
 
 from runpod.serverless.modules import job as job_module
 
@@ -142,6 +142,9 @@ class TestJob:
 
     @pytest.mark.asyncio
     async def test_get_job_no_id(self):
+        '''
+        Tests the get_job function with a 200 response but no id
+        '''
         response = Mock(ClientResponse)
         response.status = 200
         response.json = make_mocked_coro(return_value={})
@@ -185,6 +188,7 @@ class TestJob:
             assert mock_log.error.call_count == 1
 
 class TestRunJob(unittest.TestCase):
+    ''' Tests the run_job function '''
 
     def setUp(self) -> None:
         self.sample_job = {
@@ -253,18 +257,18 @@ class TestRunJob(unittest.TestCase):
 class TestRunJobGenerator(unittest.TestCase):
     ''' Tests the run_job_generator function '''
 
-    def handler_success(self, job):
+    def handler_success(self):
         '''
         Test handler that returns a generator
         '''
         yield "partial_output_1"
         yield "partial_output_2"
 
-    def handler_fail(self, job):
+    def handler_fail(self):
         '''
         Test handler that raises an exception
         '''
-        raise Exception("Test Exception")
+        raise Exception("Test Exception") # pylint: disable=broad-except-reraise
 
     def test_run_job_generator_success(self):
         '''
