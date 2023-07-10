@@ -2,11 +2,15 @@
     This module is used to handle HTTP requests.
 """
 
+import os
 import json
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .retry import retry
-from .worker_state import IS_LOCAL_TEST, get_done_url, get_stream_url
+from .worker_state import WORKER_ID, IS_LOCAL_TEST
+
+JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
+JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
 log = RunPodLogger()
 
@@ -38,7 +42,8 @@ async def send_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not IS_LOCAL_TEST:
-            await transmit(session, job_data, get_done_url())
+            job_done_url = JOB_DONE_URL_TEMPLATE.replace('$ID', job['id'])
+            await transmit(session, job_data, job_done_url)
             log.debug(f"{job['id']} | Results sent.")
         else:
             log.warn(f"Local test job results for {job['id']}: {job_data}")
@@ -54,7 +59,8 @@ async def stream_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not IS_LOCAL_TEST:
-            await transmit(session, job_data, get_stream_url())
+            job_done_url = JOB_DONE_URL_TEMPLATE.replace('$ID', job['id'])
+            await transmit(session, job_data, job_done_url)
         else:
             log.warn(f"Local test job results for {job['id']}: {job_data}")
 

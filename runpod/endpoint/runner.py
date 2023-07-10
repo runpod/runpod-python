@@ -123,9 +123,6 @@ class Job:
         if "error" in request_json:
             raise RuntimeError(f"Error from RunPod Server: '{request_json['error']}'")
 
-        if "status" not in request_json:
-            raise ValueError(f"Unexpected response from server: {request_json}")
-
         return request_json
 
     def status(self):
