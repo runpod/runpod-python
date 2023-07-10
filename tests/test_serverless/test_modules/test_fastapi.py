@@ -1,7 +1,6 @@
 ''' Tests for runpod.serverless.modules.rp_fastapi.py '''
 
 import os
-import json
 import asyncio
 import pytest
 
@@ -22,10 +21,11 @@ class TestFastAPI(unittest.TestCase):
         '''
         Tests the start_serverless() method with the realtime option.
         '''
-        with patch("runpod.serverless.modules.rp_fastapi.HeartbeatSender.start_ping", Mock()) as mock_ping, \
-            patch("runpod.serverless.modules.rp_fastapi.FastAPI", Mock()) as mock_fastapi, \
-            patch("runpod.serverless.modules.rp_fastapi.APIRouter", return_value=Mock()) as mock_router, \
-            patch("runpod.serverless.modules.rp_fastapi.uvicorn", Mock()) as mock_uvicorn:
+        module_location = "runpod.serverless.modules.rp_fastapi"
+        with patch(f"{module_location}.HeartbeatSender.start_ping", Mock()) as mock_ping, \
+            patch(f"{module_location}.FastAPI", Mock()) as mock_fastapi, \
+            patch(f"{module_location}.APIRouter", return_value=Mock()) as mock_router, \
+            patch(f"{module_location}.uvicorn", Mock()) as mock_uvicorn:
 
 
             rp_fastapi.RUNPOD_REALTIME_PORT = '1111'
@@ -51,35 +51,38 @@ class TestFastAPI(unittest.TestCase):
     def test_run(self):
         loop = asyncio.get_event_loop()
 
-        with patch("runpod.serverless.modules.rp_fastapi.HeartbeatSender.start_ping", Mock()) as mock_ping, \
-            patch("runpod.serverless.modules.rp_fastapi.FastAPI", Mock()) as mock_fastapi, \
-            patch("runpod.serverless.modules.rp_fastapi.APIRouter", return_value=Mock()) as mock_router, \
-            patch("runpod.serverless.modules.rp_fastapi.uvicorn", Mock()) as mock_uvicorn:
+        module_location = "runpod.serverless.modules.rp_fastapi"
+        with patch(f"{module_location}.HeartbeatSender.start_ping", Mock()) as mock_ping, \
+            patch(f"{module_location}.FastAPI", Mock()) as mock_fastapi, \
+            patch(f"{module_location}.APIRouter", return_value=Mock()) as mock_router, \
+            patch(f"{module_location}.uvicorn", Mock()) as mock_uvicorn:
 
-                job_object = rp_fastapi.Job(
-                    id="test_job_id",
-                    input={"test_input": "test_input"}
-                )
+            job_object = rp_fastapi.Job(
+                id="test_job_id",
+                input={"test_input": "test_input"}
+            )
 
-                # Test without handler
-                worker_api_without_handler = rp_fastapi.WorkerAPI()
+            # Test without handler
+            worker_api_without_handler = rp_fastapi.WorkerAPI()
 
-                handlerless_run_return = asyncio.run(worker_api_without_handler._run(job_object))
-                assert handlerless_run_return == {"error": "Handler not provided"}
+            handlerless_run_return = asyncio.run(worker_api_without_handler._run(job_object))
+            assert handlerless_run_return == {"error": "Handler not provided"}
 
-                handlerless_debug_run_return = asyncio.run(worker_api_without_handler._debug_run(job_object))
-                assert handlerless_debug_run_return == {"error": "Handler not provided"}
+            handlerless_debug_run_return = asyncio.run(worker_api_without_handler._debug_run(job_object))
+            assert handlerless_debug_run_return == {"error": "Handler not provided"}
 
-                # Test with handler
-                worker_api = rp_fastapi.WorkerAPI(handler=self.handler)
+            # Test with handler
+            worker_api = rp_fastapi.WorkerAPI(handler=self.handler)
 
-                run_return = asyncio.run(worker_api._run(job_object))
-                assert run_return == {"output": {"result": "success"}}
+            run_return = asyncio.run(worker_api._run(job_object))
+            assert run_return == {"output": {"result": "success"}}
 
-                debug_run_return = asyncio.run(worker_api._debug_run(job_object))
-                assert debug_run_return == {
-                            "id": "test_job_id",
-                            "output": {"result": "success"}
-                        }
+            debug_run_return = asyncio.run(worker_api._debug_run(job_object))
+            assert debug_run_return == {
+                        "id": "test_job_id",
+                        "output": {"result": "success"}
+                    }
+
+            self.assertTrue(mock_ping.called)
 
         loop.close()
