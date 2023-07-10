@@ -2,10 +2,10 @@
 
 import os
 import asyncio
-import pytest
 
 import unittest
 from unittest.mock import patch, Mock
+import pytest
 
 import runpod
 from runpod.serverless.modules import rp_fastapi
@@ -49,13 +49,16 @@ class TestFastAPI(unittest.TestCase):
 
     @pytest.mark.asyncio
     def test_run(self):
+        '''
+        Tests the _run() method.
+        '''
         loop = asyncio.get_event_loop()
 
         module_location = "runpod.serverless.modules.rp_fastapi"
         with patch(f"{module_location}.HeartbeatSender.start_ping", Mock()) as mock_ping, \
-            patch(f"{module_location}.FastAPI", Mock()) as mock_fastapi, \
-            patch(f"{module_location}.APIRouter", return_value=Mock()) as mock_router, \
-            patch(f"{module_location}.uvicorn", Mock()) as mock_uvicorn:
+            patch(f"{module_location}.FastAPI", Mock()), \
+            patch(f"{module_location}.APIRouter", return_value=Mock()), \
+            patch(f"{module_location}.uvicorn", Mock()):
 
             job_object = rp_fastapi.Job(
                 id="test_job_id",
@@ -65,19 +68,19 @@ class TestFastAPI(unittest.TestCase):
             # Test without handler
             worker_api_without_handler = rp_fastapi.WorkerAPI()
 
-            handlerless_run_return = asyncio.run(worker_api_without_handler._run(job_object))
+            handlerless_run_return = asyncio.run(worker_api_without_handler._run(job_object)) # pylint: disable=protected-access
             assert handlerless_run_return == {"error": "Handler not provided"}
 
-            handlerless_debug_run_return = asyncio.run(worker_api_without_handler._debug_run(job_object))
-            assert handlerless_debug_run_return == {"error": "Handler not provided"}
+            handlerless_debug_run = asyncio.run(worker_api_without_handler._debug_run(job_object)) # pylint: disable=protected-access
+            assert handlerless_debug_run == {"error": "Handler not provided"}
 
             # Test with handler
             worker_api = rp_fastapi.WorkerAPI(handler=self.handler)
 
-            run_return = asyncio.run(worker_api._run(job_object))
+            run_return = asyncio.run(worker_api._run(job_object)) # pylint: disable=protected-access
             assert run_return == {"output": {"result": "success"}}
 
-            debug_run_return = asyncio.run(worker_api._debug_run(job_object))
+            debug_run_return = asyncio.run(worker_api._debug_run(job_object)) # pylint: disable=protected-access
             assert debug_run_return == {
                         "id": "test_job_id",
                         "output": {"result": "success"}

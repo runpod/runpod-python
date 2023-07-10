@@ -1,7 +1,7 @@
 ''' Unit tests for the retry module. '''
 
-import pytest
 from unittest.mock import patch
+import pytest
 from runpod.serverless.modules.retry import retry
 
 @retry(max_attempts=3, base_delay=1, max_delay=10)

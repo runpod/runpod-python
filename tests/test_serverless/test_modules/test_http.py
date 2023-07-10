@@ -1,8 +1,10 @@
+'''
+Test rp_http.py module.
+'''
 
 import asyncio
 import unittest
-from unittest.mock import patch, Mock, MagicMock
-from aiohttp import ClientSession
+from unittest.mock import patch, Mock
 
 from runpod.serverless.modules import rp_http
 

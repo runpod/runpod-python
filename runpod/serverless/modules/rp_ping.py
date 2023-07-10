@@ -31,7 +31,8 @@ class HeartbeatSender:
     def __new__(cls):
         if HeartbeatSender._instance is None:
             HeartbeatSender._instance = object.__new__(cls)
-            HeartbeatSender._thread = threading.Thread(target=HeartbeatSender._instance._run, daemon=True)
+            HeartbeatSender._thread = threading.Thread(
+                target=HeartbeatSender._instance._run, daemon=True)
         return HeartbeatSender._instance
 
     def start_ping(self):
