@@ -7,7 +7,7 @@ from unittest.mock import patch, mock_open
 
 import requests
 
-from runpod.serverless.utils.rp_download import download_files_from_urls
+from runpod.serverless.utils.rp_download import calculate_chunk_size, download_files_from_urls
 
 URL_LIST = ['https://example.com/picture.jpg',
             'https://example.com/picture.jpg?X-Amz-Signature=123']
@@ -60,6 +60,15 @@ def mock_requests_get(*args, **kwargs):
 
 class TestDownloadFilesFromUrls(unittest.TestCase):
     ''' Tests for download_files_from_urls '''
+
+    def test_calculate_chunk_size(self):
+        '''
+        Tests calculate_chunk_size
+        '''
+        self.assertEqual(calculate_chunk_size(1024), 1024)
+        self.assertEqual(calculate_chunk_size(1024*1024), 1024)
+        self.assertEqual(calculate_chunk_size(1024*1024*1024), 1024*1024)
+        self.assertEqual(calculate_chunk_size(1024*1024*1024*10), 1024*1024*10)
 
     @patch('os.makedirs', return_value=None)
     @patch('requests.get', side_effect=mock_requests_get)
