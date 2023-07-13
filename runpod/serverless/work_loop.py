@@ -2,7 +2,7 @@
 runpod | serverless | worker_loop.py
 Called to convert a container into a worker pod for the runpod serverless platform.
 """
-
+import inspect
 import os
 import sys
 import types
@@ -63,7 +63,7 @@ async def start_worker(config: Dict[str, Any]) -> None:
                 error_msg = f"Job {job['id']} has no input parameter. Unable to run."
                 log.error(error_msg)
                 job_result = {"error": error_msg}
-            elif isinstance(config["handler"], types.GeneratorType):
+            elif inspect.isgeneratorfunction(config["handler"]):
                 job_result = run_job_generator(config["handler"], job)
 
                 log.debug("Handler is a generator, streaming results.")
