@@ -12,6 +12,9 @@ from .worker_state import WORKER_ID, IS_LOCAL_TEST
 JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
 JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
+JOB_STREAM_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_STREAM'))
+JOB_STREAM_URL_TEMPLATE = JOB_STREAM_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
+
 log = RunPodLogger()
 
 
@@ -59,7 +62,7 @@ async def stream_result(session, job_data, job):
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
         if not IS_LOCAL_TEST:
-            job_done_url = JOB_DONE_URL_TEMPLATE.replace('$ID', job['id'])
+            job_done_url = JOB_STREAM_URL_TEMPLATE.replace('$ID', job['id'])
             await transmit(session, job_data, job_done_url)
         else:
             log.warn(f"Local test job results for {job['id']}: {job_data}")
