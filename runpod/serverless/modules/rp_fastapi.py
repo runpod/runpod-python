@@ -1,8 +1,6 @@
 ''' Used to launch the FastAPI web server when worker is running in API mode. '''
 # pylint: disable=too-few-public-methods
 
-from __future__ import annotations
-
 import os
 
 import uvicorn
