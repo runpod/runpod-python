@@ -1,6 +1,7 @@
 '''
 Unit tests for the rp_cuda module
 '''
+from __future__ import annotations
 
 from unittest.mock import patch
 from runpod.serverless.utils import rp_cuda

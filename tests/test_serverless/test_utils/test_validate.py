@@ -1,4 +1,6 @@
 ''' Tests for runpod.serverless.utils.validate '''
+from __future__ import annotations
+
 import unittest
 from unittest.mock import Mock
 from runpod.serverless.utils import rp_validator
