@@ -3,6 +3,7 @@ runpod | serverless | cleanup.py
 
 Called to clean up the worker pod after a job is completed.
 '''
+from __future__ import annotations
 
 import os
 import shutil
