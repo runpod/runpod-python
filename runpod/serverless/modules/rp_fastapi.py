@@ -38,7 +38,7 @@ heartbeat = HeartbeatSender()
 class Job(BaseModel):
     ''' Represents a job. '''
     id: str
-    input: dict | list | str | int | float | bool
+    input: "dict | list | str | int | float | bool"
 
 
 class TestJob(BaseModel):
@@ -46,7 +46,7 @@ class TestJob(BaseModel):
     input can be any type of data.
     '''
     id: str = "test_job"
-    input: dict | list | str | int | float | bool
+    input: "dict | list | str | int | float | bool"
 
 
 class WorkerAPI:
