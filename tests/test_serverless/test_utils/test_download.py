@@ -104,7 +104,10 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
 
         # Test requests exception
         mock_get.side_effect = requests.exceptions.RequestException('Error')
-        self.assertEqual(download_files_from_urls(JOB_ID, ['https://example.com/picture.jpg']), [None])
+        self.assertEqual(
+            download_files_from_urls(JOB_ID, ['https://example.com/picture.jpg']),
+            [None]
+        )
 
     @patch('os.makedirs', return_value=None)
     @patch('requests.get', side_effect=mock_requests_get)
