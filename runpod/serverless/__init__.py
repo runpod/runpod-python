@@ -1,13 +1,16 @@
-"""Allows serverless to be recognized as a package."""
+"""
+Contains the main entrypoint for the RunPod Serverless Worker.
+
+Arguments can be passed in when the worker is started, and will be passed to the worker.
+"""
 
 import os
 import sys
 import json
 import time
-import asyncio
 import argparse
 
-from . import work_loop
+from . import worker
 from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
 
@@ -113,4 +116,4 @@ def start(config):
         )
 
     else:
-        asyncio.run(work_loop.start_worker(config))
+        worker.main(config)

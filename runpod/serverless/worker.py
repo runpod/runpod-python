@@ -6,6 +6,7 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 import os
 import sys
 import types
+import asyncio
 from typing import Dict, Any, Optional
 
 import aiohttp
@@ -39,12 +40,11 @@ def _is_local_testing() -> bool:
     return os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
 
 
-async def start_worker(config: Dict[str, Any]) -> None:
+async def run_worker(config: Dict[str, Any]) -> None:
     """
     Starts the worker loop.
     """
     auth_header = _get_auth_header()
-
     async with aiohttp.ClientSession(headers=auth_header, timeout=_TIMEOUT) as session:
 
         heartbeat.start_ping()
@@ -100,3 +100,17 @@ async def start_worker(config: Dict[str, Any]) -> None:
                 else:
                     log.info("Local testing complete, exiting.")
                     sys.exit(0)
+
+
+def main(config: Dict[str, Any]) -> None:
+    """
+    Creates the worker loop.
+    """
+    try:
+        work_loop = asyncio.new_event_loop()
+
+        asyncio.ensure_future(run_worker(config), loop=work_loop)
+
+        work_loop.run_forever()
+    finally:
+        work_loop.close()
