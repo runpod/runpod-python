@@ -3,11 +3,13 @@
 
 import os
 import unittest
-from unittest.mock import patch, mock_open, Mock, MagicMock
+from unittest.mock import patch, mock_open, MagicMock
 
 import requests
 
-from runpod.serverless.utils.rp_download import calculate_chunk_size, download_files_from_urls, file
+from runpod.serverless.utils.rp_download import(
+    calculate_chunk_size, download_files_from_urls, file
+)
 
 URL_LIST = ['https://example.com/picture.jpg',
             'https://example.com/picture.jpg?X-Amz-Signature=123']
