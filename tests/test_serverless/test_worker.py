@@ -1,7 +1,5 @@
 ''' Tests for runpod | serverless| worker '''
 
-import os
-import sys
 import argparse
 
 import unittest
@@ -42,7 +40,7 @@ class TestWorker(unittest.TestCase):
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
             assert runpod.serverless.worker._is_local({"rp_args": {}}) is True # pylint: disable=protected-access
-            assert runpod.serverless.worker._is_local({"rp_args":{"test_input": "something"}}) is True # pylint: disable=protected-access
+            assert runpod.serverless.worker._is_local({"rp_args":{"test_input": "something"}}) is True # pylint: disable=protected-access, line-too-long
 
             mock_os.environ.get.return_value = "something"
             assert runpod.serverless.worker._is_local(self.mock_config) is False # pylint: disable=protected-access
