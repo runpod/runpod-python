@@ -8,7 +8,7 @@ from fastapi import FastAPI, APIRouter
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
-from .job import run_job
+from .rp_job import run_job
 from .worker_state import Jobs
 from .rp_ping import HeartbeatSender
 

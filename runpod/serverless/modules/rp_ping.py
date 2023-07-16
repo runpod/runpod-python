@@ -60,7 +60,7 @@ class HeartbeatSender:
             'job_id': job_ids,
         } if job_ids is not None else None
 
-        if PING_URL not in [None, 'PING_URL_NOT_SET']:
+        if PING_URL not in [None, 'PING_NOT_SET']:
             try:
                 result = _session.get(
                     PING_URL,

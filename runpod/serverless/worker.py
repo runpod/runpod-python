@@ -6,14 +6,15 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 import os
 import sys
 import types
+import json
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 import aiohttp
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .modules.rp_ping import HeartbeatSender
-from .modules.job import get_job, run_job, run_job_generator
+from .modules.rp_job import get_job, run_job, run_job_generator
 from .modules.rp_http import send_result, stream_result
 from .modules.worker_state import REF_COUNT_ZERO, Jobs
 from .utils import rp_debugger
@@ -33,13 +34,55 @@ def _get_auth_header() -> Dict[str, str]:
     return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
 
-def _is_local_testing() -> bool:
+def _is_local(config) -> bool:
     '''
     Returns True if the environment variable RUNPOD_WEBHOOK_GET_JOB is not set.
     '''
-    return os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
+    if config['rp_args'].get('test_input', None):
+        return True
+
+    if os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None:
+        return True
+
+    return False
+
+def run_local(config: Dict[str, Any]) -> None:
+    '''
+    Runs the worker locally.
+    '''
+    # Get the local test job
+    if config['rp_args'].get('test_input', None):
+        log.info("test_input set, using test_input as job input.")
+        local_job = config['rp_args']['test_input']
+    else:
+        if not os.path.exists("test_input.json"):
+            log.warn("test_input.json not found, exiting.")
+            sys.exit(1)
+
+        log.info("Using test_input.json as job input.")
+        with open("test_input.json", "r", encoding="UTF-8") as file:
+            local_job = json.loads(file.read())
+
+    if local_job.get("input", None) is None:
+        log.error("Job has no input parameter. Unable to run.")
+        sys.exit(1)
+
+    # Set the job ID
+    local_job["id"] = local_job.get("id", "local_test")
+    log.debug(f"Retrieved local job: {local_job}")
+
+    job_result = run_job(config["handler"], local_job)
+
+    if job_result.get("error", None):
+        log.error(f"Job {local_job['id']} failed with error: {job_result['error']}")
+        sys.exit(1)
+
+    log.info("Local testing complete, exiting.")
+    sys.exit(0)
 
 
+
+# ------------------------- Main Worker Running Loop ------------------------- #
 async def run_worker(config: Dict[str, Any]) -> None:
     """
     Starts the worker loop.
@@ -50,20 +93,12 @@ async def run_worker(config: Dict[str, Any]) -> None:
         heartbeat.start_ping()
 
         while True:
-            job: Optional[Dict[str, Any]] = await get_job(session, config['rp_args'])
-
-            if job is None:
-                log.debug("No job available, waiting for the next one.")
-                continue
+            job = await get_job(session)
 
             job_list.add_job(job["id"])
             log.debug(f"{job['id']} | Set Job ID")
 
-            if job.get('input', None) is None:
-                error_msg = f"Job {job['id']} has no input parameter. Unable to run."
-                log.error(error_msg)
-                job_result = {"error": error_msg}
-            elif isinstance(config["handler"], types.GeneratorType):
+            if isinstance(config["handler"], types.GeneratorType):
                 job_result = run_job_generator(config["handler"], job)
 
                 log.debug("Handler is a generator, streaming results.")
@@ -93,24 +128,21 @@ async def run_worker(config: Dict[str, Any]) -> None:
             log.info(f'{job["id"]} | Finished')
             job_list.remove_job(job["id"])
 
-            if _is_local_testing():
-                if "error" in job_result:
-                    log.error(f"Job {job['id']} failed with error: {job_result['error']}")
-                    sys.exit(1)
-                else:
-                    log.info("Local testing complete, exiting.")
-                    sys.exit(0)
-
 
 def main(config: Dict[str, Any]) -> None:
     """
-    Creates the worker loop.
+    Checks if the worker is running locally or on RunPod.
+    If running locally, the test job is run and the worker exits.
+    If running on RunPod, the worker loop is created.
     """
-    try:
-        work_loop = asyncio.new_event_loop()
+    if _is_local(config):
+        run_local(config)
 
-        asyncio.ensure_future(run_worker(config), loop=work_loop)
+    else:
+        try:
+            work_loop = asyncio.new_event_loop()
+            asyncio.ensure_future(run_worker(config), loop=work_loop)
+            work_loop.run_forever()
 
-        work_loop.run_forever()
-    finally:
-        work_loop.close()
+        finally:
+            work_loop.close()

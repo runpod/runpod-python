@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(
     prog="runpod",
     description="Runpod Serverless Worker Arguments."
 )
-parser.add_argument("--rp_log_level", type=str,
+parser.add_argument("--rp_log_level", type=str, default=None,
                     help="""Controls what level of logs are printed to the console.
                     Options: ERROR, WARN, INFO, and DEBUG.""")
 
