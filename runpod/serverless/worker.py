@@ -6,6 +6,7 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 import os
 import types
 import asyncio
+import inspect
 from typing import Dict, Any
 
 import aiohttp
@@ -63,13 +64,13 @@ async def run_worker(config: Dict[str, Any]) -> None:
             job_list.add_job(job["id"])
             log.debug(f"{job['id']} | Set Job ID")
 
-            if isinstance(config["handler"], types.GeneratorType):
+            if inspect.isgeneratorfunction(config["handler"]):
                 job_result = run_job_generator(config["handler"], job)
 
                 log.debug("Handler is a generator, streaming results.")
                 for job_stream in job_result:
                     await stream_result(session, job_stream, job)
-                job_result = None
+                job_result = {}
             else:
                 job_result = run_job(config["handler"], job)
 
@@ -79,6 +80,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 job_result["stopPod"] = True
                 kill_worker = True
 
+            # If rp_debugger is set, debugger output will be returned.
             if config["rp_args"].get("rp_debugger", False):
                 log.debug("rp_debugger | Flag set, return debugger output.")
                 job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()

@@ -127,6 +127,18 @@ class TestWorkerTestInput(unittest.TestCase):
             log = RunPodLogger()
             assert log.level() == "WARN"
 
+
+
+
+
+def generator_handler(job):
+    '''
+    Test generator_handler
+    '''
+    print(job)
+    yield "test"
+
+
 @pytest.mark.asyncio
 @patch("aiohttp.ClientSession")
 @patch("runpod.serverless.worker.get_job")
@@ -161,22 +173,10 @@ async def test_run_worker(mock_send_result, mock_stream_result, mock_run_job, mo
     mock_run_job.assert_called_once()
     mock_send_result.assert_called_once()
 
+    assert mock_stream_result.called is False
+    assert mock_session.called
 
-
-
-# class TestAsyncWorker(unittest.TestCase):
-#     ''' Test the async worker '''
-
-#     def setUp(self) -> None:
-#         os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
-
-#     @pytest.mark.asyncio
-#     async def test_async_worker(self):
-#         '''
-#         Test starting the async worker
-#         '''
-#         with patch("runpod.serverless.worker.asyncio") as mock_async:
-#             mock_async.new_event_loop = Mock()
-
-#             await runpod.serverless.start({"handler": "test"})
-#             assert mock_async.new_event_loop.called
+    generator_config = {"handler": generator_handler, "refresh_worker": True}
+    with patch("runpod.serverless.worker.stream_result") as mock_stream_result:
+        runpod.serverless.start(generator_config)
+        assert mock_stream_result.called
