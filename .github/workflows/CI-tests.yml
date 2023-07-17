@@ -31,7 +31,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          nest_asyncio
           pip install pytest
           pip install pytest-timeout
           pip install pytest-cov

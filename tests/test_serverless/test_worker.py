@@ -80,7 +80,7 @@ class TestWorker(unittest.TestCase):
 
         known_args = argparse.Namespace()
         known_args.rp_log_level = None
-        known_args.rp_debugger = True
+        known_args.rp_debugger = None
         known_args.rp_serve_api = True
         known_args.rp_api_port = 8000
         known_args.rp_api_concurrency = 1
@@ -101,6 +101,8 @@ class TestWorkerTestInput(unittest.TestCase):
 
     def setUp(self):
         self.mock_handler = Mock()
+        self.mock_handler.return_value = {}
+
         self.mock_handler.return_value = "test"
 
     def test_worker_bad_local(self):
