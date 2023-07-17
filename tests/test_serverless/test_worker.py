@@ -131,8 +131,6 @@ class TestWorkerTestInput(unittest.TestCase):
 
 
 
-
-
 def generator_handler(job):
     '''
     Test generator_handler
@@ -169,7 +167,7 @@ async def test_run_worker(
     config = {"handler": MagicMock(), "refresh_worker": True, "rp_args": {"rp_debugger": True}}
 
     # Call the function
-    worker.main(config)
+    runpod.serverless.start(config)
 
     # Make assertions about the behaviors
     mock_get_job.assert_called_once()
@@ -179,6 +177,8 @@ async def test_run_worker(
     assert mock_stream_result.called is False
     assert mock_session.called
 
+
+    # Test generator handler
     generator_config = {"handler": generator_handler, "refresh_worker": True}
     runpod.serverless.start(generator_config)
     assert mock_stream_result.called
