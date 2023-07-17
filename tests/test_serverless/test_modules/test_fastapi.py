@@ -1,5 +1,4 @@
 ''' Tests for runpod.serverless.modules.rp_fastapi.py '''
-
 import os
 import asyncio
 

@@ -5,13 +5,12 @@ Job related helpers.
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
-import sys
 import json
 import traceback
 from aiohttp import ClientSession
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import WORKER_ID, IS_LOCAL_TEST
+from .worker_state import WORKER_ID
 from .rp_tips import check_return_size
 
 JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
@@ -19,64 +18,53 @@ JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKE
 log = RunPodLogger()
 
 
-def _get_local() -> Optional[Dict[str, Any]]:
-    """
-    Returns contents of test_input.json.
-    """
-    if not os.path.exists("test_input.json"):
-        log.warn("test_input.json not found, exiting.")
-        sys.exit(1)
-
-    with open("test_input.json", "r", encoding="UTF-8") as file:
-        test_inputs = json.loads(file.read())
-
-    if "id" not in test_inputs:
-        test_inputs["id"] = "local_test"
-
-    log.debug(f"Retrieved local job: {test_inputs}")
-    return test_inputs
-
-
-async def get_job(session: ClientSession, rp_args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
+    Will continue trying to get a job until one is available.
 
     Inputs:
     - session | The aiohttp session
-    - rp_args | Arguments passed to the worker
+
+    Note: Retry True just for ease of, if testing improved this can be removed.
     """
     next_job = None
-
-    try:
-        if rp_args.get("test_input", None):
-            log.warn("test_input set, using test_input as job input")
-            next_job = rp_args["test_input"]
-            next_job["id"] = "test_input_provided"
-        elif IS_LOCAL_TEST:
-            log.warn("RUNPOD_WEBHOOK_GET_JOB not set, switching to get_local")
-            next_job = _get_local()
-        else:
+    while next_job is None:
+        try:
             async with session.get(JOB_GET_URL) as response:
                 if response.status == 204:
                     log.debug("No content, no job to process.")
-                    return None
+                    if not retry:
+                        return None
+                    continue
 
                 if response.status not in [200, 400]:
                     log.error(f"Failed to get job, status code: {response.status}")
-                    return None
+                    if not retry:
+                        return None
+                    continue
 
                 next_job = await response.json()
                 log.debug(f"Received Job | {next_job}")
 
-        if next_job.get("id", None) is None:
-            log.error("Job has no id, unable to process.")
-            next_job = None
+            # Check if the job is valid
+            if next_job.get("id", None) is None:
+                log.error("Job has no id, unable to process.")
+                next_job = None
 
-        if next_job:
-            log.debug(f"{next_job['id']} | Job Confirmed")
-    except Exception as err:  # pylint: disable=broad-except
-        log.error(f"Error while getting job: {err}")
+            if next_job.get("input", None) is None:
+                log.error("Job has no input, unable to process.")
+                next_job = None
 
+        except Exception as err:  # pylint: disable=broad-except
+            log.error(f"Error while getting job: {err}")
+
+        if next_job is None:
+            log.debug("No job available, waiting for the next one.")
+            if not retry:
+                return None
+
+    log.debug(f"{next_job['id']} | Job Confirmed")
     return next_job
 
 

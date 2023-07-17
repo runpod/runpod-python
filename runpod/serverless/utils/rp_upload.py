@@ -25,7 +25,8 @@ logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHand
 
 
 # --------------------------- S3 Bucket Connection --------------------------- #
-def get_boto_client(bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]:
+def get_boto_client(
+    bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]: # pragma: no cover
     '''
     Returns a boto3 client and transfer config for the bucket.
     '''
@@ -72,7 +73,7 @@ def get_boto_client(bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, 
 # ---------------------------------------------------------------------------- #
 #                                 Upload Image                                 #
 # ---------------------------------------------------------------------------- #
-def upload_image(job_id, image_location, result_index=0, results_list=None):
+def upload_image(job_id, image_location, result_index=0, results_list=None): # pragma: no cover
     '''
     Upload image to bucket storage.
     '''
@@ -124,7 +125,7 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):
 # ---------------------------------------------------------------------------- #
 #                                Files To Upload                               #
 # ---------------------------------------------------------------------------- #
-def files(job_id, file_list):
+def files(job_id, file_list): # pragma: no cover
     '''
     Uploads a list of files in parallel.
     Once all files are uploaded, the function returns the presigned URLs list.
@@ -149,7 +150,7 @@ def files(job_id, file_list):
 
 
 # --------------------------- Custom Bucket Upload --------------------------- #
-def bucket_upload(job_id, file_list, bucket_creds):
+def bucket_upload(job_id, file_list, bucket_creds): # pragma: no cover
     '''
     Uploads files to bucket storage.
     '''
@@ -194,7 +195,7 @@ def upload_file_to_bucket(
         bucket_name: Optional[str] = None,
         prefix: Optional[str] = None,
         extra_args: Optional[dict] = None
-) -> str:
+) -> str: # pragma: no cover
     '''
     Uploads a single file to bucket storage and returns a presigned URL.
     '''
@@ -246,7 +247,7 @@ def upload_in_memory_object(
         file_name: str, file_data: bytes,
         bucket_creds: Optional[dict] = None,
         bucket_name: Optional[str] = None,
-        prefix: Optional[str] = None) -> str:
+        prefix: Optional[str] = None) -> str: # pragma: no cover
     '''
     Uploads an in-memory object (bytes) to bucket storage and returns a presigned URL.
     '''

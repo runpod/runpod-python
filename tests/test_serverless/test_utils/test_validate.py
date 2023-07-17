@@ -1,4 +1,5 @@
 ''' Tests for runpod.serverless.utils.validate '''
+
 import unittest
 from unittest.mock import Mock
 from runpod.serverless.utils import rp_validator
@@ -8,8 +9,9 @@ class TestValidator(unittest.TestCase):
     ''' Tests for validator '''
 
     def setUp(self):
-        self.raw_input = {"x": 10, "y": 20, "z": 30}
+        self.raw_input = {"a": 1.1, "x": 10, "y": 20, "z": 30}
         self.schema = {
+            "a": {"type": float, "required": True},
             "x": {"type": int, "required": True},
             "y": {"type": int, "required": True, "default": 5},
             "z": {
@@ -81,6 +83,13 @@ class TestValidator(unittest.TestCase):
 
         self.assertIn("errors", result)
         self.assertIn("x should be <class 'int'> type, not <class 'str'>.", result["errors"])
+
+    def test_validate_rules_not_dict(self):
+        '''
+        Tests validate with rules not dict
+        '''
+        result = rp_validator.validate(self.raw_input, {"x": "not dict"})
+        self.assertIn("errors", result)
 
 
 if __name__ == '__main__':
