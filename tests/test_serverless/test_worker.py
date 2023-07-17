@@ -2,12 +2,11 @@
 
 import os
 import argparse
-import nest_asyncio
-
 import unittest
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
 import pytest
+import nest_asyncio
 
 import runpod
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -177,6 +176,5 @@ async def test_run_worker(mock_send_result, mock_stream_result, mock_run_job, mo
     assert mock_session.called
 
     generator_config = {"handler": generator_handler, "refresh_worker": True}
-    with patch("runpod.serverless.worker.stream_result") as mock_stream_result:
-        runpod.serverless.start(generator_config)
-        assert mock_stream_result.called
+    runpod.serverless.start(generator_config)
+    assert mock_stream_result.called
