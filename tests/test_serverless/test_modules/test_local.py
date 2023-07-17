@@ -2,12 +2,13 @@
 
 import unittest
 from unittest.mock import patch, mock_open
-import pytest
 
 from runpod.serverless.modules import rp_local
 
 
 class TestRunLocal(unittest.TestCase):
+    ''' Tests for run_local function '''
+
     @patch("runpod.serverless.modules.rp_local.run_job", return_value={})
     @patch("builtins.open", new_callable=mock_open, read_data='{"input": "test"}')
     def test_run_local_with_test_input(self, mock_file, mock_run):
