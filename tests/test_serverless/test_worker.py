@@ -9,7 +9,6 @@ import pytest
 import nest_asyncio
 
 import runpod
-from runpod.serverless import worker
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 
