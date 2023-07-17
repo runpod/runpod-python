@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch, mock_open, Mock
 
 import runpod
+from runpod.serverless.modules.rp_logger import RunPodLogger
 
 
 class TestWorker(unittest.TestCase):
@@ -67,6 +68,29 @@ class TestWorker(unittest.TestCase):
             mock_os.environ.get.return_value = "something"
             assert runpod.serverless.worker._is_local(self.mock_config) is False # pylint: disable=protected-access
 
+    def test_local_api(self):
+        '''
+        Test local FastAPI setup.
+        '''
+
+        known_args = argparse.Namespace()
+        known_args.rp_log_level = None
+        known_args.rp_debugger = None
+        known_args.rp_serve_api = True
+        known_args.rp_api_port = 8000
+        known_args.rp_api_concurrency = 1
+        known_args.rp_api_host = "localhost"
+        known_args.test_input = '{"test": "test"}'
+
+        with patch("argparse.ArgumentParser.parse_known_args") as mock_parse_known_args, \
+            patch("runpod.serverless.rp_fastapi") as mock_fastapi:
+
+            mock_parse_known_args.return_value = known_args, []
+            runpod.serverless.start({"handler": self.mock_handler})
+
+            assert mock_fastapi.WorkerAPI.called
+
+
 class TestWorkerTestInput(unittest.TestCase):
     """ Tests for runpod | serverless| worker """
 
@@ -79,9 +103,8 @@ class TestWorkerTestInput(unittest.TestCase):
         Test sys args.
         '''
         known_args = argparse.Namespace()
-        known_args.rp_log_level = None
+        known_args.rp_log_level = "WARN"
         known_args.rp_debugger = None
-        known_args.rp_serve_api = None
         known_args.rp_serve_api = None
         known_args.rp_api_port = 8000
         known_args.rp_api_concurrency = 1
@@ -93,3 +116,7 @@ class TestWorkerTestInput(unittest.TestCase):
 
             mock_parse_known_args.return_value = known_args, []
             runpod.serverless.start({"handler": self.mock_handler})
+
+            # Confirm that the log level is set to WARN
+            log = RunPodLogger()
+            assert log.level() == "WARN"

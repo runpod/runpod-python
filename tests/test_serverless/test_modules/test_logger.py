@@ -3,6 +3,7 @@
 import unittest
 from unittest.mock import patch
 
+import runpod
 from runpod.serverless.modules import rp_logger
 
 

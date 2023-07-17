@@ -4,15 +4,14 @@ Called to convert a container into a worker pod for the runpod serverless platfo
 """
 
 import os
-import sys
 import types
-import json
 import asyncio
 from typing import Dict, Any
 
 import aiohttp
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
+from .modules import rp_local
 from .modules.rp_ping import HeartbeatSender
 from .modules.rp_job import get_job, run_job, run_job_generator
 from .modules.rp_http import send_result, stream_result
@@ -45,41 +44,6 @@ def _is_local(config) -> bool:
         return True
 
     return False
-
-def run_local(config: Dict[str, Any]) -> None:
-    '''
-    Runs the worker locally.
-    '''
-    # Get the local test job
-    if config['rp_args'].get('test_input', None):
-        log.info("test_input set, using test_input as job input.")
-        local_job = config['rp_args']['test_input']
-    else:
-        if not os.path.exists("test_input.json"):
-            log.warn("test_input.json not found, exiting.")
-            sys.exit(1)
-
-        log.info("Using test_input.json as job input.")
-        with open("test_input.json", "r", encoding="UTF-8") as file:
-            local_job = json.loads(file.read())
-
-    if local_job.get("input", None) is None:
-        log.error("Job has no input parameter. Unable to run.")
-        sys.exit(1)
-
-    # Set the job ID
-    local_job["id"] = local_job.get("id", "local_test")
-    log.debug(f"Retrieved local job: {local_job}")
-
-    job_result = run_job(config["handler"], local_job)
-
-    if job_result.get("error", None):
-        log.error(f"Job {local_job['id']} failed with error: {job_result['error']}")
-        sys.exit(1)
-
-    log.info("Local testing complete, exiting.")
-    sys.exit(0)
-
 
 
 # ------------------------- Main Worker Running Loop ------------------------- #
@@ -136,7 +100,7 @@ def main(config: Dict[str, Any]) -> None:
     If running on RunPod, the worker loop is created.
     """
     if _is_local(config):
-        run_local(config)
+        rp_local.run_local(config)
 
     else:
         try:
