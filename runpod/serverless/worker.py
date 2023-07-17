@@ -56,7 +56,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
         heartbeat.start_ping()
 
-        while True:
+        kill_worker = False # Flag to kill the worker after job is complete.
+        while kill_worker is False:
             job = await get_job(session)
 
             job_list.add_job(job["id"])
@@ -76,6 +77,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
             if config.get("refresh_worker", False):
                 log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
                 job_result["stopPod"] = True
+                kill_worker = True
 
             if config["rp_args"].get("rp_debugger", False):
                 log.debug("rp_debugger | Flag set, return debugger output.")
@@ -91,6 +93,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
             log.info(f'{job["id"]} | Finished')
             job_list.remove_job(job["id"])
+
+        asyncio.get_event_loop().stop() # Stops the worker loop if the kill_worker flag is set.
 
 
 def main(config: Dict[str, Any]) -> None:

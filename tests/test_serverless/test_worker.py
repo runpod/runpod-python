@@ -1,13 +1,19 @@
 ''' Tests for runpod | serverless| worker '''
 
+import os
 import argparse
+import nest_asyncio
 
 import unittest
-from unittest.mock import patch, mock_open, Mock
+from unittest.mock import patch, mock_open, Mock, MagicMock
+
+import pytest
 
 import runpod
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
+
+nest_asyncio.apply()
 
 class TestWorker(unittest.TestCase):
     """ Tests for runpod | serverless| worker """
@@ -120,3 +126,57 @@ class TestWorkerTestInput(unittest.TestCase):
             # Confirm that the log level is set to WARN
             log = RunPodLogger()
             assert log.level() == "WARN"
+
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession")
+@patch("runpod.serverless.worker.get_job")
+@patch("runpod.serverless.worker.run_job")
+@patch("runpod.serverless.worker.stream_result")
+@patch("runpod.serverless.worker.send_result")
+async def test_run_worker(mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
+    '''
+    Test run_worker
+
+    Args:
+        mock_send_result (_type_): _description_
+        mock_stream_result (_type_): _description_
+        mock_run_job (_type_): _description_
+        mock_get_job (_type_): _description_
+        mock_session (_type_): _description_
+    '''
+
+    os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
+    # Define the mock behaviors
+    mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+    mock_run_job.return_value = {"output": "result", "error": None}
+
+    # Set up the config
+    config = {"handler": MagicMock(), "refresh_worker": True, "rp_args": {"rp_debugger": True}}
+
+    # Call the function
+    runpod.serverless.start(config)
+
+    # Make assertions about the behaviors
+    mock_get_job.assert_called_once()
+    mock_run_job.assert_called_once()
+    mock_send_result.assert_called_once()
+
+
+
+
+# class TestAsyncWorker(unittest.TestCase):
+#     ''' Test the async worker '''
+
+#     def setUp(self) -> None:
+#         os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
+
+#     @pytest.mark.asyncio
+#     async def test_async_worker(self):
+#         '''
+#         Test starting the async worker
+#         '''
+#         with patch("runpod.serverless.worker.asyncio") as mock_async:
+#             mock_async.new_event_loop = Mock()
+
+#             await runpod.serverless.start({"handler": "test"})
+#             assert mock_async.new_event_loop.called
