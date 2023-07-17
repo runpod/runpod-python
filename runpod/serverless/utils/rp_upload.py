@@ -25,7 +25,8 @@ logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHand
 
 
 # --------------------------- S3 Bucket Connection --------------------------- #
-def get_boto_client(bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]: # pragma: no cover
+def get_boto_client(
+    bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]: # pragma: no cover
     '''
     Returns a boto3 client and transfer config for the bucket.
     '''
