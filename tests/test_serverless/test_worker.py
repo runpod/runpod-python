@@ -9,6 +9,7 @@ import pytest
 import nest_asyncio
 
 import runpod
+from runpod.serverless import worker
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 
@@ -168,7 +169,7 @@ async def test_run_worker(
     config = {"handler": MagicMock(), "refresh_worker": True, "rp_args": {"rp_debugger": True}}
 
     # Call the function
-    runpod.serverless.start(config)
+    worker.main(config)
 
     # Make assertions about the behaviors
     mock_get_job.assert_called_once()
