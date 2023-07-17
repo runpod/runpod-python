@@ -7,7 +7,7 @@ import json
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .retry import retry
-from .worker_state import WORKER_ID, IS_LOCAL_TEST
+from .worker_state import WORKER_ID
 
 JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
 JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
@@ -41,12 +41,10 @@ async def send_result(session, job_data, job):
     '''
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
-        if not IS_LOCAL_TEST:
-            job_done_url = JOB_DONE_URL_TEMPLATE.replace('$ID', job['id'])
-            await transmit(session, job_data, job_done_url)
-            log.debug(f"{job['id']} | Results sent.")
-        else:
-            log.warn(f"Local test job results for {job['id']}: {job_data}")
+        job_done_url = JOB_DONE_URL_TEMPLATE.replace('$ID', job['id'])
+
+        await transmit(session, job_data, job_done_url)
+        log.debug(f"{job['id']} | Results sent.")
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
@@ -58,11 +56,9 @@ async def stream_result(session, job_data, job):
     '''
     try:
         job_data = json.dumps(job_data, ensure_ascii=False)
-        if not IS_LOCAL_TEST:
-            job_done_url = JOB_DONE_URL_TEMPLATE.replace('$ID', job['id'])
-            await transmit(session, job_data, job_done_url)
-        else:
-            log.warn(f"Local test job results for {job['id']}: {job_data}")
+        job_done_url = JOB_DONE_URL_TEMPLATE.replace('$ID', job['id'])
+
+        await transmit(session, job_data, job_done_url)
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")

@@ -1,6 +1,7 @@
 ''' Tests for runpod | serverless| worker '''
 
 import os
+import time
 import argparse
 import unittest
 from unittest.mock import patch, mock_open, Mock, MagicMock
@@ -160,10 +161,17 @@ async def test_run_worker(
     os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
     # Define the mock behaviors
     mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
-    mock_run_job.return_value = {"output": "result", "error": None}
+    mock_run_job.return_value = {"output": {"result": "odd"}}
 
     # Set up the config
-    config = {"handler": MagicMock(), "refresh_worker": True, "rp_args": {"rp_debugger": True}}
+    config = {
+        "handler": MagicMock(),
+        "refresh_worker": True,
+        "rp_args": {
+            "rp_debugger": True,
+            "rp_log_level": "DEBUG"
+            }
+        }
 
     # Call the function
     runpod.serverless.start(config)
@@ -181,3 +189,28 @@ async def test_run_worker(
     generator_config = {"handler": generator_handler, "refresh_worker": True}
     runpod.serverless.start(generator_config)
     assert mock_stream_result.called
+
+    with patch("runpod.serverless._set_config_args") as mock_set_config_args:
+
+        limited_config = {
+            "handler": Mock(),
+            "reference_counter_start": time.perf_counter(),
+            "refresh_worker": True,
+            "rp_args": {
+                "rp_debugger": True,
+                "rp_serve_api": None,
+                "rp_api_port": 8000,
+                "rp_api_concurrency": 1,
+                "rp_api_host": "localhost"
+                }
+        }
+
+        mock_set_config_args.return_value = limited_config
+        runpod.serverless.start(limited_config)
+
+        print(mock_set_config_args.call_args_list)
+
+        assert mock_set_config_args.called
+
+
+    print("HERE")

@@ -175,11 +175,16 @@ def get_debugger_output():
     '''
     Return the debugger output.
     '''
+    print('Getting debugger output...')
     import runpod  # pylint: disable=import-outside-toplevel, cyclic-import
+
+    print('Getting checkpoints...')
 
     checkpoints = Checkpoints()
     ckpt_results = checkpoints.get_checkpoints()
     checkpoints.clear()
+
+    print('Getting system info...')
 
     system_info = {
         'os': OS_INFO,
@@ -187,6 +192,8 @@ def get_debugger_output():
         'python_version': PYTHON_VERSION,
         'runpod': runpod.__version__,
     }
+
+    print('Debugger output complete.')
 
     return {
         'system_info': system_info,

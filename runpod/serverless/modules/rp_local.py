@@ -44,5 +44,8 @@ def run_local(config: Dict[str, Any]) -> None:
         log.error(f"Job {local_job['id']} failed with error: {job_result['error']}")
         sys.exit(1)
 
+    log.info(f"Job {local_job['id']} completed successfully.")
+    log.info(f"Job result: {job_result}")
+
     log.info("Local testing complete, exiting.")
     sys.exit(0)

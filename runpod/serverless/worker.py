@@ -80,7 +80,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 kill_worker = True
 
             # If rp_debugger is set, debugger output will be returned.
-            if config["rp_args"].get("rp_debugger", False):
+            if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
                 log.debug("rp_debugger | Flag set, return debugger output.")
                 job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
 
