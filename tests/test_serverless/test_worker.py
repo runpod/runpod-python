@@ -80,7 +80,7 @@ class TestWorker(unittest.TestCase):
 
         known_args = argparse.Namespace()
         known_args.rp_log_level = None
-        known_args.rp_debugger = None
+        known_args.rp_debugger = True
         known_args.rp_serve_api = True
         known_args.rp_api_port = 8000
         known_args.rp_api_concurrency = 1
@@ -109,7 +109,7 @@ class TestWorkerTestInput(unittest.TestCase):
         '''
         known_args = argparse.Namespace()
         known_args.rp_log_level = "WARN"
-        known_args.rp_debugger = None
+        known_args.rp_debugger = True
         known_args.rp_serve_api = None
         known_args.rp_api_port = 8000
         known_args.rp_api_concurrency = 1
@@ -144,7 +144,8 @@ def generator_handler(job):
 @patch("runpod.serverless.worker.run_job")
 @patch("runpod.serverless.worker.stream_result")
 @patch("runpod.serverless.worker.send_result")
-async def test_run_worker(mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
+async def test_run_worker(
+    mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
     '''
     Test run_worker
 
