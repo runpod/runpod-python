@@ -153,7 +153,8 @@ class Job:
         '''
         Gets the output of the endpoint run request.
 
-        :param timeout: after how much time should the request timeout? (if it doesn't get a response back)
+        :param timeout: after how much time should the request timeout? 
+                        (if it doesn't get a response back)
         '''
         while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
             time.sleep(.1)
