@@ -94,6 +94,8 @@ class Scaler():
 
         # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
         if self.handler_fully_utilized() is True:
+            log.debug("The handler is fully utilized. Downscaling now.")
+
             # Reduce job query rate.
             self.num_concurrent_requests = int(max(
                 self.num_concurrent_requests // SCALE_FACTOR, MIN_CONCURRENT_REQUESTS))
