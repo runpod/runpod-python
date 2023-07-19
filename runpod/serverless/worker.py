@@ -159,7 +159,7 @@ async def run_worker_multi(config: Dict[str, Any]) -> None:
                 job_list.remove_job(job["id"])
 
             # Create process job task
-            async for job in scalar.get_jobs():
+            async for job in scalar.get_jobs(session):
                 # Process the job here
                 task = asyncio.create_task(process_job(job))
                 scalar.background_tasks.add(task)
