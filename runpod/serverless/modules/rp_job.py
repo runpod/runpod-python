@@ -71,7 +71,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
     return next_job
 
 
-def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
+async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     """
     Run the job using the handler.
     Returns the job output or error.
@@ -79,7 +79,7 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     log.info(f'{job["id"]} | Started')
 
     try:
-        job_output = handler(job)
+        job_output = await handler(job)
         log.debug(f'{job["id"]} | Handler output: {job_output}')
 
         run_result = {"output": job_output}
