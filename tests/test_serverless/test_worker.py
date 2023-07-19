@@ -1,5 +1,6 @@
 ''' Tests for runpod | serverless| worker '''
 
+import asyncio
 import os
 import time
 import argparse
@@ -159,9 +160,15 @@ async def test_run_worker(
     '''
 
     os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
+
     # Define the mock behaviors
-    mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
-    mock_run_job.return_value = {"output": {"result": "odd"}}
+    get_job_return = asyncio.Future()
+    get_job_return.set_result({"id": "123", "input": {"number": 1}})
+    mock_get_job.return_value = get_job_return
+
+    run_job_return = asyncio.Future()
+    run_job_return.set_result({"output": {"result": "odd"}})
+    mock_run_job.return_value = run_job_return
 
     # Set up the config
     config = {
