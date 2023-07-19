@@ -251,8 +251,7 @@ def main(config: Dict[str, Any]) -> None:
     If running on RunPod, the worker loop is created.
     """
     if _is_local(config):
-        rp_local.run_local(config)
-
+        asyncio.run(rp_local.run_local(config))
     else:
         try:
             work_loop = asyncio.new_event_loop()

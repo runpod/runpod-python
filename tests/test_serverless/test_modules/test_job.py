@@ -235,7 +235,7 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         job = {"id": "123"}
 
         with patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log:
-            result = await [i async for i in rp_job.run_job_generator(handler, job)]
+            result = [i async for i in rp_job.run_job_generator(handler, job)]
 
         assert result == [{"output": "partial_output_1"}, {"output": "partial_output_2"}]
         assert mock_log.error.call_count == 0
@@ -250,7 +250,7 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         job = {"id": "123"}
 
         with patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log:
-            result = await [i async for i in rp_job.run_job_generator(handler, job)]
+            result = [i async for i in rp_job.run_job_generator(handler, job)]
 
         assert len(result) == 1
         assert "error" in result[0]
