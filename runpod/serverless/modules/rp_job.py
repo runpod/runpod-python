@@ -2,6 +2,7 @@
 Job related helpers.
 """
 
+import inspect
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
@@ -79,7 +80,9 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     log.info(f'{job["id"]} | Started')
 
     try:
-        job_output = await handler(job)
+        result = handler(job)
+        job_output = await result if inspect.isawaitable(result) else result
+
         log.debug(f'{job["id"]} | Handler output: {job_output}')
 
         run_result = {"output": job_output}
