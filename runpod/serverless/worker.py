@@ -49,11 +49,17 @@ def _is_local(config) -> bool:
 # Constants
 SCALE_FACTOR = 2
 INITIAL_CONCURRENT_REQUESTS = 1
-MAX_CONCURRENT_REQUESTS = 100 #sys.maxsize
+MAX_CONCURRENT_REQUESTS = 100
 MIN_CONCURRENT_REQUESTS = 1
 AVAILABILITY_RATIO_THRESHOLD = 0.90
 
 class Scaler():
+    """
+    Automatically start concurrently retrieving jobs from SLS, including the ability 
+    to scale up or scale down the rate at which we're retrieving jobs. Additionally, 
+    we separate job retrieval from job execution in order to decouple the latency as 
+    much as possible between the two phases.
+    """
     def __init__(self, handler_fully_utilized):
         self.background_tasks = set()
         self.num_concurrent_requests = INITIAL_CONCURRENT_REQUESTS
@@ -61,8 +67,15 @@ class Scaler():
         self.handler_fully_utilized = handler_fully_utilized
 
     async def get_jobs(self, session):
+        """
+        Retrieve 'num_concurrent_requests' number of jobs from SLS, 
+        performing sleep, and rescaling appropriately.
+        """
         while True:
-            tasks = [asyncio.create_task(get_job(session, retry=False)) for _ in range(self.num_concurrent_requests)]
+            tasks = [
+                asyncio.create_task(
+                    get_job(session, retry=False)
+                ) for _ in range(self.num_concurrent_requests)]
             for job_future in asyncio.as_completed(tasks):
                 job = await job_future
                 self.job_history.append(job)
@@ -72,14 +85,21 @@ class Scaler():
                     log.debug(f"{job['id']} | Set Job ID")
                     yield job
 
+            # We retrieve num_concurrent_requests jobs per second.
             await asyncio.sleep(1)
 
+            # Rescale the retrieval rate appropriately.
             self.rescale_request_rate()
 
-            log.info(f"Concurrent Get Jobs | The number of concurrent get_jobs is {self.num_concurrent_requests}.")
+            log.info(
+                f"Concurrent Get Jobs | The number of concurrent get_jobs is "
+                f"{self.num_concurrent_requests}."
+            )
 
-    # Scale up or down the rate at which we are handling jobs from SLS.
-    def rescale_request_rate(self, force_downscale=False):
+    def rescale_request_rate(self, force_downscale=False) -> None:
+        """
+        Scale up or down the rate at which we are handling jobs from SLS.
+        """
         if force_downscale:
             self.num_concurrent_requests = int(max(
                 self.num_concurrent_requests // SCALE_FACTOR, MIN_CONCURRENT_REQUESTS))
@@ -122,10 +142,12 @@ async def run_worker_multi(config: Dict[str, Any]) -> None:
     auth_header = _get_auth_header()
     connector = aiohttp.TCPConnector(limit=None)
     scalar = Scaler(config.get('handler_fully_utilized'))
-    async with aiohttp.ClientSession(connector=connector, headers=auth_header, timeout=_TIMEOUT) as session:
+    async with aiohttp.ClientSession(
+        connector=connector, headers=auth_header, timeout=_TIMEOUT) as session:
 
         heartbeat.start_ping()
 
+        global kill_worker
         kill_worker = False # Flag to kill the worker after job is complete.
         while kill_worker is False:
             async def process_job(job):
@@ -169,7 +191,6 @@ async def run_worker_multi(config: Dict[str, Any]) -> None:
                 scalar.background_tasks.add(task)
                 task.add_done_callback(scalar.background_tasks.discard)
 
-        log.debug("rp_debugger | The event loop has closed due to {}, #2.")
         asyncio.get_event_loop().stop() # Stops the worker loop if the kill_worker flag is set.
 
 
@@ -242,7 +263,7 @@ def main(config: Dict[str, Any]) -> None:
                 asyncio.ensure_future(run_worker(config), loop=work_loop)
             work_loop.run_forever()
 
-        except Exception as e:  
-            log.debug("rp_debugger | The event loop has closed due to {}, #1.".format(e))
+        except Exception as exception: # pylint: disable=broad-exception-caught
+            log.debug(f"rp_debugger | The event loop has closed due to {exception}.")
         finally:
             work_loop.close()
