@@ -76,6 +76,8 @@ class Scaler():
 
             self.rescale_request_rate()
 
+            log.info(f"Concurrent Get Jobs | The number of concurrent get_jobs is {self.num_concurrent_requests}.")
+
     # Scale up or down the rate at which we are handling jobs from SLS.
     def rescale_request_rate(self, force_downscale=False):
         if force_downscale:
@@ -83,7 +85,7 @@ class Scaler():
                 self.num_concurrent_requests // SCALE_FACTOR, MIN_CONCURRENT_REQUESTS))
             return
 
-        if len(self.job_history) == 0:
+        if len(self.job_history) < 10:
             return
 
         # Compute the availability ratio of the job queue.
