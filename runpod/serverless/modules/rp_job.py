@@ -10,7 +10,7 @@ import traceback
 from aiohttp import ClientSession
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import WORKER_ID
+from .worker_state import WORKER_ID, Jobs
 from .rp_tips import check_return_size
 
 JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
@@ -29,9 +29,12 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
     Note: Retry True just for ease of, if testing improved this can be removed.
     """
     next_job = None
+    job_list = Jobs()
+
     while next_job is None:
         try:
-            async with session.get(JOB_GET_URL) as response:
+            job_in_progress = '1' if job_list.get_job_list() is not None else '0'
+            async with session.get(JOB_GET_URL + "&job_in_progress={}".format(job_in_progress)) as response:
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if not retry:
@@ -117,7 +120,7 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         return run_result  # pylint: disable=lost-exception
 
 
-def run_job_generator(
+async def run_job_generator(
         handler: Callable,
         job: Dict[str, Any]) -> Generator[Dict[str, Union[str, Any]], None, None]:
     '''
@@ -125,7 +128,7 @@ def run_job_generator(
     Yields output partials from the generator.
     '''
     try:
-        job_output = handler(job)
+        job_output = await handler(job)
         for output_partial in job_output:
             yield {"output": output_partial}
     except Exception as err:    # pylint: disable=broad-except
@@ -134,4 +137,4 @@ def run_job_generator(
     finally:
         log.info(f'{job["id"]} | Finished ')
 
-        return None  # pylint: disable=lost-exception
+        # return None  # pylint: disable=lost-exception
