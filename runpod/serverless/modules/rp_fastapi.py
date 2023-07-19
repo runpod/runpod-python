@@ -107,7 +107,7 @@ class WorkerAPI:
         job_list.add_job(job.id)
 
         # Process the job using the provided handler.
-        job_results = run_job(self.config["handler"], job.__dict__)
+        job_results = await run_job(self.config["handler"], job.__dict__)
 
         # Reset the job ID.
         job_list.remove_job(job.id)
@@ -125,7 +125,7 @@ class WorkerAPI:
         # Set the current job ID.
         job_list.add_job(job.id)
 
-        job_results = run_job(self.config["handler"], job.__dict__)
+        job_results = await run_job(self.config["handler"], job.__dict__)
 
         job_results["id"] = job.id
 

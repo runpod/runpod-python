@@ -159,58 +159,58 @@ class TestRunJob(unittest.TestCase):
             }
         }
 
-    def test_simple_job(self):
+    async def test_simple_job(self):
         '''
         Tests the run_job function
         '''
         mock_handler = Mock()
         mock_handler.return_value = "test"
 
-        job_result = rp_job.run_job(mock_handler, self.sample_job)
+        job_result = await rp_job.run_job(mock_handler, self.sample_job)
 
         assert job_result == {"output": "test"}
 
-    def test_job_with_errors(self):
+    async def test_job_with_errors(self):
         '''
         Tests the run_job function with errors
         '''
         mock_handler = Mock()
         mock_handler.return_value = {"error": "test"}
 
-        job_result = rp_job.run_job(mock_handler, self.sample_job)
+        job_result = await rp_job.run_job(mock_handler, self.sample_job)
 
         assert job_result == {"error": "test"}
 
-    def test_job_with_refresh_worker(self):
+    async def test_job_with_refresh_worker(self):
         '''
         Tests the run_job function with refresh_worker
         '''
         mock_handler = Mock()
         mock_handler.return_value = {"refresh_worker": True}
 
-        job_result = rp_job.run_job(mock_handler, self.sample_job)
+        job_result = await rp_job.run_job(mock_handler, self.sample_job)
 
         assert job_result["stopPod"] is True
 
-    def test_job_bool_output(self):
+    async def test_job_bool_output(self):
         '''
         Tests the run_job function with a boolean output
         '''
         mock_handler = Mock()
         mock_handler.return_value = True
 
-        job_result = rp_job.run_job(mock_handler, self.sample_job)
+        job_result = await rp_job.run_job(mock_handler, self.sample_job)
 
         assert job_result == {"output": True}
 
-    def test_job_with_exception(self):
+    async def test_job_with_exception(self):
         '''
         Tests the run_job function with an exception
         '''
         mock_handler = Mock()
         mock_handler.side_effect = Exception
 
-        job_result = rp_job.run_job(mock_handler, self.sample_job)
+        job_result = await rp_job.run_job(mock_handler, self.sample_job)
 
         self.assertRaises(Exception, job_result)
 
@@ -231,7 +231,7 @@ class TestRunJobGenerator(unittest.TestCase):
         '''
         raise Exception("Test Exception") # pylint: disable=broad-exception-raised
 
-    def test_run_job_generator_success(self):
+    async def test_run_job_generator_success(self):
         '''
         Tests the run_job_generator function with a successful generator
         '''
@@ -239,14 +239,14 @@ class TestRunJobGenerator(unittest.TestCase):
         job = {"id": "123"}
 
         with patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log:
-            result = list(rp_job.run_job_generator(handler, job))
+            result = list(await rp_job.run_job_generator(handler, job))
 
         assert result == [{"output": "partial_output_1"}, {"output": "partial_output_2"}]
         assert mock_log.error.call_count == 0
         assert mock_log.info.call_count == 1
         mock_log.info.assert_called_with('123 | Finished ')
 
-    def test_run_job_generator_exception(self):
+    async def test_run_job_generator_exception(self):
         '''
         Tests the run_job_generator function with an exception
         '''
@@ -254,7 +254,7 @@ class TestRunJobGenerator(unittest.TestCase):
         job = {"id": "123"}
 
         with patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log:
-            result = list(rp_job.run_job_generator(handler, job))
+            result = list(await rp_job.run_job_generator(handler, job))
 
         assert len(result) == 1
         assert "error" in result[0]
