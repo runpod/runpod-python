@@ -33,8 +33,8 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 
     while next_job is None:
         try:
-            job_in_progress = '1' if job_list.get_job_list() is not None else '0'
-            async with session.get(JOB_GET_URL + "&job_in_progress={}".format(job_in_progress)) as response:
+            job_in_progress = '1' if job_list.get_job_list() else '0'
+            async with session.get(JOB_GET_URL + f"&job_in_progress={job_in_progress}") as response: # pylint: disable=line-too-long
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if not retry:

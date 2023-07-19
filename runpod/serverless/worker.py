@@ -53,18 +53,19 @@ MAX_CONCURRENT_REQUESTS = 100
 MIN_CONCURRENT_REQUESTS = 1
 AVAILABILITY_RATIO_THRESHOLD = 0.90
 
-class Scaler():
+class MultiProcessingEngine():
     """
     Automatically start concurrently retrieving jobs from SLS, including the ability 
     to scale up or scale down the rate at which we're retrieving jobs. Additionally, 
     we separate job retrieval from job execution in order to decouple the latency as 
     much as possible between the two phases.
     """
-    def __init__(self, handler_fully_utilized):
+    def __init__(self, config):
         self.background_tasks = set()
         self.num_concurrent_requests = INITIAL_CONCURRENT_REQUESTS
         self.job_history = []  # Keeps track of recent job results
-        self.handler_fully_utilized = handler_fully_utilized
+        self.handler_fully_utilized = config.get('handler_fully_utilized')
+        self.kill_worker = False
 
     async def get_jobs(self, session):
         """
@@ -141,15 +142,14 @@ async def run_worker_multi(config: Dict[str, Any]) -> None:
     """
     auth_header = _get_auth_header()
     connector = aiohttp.TCPConnector(limit=None)
-    scalar = Scaler(config.get('handler_fully_utilized'))
+    multi_processing_engine = MultiProcessingEngine(config=config)
     async with aiohttp.ClientSession(
         connector=connector, headers=auth_header, timeout=_TIMEOUT) as session:
 
         heartbeat.start_ping()
 
-        global kill_worker
-        kill_worker = False # Flag to kill the worker after job is complete.
-        while kill_worker is False:
+        multi_processing_engine.kill_worker = False # Flag to kill the worker after job is complete.
+        while multi_processing_engine.kill_worker is False:
             async def process_job(job):
                 if inspect.isgeneratorfunction(config["handler"]):
                     job_result = await run_job_generator(config["handler"], job)
@@ -165,8 +165,7 @@ async def run_worker_multi(config: Dict[str, Any]) -> None:
                 if config.get("refresh_worker", False):
                     log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
                     job_result["stopPod"] = True
-                    global kill_worker
-                    kill_worker = True
+                    multi_processing_engine.kill_worker = True
 
                 # If rp_debugger is set, debugger output will be returned.
                 if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
@@ -185,11 +184,11 @@ async def run_worker_multi(config: Dict[str, Any]) -> None:
                 job_list.remove_job(job["id"])
 
             # Create process job task
-            async for job in scalar.get_jobs(session):
+            async for job in multi_processing_engine.get_jobs(session):
                 # Process the job here
                 task = asyncio.create_task(process_job(job))
-                scalar.background_tasks.add(task)
-                task.add_done_callback(scalar.background_tasks.discard)
+                multi_processing_engine.background_tasks.add(task)
+                task.add_done_callback(multi_processing_engine.background_tasks.discard)
 
         asyncio.get_event_loop().stop() # Stops the worker loop if the kill_worker flag is set.
 
