@@ -48,7 +48,7 @@ class RunPodClient:
         '''
         url = f"{self.endpoint_url_base}/{endpoint}"
         return self.rp_session.get(url, headers=self.headers, timeout=timeout)
-    
+
 # ---------------------------------------------------------------------------- #
 #                                      Job                                     #
 # ---------------------------------------------------------------------------- #
@@ -166,5 +166,3 @@ class Endpoint:
         )
 
         return job_return.json()
-
-
