@@ -11,11 +11,11 @@ from unittest.mock import Mock, patch
 import pytest
 from aiohttp import ClientResponse
 from aiohttp.test_utils import make_mocked_coro
+from unittest import IsolatedAsyncioTestCase
 
 from runpod.serverless.modules import rp_job
 
-
-class TestJob():
+class TestJob(IsolatedAsyncioTestCase):
     ''' Tests the Job class. '''
 
     @pytest.mark.asyncio

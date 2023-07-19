@@ -256,7 +256,7 @@ def main(config: Dict[str, Any]) -> None:
     else:
         try:
             work_loop = asyncio.new_event_loop()
-            if config['handler_fully_utilized'] is not None:
+            if config['handler_fully_utilized']:
                 asyncio.ensure_future(run_worker_multi(config), loop=work_loop)
             else:
                 asyncio.ensure_future(run_worker(config), loop=work_loop)
