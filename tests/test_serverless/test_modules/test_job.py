@@ -7,11 +7,10 @@ import unittest
 
 from unittest.mock import Mock, patch
 
-
+from unittest import IsolatedAsyncioTestCase
 import pytest
 from aiohttp import ClientResponse
 from aiohttp.test_utils import make_mocked_coro
-from unittest import IsolatedAsyncioTestCase
 
 from runpod.serverless.modules import rp_job
 

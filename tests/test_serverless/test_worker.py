@@ -1,6 +1,5 @@
 ''' Tests for runpod | serverless| worker '''
 
-import asyncio
 import os
 import time
 import argparse
