@@ -1,7 +1,7 @@
 '''
 RunPod | Python | Endpoint Runner
 '''
-
+from typing import Any, Union
 import time
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -35,65 +35,19 @@ class RunPodClient:
             "Authorization": f"Bearer {api_key}"
         }
 
-    def post(self, endpoint, data, timeout=10):
+    def post(self, endpoint : str, data : dict, timeout : int=10):
         '''
         Post to the endpoint.
         '''
         url = f"{self.endpoint_url_base}/{endpoint}"
         return self.rp_session.post(url, headers=self.headers, json=data, timeout=timeout)
 
-    def get(self, endpoint, timeout=10):
+    def get(self, endpoint : str, timeout : int=10):
         '''
         Get from the endpoint.
         '''
         url = f"{self.endpoint_url_base}/{endpoint}"
         return self.rp_session.get(url, headers=self.headers, timeout=timeout)
-
-
-# ---------------------------------------------------------------------------- #
-#                                   Endpoint                                   #
-# ---------------------------------------------------------------------------- #
-class Endpoint:
-    ''' Creates a class to run an endpoint. '''
-
-    def __init__(self, endpoint_id):
-        '''
-        Initializes the class.
-        '''
-        self.endpoint_id = endpoint_id
-        self.rp_client = RunPodClient()
-
-        print(f"Initialized endpoint: {self.endpoint_id}")
-
-    def run(self, endpoint_input):
-        '''
-        Runs the endpoint.
-        '''
-        job_request = self.rp_client.post(
-            endpoint=f"{self.endpoint_id}/run",
-            data={"input": endpoint_input},
-            timeout=10
-        )
-
-        if job_request.status_code == 401:
-            raise RuntimeError("401 Unauthorized | Make sure Runpod API key is set and valid.")
-
-        print(f"Started job: {job_request.json()['id']}")
-
-        return Job(self.endpoint_id, job_request.json()["id"])
-
-    def run_sync(self, endpoint_input):
-        '''
-        Blocking run where the job results are returned with the call.
-        '''
-        job_return = self.rp_client.post(
-            endpoint=f"{self.endpoint_id}/runsync",
-            data={"input": endpoint_input},
-            timeout=60
-        )
-
-        return job_return.json()
-
 
 # ---------------------------------------------------------------------------- #
 #                                      Job                                     #
@@ -101,7 +55,7 @@ class Endpoint:
 class Job:
     ''' Creates a class to run a job. '''
 
-    def __init__(self, endpoint_id, job_id):
+    def __init__(self, endpoint_id : str, job_id : str):
         ''' Initializes the class. '''
 
         self.endpoint_id = endpoint_id
@@ -131,9 +85,12 @@ class Job:
         '''
         return self._status_json()["status"]
 
-    def output(self, timeout=60):
+    def output(self, timeout : int=60) -> Union[None, dict]:
         '''
         Gets the output of the endpoint run request.
+
+        :param timeout: after how much time should the request timeout? 
+                        (if it doesn't get a response back)
         '''
         while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
             time.sleep(.1)
@@ -146,3 +103,66 @@ class Job:
             self.job_output = status_json["output"]
 
         return self.job_output
+
+
+
+# ---------------------------------------------------------------------------- #
+#                                   Endpoint                                   #
+# ---------------------------------------------------------------------------- #
+class Endpoint:
+    '''Creates a class to run an endpoint.'''
+
+    def __init__(self, endpoint_id : str):
+        '''
+        Initializes the class
+
+        :param endpoint_id: the id of the endpoint
+
+        :example:
+
+        >>> endpoint = runpod.Endpoint("ENDPOINT_ID")
+        >>> run_request = endpoint.run(
+                {"your_model_input_key": "your_model_input_value"}
+            )
+        >>> print(run_request.status())
+        
+        >>> print(run_request.output())
+        '''
+        # the endpoint id
+        self.endpoint_id : str = endpoint_id
+        self.rp_client = RunPodClient()
+
+        print(f"Initialized endpoint: {self.endpoint_id}")
+
+    def run(self, endpoint_input : Any) -> Job:
+        '''
+        Runs the endpoint.
+
+        :param endpoint_input: the input to pass into the endpoint
+        '''
+        job_request = self.rp_client.post(
+            endpoint=f"{self.endpoint_id}/run",
+            data={"input": endpoint_input},
+            timeout=10
+        )
+
+        if job_request.status_code == 401:
+            raise RuntimeError("401 Unauthorized | Make sure Runpod API key is set and valid.")
+
+        print(f"Started job: {job_request.json()['id']}")
+
+        return Job(self.endpoint_id, job_request.json()["id"])
+
+    def run_sync(self, endpoint_input : Any) -> dict:
+        '''
+        Blocking run where the job results are returned with the call.
+
+        :param endpoint_input: the input to pass into the endpoint
+        '''
+        job_return = self.rp_client.post(
+            endpoint=f"{self.endpoint_id}/runsync",
+            data={"input": endpoint_input},
+            timeout=60
+        )
+
+        return job_return.json()
