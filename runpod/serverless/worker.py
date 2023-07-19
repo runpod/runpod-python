@@ -49,7 +49,7 @@ def _is_local(config) -> bool:
 # Constants
 SCALE_FACTOR = 2
 INITIAL_CONCURRENT_REQUESTS = 1
-MAX_CONCURRENT_REQUESTS = 10000 #sys.maxsize
+MAX_CONCURRENT_REQUESTS = 100 #sys.maxsize
 MIN_CONCURRENT_REQUESTS = 1
 AVAILABILITY_RATIO_THRESHOLD = 0.90
 
@@ -62,7 +62,7 @@ class Scaler():
 
     async def get_jobs(self, session):
         while True:
-            tasks = [asyncio.create_task(get_job(session)) for _ in range(self.num_concurrent_requests)]
+            tasks = [asyncio.create_task(get_job(session, retry=False)) for _ in range(self.num_concurrent_requests)]
             for job_future in asyncio.as_completed(tasks):
                 job = await job_future
                 self.job_history.append(job)
@@ -85,7 +85,7 @@ class Scaler():
                 self.num_concurrent_requests // SCALE_FACTOR, MIN_CONCURRENT_REQUESTS))
             return
 
-        if len(self.job_history) < 10:
+        if len(self.job_history) == 0:
             return
 
         # Compute the availability ratio of the job queue.
