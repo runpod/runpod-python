@@ -6,6 +6,7 @@ import argparse
 import unittest
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
+from unittest import IsolatedAsyncioTestCase
 import pytest
 import nest_asyncio
 
@@ -15,7 +16,7 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 nest_asyncio.apply()
 
-class TestWorker(unittest.TestCase):
+class TestWorker(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
 
     def setUp(self):
@@ -97,7 +98,7 @@ class TestWorker(unittest.TestCase):
             assert mock_fastapi.WorkerAPI.called
 
 
-class TestWorkerTestInput(unittest.TestCase):
+class TestWorkerTestInput(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
 
     def setUp(self):
@@ -127,7 +128,7 @@ class TestWorkerTestInput(unittest.TestCase):
 
             # Confirm that the log level is set to WARN
             log = RunPodLogger()
-            assert log.level() == "WARN"
+            assert log.level == "WARN"
 
 
 

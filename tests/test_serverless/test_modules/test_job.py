@@ -214,7 +214,7 @@ class TestRunJob(unittest.TestCase):
         self.assertRaises(Exception, job_result)
 
 
-class TestRunJobGenerator(unittest.TestCase):
+class TestRunJobGenerator(IsolatedAsyncioTestCase):
     ''' Tests the run_job_generator function '''
 
     def handler_success(self, job): # pylint: disable=unused-argument

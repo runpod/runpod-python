@@ -1,12 +1,12 @@
 ''' Tests for rp_local.py '''
 
-import unittest
+from unittest import IsolatedAsyncioTestCase
 from unittest.mock import patch, mock_open
 
 from runpod.serverless.modules import rp_local
 
 
-class TestRunLocal(unittest.TestCase):
+class TestRunLocal(IsolatedAsyncioTestCase):
     ''' Tests for run_local function '''
 
     @patch("runpod.serverless.modules.rp_local.run_job", return_value={})
