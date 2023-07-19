@@ -169,6 +169,7 @@ async def run_worker_multi(config: Dict[str, Any]) -> None:
                 scalar.background_tasks.add(task)
                 task.add_done_callback(scalar.background_tasks.discard)
 
+        log.debug("rp_debugger | The event loop has closed due to {}, #2.")
         asyncio.get_event_loop().stop() # Stops the worker loop if the kill_worker flag is set.
 
 
@@ -241,5 +242,7 @@ def main(config: Dict[str, Any]) -> None:
                 asyncio.ensure_future(run_worker(config), loop=work_loop)
             work_loop.run_forever()
 
+        except Exception as e:  
+            log.debug("rp_debugger | The event loop has closed due to {}, #1.".format(e))
         finally:
             work_loop.close()
