@@ -22,9 +22,9 @@ Official Python library for RunPod API &amp; SDK.
 - [SDK - Serverless Worker](#sdk---serverless-worker)
   - [Quick Start](#quick-start)
   - [Local Test Worker](#local-test-worker)
-- [API Language Library](#api-language-library)
+- [API Language Library (GraphQL Wrapper)](#api-language-library-graphql-wrapper)
   - [Endpoints](#endpoints)
-  - [GPU Pod Control](#gpu-pod-control)
+  - [GPU Cloud (Pods)](#gpu-cloud-pods)
 - [Directory](#directory)
 - [Community and Contributing](#community-and-contributing)
 
@@ -79,7 +79,7 @@ You can also test your worker locally before deploying it to RunPod. This is use
 python my_worker.py --rp_serve_api
 ```
 
-## API Language Library
+## API Language Library (GraphQL Wrapper)
 
 When interacting with the RunPod API you can use this library to make requests to the API.
 
@@ -118,7 +118,7 @@ run_request = endpoint.run_sync(
 print(run_request )
 ```
 
-### GPU Pod Control
+### GPU Cloud (Pods)
 
 ```python
 import runpod
@@ -143,7 +143,10 @@ runpod.terminate_pod(pod.id)
 ```BASH
 .
 ├── docs               # Documentation
+├── examples           # Examples
 ├── runpod             # Package source code
+│   ├── api_wrapper    # Language library - API (GraphQL)
+|   ├── cli            # Command Line Interface Functions
 │   ├── endpoint       # Language library - Endpoints
 │   └── serverless     # SDK - Serverless Worker
 └── tests              # Package tests
