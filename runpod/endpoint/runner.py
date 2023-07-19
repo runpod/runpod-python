@@ -1,7 +1,6 @@
 '''
 RunPod | Python | Endpoint Runner
 '''
-from __future__ import annotations
 from typing import Any, Union
 import time
 import requests
@@ -49,6 +48,62 @@ class RunPodClient:
         '''
         url = f"{self.endpoint_url_base}/{endpoint}"
         return self.rp_session.get(url, headers=self.headers, timeout=timeout)
+    
+# ---------------------------------------------------------------------------- #
+#                                      Job                                     #
+# ---------------------------------------------------------------------------- #
+class Job:
+    ''' Creates a class to run a job. '''
+
+    def __init__(self, endpoint_id : str, job_id : str):
+        ''' Initializes the class. '''
+
+        self.endpoint_id = endpoint_id
+        self.job_id = job_id
+        self.rp_client = RunPodClient()
+
+        self.job_output = None
+
+    def _status_json(self):
+        """
+        Returns the raw json of the status, raises an exception if invalid
+        """
+
+        status_url = f"{self.endpoint_id}/status/{self.job_id}"
+
+        status_request = self.rp_client.get(endpoint=status_url, timeout=10)
+        request_json = status_request.json()
+
+        if "error" in request_json:
+            raise RuntimeError(f"Error from RunPod Server: '{request_json['error']}'")
+
+        return request_json
+
+    def status(self):
+        '''
+        Returns the status of the job request.
+        '''
+        return self._status_json()["status"]
+
+    def output(self, timeout : int=60) -> Union[None, dict]:
+        '''
+        Gets the output of the endpoint run request.
+
+        :param timeout: after how much time should the request timeout? 
+                        (if it doesn't get a response back)
+        '''
+        while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
+            time.sleep(.1)
+            timeout -= .1
+
+        if self.job_output is None:
+            status_json = self._status_json()
+            if "output" not in status_json:
+                return None
+            self.job_output = status_json["output"]
+
+        return self.job_output
+
 
 
 # ---------------------------------------------------------------------------- #
@@ -113,57 +168,3 @@ class Endpoint:
         return job_return.json()
 
 
-# ---------------------------------------------------------------------------- #
-#                                      Job                                     #
-# ---------------------------------------------------------------------------- #
-class Job:
-    ''' Creates a class to run a job. '''
-
-    def __init__(self, endpoint_id : str, job_id : str):
-        ''' Initializes the class. '''
-
-        self.endpoint_id = endpoint_id
-        self.job_id = job_id
-        self.rp_client = RunPodClient()
-
-        self.job_output = None
-
-    def _status_json(self):
-        """
-        Returns the raw json of the status, raises an exception if invalid
-        """
-
-        status_url = f"{self.endpoint_id}/status/{self.job_id}"
-
-        status_request = self.rp_client.get(endpoint=status_url, timeout=10)
-        request_json = status_request.json()
-
-        if "error" in request_json:
-            raise RuntimeError(f"Error from RunPod Server: '{request_json['error']}'")
-
-        return request_json
-
-    def status(self):
-        '''
-        Returns the status of the job request.
-        '''
-        return self._status_json()["status"]
-
-    def output(self, timeout : int=60) -> Union[None, dict]:
-        '''
-        Gets the output of the endpoint run request.
-
-        :param timeout: after how much time should the request timeout? 
-                        (if it doesn't get a response back)
-        '''
-        while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
-            time.sleep(.1)
-            timeout -= .1
-
-        if self.job_output is None:
-            status_json = self._status_json()
-            if "output" not in status_json:
-                return None
-            self.job_output = status_json["output"]
-
-        return self.job_output
