@@ -3,7 +3,6 @@
 import os
 import time
 import argparse
-import unittest
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
 from unittest import IsolatedAsyncioTestCase
