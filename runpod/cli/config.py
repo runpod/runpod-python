@@ -6,11 +6,15 @@ Configurations are TOML files located under ~/.runpod/
 '''
 
 import os
-import tomllib
+
+try:
+    import tomllib as toml
+except ImportError:
+    import tomli as toml
 
 CREDENTIAL_FILE = os.path.expanduser('~/.runpod/credentials.toml')
 
-def set_credentials(api_key):
+def set_credentials(api_key: str) -> None:
     '''
     Sets the user's credentials in ~/.runpod/credentials.toml
 
@@ -31,15 +35,12 @@ def check_credentials():
     '''
     Checks if the credentials file exists and is valid.
     '''
-    if not os.path.exists(os.path.expanduser('~/.runpod')):
-        return False
-
     if not os.path.exists(CREDENTIAL_FILE):
         return False
 
     # Check for default api_key
     try:
-        config = tomllib.load(CREDENTIAL_FILE)
+        config = toml.load(CREDENTIAL_FILE)
 
         if 'default' not in config:
             return False
@@ -47,7 +48,7 @@ def check_credentials():
         if 'api_key' not in config['default']:
             return False
 
-    except tomllib.TOMLDecodeError:
+    except toml.TOMLDecodeError:
         print('Error: ~/.runpod/credentials.toml is not a valid TOML file.')
 
         return False
