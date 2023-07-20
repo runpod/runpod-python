@@ -7,10 +7,7 @@ Configurations are TOML files located under ~/.runpod/
 
 import os
 
-try:
-    import tomllib as toml
-except ImportError:
-    import tomli as toml
+import tomli as toml
 
 CREDENTIAL_FILE = os.path.expanduser('~/.runpod/credentials.toml')
 
