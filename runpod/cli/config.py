@@ -48,7 +48,7 @@ def check_credentials():
         if 'api_key' not in config['default']:
             return False
 
-    except toml.TOMLDecodeError:
+    except (TypeError, ValueError):
         print('Error: ~/.runpod/credentials.toml is not a valid TOML file.')
 
         return False
