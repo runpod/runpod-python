@@ -37,27 +37,27 @@ class TestConfig(unittest.TestCase):
         '''
         mock_exists.return_value = False
 
-        passed = runpod.check_credentials()
+        passed, _ = runpod.check_credentials()
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = ""
 
-        passed = runpod.check_credentials()
+        passed, _ = runpod.check_credentials()
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = dict({'default': 'something'})
 
-        passed = runpod.check_credentials()
+        passed, _ = runpod.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = ValueError
 
-        passed = runpod.check_credentials()
+        passed, _ = runpod.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = dict({'default': 'api_key'})
 
-        passed = runpod.check_credentials()
+        passed, _ = runpod.check_credentials()
         assert passed is True
