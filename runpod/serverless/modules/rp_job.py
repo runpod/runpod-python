@@ -17,6 +17,7 @@ from .rp_tips import check_return_size
 JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
 
 log = RunPodLogger()
+job_list = Jobs()
 
 
 async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
@@ -30,7 +31,6 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
     Note: Retry True just for ease of, if testing improved this can be removed.
     """
     next_job = None
-    job_list = Jobs()
 
     while next_job is None:
         try:
