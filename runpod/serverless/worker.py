@@ -152,10 +152,10 @@ async def run_worker_multi(config: Dict[str, Any]) -> None:
         while multi_processing_engine.kill_worker is False:
             async def process_job(job):
                 if inspect.isgeneratorfunction(config["handler"]):
-                    job_result = await run_job_generator(config["handler"], job)
+                    job_result = run_job_generator(config["handler"], job)
 
                     log.debug("Handler is a generator, streaming results.")
-                    for job_stream in job_result:
+                    async for job_stream in job_result:
                         await stream_result(session, job_stream, job)
                     job_result = {}
                 else:
@@ -210,10 +210,10 @@ async def run_worker(config: Dict[str, Any]) -> None:
             log.debug(f"{job['id']} | Set Job ID")
 
             if inspect.isgeneratorfunction(config["handler"]):
-                job_result = await run_job_generator(config["handler"], job)
+                job_result = run_job_generator(config["handler"], job)
 
                 log.debug("Handler is a generator, streaming results.")
-                for job_stream in job_result:
+                async for job_stream in job_result:
                     await stream_result(session, job_stream, job)
                 job_result = {}
             else:
@@ -255,7 +255,7 @@ def main(config: Dict[str, Any]) -> None:
     else:
         try:
             work_loop = asyncio.new_event_loop()
-            if config['handler_fully_utilized']:
+            if config.get('handler_fully_utilized'):
                 asyncio.ensure_future(run_worker_multi(config), loop=work_loop)
             else:
                 asyncio.ensure_future(run_worker(config), loop=work_loop)
