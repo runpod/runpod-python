@@ -141,7 +141,7 @@ def generator_handler(job):
 
 @pytest.mark.asyncio
 @patch("aiohttp.ClientSession")
-@patch("runpod.serverless.worker.get_job")
+@patch("runpod.serverless.modules.rp_scale.get_job")
 @patch("runpod.serverless.worker.run_job")
 @patch("runpod.serverless.worker.stream_result")
 @patch("runpod.serverless.worker.send_result")

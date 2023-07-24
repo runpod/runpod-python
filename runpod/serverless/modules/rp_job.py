@@ -20,6 +20,20 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
+def _job_get_url():
+    """
+    Prepare the URL for making a 'get' request to the serverless API (sls).
+
+    This function constructs the appropriate URL for sending a 'get' request to the serverless API,
+    ensuring that the request will be correctly routed and processed by the API.
+
+    Returns:
+        str: The prepared URL for the 'get' request to the serverless API.
+    """
+    job_in_progress = '1' if job_list.get_job_list() else '0'
+    return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
+
+
 async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
@@ -34,8 +48,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 
     while next_job is None:
         try:
-            job_in_progress = '1' if job_list.get_job_list() else '0'
-            async with session.get(JOB_GET_URL + f"&job_in_progress={job_in_progress}") as response: # pylint: disable=line-too-long
+            async with session.get(_job_get_url()) as response: # pylint: disable=line-too-long
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if not retry:
@@ -69,6 +82,10 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                 return None
 
     log.debug(f"{next_job['id']} | Job Confirmed")
+
+    if next_job:
+        job_list.add_job(next_job["id"])
+        log.debug(f"{next_job['id']} | Set Job ID")
     return next_job
 
 

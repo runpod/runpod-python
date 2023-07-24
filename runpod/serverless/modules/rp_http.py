@@ -6,6 +6,7 @@ import os
 import json
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
+from .worker_state import Jobs
 from .retry import retry
 from .worker_state import WORKER_ID
 
@@ -13,6 +14,7 @@ JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
 JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
 log = RunPodLogger()
+job_list = Jobs()
 
 
 @retry(max_attempts=3, base_delay=1, max_delay=3)
@@ -45,6 +47,9 @@ async def send_result(session, job_data, job):
 
         await transmit(session, job_data, job_done_url)
         log.debug(f"{job['id']} | Results sent.")
+
+        log.info(f'{job["id"]} | Finished')
+        job_list.remove_job(job["id"])
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
