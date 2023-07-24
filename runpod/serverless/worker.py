@@ -10,7 +10,7 @@ from typing import Dict, Any
 import aiohttp
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from runpod.serverless.modules.rp_scale import JobProcessor
+from runpod.serverless.modules.rp_scale import JobScaler
 from .modules import rp_local
 from .modules.rp_ping import HeartbeatSender
 from .modules.rp_job import run_job, run_job_generator
@@ -63,7 +63,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
         heartbeat.start_ping()
 
         # Flag to kill the worker after job is complete.
-        job_processor = JobProcessor(
+        job_processor = JobScaler(
             handler_fully_utilized=config.get('handler_fully_utilized'),
         )
 
@@ -133,8 +133,5 @@ def main(config: Dict[str, Any]) -> None:
             asyncio.ensure_future(run_worker(config), loop=work_loop)
             work_loop.run_forever()
 
-        except Exception as exception:  # pylint: disable=broad-exception-caught
-            log.debug(
-                f"rp_debugger | The event loop has closed due to {exception}.")
         finally:
             work_loop.close()

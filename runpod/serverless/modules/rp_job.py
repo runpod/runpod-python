@@ -48,7 +48,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 
     while next_job is None:
         try:
-            async with session.get(_job_get_url()) as response: # pylint: disable=line-too-long
+            async with session.get(_job_get_url()) as response:
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if not retry:
@@ -156,5 +156,3 @@ async def run_job_generator(
         yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
         log.info(f'{job["id"]} | Finished ')
-
-        # return None  # pylint: disable=lost-exception

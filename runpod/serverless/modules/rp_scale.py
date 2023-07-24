@@ -13,7 +13,7 @@ from .worker_state import Jobs
 log = RunPodLogger()
 job_list = Jobs()
 
-class JobProcessor():
+class JobScaler():
     """
     A class for automatically retrieving new jobs from the server and processing them concurrently.
 
@@ -38,7 +38,7 @@ class JobProcessor():
             and handler utilization.
 
     Usage example:
-        job_processor = JobProcessor(config)
+        job_processor = JobScaler(config)
 
         # Retrieving multiple jobs in parallel
         jobs_list = job_processor.get_jobs(session)
@@ -62,7 +62,7 @@ class JobProcessor():
 
     def __init__(self, handler_fully_utilized: typing.Any):
         self.background_get_job_tasks = set()
-        self.num_concurrent_get_job_requests = JobProcessor.INITIAL_CONCURRENT_REQUESTS
+        self.num_concurrent_get_job_requests = JobScaler.INITIAL_CONCURRENT_REQUESTS
         self.job_history = []
         self.handler_fully_utilized = handler_fully_utilized
         self.is_alive = True
@@ -122,8 +122,8 @@ class JobProcessor():
         """
         self.num_concurrent_get_job_requests = min(
             self.num_concurrent_get_job_requests *
-            JobProcessor.CONCURRENCY_SCALE_FACTOR,
-            JobProcessor.MAX_CONCURRENT_REQUESTS
+            JobScaler.CONCURRENCY_SCALE_FACTOR,
+            JobScaler.MAX_CONCURRENT_REQUESTS
         )
 
     def downscale_rate(self) -> None:
@@ -134,8 +134,8 @@ class JobProcessor():
         effectively retrieving fewer jobs per unit of time.
         """
         self.num_concurrent_get_job_requests = int(max(
-            self.num_concurrent_get_job_requests // JobProcessor.CONCURRENCY_SCALE_FACTOR,
-            JobProcessor.MIN_CONCURRENT_REQUESTS
+            self.num_concurrent_get_job_requests // JobScaler.CONCURRENCY_SCALE_FACTOR,
+            JobScaler.MIN_CONCURRENT_REQUESTS
         ))
 
     def rescale_request_rate(self) -> None:
@@ -158,12 +158,12 @@ class JobProcessor():
             log.debug("Reducing job query rate due to full worker utilization.")
 
             self.downscale_rate()
-        elif availability_ratio < 1 / JobProcessor.CONCURRENCY_SCALE_FACTOR:
+        elif availability_ratio < 1 / JobScaler.CONCURRENCY_SCALE_FACTOR:
             log.debug(
                 "Reducing job query rate due to low job queue availability.")
 
             self.downscale_rate()
-        elif availability_ratio >= JobProcessor.AVAILABILITY_RATIO_THRESHOLD:
+        elif availability_ratio >= JobScaler.AVAILABILITY_RATIO_THRESHOLD:
             log.debug(
                 "Increasing job query rate due to increased job queue availability.")
 

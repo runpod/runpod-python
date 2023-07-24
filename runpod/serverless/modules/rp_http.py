@@ -48,8 +48,8 @@ async def send_result(session, job_data, job):
         await transmit(session, job_data, job_done_url)
         log.debug(f"{job['id']} | Results sent.")
 
-        log.info(f'{job["id"]} | Finished')
         job_list.remove_job(job["id"])
+        log.info(f'{job["id"]} | Finished')
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
