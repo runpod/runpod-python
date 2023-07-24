@@ -38,19 +38,19 @@ class JobScaler():
             and handler utilization.
 
     Usage example:
-        job_processor = JobScaler(config)
+        job_scaler = JobScaler(config)
 
         # Retrieving multiple jobs in parallel
-        jobs_list = job_processor.get_jobs(session)
+        jobs_list = job_scaler.get_jobs(session)
 
         # Upscaling the rate for faster job retrieval
-        job_processor.upscale_rate()
+        job_scaler.upscale_rate()
 
         # Downscaling the rate for more conservative job retrieval
-        job_processor.downscale_rate()
+        job_scaler.downscale_rate()
 
         # Rescaling based on the queue, availability, and other metrics
-        job_processor.rescale_request_rate()
+        job_scaler.rescale_request_rate()
     """
 
     # Scaling Constants

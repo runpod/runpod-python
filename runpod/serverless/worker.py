@@ -63,11 +63,11 @@ async def run_worker(config: Dict[str, Any]) -> None:
         heartbeat.start_ping()
 
         # Flag to kill the worker after job is complete.
-        job_processor = JobScaler(
+        job_scaler = JobScaler(
             handler_fully_utilized=config.get('handler_fully_utilized'),
         )
 
-        while job_processor.is_alive:
+        while job_scaler.is_alive:
             async def process_job(job):
                 if inspect.isgeneratorfunction(config["handler"]):
                     job_result = run_job_generator(config["handler"], job)
@@ -84,7 +84,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
                     log.info(
                         f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
                     job_result["stopPod"] = True
-                    job_processor.kill_worker()
+                    job_scaler.kill_worker()
 
                 # If rp_debugger is set, debugger output will be returned.
                 if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
@@ -108,12 +108,12 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 log.info(f'{job["id"]} | Finished')
                 job_list.remove_job(job["id"])
 
-            async for job in job_processor.get_jobs(session):
+            async for job in job_scaler.get_jobs(session):
                 # Process the job here
                 task = asyncio.create_task(process_job(job))
-                job_processor.background_get_job_tasks.add(task)
+                job_scaler.background_get_job_tasks.add(task)
                 task.add_done_callback(
-                    job_processor.background_get_job_tasks.discard)
+                    job_scaler.background_get_job_tasks.discard)
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()
