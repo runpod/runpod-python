@@ -133,18 +133,18 @@ class JobProcessor():
             if not self.handler_fully_utilized:
                 await asyncio.wait(self.background_get_job_tasks)
                 break
-            else:
-                # We retrieve num_concurrent_get_job_requests jobs per second.
-                await asyncio.sleep(1)
 
-                # Rescale the retrieval rate appropriately.
-                self.rescale_request_rate()
+            # We retrieve num_concurrent_get_job_requests jobs per second.
+            await asyncio.sleep(1)
 
-                # Show logs
-                log.info(
-                    f"Concurrent Get Jobs | The number of concurrent get_jobs is "
-                    f"{self.num_concurrent_get_job_requests}."
-                )
+            # Rescale the retrieval rate appropriately.
+            self.rescale_request_rate()
+
+            # Show logs
+            log.info(
+                f"Concurrent Get Jobs | The number of concurrent get_jobs is "
+                f"{self.num_concurrent_get_job_requests}."
+            )
 
     def upscale_rate(self) -> None:
         """
