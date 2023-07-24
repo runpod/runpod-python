@@ -1,3 +1,8 @@
+'''
+runpod | serverless | rp_scale.py
+Provides the functionality for scaling the runpod serverless worker.
+'''
+
 import asyncio
 import typing
 
