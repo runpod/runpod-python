@@ -54,7 +54,6 @@ async def send_result(session, job_data, job):
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
 
-
 async def stream_result(session, job_data, job):
     '''
     Return the stream job results.
