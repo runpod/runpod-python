@@ -45,8 +45,7 @@ class Jobs:
         '''
         Removes a job from the list of jobs.
         '''
-        if job_id in self.jobs:
-            self.jobs.remove(job_id)
+        self.jobs.remove(job_id)
 
     def get_job_list(self):
         '''

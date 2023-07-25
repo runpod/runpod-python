@@ -67,7 +67,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
             handler_fully_utilized=config.get('handler_fully_utilized'),
         )
 
-        while job_scaler.is_alive:
+        while job_scaler.is_alive():
             async def process_job(job):
                 if inspect.isgeneratorfunction(config["handler"]):
                     job_result = run_job_generator(config["handler"], job)
@@ -111,9 +111,12 @@ async def run_worker(config: Dict[str, Any]) -> None:
             async for job in job_scaler.get_jobs(session):
                 # Process the job here
                 task = asyncio.create_task(process_job(job))
-                job_scaler.background_get_job_tasks.add(task)
-                task.add_done_callback(
-                    job_scaler.background_get_job_tasks.discard)
+
+                # Track the task
+                job_scaler.track_task(task)
+
+                # Allow job processing
+                await asyncio.sleep(0)
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()

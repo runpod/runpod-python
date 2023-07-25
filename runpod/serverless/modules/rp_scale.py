@@ -59,19 +59,33 @@ class JobScaler():
     INITIAL_CONCURRENT_REQUESTS = 1
     MAX_CONCURRENT_REQUESTS = 100
     MIN_CONCURRENT_REQUESTS = 1
+    SLEEP_INTERVAL_SEC = 1
 
     def __init__(self, handler_fully_utilized: typing.Any):
         self.background_get_job_tasks = set()
         self.num_concurrent_get_job_requests = JobScaler.INITIAL_CONCURRENT_REQUESTS
         self.job_history = []
         self.handler_fully_utilized = handler_fully_utilized
-        self.is_alive = True
+        self._is_alive = True
+
+    def is_alive(self):
+        """
+        Return whether the worker is alive or not.
+        """
+        return self._is_alive
 
     def kill_worker(self):
         """
         Whether to kill the worker.
         """
-        self.is_alive = False
+        self._is_alive = False
+
+    def track_task(self, task):
+        """
+        Keep track of the task to avoid python garbage collection of the coroutine.
+        """
+        self.background_get_job_tasks.add(task)
+        task.add_done_callback(self.background_get_job_tasks.discard)
 
     async def get_jobs(self, session):
         """
@@ -81,6 +95,10 @@ class JobScaler():
             List[Any]: A list of job data retrieved from the server.
         """
         while True:
+            # Finish if the job_scale is not alive
+            if not self.is_alive():
+                break
+
             tasks = [
                 asyncio.create_task(
                     get_job(session, retry=False)
@@ -97,16 +115,16 @@ class JobScaler():
                     yield job
 
             # During the single processing scenario, wait for the job to finish processing.
-            if not self.handler_fully_utilized:
+            if self.handler_fully_utilized is None:
                 await asyncio.wait(self.background_get_job_tasks)
                 break
 
             # We retrieve num_concurrent_get_job_requests jobs per second.
-            await asyncio.sleep(1)
-
+            await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
+            
             # Rescale the retrieval rate appropriately.
             self.rescale_request_rate()
-
+            
             # Show logs
             log.info(
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
@@ -142,14 +160,6 @@ class JobScaler():
         """
         Scale up or down the rate at which we are handling jobs from SLS.
         """
-        # If we're inside the single-processing setting.
-        if not self.handler_fully_utilized:
-            return
-
-        # There's no job history for our rescaling mechanism.
-        if len(self.job_history) == 0:
-            return
-
         # Compute the availability ratio of the job queue.
         availability_ratio = sum(self.job_history) / len(self.job_history)
 
