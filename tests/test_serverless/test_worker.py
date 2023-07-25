@@ -1,5 +1,4 @@
 ''' Tests for runpod | serverless| worker '''
-import asyncio
 import os
 import time
 import argparse
@@ -334,7 +333,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # Should go from concurrency 1 -> 2 -> 4 -> 8 -> 16 -> 8 -> 4 -> 2 -> 1
         # 1+2+4+8+16+8+4+2+1 -> 46 calls to get_job.
         scale_behavior = {
-            'behavior': [False, False, False, False, False, False, True, True, True, True],
+            'behavior': [False, False, False, False, False, False, True, True, True, True, True],
             'counter': 0,
         }
         def handler_fully_utilized():
