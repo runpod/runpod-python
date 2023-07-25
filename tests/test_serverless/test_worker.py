@@ -353,22 +353,26 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             }
 
         # Let's mock job_scaler.is_alive so that it returns False when scale_behavior's counter is now 5.
-        def fake_is_alive():
+        def mock_is_alive():
             res = scale_behavior['counter'] < 10
             scale_behavior['counter'] +=1
             return res
         
-        #with patch("runpod.serverless.modules.rp_scale.JobScaler.track_task", wraps=fake_track_task):
-        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=fake_is_alive):
+        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
-        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called 1 + 2 + 4 + 8 + 4 + 2 + 1 = 22 times
+        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
+        # 1 + 2 + 4 + 8 + 16 + 8 + 4 + 2 + 1 = 46 times
         assert mock_get_job.call_count == 46
         assert mock_run_job.call_count == 46
         assert mock_send_result.call_count == 46
 
     @pytest.mark.asyncio
-    async def test_run_worker_multi_processing_availability_ratio(self):
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.send_result")
+    async def test_run_worker_multi_processing_availability_ratio(
+        self, mock_send_result, mock_run_job, mock_get_job):
         '''
         Test run_worker with multi processing enabled, the scale-up and scale-down behavior with availability ratio.
 
@@ -379,8 +383,48 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
-        # Figure out how to simulate a call to mock_get_job where it's returning None for all the jobs but one, which
-        # should force a scale down, hitting full code coverage.
-        pass
+        # For downscaling, we'll rely entirely on the availability ratio.
+        def handler_fully_utilized():
+            return False
+
+        # Let the test be a long running one so we can capture the scale-up and scale-down.
+        config = {
+            "handler": MagicMock(),
+            "refresh_worker": False,
+            "handler_fully_utilized": handler_fully_utilized,
+            "rp_args": {
+                "rp_debugger": True,
+                "rp_log_level": "DEBUG"
+                }
+            }
+
+        # Let's stop after the 20th call.
+        scale_behavior = {
+            'counter': 0
+        }
+
+        def mock_is_alive():
+            res = scale_behavior['counter'] < 10
+            scale_behavior['counter'] +=1
+
+            # Let's oscillate between upscaling, downscaling, upscaling, downscaling, ...
+            if scale_behavior['counter'] % 2 == 0:
+                mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+            else:
+                mock_get_job.return_value = None
+            return res
+
+        # Define the mock behaviors
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
+            runpod.serverless.start(config)
+
+        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
+        # 1 + 2 + 1 + 2 + 1 + 2 + 1 + 2 + 1 = 13 calls
+        assert mock_get_job.call_count == 13
+
+        # 5 calls with actual jobs
+        assert mock_run_job.call_count == 5
+        assert mock_send_result.call_count == 5
 
     print("HERE")
