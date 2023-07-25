@@ -160,6 +160,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
+    # pylint: disable=too-many-arguments
     async def test_run_worker(
         self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
         '''
@@ -242,6 +243,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
+    # pylint: disable=too-many-arguments
     async def test_run_worker_multi_processing(
         self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
         '''
