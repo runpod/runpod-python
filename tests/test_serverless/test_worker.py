@@ -1,5 +1,4 @@
 ''' Tests for runpod | serverless| worker '''
-
 import asyncio
 import os
 import time
@@ -317,7 +316,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     async def test_run_worker_multi_processing_scaling_up(
         self, mock_send_result, mock_run_job, mock_get_job):
         '''
-        Test run_worker with multi processing enabled, the scale-up and scale-down behavior with handler_fully_utilized.
+        Test run_worker with multi processing enabled, the scale-up and scale-down 
+        behavior with handler_fully_utilized.
 
         Args:
             mock_send_result (_type_): _description_
@@ -338,7 +338,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             'counter': 0,
         }
         def handler_fully_utilized():
-            val = scale_behavior['behavior'][scale_behavior['counter'] % len(scale_behavior['behavior'])]
+            val = scale_behavior['behavior'][scale_behavior['counter']]
             return val
 
         # Let the test be a long running one so we can capture the scale-up and scale-down.
@@ -352,12 +352,13 @@ class TestRunWorker(IsolatedAsyncioTestCase):
                 }
             }
 
-        # Let's mock job_scaler.is_alive so that it returns False when scale_behavior's counter is now 5.
+        # Let's mock job_scaler.is_alive so that it returns False
+        # when scale_behavior's counter is now 5.
         def mock_is_alive():
             res = scale_behavior['counter'] < 10
             scale_behavior['counter'] +=1
             return res
-        
+
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
@@ -374,7 +375,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     async def test_run_worker_multi_processing_availability_ratio(
         self, mock_send_result, mock_run_job, mock_get_job):
         '''
-        Test run_worker with multi processing enabled, the scale-up and scale-down behavior with availability ratio.
+        Test run_worker with multi processing enabled, the scale-up and 
+        scale-down behavior with availability ratio.
 
         Args:
             mock_send_result (_type_): _description_
