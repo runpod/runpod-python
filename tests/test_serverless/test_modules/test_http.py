@@ -28,7 +28,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         with patch('runpod.serverless.modules.rp_http.log') as mock_log:
             with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
                 mock_jobs.return_value = set(['test_id'])
-                send_return_local = asyncio.run(rp_http.send_result(Mock(), self.job_data, self.job))
+                send_return_local = asyncio.run(
+                    rp_http.send_result(Mock(), self.job_data, self.job))
 
                 assert send_return_local is None
                 assert mock_log.debug.call_count == 3
@@ -47,7 +48,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
                 mock_jobs.return_value = set(['test_id'])
 
-                send_return_local = asyncio.run(rp_http.send_result(Mock(), self.job_data, self.job))
+                send_return_local = asyncio.run(
+                    rp_http.send_result(Mock(), self.job_data, self.job))
 
                 assert send_return_local is None
                 assert mock_log.debug.call_count == 1
@@ -67,7 +69,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
                 mock_jobs.return_value = set(['test_id'])
                 rp_http.IS_LOCAL_TEST = True
-                send_return_local = asyncio.run(rp_http.stream_result(Mock(), self.job_data, self.job))
+                send_return_local = asyncio.run(
+                    rp_http.stream_result(Mock(), self.job_data, self.job))
 
                 assert send_return_local is None
                 assert mock_log.debug.call_count == 3
