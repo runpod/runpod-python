@@ -89,7 +89,8 @@ def start(config):
     """
     Starts the serverless worker.
     """
-    print("--- Starting Serverless Worker ---")
+    import runpod # pylint: disable=import-outside-toplevel
+    print(f"--- Starting Serverless Worker |  v{runpod.__version__} ---")
 
     config["reference_counter_start"] = time.perf_counter()
     config = _set_config_args(config)
