@@ -119,10 +119,11 @@ def main(config: Dict[str, Any]) -> None:
 
     else:
         try:
-            heartbeat.start_ping() # Currently not async, might need to be changed.
-
             work_loop = asyncio.new_event_loop()
+
+            asyncio.ensure_future(heartbeat.start_ping(), loop=work_loop)
             asyncio.ensure_future(run_worker(config), loop=work_loop)
+
             work_loop.run_forever()
 
         finally:
