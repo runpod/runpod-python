@@ -9,6 +9,7 @@ import sys
 import json
 import time
 import argparse
+from typing import Dict, Any
 
 from . import worker
 from .modules import rp_fastapi
@@ -85,9 +86,16 @@ def _get_realtime_concurrency() -> int:
 # ---------------------------------------------------------------------------- #
 #                            Start Serverless Worker                           #
 # ---------------------------------------------------------------------------- #
-def start(config):
+def start(config: Dict[str, Any]):
     """
     Starts the serverless worker.
+
+    config (Dict[str, Any]): Configuration parameters for the worker.
+
+    config["handler"] (Callable): The handler function to run.
+    config["concurrency_controller"] (Callable): Concurrency controller function to run.
+
+    config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
     """
     print("--- Starting Serverless Worker ---")
 
