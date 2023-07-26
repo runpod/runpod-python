@@ -98,7 +98,7 @@ def start(config: Dict[str, Any]):
     config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
     """
     from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
-    print(f"--- Starting Serverless Worker |  v{runpod_version} ---")
+    print(f"--- Starting Serverless Worker |  Version {runpod_version} ---")
 
     config["reference_counter_start"] = time.perf_counter()
     config = _set_config_args(config)
