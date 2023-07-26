@@ -9,7 +9,7 @@ from .api_wrapper.ctl_commands import(
     get_gpus, get_gpu,
     create_pod, stop_pod, resume_pod, terminate_pod
 )
-from .cli.config import check_credentials
+from .cli.config import set_credentials, check_credentials, get_credentials
 
 api_key = None  # pylint: disable=invalid-name
 

@@ -18,7 +18,8 @@ def set_credentials(api_key: str) -> None:
     Args:
         api_key (str): The user's API key.
 
-    File Structure:
+
+    --- File Structure ---
 
     [default]
     api_key = "RUNPOD_API_KEY"
@@ -49,3 +50,16 @@ def check_credentials():
         return False, 'Error: ~/.runpod/credentials.toml is not a valid TOML file.'
 
     return True, None
+
+
+def get_credentials(profile='default'):
+    '''
+    Returns the credentials for the specified profile from ~/.runpod/credentials.toml
+    '''
+    with open(CREDENTIAL_FILE, 'r', encoding="UTF-8") as cred_file:
+        credentials = toml.load(cred_file)
+
+    if profile not in credentials:
+        return None
+
+    return credentials[profile]
