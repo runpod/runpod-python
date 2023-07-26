@@ -2,6 +2,7 @@
 Job related helpers.
 """
 
+import inspect
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
@@ -10,12 +11,27 @@ import traceback
 from aiohttp import ClientSession
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import WORKER_ID
+from .worker_state import WORKER_ID, Jobs
 from .rp_tips import check_return_size
 
 JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
 
 log = RunPodLogger()
+job_list = Jobs()
+
+
+def _job_get_url():
+    """
+    Prepare the URL for making a 'get' request to the serverless API (sls).
+
+    This function constructs the appropriate URL for sending a 'get' request to the serverless API,
+    ensuring that the request will be correctly routed and processed by the API.
+
+    Returns:
+        str: The prepared URL for the 'get' request to the serverless API.
+    """
+    job_in_progress = '1' if job_list.get_job_list() else '0'
+    return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
 
 
 async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
@@ -29,9 +45,10 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
     Note: Retry True just for ease of, if testing improved this can be removed.
     """
     next_job = None
+
     while next_job is None:
         try:
-            async with session.get(JOB_GET_URL) as response:
+            async with session.get(_job_get_url()) as response:
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if not retry:
@@ -65,10 +82,14 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                 return None
 
     log.debug(f"{next_job['id']} | Job Confirmed")
+
+    if next_job:
+        job_list.add_job(next_job["id"])
+        log.debug(f"{next_job['id']} | Set Job ID")
     return next_job
 
 
-def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
+async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     """
     Run the job using the handler.
     Returns the job output or error.
@@ -76,7 +97,9 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     log.info(f'{job["id"]} | Started')
 
     try:
-        job_output = handler(job)
+        result = handler(job)
+        job_output = await result if inspect.isawaitable(result) else result
+
         log.debug(f'{job["id"]} | Handler output: {job_output}')
 
         run_result = {"output": job_output}
@@ -117,7 +140,7 @@ def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         return run_result  # pylint: disable=lost-exception
 
 
-def run_job_generator(
+async def run_job_generator(
         handler: Callable,
         job: Dict[str, Any]) -> Generator[Dict[str, Union[str, Any]], None, None]:
     '''
@@ -133,5 +156,3 @@ def run_job_generator(
         yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
         log.info(f'{job["id"]} | Finished ')
-
-        return None  # pylint: disable=lost-exception

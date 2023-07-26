@@ -1,11 +1,10 @@
 ''' Tests for runpod | serverless| worker '''
-
 import os
 import time
 import argparse
-import unittest
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
+from unittest import IsolatedAsyncioTestCase
 import pytest
 import nest_asyncio
 
@@ -15,7 +14,7 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 nest_asyncio.apply()
 
-class TestWorker(unittest.TestCase):
+class TestWorker(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
 
     def setUp(self):
@@ -97,7 +96,7 @@ class TestWorker(unittest.TestCase):
             assert mock_fastapi.WorkerAPI.called
 
 
-class TestWorkerTestInput(unittest.TestCase):
+class TestWorkerTestInput(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
 
     def setUp(self):
@@ -127,7 +126,7 @@ class TestWorkerTestInput(unittest.TestCase):
 
             # Confirm that the log level is set to WARN
             log = RunPodLogger()
-            assert log.level() == "WARN"
+            assert log.level == "WARN"
 
 
 
@@ -139,78 +138,296 @@ def generator_handler(job):
     yield "test"
 
 
-@pytest.mark.asyncio
-@patch("aiohttp.ClientSession")
-@patch("runpod.serverless.worker.get_job")
-@patch("runpod.serverless.worker.run_job")
-@patch("runpod.serverless.worker.stream_result")
-@patch("runpod.serverless.worker.send_result")
-async def test_run_worker(
-    mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
-    '''
-    Test run_worker
+class TestRunWorker(IsolatedAsyncioTestCase):
+    """ Tests for runpod | serverless| worker """
+    def setUp(self):
+        os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
 
-    Args:
-        mock_send_result (_type_): _description_
-        mock_stream_result (_type_): _description_
-        mock_run_job (_type_): _description_
-        mock_get_job (_type_): _description_
-        mock_session (_type_): _description_
-    '''
-
-    os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
-    # Define the mock behaviors
-    mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
-    mock_run_job.return_value = {"output": {"result": "odd"}}
-
-    # Set up the config
-    config = {
-        "handler": MagicMock(),
-        "refresh_worker": True,
-        "rp_args": {
-            "rp_debugger": True,
-            "rp_log_level": "DEBUG"
-            }
-        }
-
-    # Call the function
-    runpod.serverless.start(config)
-
-    # Make assertions about the behaviors
-    mock_get_job.assert_called_once()
-    mock_run_job.assert_called_once()
-    mock_send_result.assert_called_once()
-
-    assert mock_stream_result.called is False
-    assert mock_session.called
-
-
-    # Test generator handler
-    generator_config = {"handler": generator_handler, "refresh_worker": True}
-    runpod.serverless.start(generator_config)
-    assert mock_stream_result.called
-
-    with patch("runpod.serverless._set_config_args") as mock_set_config_args:
-
-        limited_config = {
-            "handler": Mock(),
-            "reference_counter_start": time.perf_counter(),
+        # Set up the config
+        self.config = {
+            "handler": MagicMock(),
             "refresh_worker": True,
             "rp_args": {
                 "rp_debugger": True,
-                "rp_serve_api": None,
-                "rp_api_port": 8000,
-                "rp_api_concurrency": 1,
-                "rp_api_host": "localhost"
+                "rp_log_level": "DEBUG"
                 }
+            }
+
+
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession")
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.stream_result")
+    @patch("runpod.serverless.worker.send_result")
+    # pylint: disable=too-many-arguments
+    async def test_run_worker(
+        self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
+        '''
+        Test run_worker with synchronous handler.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+
+        # Define the mock behaviors
+        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        # Call the function
+        runpod.serverless.start(self.config)
+
+        # Make assertions about the behaviors
+        mock_get_job.assert_called_once()
+        mock_run_job.assert_called_once()
+        mock_send_result.assert_called_once()
+
+        assert mock_stream_result.called is False
+        assert mock_session.called
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.stream_result")
+    async def test_run_worker_generator_handler(
+        self, mock_stream_result, mock_run_job, mock_get_job):
+        '''
+        Test run_worker with generator handler.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+        # Define the mock behaviors
+        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        # Test generator handler
+        generator_config = {"handler": generator_handler, "refresh_worker": True}
+        runpod.serverless.start(generator_config)
+        assert mock_stream_result.called
+
+        with patch("runpod.serverless._set_config_args") as mock_set_config_args:
+
+            limited_config = {
+                "handler": Mock(),
+                "reference_counter_start": time.perf_counter(),
+                "refresh_worker": True,
+                "rp_args": {
+                    "rp_debugger": True,
+                    "rp_serve_api": None,
+                    "rp_api_port": 8000,
+                    "rp_api_concurrency": 1,
+                    "rp_api_host": "localhost"
+                    }
+            }
+
+            mock_set_config_args.return_value = limited_config
+            runpod.serverless.start(limited_config)
+
+            print(mock_set_config_args.call_args_list)
+
+            assert mock_set_config_args.called
+
+
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession")
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.stream_result")
+    @patch("runpod.serverless.worker.send_result")
+    # pylint: disable=too-many-arguments
+    async def test_run_worker_multi_processing(
+        self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
+        '''
+        Test run_worker with multi processing enabled, both async and generator handler.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+
+        # Define the mock behaviors
+        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        # Include multi-processing inside config
+        def handler_fully_utilized():
+            return False
+
+        # Include the handler_fully_utilized
+        self.config['handler_fully_utilized'] = handler_fully_utilized
+
+        # Call the function
+        runpod.serverless.start(self.config)
+
+        # Make assertions about the behaviors
+        mock_get_job.assert_called_once()
+        mock_run_job.assert_called_once()
+        mock_send_result.assert_called_once()
+
+        assert mock_stream_result.called is False
+        assert mock_session.called
+
+        # Test generator handler
+        generator_config = {
+            "handler": generator_handler, 
+            "refresh_worker": True, 
+            "handler_fully_utilized": handler_fully_utilized
+        }
+        runpod.serverless.start(generator_config)
+        assert mock_stream_result.called
+
+        with patch("runpod.serverless._set_config_args") as mock_set_config_args:
+
+            limited_config = {
+                "handler": Mock(),
+                "reference_counter_start": time.perf_counter(),
+                "refresh_worker": True,
+                "rp_args": {
+                    "rp_debugger": True,
+                    "rp_serve_api": None,
+                    "rp_api_port": 8000,
+                    "rp_api_concurrency": 1,
+                    "rp_api_host": "localhost"
+                    }
+            }
+
+            mock_set_config_args.return_value = limited_config
+            runpod.serverless.start(limited_config)
+
+            print(mock_set_config_args.call_args_list)
+
+            assert mock_set_config_args.called
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.send_result")
+    async def test_run_worker_multi_processing_scaling_up(
+        self, mock_send_result, mock_run_job, mock_get_job):
+        '''
+        Test run_worker with multi processing enabled, the scale-up and scale-down 
+        behavior with handler_fully_utilized.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+        # Define the mock behaviors
+        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        # Include multi-processing inside config
+        # Should go from concurrency 1 -> 2 -> 4 -> 8 -> 16 -> 8 -> 4 -> 2 -> 1
+        # 1+2+4+8+16+8+4+2+1 -> 46 calls to get_job.
+        scale_behavior = {
+            'behavior': [False, False, False, False, False, False, True, True, True, True, True],
+            'counter': 0,
+        }
+        def handler_fully_utilized():
+            val = scale_behavior['behavior'][scale_behavior['counter']]
+            return val
+
+        # Let the test be a long running one so we can capture the scale-up and scale-down.
+        config = {
+            "handler": MagicMock(),
+            "refresh_worker": False,
+            "handler_fully_utilized": handler_fully_utilized,
+            "rp_args": {
+                "rp_debugger": True,
+                "rp_log_level": "DEBUG"
+                }
+            }
+
+        # Let's mock job_scaler.is_alive so that it returns False
+        # when scale_behavior's counter is now 5.
+        def mock_is_alive():
+            res = scale_behavior['counter'] < 10
+            scale_behavior['counter'] +=1
+            return res
+
+        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
+            runpod.serverless.start(config)
+
+        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
+        # 1 + 2 + 4 + 8 + 16 + 8 + 4 + 2 + 1 = 46 times
+        assert mock_get_job.call_count == 46
+        assert mock_run_job.call_count == 46
+        assert mock_send_result.call_count == 46
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.send_result")
+    async def test_run_worker_multi_processing_availability_ratio(
+        self, mock_send_result, mock_run_job, mock_get_job):
+        '''
+        Test run_worker with multi processing enabled, the scale-up and 
+        scale-down behavior with availability ratio.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+        # For downscaling, we'll rely entirely on the availability ratio.
+        def handler_fully_utilized():
+            return False
+
+        # Let the test be a long running one so we can capture the scale-up and scale-down.
+        config = {
+            "handler": MagicMock(),
+            "refresh_worker": False,
+            "handler_fully_utilized": handler_fully_utilized,
+            "rp_args": {
+                "rp_debugger": True,
+                "rp_log_level": "DEBUG"
+                }
+            }
+
+        # Let's stop after the 20th call.
+        scale_behavior = {
+            'counter': 0
         }
 
-        mock_set_config_args.return_value = limited_config
-        runpod.serverless.start(limited_config)
+        def mock_is_alive():
+            res = scale_behavior['counter'] < 10
+            scale_behavior['counter'] +=1
 
-        print(mock_set_config_args.call_args_list)
+            # Let's oscillate between upscaling, downscaling, upscaling, downscaling, ...
+            if scale_behavior['counter'] % 2 == 0:
+                mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+            else:
+                mock_get_job.return_value = None
+            return res
 
-        assert mock_set_config_args.called
+        # Define the mock behaviors
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
+            runpod.serverless.start(config)
 
+        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
+        # 1 + 2 + 1 + 2 + 1 + 2 + 1 + 2 + 1 = 13 calls
+        assert mock_get_job.call_count == 13
+
+        # 5 calls with actual jobs
+        assert mock_run_job.call_count == 5
+        assert mock_send_result.call_count == 5
 
     print("HERE")

@@ -13,7 +13,7 @@ from .rp_job import run_job
 
 log = RunPodLogger()
 
-def run_local(config: Dict[str, Any]) -> None:
+async def run_local(config: Dict[str, Any]) -> None:
     '''
     Runs the worker locally.
     '''
@@ -38,7 +38,7 @@ def run_local(config: Dict[str, Any]) -> None:
     local_job["id"] = local_job.get("id", "local_test")
     log.debug(f"Retrieved local job: {local_job}")
 
-    job_result = run_job(config["handler"], local_job)
+    job_result = await run_job(config["handler"], local_job)
 
     if job_result.get("error", None):
         log.error(f"Job {local_job['id']} failed with error: {job_result['error']}")
