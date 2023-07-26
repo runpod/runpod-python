@@ -13,7 +13,6 @@ import argparse
 from . import worker
 from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
-from runpod import __version__ as runpod_version
 
 log = RunPodLogger()
 
@@ -90,6 +89,7 @@ def start(config):
     """
     Starts the serverless worker.
     """
+    from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
     print(f"--- Starting Serverless Worker |  v{runpod_version} ---")
 
     config["reference_counter_start"] = time.perf_counter()
