@@ -36,7 +36,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
 
-            auth_header = runpod.serverless.worker._get_auth_header() # pylint: disable=protected-access
+            auth_header = runpod.serverless.worker._AUTH_HEADER() # pylint: disable=protected-access
             assert auth_header == {'Authorization': 'test'}
 
     def test_is_local(self):
@@ -281,8 +281,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
         # Test generator handler
         generator_config = {
-            "handler": generator_handler, 
-            "refresh_worker": True, 
+            "handler": generator_handler,
+            "refresh_worker": True,
             "handler_fully_utilized": handler_fully_utilized
         }
         runpod.serverless.start(generator_config)
@@ -317,7 +317,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     async def test_run_worker_multi_processing_scaling_up(
         self, mock_send_result, mock_run_job, mock_get_job):
         '''
-        Test run_worker with multi processing enabled, the scale-up and scale-down 
+        Test run_worker with multi processing enabled, the scale-up and scale-down
         behavior with handler_fully_utilized.
 
         Args:
@@ -376,7 +376,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     async def test_run_worker_multi_processing_availability_ratio(
         self, mock_send_result, mock_run_job, mock_get_job):
         '''
-        Test run_worker with multi processing enabled, the scale-up and 
+        Test run_worker with multi processing enabled, the scale-up and
         scale-down behavior with availability ratio.
 
         Args:
