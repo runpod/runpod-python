@@ -22,9 +22,15 @@ log = RunPodLogger()
 job_list = Jobs()
 heartbeat = HeartbeatSender()
 
+
 _CONNECTOR = aiohttp.TCPConnector(limit=None)
-_AUTH_HEADER = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
+
+def _get_auth_header () -> Dict[str, str]:
+    '''
+    Returns the authorization header for the worker HTTP requests.
+    '''
+    return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
 
 def _is_local(config) -> bool:
@@ -49,7 +55,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
     async with aiohttp.ClientSession(
-        connector=_CONNECTOR, headers=_AUTH_HEADER, timeout=_TIMEOUT) as session:
+        connector=_CONNECTOR, headers=_get_auth_header, timeout=_TIMEOUT) as session:
 
         job_scaler = JobScaler(
             handler_fully_utilized=config.get('concurrency_controller', None)

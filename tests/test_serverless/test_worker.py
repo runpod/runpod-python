@@ -35,7 +35,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
-            assert runpod.serverless.worker._AUTH_HEADER == {'Authorization': 'test'} # pylint: disable=protected-access
+            assert runpod.serverless.worker._get_auth_header() == {'Authorization': 'test'} # pylint: disable=protected-access
 
     def test_is_local(self):
         '''
