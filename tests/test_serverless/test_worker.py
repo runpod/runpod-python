@@ -35,9 +35,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
-
-            auth_header = runpod.serverless.worker._get_auth_header() # pylint: disable=protected-access
-            assert auth_header == {'Authorization': 'test'}
+            assert runpod.serverless.worker._get_auth_header() == {'Authorization': 'test'} # pylint: disable=protected-access
 
     def test_is_local(self):
         '''
@@ -173,7 +171,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
-
         # Define the mock behaviors
         mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
@@ -206,7 +203,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_session (_type_): _description_
         '''
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = {"id": "generator-123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Test generator handler
@@ -266,7 +263,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             return False
 
         # Include the handler_fully_utilized
-        self.config['handler_fully_utilized'] = handler_fully_utilized
+        self.config['concurrency_controller'] = handler_fully_utilized
 
         # Call the function
         runpod.serverless.start(self.config)
@@ -281,9 +278,9 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
         # Test generator handler
         generator_config = {
-            "handler": generator_handler, 
-            "refresh_worker": True, 
-            "handler_fully_utilized": handler_fully_utilized
+            "handler": generator_handler,
+            "refresh_worker": True,
+            "concurrency_controller": handler_fully_utilized
         }
         runpod.serverless.start(generator_config)
         assert mock_stream_result.called
@@ -317,7 +314,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     async def test_run_worker_multi_processing_scaling_up(
         self, mock_send_result, mock_run_job, mock_get_job):
         '''
-        Test run_worker with multi processing enabled, the scale-up and scale-down 
+        Test run_worker with multi processing enabled, the scale-up and scale-down
         behavior with handler_fully_utilized.
 
         Args:
@@ -346,7 +343,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         config = {
             "handler": MagicMock(),
             "refresh_worker": False,
-            "handler_fully_utilized": handler_fully_utilized,
+            "concurrency_controller": handler_fully_utilized,
             "rp_args": {
                 "rp_debugger": True,
                 "rp_log_level": "DEBUG"
@@ -376,7 +373,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     async def test_run_worker_multi_processing_availability_ratio(
         self, mock_send_result, mock_run_job, mock_get_job):
         '''
-        Test run_worker with multi processing enabled, the scale-up and 
+        Test run_worker with multi processing enabled, the scale-up and
         scale-down behavior with availability ratio.
 
         Args:
@@ -394,7 +391,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         config = {
             "handler": MagicMock(),
             "refresh_worker": False,
-            "handler_fully_utilized": handler_fully_utilized,
+            "concurrency_controller": handler_fully_utilized,
             "rp_args": {
                 "rp_debugger": True,
                 "rp_log_level": "DEBUG"
@@ -429,5 +426,3 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # 5 calls with actual jobs
         assert mock_run_job.call_count == 5
         assert mock_send_result.call_count == 5
-
-    print("HERE")

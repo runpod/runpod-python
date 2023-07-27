@@ -20,15 +20,15 @@ from .utils import rp_debugger
 
 log = RunPodLogger()
 job_list = Jobs()
-
-_TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
-
 heartbeat = HeartbeatSender()
 
 
-def _get_auth_header() -> Dict[str, str]:
+_CONNECTOR = aiohttp.TCPConnector(limit=None)
+_TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
+
+def _get_auth_header () -> Dict[str, str]:
     '''
-    Returns the authorization header for the worker.
+    Returns the authorization header for the worker HTTP requests.
     '''
     return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
@@ -54,17 +54,11 @@ async def run_worker(config: Dict[str, Any]) -> None:
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
-    auth_header = _get_auth_header()
-    connector = aiohttp.TCPConnector(limit=None)
-
     async with aiohttp.ClientSession(
-            connector=connector, headers=auth_header, timeout=_TIMEOUT) as session:
+        connector=_CONNECTOR, headers=_get_auth_header(),timeout=_TIMEOUT) as session:
 
-        heartbeat.start_ping()
-
-        # Flag to kill the worker after job is complete.
         job_scaler = JobScaler(
-            handler_fully_utilized=config.get('handler_fully_utilized'),
+            handler_fully_utilized=config.get('concurrency_controller', None)
         )
 
         while job_scaler.is_alive():
@@ -81,32 +75,24 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # If refresh_worker is set, pod will be reset after job is complete.
                 if config.get("refresh_worker", False):
-                    log.info(
-                        f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
+                    log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
                     job_result["stopPod"] = True
                     job_scaler.kill_worker()
 
                 # If rp_debugger is set, debugger output will be returned.
                 if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
-                    log.debug("rp_debugger | Flag set, return debugger output.")
-                    job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output(
-                    )
+                    job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
+                    log.debug("rp_debugger | Flag set, returning debugger output.")
 
                     # Calculate ready delay for the debugger output.
-                    ready_delay = (
-                        config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
+                    ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
                     job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
                 else:
-                    log.debug(
-                        "rp_debugger | Flag not set, skipping debugger output.")
-
+                    log.debug("rp_debugger | Flag not set, skipping debugger output.")
                     rp_debugger.clear_debugger_output()
 
                 # Send the job result to SLS
                 await send_result(session, job_result, job)
-
-                log.info(f'{job["id"]} | Finished')
-                job_list.remove_job(job["id"])
 
             async for job in job_scaler.get_jobs(session):
                 # Process the job here
@@ -118,8 +104,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 # Allow job processing
                 await asyncio.sleep(0)
 
-        # Stops the worker loop if the kill_worker flag is set.
-        asyncio.get_event_loop().stop()
+        asyncio.get_event_loop().stop() # Stops the worker loop if the kill_worker flag is set.
 
 
 def main(config: Dict[str, Any]) -> None:
@@ -130,10 +115,14 @@ def main(config: Dict[str, Any]) -> None:
     """
     if _is_local(config):
         asyncio.run(rp_local.run_local(config))
+
     else:
         try:
             work_loop = asyncio.new_event_loop()
+
+            asyncio.ensure_future(heartbeat.start_ping(), loop=work_loop)
             asyncio.ensure_future(run_worker(config), loop=work_loop)
+
             work_loop.run_forever()
 
         finally:
