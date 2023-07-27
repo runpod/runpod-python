@@ -114,11 +114,15 @@ class JobScaler():
                     log.debug(f"{job['id']} | Set Job ID")
                     yield job
 
+
             # During the single processing scenario, wait for the job to finish processing.
             if self.handler_fully_utilized is None:
-                pre_gc = self.background_get_job_tasks.copy()
-                if pre_gc:
-                    await asyncio.wait(pre_gc)
+                # Create a copy of the background job tasks list to keep references to the tasks.
+                job_tasks_copy = self.background_job_tasks.copy()
+                if job_tasks_copy:
+                    # Wait for the job tasks to finish processing before continuing.
+                    await asyncio.wait(job_tasks_copy)
+                # Exit the loop after processing a single job (since the handler is fully utilized).
                 break
 
             # We retrieve num_concurrent_get_job_requests jobs per second.
