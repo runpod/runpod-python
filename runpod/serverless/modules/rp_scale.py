@@ -118,7 +118,7 @@ class JobScaler():
             # During the single processing scenario, wait for the job to finish processing.
             if self.handler_fully_utilized is None:
                 # Create a copy of the background job tasks list to keep references to the tasks.
-                job_tasks_copy = self.background_job_tasks.copy()
+                job_tasks_copy = self.background_get_job_tasks.copy()
                 if job_tasks_copy:
                     # Wait for the job tasks to finish processing before continuing.
                     await asyncio.wait(job_tasks_copy)
