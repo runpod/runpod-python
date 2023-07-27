@@ -36,7 +36,7 @@ class HeartbeatSender:
             await self._send_ping()
             await asyncio.sleep(int(PING_INTERVAL / 1000))
 
-    async  def _send_ping(self):
+    async def _send_ping(self):
         '''
         Sends a heartbeat to the Runpod server.
         '''

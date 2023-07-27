@@ -66,6 +66,7 @@ async def stream_result(session, job_data, job):
         job_done_url = JOB_STREAM_URL_TEMPLATE.replace('$ID', job['id'])
 
         await transmit(session, job_data, job_done_url)
+        log.debug(f"{job['id']} | Intermediate Results sent.")
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")

@@ -203,7 +203,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
-        print("here3")
         # Define the mock behaviors
         mock_get_job.return_value = {"id": "generator-123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
@@ -212,8 +211,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         generator_config = {"handler": generator_handler, "refresh_worker": True}
         runpod.serverless.start(generator_config)
         assert mock_stream_result.called
-
-        print("here3.5")
 
         with patch("runpod.serverless._set_config_args") as mock_set_config_args:
 
@@ -257,8 +254,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
-
-        print("here2")
 
         # Define the mock behaviors
         mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
@@ -433,5 +428,3 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # 5 calls with actual jobs
         assert mock_run_job.call_count == 5
         assert mock_send_result.call_count == 5
-
-    print("HERE")
