@@ -205,13 +205,15 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         print("here3")
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = {"id": "generator-123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Test generator handler
         generator_config = {"handler": generator_handler, "refresh_worker": True}
         runpod.serverless.start(generator_config)
         assert mock_stream_result.called
+
+        print("here3.5")
 
         with patch("runpod.serverless._set_config_args") as mock_set_config_args:
 
@@ -267,7 +269,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             return False
 
         # Include the handler_fully_utilized
-        self.config['handler_fully_utilized'] = handler_fully_utilized
+        self.config['concurrency_controller'] = handler_fully_utilized
 
         # Call the function
         runpod.serverless.start(self.config)
@@ -284,7 +286,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         generator_config = {
             "handler": generator_handler,
             "refresh_worker": True,
-            "handler_fully_utilized": handler_fully_utilized
+            "concurrency_controller": handler_fully_utilized
         }
         runpod.serverless.start(generator_config)
         assert mock_stream_result.called
@@ -348,7 +350,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         config = {
             "handler": MagicMock(),
             "refresh_worker": False,
-            "handler_fully_utilized": handler_fully_utilized,
+            "concurrency_controller": handler_fully_utilized,
             "rp_args": {
                 "rp_debugger": True,
                 "rp_log_level": "DEBUG"
@@ -396,7 +398,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         config = {
             "handler": MagicMock(),
             "refresh_worker": False,
-            "handler_fully_utilized": handler_fully_utilized,
+            "concurrency_controller": handler_fully_utilized,
             "rp_args": {
                 "rp_debugger": True,
                 "rp_log_level": "DEBUG"
