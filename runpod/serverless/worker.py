@@ -55,8 +55,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
     async with aiohttp.ClientSession(
-        connector=_CONNECTOR, headers=_get_auth_header(),
-        timeout=_TIMEOUT) as session:
+        connector=_CONNECTOR, headers=_get_auth_header(),timeout=_TIMEOUT) as session:
 
         job_scaler = JobScaler(
             handler_fully_utilized=config.get('concurrency_controller', None)
@@ -64,7 +63,6 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
         while job_scaler.is_alive():
             async def process_job(job):
-                print(f"Processing job {job['id']}")
                 if inspect.isgeneratorfunction(config["handler"]):
                     job_result = run_job_generator(config["handler"], job)
 
@@ -77,8 +75,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # If refresh_worker is set, pod will be reset after job is complete.
                 if config.get("refresh_worker", False):
-                    log.info(
-                        f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
+                    log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
                     job_result["stopPod"] = True
                     job_scaler.kill_worker()
 

@@ -171,7 +171,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
-        print("here4")
         # Define the mock behaviors
         mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
@@ -325,7 +324,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
-        print("here")
         # Define the mock behaviors
         mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
