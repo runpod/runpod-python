@@ -55,8 +55,9 @@ async def run_worker(config: Dict[str, Any]) -> None:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
     async with aiohttp.ClientSession(
-        connector=_CONNECTOR, headers=_get_auth_header(), timeout=_TIMEOUT) as session:
-        
+        connector=_CONNECTOR, headers=_get_auth_header(),
+        timeout=_TIMEOUT) as session:
+
         job_scaler = JobScaler(
             handler_fully_utilized=config.get('concurrency_controller', None)
         )

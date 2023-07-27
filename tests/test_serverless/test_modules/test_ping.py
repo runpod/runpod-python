@@ -1,6 +1,5 @@
 ''' Tests for runpod.serverless.modules.rp_ping '''
 
-import asyncio
 import os
 import importlib
 
