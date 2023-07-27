@@ -117,7 +117,8 @@ class JobScaler():
             # During the single processing scenario, wait for the job to finish processing.
             if self.handler_fully_utilized is None:
                 if self.background_get_job_tasks:
-                    await asyncio.wait(self.background_get_job_tasks.copy())
+                    ref = self.background_get_job_tasks.copy()
+                    await asyncio.wait(ref)
                 break
 
             # We retrieve num_concurrent_get_job_requests jobs per second.
