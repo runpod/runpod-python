@@ -59,7 +59,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
         timeout=_TIMEOUT) as session:
 
         job_scaler = JobScaler(
-            handler_fully_utilized=config.get('concurrency_controller', None)
+            concurrency_controller=config.get('concurrency_controller', None)
         )
 
         while job_scaler.is_alive():
