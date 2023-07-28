@@ -121,7 +121,7 @@ class JobScaler():
                 if job_tasks_copy:
                     # Wait for the job tasks to finish processing before continuing.
                     await asyncio.wait(job_tasks_copy)
-                # Exit the loop after processing a single job (since the handler is fully utilized)..
+                # Exit the loop after processing a single job (since the handler is fully utilized).
                 await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
                 break
 
