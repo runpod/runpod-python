@@ -9,7 +9,7 @@ requests >= 2.31.0
 tqdm-loggable == 0.1.4
 setuptools_scm == 7.1.0
 
-fastapi[all] >= 0.99.0
+fastapi[all] == 0.99.1
 
 # Testing Requirements
 nest_asyncio == 1.5.6

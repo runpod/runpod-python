@@ -61,11 +61,11 @@ class JobScaler():
     MIN_CONCURRENT_REQUESTS = 1
     SLEEP_INTERVAL_SEC = 1
 
-    def __init__(self, handler_fully_utilized: typing.Any):
+    def __init__(self, concurrency_controller: typing.Any):
         self.background_get_job_tasks = set()
         self.num_concurrent_get_job_requests = JobScaler.INITIAL_CONCURRENT_REQUESTS
         self.job_history = []
-        self.handler_fully_utilized = handler_fully_utilized
+        self.concurrency_controller = concurrency_controller
         self._is_alive = True
 
     def is_alive(self):
@@ -114,15 +114,15 @@ class JobScaler():
                     log.debug(f"{job['id']} | Set Job ID")
                     yield job
 
-
             # During the single processing scenario, wait for the job to finish processing.
-            if self.handler_fully_utilized is None:
+            if self.concurrency_controller is None:
                 # Create a copy of the background job tasks list to keep references to the tasks.
                 job_tasks_copy = self.background_get_job_tasks.copy()
                 if job_tasks_copy:
                     # Wait for the job tasks to finish processing before continuing.
                     await asyncio.wait(job_tasks_copy)
                 # Exit the loop after processing a single job (since the handler is fully utilized).
+                await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
                 break
 
             # We retrieve num_concurrent_get_job_requests jobs per second.
@@ -136,6 +136,8 @@ class JobScaler():
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
                 f"{self.num_concurrent_get_job_requests}."
             )
+
+
 
     def upscale_rate(self) -> None:
         """
@@ -170,7 +172,7 @@ class JobScaler():
         availability_ratio = sum(self.job_history) / len(self.job_history)
 
         # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
-        if self.handler_fully_utilized() is True:
+        if self.concurrency_controller() is True:
             log.debug("Reducing job query rate due to full worker utilization.")
 
             self.downscale_rate()
