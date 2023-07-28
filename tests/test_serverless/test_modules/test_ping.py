@@ -3,9 +3,10 @@
 import os
 import importlib
 
-import aiohttp
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import patch, Mock
+
+import aiohttp
 from runpod.serverless.modules import rp_ping
 
 class TestPing(IsolatedAsyncioTestCase):
