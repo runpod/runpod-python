@@ -50,7 +50,7 @@ class HeartbeatSender:
 
             if PING_URL not in [None, 'PING_NOT_SET']:
                 try:
-                    result = session.get(
+                    result = await session.get(
                         PING_URL,
                         params=ping_params,
                         timeout=int(PING_INTERVAL / 1000)
