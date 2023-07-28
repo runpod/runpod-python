@@ -3,6 +3,7 @@
 import os
 import importlib
 
+import aiohttp
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import patch, Mock
 from runpod.serverless.modules import rp_ping
@@ -54,7 +55,7 @@ class TestPing(IsolatedAsyncioTestCase):
             self.assertEqual(rp_ping.PING_URL, "https://test.com/ping")
 
             # Exception case
-            mock_get.side_effect = Exception("Test exception")
+            mock_get.side_effect = aiohttp.ClientError("Test Error")
 
             with patch("runpod.serverless.modules.rp_ping.log.error") as mock_log_error:
                 await new_ping._send_ping() # pylint: disable=protected-access
