@@ -55,7 +55,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
     """
     connector = aiohttp.TCPConnector(limit=None)
     async with aiohttp.ClientSession(
-        connector=_CONNECTOR, headers=_get_auth_header(),timeout=_TIMEOUT) as session:
+        connector=connector, headers=_get_auth_header(),timeout=_TIMEOUT) as session:
 
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
