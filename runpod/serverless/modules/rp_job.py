@@ -65,12 +65,17 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                 log.debug(f"Received Job | {next_job}")
 
             # Check if the job is valid
-            if next_job.get("id", None) is None:
-                log.error("Job has no id, unable to process.")
-                next_job = None
+            job_id = next_job.get("id", None)
+            job_input = next_job.get("input", None)
 
-            if next_job.get("input", None) is None:
-                log.error("Job has no input, unable to process.")
+            if None in [job_id, job_input]:
+                missing_fields = []
+                if job_id is None:
+                    missing_fields.append("id")
+                if job_input is None:
+                    missing_fields.append("input")
+
+                log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
                 next_job = None
 
         except Exception as err:  # pylint: disable=broad-except

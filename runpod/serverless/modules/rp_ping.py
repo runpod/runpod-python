@@ -50,13 +50,13 @@ class HeartbeatSender:
 
             if PING_URL not in [None, 'PING_NOT_SET']:
                 try:
-                    result = session.get(
+                    result = await session.get(
                         PING_URL,
                         params=ping_params,
                         timeout=int(PING_INTERVAL / 1000)
                     )
 
-                    log.debug(f"Heartbeat Sent | URL: {PING_URL} | Status: {result.status_code}")
+                    log.debug(f"Heartbeat Sent | URL: {PING_URL} | Status: {result.status}")
                     log.debug(f"Heartbeat | Interval: {PING_INTERVAL}ms | Params: {ping_params}")
 
                 except aiohttp.ClientError as err:
