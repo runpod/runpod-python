@@ -68,7 +68,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             job_id = next_job.get("id", None)
             job_input = next_job.get("input", None)
 
-            if not all([job_id, job_input]):
+            if None in [job_id, job_input]:
                 missing_fields = []
                 if job_id is None:
                     missing_fields.append("id")
