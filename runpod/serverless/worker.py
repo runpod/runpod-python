@@ -23,7 +23,6 @@ job_list = Jobs()
 heartbeat = HeartbeatSender()
 
 
-_CONNECTOR = aiohttp.TCPConnector(limit=None)
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
 def _get_auth_header () -> Dict[str, str]:
@@ -54,6 +53,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
+    connector = aiohttp.TCPConnector(limit=None)
     async with aiohttp.ClientSession(
         connector=_CONNECTOR, headers=_get_auth_header(),timeout=_TIMEOUT) as session:
 
