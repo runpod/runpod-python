@@ -8,7 +8,6 @@ from unittest.mock import patch, Mock
 
 import pytest
 import aiohttp
-from asynctest import CoroutineMock
 from runpod.serverless.modules import rp_ping
 
 class MockResponse: # pylint: disable=too-few-public-methods
@@ -44,7 +43,7 @@ class TestPing(IsolatedAsyncioTestCase):
         self.assertEqual(rp_ping.PING_INTERVAL, 20000)
 
     @pytest.mark.asyncio
-    @patch("aiohttp.ClientSession.get", new_callable=CoroutineMock, side_effect=mock_get)
+    @patch("aiohttp.ClientSession.get", side_effect=mock_get)
     async def test_start_ping(self, mock_get_return):
         '''
         Tests that the start_ping function works correctly
