@@ -86,11 +86,12 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             if not retry:
                 return None
 
-    log.debug(f"{next_job['id']} | Job Confirmed")
+    log.debug(f"{next_job['id']} | Valid Job Confirmed")
 
     if next_job:
         job_list.add_job(next_job["id"])
-        log.debug(f"{next_job['id']} | Set Job ID")
+        log.debug(f"{next_job['id']} | Added Job ID")
+
     return next_job
 
 

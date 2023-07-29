@@ -22,7 +22,6 @@ log = RunPodLogger()
 job_list = Jobs()
 heartbeat = HeartbeatSender()
 
-
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
 def _get_auth_header () -> Dict[str, str]:
