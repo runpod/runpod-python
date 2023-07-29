@@ -12,9 +12,13 @@ from asynctest import CoroutineMock
 from runpod.serverless.modules import rp_ping
 
 class MockResponse:
+    ''' Mock response for aiohttp '''
     status = 200
 
 async def mock_get(*args, **kwargs):
+    '''
+    Mock get function for aiohttp
+    '''
     return MockResponse()
 
 class TestPing(IsolatedAsyncioTestCase):
