@@ -1,6 +1,7 @@
 ''' Tests for runpod.serverless.modules.rp_ping '''
 
 import os
+import pytest
 import importlib
 
 from unittest import IsolatedAsyncioTestCase
@@ -31,6 +32,7 @@ class TestPing(IsolatedAsyncioTestCase):
         self.assertEqual(rp_ping.PING_URL, "https://test.com/ping")
         self.assertEqual(rp_ping.PING_INTERVAL, 20000)
 
+    @pytest.mark.asyncio
     async def test_start_ping(self):
         '''
         Tests that the start_ping function works correctly
