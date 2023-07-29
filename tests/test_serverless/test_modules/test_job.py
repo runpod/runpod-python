@@ -102,7 +102,7 @@ class TestJob(IsolatedAsyncioTestCase):
             job = await rp_job.get_job(mock_session, retry=False)
 
             assert job is None
-            assert mock_log.error.call_count == 2
+            assert mock_log.error.call_count == 1
 
     @pytest.mark.asyncio
     async def test_get_job_no_input(self):
