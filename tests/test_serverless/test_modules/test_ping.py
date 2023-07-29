@@ -11,11 +11,11 @@ import aiohttp
 from asynctest import CoroutineMock
 from runpod.serverless.modules import rp_ping
 
-class MockResponse:
+class MockResponse: # pylint: disable=too-few-public-methods
     ''' Mock response for aiohttp '''
     status = 200
 
-async def mock_get(*args, **kwargs):
+async def mock_get(*args, **kwargs): # pylint: disable=unused-argument
     '''
     Mock get function for aiohttp
     '''
