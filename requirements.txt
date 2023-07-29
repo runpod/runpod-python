@@ -12,5 +12,4 @@ setuptools_scm == 7.1.0
 fastapi[all] == 0.99.1
 
 # Testing Requirements
-asynctest == 0.13.0
 nest_asyncio == 1.5.6
