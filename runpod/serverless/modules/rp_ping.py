@@ -28,17 +28,23 @@ class HeartbeatSender:
             HeartbeatSender._instance = object.__new__(cls)
         return HeartbeatSender._instance
 
-    async def start_ping(self):
+    async def start_ping(self, test=False):
         '''
         Sends heartbeat pings to the Runpod server.
         '''
-        try:
-            while True:
-                await self._send_ping()
-                await asyncio.sleep(int(PING_INTERVAL / 1000))
-        except (aiohttp.ClientError, asyncio.TimeoutError, asyncio.CancelledError) as err:
-            log.error(f"Ping Error: {err}, attempting to restart ping.")
-            await self.start_ping()
+        while True:
+            try:
+                while True:
+                    await self._send_ping()
+                    await asyncio.sleep(int(PING_INTERVAL / 1000))
+
+                    if test:
+                        return
+            except (aiohttp.ClientError, asyncio.TimeoutError, asyncio.CancelledError) as err:
+                log.error(f"Ping Error: {err}, attempting to restart ping.")
+                if test:
+                    return
+
 
     async def _send_ping(self):
         '''
