@@ -36,8 +36,6 @@ async def transmit(session, job_data, url):
                             raise_for_status=True) as resp:
         await resp.text()
 
-    log.debug(f"{job_data['id']} | Transmitted result.")
-
 
 async def send_result(session, job_data, job):
     '''
