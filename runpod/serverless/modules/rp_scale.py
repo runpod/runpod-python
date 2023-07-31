@@ -34,7 +34,7 @@ class JobScaler():
             Downscales the job retrieval rate by adjusting the number of concurrent requests.
 
         rescale_request_rate() -> None:
-            Rescales the job retrieval rate based on factors such as job queue availability 
+            Rescales the job retrieval rate based on factors such as job queue availability
             and handler utilization.
 
     Usage example:
@@ -108,10 +108,7 @@ class JobScaler():
                 job = await job_future
                 self.job_history.append(1 if job else 0)
 
-                # Add the job to our list of jobs
                 if job:
-                    job_list.add_job(job["id"])
-                    log.debug(f"{job['id']} | Set Job ID")
                     yield job
 
             # During the single processing scenario, wait for the job to finish processing.
