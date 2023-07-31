@@ -28,13 +28,23 @@ class HeartbeatSender:
             HeartbeatSender._instance = object.__new__(cls)
         return HeartbeatSender._instance
 
-    async def start_ping(self):
+    async def start_ping(self, test=False):
         '''
         Sends heartbeat pings to the Runpod server.
         '''
         while True:
-            await self._send_ping()
-            await asyncio.sleep(int(PING_INTERVAL / 1000))
+            try:
+                while True:
+                    await self._send_ping()
+                    await asyncio.sleep(int(PING_INTERVAL / 1000))
+
+                    if test:
+                        return
+            except (aiohttp.ClientError, asyncio.TimeoutError, asyncio.CancelledError) as err:
+                log.error(f"Ping Error: {err}, attempting to restart ping.")
+                if test:
+                    return
+
 
     async def _send_ping(self):
         '''
@@ -49,16 +59,10 @@ class HeartbeatSender:
             } if job_ids is not None else None
 
             if PING_URL not in [None, 'PING_NOT_SET']:
-                try:
-                    result = await session.get(
-                        PING_URL,
-                        params=ping_params,
-                        timeout=int(PING_INTERVAL / 1000)
-                    )
+                result = await session.get(
+                    PING_URL,
+                    params=ping_params,
+                    timeout=int(PING_INTERVAL / 1000)
+                )
 
-                    log.debug(f"Heartbeat Sent | URL: {PING_URL} | Status: {result.status}")
-                    log.debug(f"Heartbeat | Interval: {PING_INTERVAL}ms | Params: {ping_params}")
-
-                except aiohttp.ClientError as err:
-                    log.error(f"Heartbeat Failed  URL: {PING_URL}  Params: {ping_params}")
-                    log.error(f"Heartbeat Fail  Error: {err}")
+                log.debug(f"Heartbeat Sent | URL: {PING_URL} | Status: {result.status}")

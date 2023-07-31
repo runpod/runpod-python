@@ -57,7 +57,7 @@ class TestPing(IsolatedAsyncioTestCase):
         mock_session.headers.update = Mock()
 
         # Success case
-        await new_ping._send_ping() # pylint: disable=protected-access
+        await new_ping.start_ping(test=True)
 
         rp_ping.PING_URL = "https://test.com/ping"
 
@@ -67,5 +67,5 @@ class TestPing(IsolatedAsyncioTestCase):
         mock_get_return.side_effect = aiohttp.ClientError("Test Error")
 
         with patch("runpod.serverless.modules.rp_ping.log.error") as mock_log_error:
-            await new_ping._send_ping() # pylint: disable=protected-access
-            assert mock_log_error.call_count == 2
+            await new_ping.start_ping(test=True)
+            assert mock_log_error.call_count == 1

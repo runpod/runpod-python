@@ -32,7 +32,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                     rp_http.send_result(Mock(), self.job_data, self.job))
 
                 assert send_return_local is None
-                assert mock_log.debug.call_count == 3
+                assert mock_log.debug.call_count == 0
                 assert mock_log.error.call_count == 1
 
         loop.close()
@@ -94,7 +94,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                     rp_http.stream_result(Mock(), self.job_data, self.job))
 
                 assert send_return_local is None
-                assert mock_log.debug.call_count == 3
+                assert mock_log.debug.call_count == 0
                 assert mock_log.error.call_count == 1
 
         loop.close()

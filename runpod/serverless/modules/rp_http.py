@@ -30,14 +30,11 @@ async def transmit(session, job_data, url):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    log.debug(f"Initiating result API call to {url} with job data: {job_data}")
     async with session.post(url,
                             data=job_data,
                             headers=headers,
                             raise_for_status=True) as resp:
-        result = await resp.text()
-
-    log.debug(f"Completed result API call to {url}. Response: {result}")
+        await resp.text()
 
 
 async def send_result(session, job_data, job):
@@ -56,6 +53,7 @@ async def send_result(session, job_data, job):
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"Error while returning job result {job['id']}: {err}")
+
 
 async def stream_result(session, job_data, job):
     '''
