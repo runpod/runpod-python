@@ -1,47 +1,30 @@
 # The Serverless Worker
 
-## Logging
+Both RunPod official endpoints as well as custom built endpoints function by means of a worker that fetches available jobs, passes them into a handler and then returns the output.
 
-The worker outputs logs to the console at different points in the workers lifecycle. These logs can be used to debug issues with the worker or handler. There are four logging levels that can be used to control the verbosity of the logs:
-
-   0. `NOTSET` - Does not output any logs.
-
-   1. `DEBUG` (Default) - Outputs all logs, including debug logs.
-
-   2. `INFO` - Outputs all logs except debug logs.
-
-   3. `WARNING` - Outputs only warning and error logs.
-
-   4. `ERROR` - Outputs only error logs.
-
-### Setting the Logging Level
-
-There are two ways to set the logging level:
-
-   1. Set the `RUNPOD_DEBUG_LEVEL` environment variable to one of the above logging levels.
-
-   2. Set the `rp_log_level` argument when calling the file with your handler. If this value is set, it will override the `RUNPOD_DEBUG_LEVEL` environment variable.
-
-        ```python
-        python worker.py --rp_log_level='INFO'
-        ```
-
-## Error Handling
-
-The worker is designed to handle errors raised by the handler gracefully. If the handler raises an error, the worker will capture this error and return it as the job output along with the stack trace.
-
-If you want to return a custom error within the handler, this can be accomplished by returning a dictionary with a top-level key of `error` and a value of the error message. The worker will then return this error message as the job output.
-
-### Example
+A worker entry point is a python file containing the command `runpod.serverless.start(config)`. An minimal worker file is shown below:
 
 ```python
-def handler_with_custom_error(job):
-    if job["id"] == "invalid_job":
-        return {"error": "Invalid job ID"}
-    else:
-        # Handle the job and return the output
-        return {"output": "Job completed successfully"}
+import runpod
+
+def handler(job):
+    # Handle the job and return the output
+    return {"output": "Job completed successfully"}
+
+runpod.serverless.start({"handler": handler})
 ```
+
+## config
+
+The `config` parameter is a dictionary containing the following keys:
+
+| Key       | Type       | Description                                                  |
+|-----------|------------|--------------------------------------------------------------|
+| `handler` | `function` | The handler function that will be called with the job input. |
+
+### handler
+
+The handler function can either had a standard return or be a generator function. If the handler is a generator function, it will be called with the job input and the generator will be iterated over until it is exhausted.
 
 ## Worker Refresh
 
