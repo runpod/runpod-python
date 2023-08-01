@@ -76,15 +76,13 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # If refresh_worker is set, pod will be reset after job is complete.
                 if config.get("refresh_worker", False):
-                    log.info(
-                        f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
+                    log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
                     job_result["stopPod"] = True
                     job_scaler.kill_worker()
 
                 # If rp_debugger is set, debugger output will be returned.
                 if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
-                    job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output(
-                    )
+                    job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
                     log.debug(
                         "rp_debugger | Flag set, returning debugger output.")
 
