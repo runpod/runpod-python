@@ -146,7 +146,7 @@ runpod.terminate_pod(pod.id)
 ├── examples           # Examples
 ├── runpod             # Package source code
 │   ├── api_wrapper    # Language library - API (GraphQL)
-|   ├── cli            # Command Line Interface Functions
+│   ├── cli            # Command Line Interface Functions
 │   ├── endpoint       # Language library - Endpoints
 │   └── serverless     # SDK - Serverless Worker
 └── tests              # Package tests
