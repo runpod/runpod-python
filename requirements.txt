@@ -6,6 +6,7 @@ pillow >= 9.5.0
 py-cpuinfo == 9.0.0
 python-dotenv >= 1.0.0
 requests >= 2.31.0
+tomli >= 2.0.1
 tqdm-loggable == 0.1.4
 setuptools_scm == 7.1.0
 
