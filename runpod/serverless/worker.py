@@ -24,7 +24,8 @@ heartbeat = HeartbeatSender()
 
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
-def _get_auth_header () -> Dict[str, str]:
+
+def _get_auth_header() -> Dict[str, str]:
     '''
     Returns the authorization header for the worker HTTP requests.
     '''
@@ -54,7 +55,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
     """
     connector = aiohttp.TCPConnector(limit=None)
     async with aiohttp.ClientSession(
-        connector=connector, headers=_get_auth_header(),timeout=_TIMEOUT) as session:
+            connector=connector, headers=_get_auth_header(), timeout=_TIMEOUT) as session:
 
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
@@ -62,7 +63,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
         while job_scaler.is_alive():
             async def process_job(job):
-                if inspect.isgeneratorfunction(config["handler"]):
+                if inspect.isgeneratorfunction(config["handler"]) \
+                    or inspect.isasyncgenfunction(config["handler"]):
                     job_result = run_job_generator(config["handler"], job)
 
                     log.debug("Handler is a generator, streaming results.")
@@ -103,7 +105,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 # Allow job processing
                 await asyncio.sleep(0)
 
-        asyncio.get_event_loop().stop() # Stops the worker loop if the kill_worker flag is set.
+        # Stops the worker loop if the kill_worker flag is set.
+        asyncio.get_event_loop().stop()
 
 
 def main(config: Dict[str, Any]) -> None:
