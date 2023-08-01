@@ -83,16 +83,13 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 # If rp_debugger is set, debugger output will be returned.
                 if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
                     job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
-                    log.debug(
-                        "rp_debugger | Flag set, returning debugger output.")
+                    log.debug("rp_debugger | Flag set, returning debugger output.")
 
                     # Calculate ready delay for the debugger output.
-                    ready_delay = (
-                        config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
+                    ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
                     job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
                 else:
-                    log.debug(
-                        "rp_debugger | Flag not set, skipping debugger output.")
+                    log.debug("rp_debugger | Flag not set, skipping debugger output.")
                     rp_debugger.clear_debugger_output()
 
                 # Send the job result to SLS
