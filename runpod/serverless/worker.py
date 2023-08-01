@@ -24,7 +24,8 @@ heartbeat = HeartbeatSender()
 
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
-def _get_auth_header () -> Dict[str, str]:
+
+def _get_auth_header() -> Dict[str, str]:
     '''
     Returns the authorization header for the worker HTTP requests.
     '''
@@ -54,7 +55,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
     """
     connector = aiohttp.TCPConnector(limit=None)
     async with aiohttp.ClientSession(
-        connector=connector, headers=_get_auth_header(),timeout=_TIMEOUT) as session:
+            connector=connector, headers=_get_auth_header(), timeout=_TIMEOUT) as session:
 
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
@@ -62,7 +63,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
         while job_scaler.is_alive():
             async def process_job(job):
-                if inspect.isgeneratorfunction(config["handler"]):
+                if inspect.isgeneratorfunction(config["handler"]) \
+                    or inspect.isasyncgenfunction(config["handler"]):
                     job_result = run_job_generator(config["handler"], job)
 
                     log.debug("Handler is a generator, streaming results.")
@@ -74,20 +76,25 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # If refresh_worker is set, pod will be reset after job is complete.
                 if config.get("refresh_worker", False):
-                    log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
+                    log.info(
+                        f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
                     job_result["stopPod"] = True
                     job_scaler.kill_worker()
 
                 # If rp_debugger is set, debugger output will be returned.
                 if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
-                    job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
-                    log.debug("rp_debugger | Flag set, returning debugger output.")
+                    job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output(
+                    )
+                    log.debug(
+                        "rp_debugger | Flag set, returning debugger output.")
 
                     # Calculate ready delay for the debugger output.
-                    ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
+                    ready_delay = (
+                        config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
                     job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
                 else:
-                    log.debug("rp_debugger | Flag not set, skipping debugger output.")
+                    log.debug(
+                        "rp_debugger | Flag not set, skipping debugger output.")
                     rp_debugger.clear_debugger_output()
 
                 # Send the job result to SLS
@@ -103,7 +110,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 # Allow job processing
                 await asyncio.sleep(0)
 
-        asyncio.get_event_loop().stop() # Stops the worker loop if the kill_worker flag is set.
+        # Stops the worker loop if the kill_worker flag is set.
+        asyncio.get_event_loop().stop()
 
 
 def main(config: Dict[str, Any]) -> None:
