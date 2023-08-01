@@ -13,32 +13,36 @@
 
 </div>
 
-Official Python library for RunPod API &amp; SDK.
+Welcome to the official Python library for RunPod API &amp; SDK.
 
 ## Table of Contents
 
 - [Table of Contents](#table-of-contents)
-- [Installation](#installation)
-- [SDK - Serverless Worker](#sdk---serverless-worker)
+- [💻 | Installation](#--installation)
+- [⚡ | Serverless Worker (SDK)](#--serverless-worker-sdk)
   - [Quick Start](#quick-start)
   - [Local Test Worker](#local-test-worker)
-- [API Language Library (GraphQL Wrapper)](#api-language-library-graphql-wrapper)
+- [📚 | API Language Library (GraphQL Wrapper)](#--api-language-library-graphql-wrapper)
   - [Endpoints](#endpoints)
   - [GPU Cloud (Pods)](#gpu-cloud-pods)
-- [Directory](#directory)
-- [Community and Contributing](#community-and-contributing)
+- [📁 | Directory](#--directory)
+- [🤝 | Community and Contributing](#--community-and-contributing)
 
-## Installation
+## 💻 | Installation
 
 ```bash
 # Install the latest release version
 pip install runpod
 
+# or
+
 # Install the latest development version (main branch)
 pip install git+https://github.com/runpod/runpod-python.git
 ```
 
-## SDK - Serverless Worker
+*Python 3.10 or higher is required to use the latest version of this package.*
+
+## ⚡ | Serverless Worker (SDK)
 
 This python package can also be used to create a serverless worker that can be deployed to RunPod as a custom endpoint API.
 
@@ -79,7 +83,7 @@ You can also test your worker locally before deploying it to RunPod. This is use
 python my_worker.py --rp_serve_api
 ```
 
-## API Language Library (GraphQL Wrapper)
+## 📚 | API Language Library (GraphQL Wrapper)
 
 When interacting with the RunPod API you can use this library to make requests to the API.
 
@@ -138,7 +142,7 @@ runpod.start_pod(pod.id)
 runpod.terminate_pod(pod.id)
 ```
 
-## Directory
+## 📁 | Directory
 
 ```BASH
 .
@@ -152,7 +156,7 @@ runpod.terminate_pod(pod.id)
 └── tests              # Package tests
 ```
 
-## Community and Contributing
+## 🤝 | Community and Contributing
 
 We welcome both pull requests and issues on [GitHub](https://github.com/runpod/runpod-python). Bug fixes and new features are encouraged.
 
