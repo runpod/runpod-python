@@ -214,16 +214,23 @@ class TestRunJob(IsolatedAsyncioTestCase):
 class TestRunJobGenerator(IsolatedAsyncioTestCase):
     ''' Tests the run_job_generator function '''
 
-    def handler_success(self, job): # pylint: disable=unused-argument
+    def handler_gen_success(self, job): # pylint: disable=unused-argument
         '''
-        Test handler that returns a generator
+        Test handler that returns a generator.
+        '''
+        yield "partial_output_1"
+        yield "partial_output_2"
+
+    async def handler_async_gen_success(self, job): # pylint: disable=unused-argument
+        '''
+        Test handler that returns an async generator.
         '''
         yield "partial_output_1"
         yield "partial_output_2"
 
     def handler_fail(self, job):
         '''
-        Test handler that raises an exception
+        Test handler that raises an exception.
         '''
         raise Exception("Test Exception") # pylint: disable=broad-exception-raised
 
@@ -231,7 +238,22 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         '''
         Tests the run_job_generator function with a successful generator
         '''
-        handler = self.handler_success
+        handler = self.handler_gen_success
+        job = {"id": "123"}
+
+        with patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log:
+            result = [i async for i in rp_job.run_job_generator(handler, job)]
+
+        assert result == [{"output": "partial_output_1"}, {"output": "partial_output_2"}]
+        assert mock_log.error.call_count == 0
+        assert mock_log.info.call_count == 1
+        mock_log.info.assert_called_with('123 | Finished ')
+
+    async def test_run_job_generator_success_async(self):
+        '''
+        Tests the run_job_generator function with a successful generator
+        '''
+        handler = self.handler_async_gen_success
         job = {"id": "123"}
 
         with patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log:
