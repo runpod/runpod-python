@@ -99,15 +99,9 @@ class JobScaler():
             if not self.is_alive():
                 break
 
-            tasks = [
-                asyncio.create_task(
-                    get_job(session, retry=False)
-                ) for _ in range(self.num_concurrent_get_job_requests)]
-
-            for job_future in asyncio.as_completed(tasks):
-                job = await job_future
+            for _ in range(self.num_concurrent_get_job_requests):
+                job = await get_job(session, retry=False)
                 self.job_history.append(1 if job else 0)
-
                 if job:
                     yield job
 
