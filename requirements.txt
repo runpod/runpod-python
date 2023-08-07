@@ -10,7 +10,7 @@ tomli >= 2.0.1
 tqdm-loggable == 0.1.4
 setuptools_scm == 7.1.0
 
-fastapi[all] == 0.100.1
+fastapi[all] == 0.101.0
 
 # Testing Requirements
 nest_asyncio == 1.5.7
