@@ -3,8 +3,8 @@
 import os
 import importlib
 
-from unittest import IsolatedAsyncioTestCase
-from unittest.mock import patch, Mock
+from unittest import TestCase
+from unittest.mock import patch
 
 import requests
 from runpod.serverless.modules import rp_ping
