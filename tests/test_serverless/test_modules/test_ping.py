@@ -11,7 +11,7 @@ from runpod.serverless.modules import rp_ping
 
 class MockResponse: # pylint: disable=too-few-public-methods
     ''' Mock response for aiohttp '''
-    status = 200
+    status_code = 200
 
 def mock_get(*args, **kwargs): # pylint: disable=unused-argument
     '''
