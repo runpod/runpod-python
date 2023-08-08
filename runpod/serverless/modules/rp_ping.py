@@ -33,10 +33,6 @@ class Heartbeat:
             log.error("Ping URL not set, cannot start ping.")
             return
 
-        if [thread for thread in threading.enumerate() if thread.name == "ping_thread"]:
-            log.warn("Ping thread already started.")
-            return
-
         threading.Thread(target=self.ping_loop, name="ping_thread", daemon=True).start()
 
     def ping_loop(self, test=False):
