@@ -3,7 +3,7 @@
 import os
 import importlib
 
-from unittest import IsolatedAsyncioTestCase
+import unittest
 from unittest.mock import patch, Mock
 
 import requests
@@ -19,7 +19,7 @@ async def mock_get(*args, **kwargs): # pylint: disable=unused-argument
     '''
     return MockResponse()
 
-class TestPing(IsolatedAsyncioTestCase):
+class TestPing(unittest.TestCase):
     ''' Tests for rp_ping '''
 
     def test_variables(self):
