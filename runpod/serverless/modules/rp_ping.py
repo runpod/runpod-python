@@ -29,6 +29,10 @@ class Heartbeat:
         '''
         Sends heartbeat pings to the Runpod server.
         '''
+        if self.PING_URL in ["PING_NOT_SET", None]:
+            log.error("Ping URL not set, cannot start ping.")
+            return
+
         if [thread for thread in threading.enumerate() if thread.name == "ping_thread"]:
             log.warn("Ping thread already started.")
             return
