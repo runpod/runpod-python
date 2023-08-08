@@ -13,7 +13,7 @@ class MockResponse: # pylint: disable=too-few-public-methods
     ''' Mock response for aiohttp '''
     status = 200
 
-async def mock_get(*args, **kwargs): # pylint: disable=unused-argument
+def mock_get(*args, **kwargs): # pylint: disable=unused-argument
     '''
     Mock get function for aiohttp
     '''
@@ -60,6 +60,7 @@ class TestPing(unittest.TestCase):
             assert mock_thread_start.call_count == 1
 
         rp_ping.Heartbeat.PING_URL = "https://test.com/ping"
+        new_ping.ping_loop(test=True)
 
         self.assertEqual(rp_ping.Heartbeat.PING_URL, "https://test.com/ping")
 
