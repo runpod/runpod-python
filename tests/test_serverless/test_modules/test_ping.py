@@ -31,7 +31,7 @@ class TestPing(IsolatedAsyncioTestCase):
         importlib.reload(rp_ping)
 
         self.assertEqual(rp_ping.Heartbeat.PING_URL, "PING_NOT_SET")
-        self.assertEqual(rp_ping.Heartbeat.PING_INTERVAL, 10000)
+        self.assertEqual(rp_ping.Heartbeat.PING_INTERVAL, 10)
 
         os.environ["RUNPOD_WEBHOOK_PING"] = "https://test.com/ping"
         os.environ["RUNPOD_PING_INTERVAL"] = "20000"
@@ -39,7 +39,7 @@ class TestPing(IsolatedAsyncioTestCase):
         importlib.reload(rp_ping)
 
         self.assertEqual(rp_ping.Heartbeat.PING_URL, "https://test.com/ping")
-        self.assertEqual(rp_ping.Heartbeat.PING_INTERVAL, 20000)
+        self.assertEqual(rp_ping.Heartbeat.PING_INTERVAL, 20)
 
     @patch("requests.Session.get", side_effect=mock_get)
     def test_start_ping(self, mock_get_return):

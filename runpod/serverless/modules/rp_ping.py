@@ -20,7 +20,7 @@ class Heartbeat:
 
     PING_URL = os.environ.get('RUNPOD_WEBHOOK_PING', "PING_NOT_SET")
     PING_URL = PING_URL.replace('$RUNPOD_POD_ID', WORKER_ID)
-    PING_INTERVAL = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))/1000
+    PING_INTERVAL = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))//1000
 
     _session = requests.Session()
     _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
