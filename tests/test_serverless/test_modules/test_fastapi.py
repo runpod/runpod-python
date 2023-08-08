@@ -21,7 +21,7 @@ class TestFastAPI(unittest.TestCase):
         Tests the start_serverless() method with the realtime option.
         '''
         module_location = "runpod.serverless.modules.rp_fastapi"
-        with patch(f"{module_location}.HeartbeatSender.start_ping", Mock()) as mock_ping, \
+        with patch(f"{module_location}.Heartbeat.start_ping", Mock()) as mock_ping, \
             patch(f"{module_location}.FastAPI", Mock()) as mock_fastapi, \
             patch(f"{module_location}.APIRouter", return_value=Mock()) as mock_router, \
             patch(f"{module_location}.uvicorn", Mock()) as mock_uvicorn:
@@ -54,7 +54,7 @@ class TestFastAPI(unittest.TestCase):
         loop = asyncio.get_event_loop()
 
         module_location = "runpod.serverless.modules.rp_fastapi"
-        with patch(f"{module_location}.HeartbeatSender.start_ping", Mock()) as mock_ping, \
+        with patch(f"{module_location}.Heartbeat.start_ping", Mock()) as mock_ping, \
             patch(f"{module_location}.FastAPI", Mock()), \
             patch(f"{module_location}.APIRouter", return_value=Mock()), \
             patch(f"{module_location}.uvicorn", Mock()):

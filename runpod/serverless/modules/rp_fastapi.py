@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from .rp_job import run_job
 from .worker_state import Jobs
-from .rp_ping import HeartbeatSender
+from .rp_ping import Heartbeat
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
@@ -29,7 +29,7 @@ The URLs provided are named to match the endpoints that you will be provided whe
 
 job_list = Jobs()
 
-heartbeat = HeartbeatSender()
+heartbeat = Heartbeat()
 
 
 # ------------------------------- Input Objects ------------------------------ #

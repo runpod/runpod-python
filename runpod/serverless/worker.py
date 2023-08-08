@@ -12,7 +12,7 @@ import aiohttp
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless.modules.rp_scale import JobScaler
 from .modules import rp_local
-from .modules.rp_ping import HeartbeatSender
+from .modules.rp_ping import Heartbeat
 from .modules.rp_job import run_job, run_job_generator
 from .modules.rp_http import send_result, stream_result
 from .modules.worker_state import REF_COUNT_ZERO, Jobs
@@ -20,7 +20,7 @@ from .utils import rp_debugger
 
 log = RunPodLogger()
 job_list = Jobs()
-heartbeat = HeartbeatSender()
+heartbeat = Heartbeat()
 
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
@@ -62,6 +62,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
         )
 
         while job_scaler.is_alive():
+            heartbeat.start_ping()
+
             async def process_job(job):
                 if inspect.isgeneratorfunction(config["handler"]) \
                     or inspect.isasyncgenfunction(config["handler"]):
@@ -121,10 +123,7 @@ def main(config: Dict[str, Any]) -> None:
     else:
         try:
             work_loop = asyncio.new_event_loop()
-
-            asyncio.ensure_future(heartbeat.start_ping(), loop=work_loop)
             asyncio.ensure_future(run_worker(config), loop=work_loop)
-
             work_loop.run_forever()
 
         finally:
