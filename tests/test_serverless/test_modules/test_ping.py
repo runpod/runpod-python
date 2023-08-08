@@ -59,9 +59,9 @@ class TestPing(IsolatedAsyncioTestCase):
             new_ping.start_ping()
             assert mock_thread_start.call_count == 1
 
-        rp_ping.PING_URL = "https://test.com/ping"
+        rp_ping.Heartbeat.PING_URL = "https://test.com/ping"
 
-        self.assertEqual(rp_ping.PING_URL, "https://test.com/ping")
+        self.assertEqual(rp_ping.Heartbeat.PING_URL, "https://test.com/ping")
 
         # Exception case
         mock_get_return.side_effect = requests.RequestException("Test Error")
