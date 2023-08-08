@@ -6,8 +6,7 @@ import importlib
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import patch, Mock
 
-import pytest
-import aiohttp
+import requests
 from runpod.serverless.modules import rp_ping
 
 class MockResponse: # pylint: disable=too-few-public-methods
@@ -31,41 +30,42 @@ class TestPing(IsolatedAsyncioTestCase):
 
         importlib.reload(rp_ping)
 
-        self.assertEqual(rp_ping.PING_URL, "PING_NOT_SET")
-        self.assertEqual(rp_ping.PING_INTERVAL, 10000)
+        self.assertEqual(rp_ping.Heartbeat.PING_URL, "PING_NOT_SET")
+        self.assertEqual(rp_ping.Heartbeat.PING_INTERVAL, 10000)
 
         os.environ["RUNPOD_WEBHOOK_PING"] = "https://test.com/ping"
         os.environ["RUNPOD_PING_INTERVAL"] = "20000"
 
         importlib.reload(rp_ping)
 
-        self.assertEqual(rp_ping.PING_URL, "https://test.com/ping")
-        self.assertEqual(rp_ping.PING_INTERVAL, 20000)
+        self.assertEqual(rp_ping.Heartbeat.PING_URL, "https://test.com/ping")
+        self.assertEqual(rp_ping.Heartbeat.PING_INTERVAL, 20000)
 
-    @pytest.mark.asyncio
-    @patch("aiohttp.ClientSession.get", side_effect=mock_get)
-    async def test_start_ping(self, mock_get_return):
+    @patch("requests.Session.get", side_effect=mock_get)
+    def test_start_ping(self, mock_get_return):
         '''
         Tests that the start_ping function works correctly
         '''
         os.environ["RUNPOD_WEBHOOK_PING"] = "https://test.com/ping"
 
         importlib.reload(rp_ping)
-        new_ping = rp_ping.HeartbeatSender()
+        new_ping = rp_ping.Heartbeat()
 
         mock_session = Mock()
         mock_session.headers.update = Mock()
 
         # Success case
-        await new_ping.start_ping(test=True)
+        with patch("threading.Thread.start") as mock_thread_start:
+            new_ping.start_ping()
+            assert mock_thread_start.call_count == 1
 
         rp_ping.PING_URL = "https://test.com/ping"
 
         self.assertEqual(rp_ping.PING_URL, "https://test.com/ping")
 
         # Exception case
-        mock_get_return.side_effect = aiohttp.ClientError("Test Error")
+        mock_get_return.side_effect = requests.RequestException("Test Error")
 
         with patch("runpod.serverless.modules.rp_ping.log.error") as mock_log_error:
-            await new_ping.start_ping(test=True)
+            new_ping.ping_loop(test=True)
             assert mock_log_error.call_count == 1
