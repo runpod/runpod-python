@@ -56,7 +56,7 @@ class TestPing(unittest.TestCase):
 
         # Success case
         with patch("threading.Thread.start") as mock_thread_start:
-            new_ping.start_ping()
+            new_ping.start_ping(test=True)
             assert mock_thread_start.call_count == 1
 
         rp_ping.Heartbeat.PING_URL = "https://test.com/ping"

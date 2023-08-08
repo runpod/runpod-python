@@ -25,7 +25,7 @@ class Heartbeat:
     _session = requests.Session()
     _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
 
-    def start_ping(self):
+    def start_ping(self, test=False):
         '''
         Sends heartbeat pings to the Runpod server.
         '''
@@ -33,7 +33,7 @@ class Heartbeat:
             log.error("Ping URL not set, cannot start ping.")
             return
 
-        threading.Thread(target=self.ping_loop, name="ping_thread", daemon=True).start()
+        threading.Thread(target=self.ping_loop, daemon=True, args=(test,)).start()
 
     def ping_loop(self, test=False):
         '''
