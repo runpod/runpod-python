@@ -153,7 +153,6 @@ async def run_job_generator(
     Run generator job.
     Yields output partials from the generator.
     '''
-    stream_count = 0
     try:
         job_output = handler(job)
         if inspect.isasyncgenfunction(handler):
