@@ -45,6 +45,42 @@ def _is_local(config) -> bool:
     return False
 
 
+async def _process_job(job, session, job_scaler, config):
+    if inspect.isgeneratorfunction(config["handler"]) \
+        or inspect.isasyncgenfunction(config["handler"]):
+        generator_output = run_job_generator(config["handler"], job)
+
+        log.debug("Handler is a generator, streaming results.")
+        job_result = {'output': []}
+        async for job_stream in generator_output:
+            if config.get('return_aggregate_stream', False):
+                job_result['output'].append(job_stream)
+            await stream_result(session, job_stream, job)
+    else:
+        job_result = await run_job(config["handler"], job)
+
+    # If refresh_worker is set, pod will be reset after job is complete.
+    if config.get("refresh_worker", False):
+        log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
+        job_result["stopPod"] = True
+        job_scaler.kill_worker()
+
+    # If rp_debugger is set, debugger output will be returned.
+    if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
+        job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
+        log.debug("rp_debugger | Flag set, returning debugger output.")
+
+        # Calculate ready delay for the debugger output.
+        ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
+        job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
+    else:
+        log.debug("rp_debugger | Flag not set, skipping debugger output.")
+        rp_debugger.clear_debugger_output()
+
+    # Send the job result to SLS
+    await send_result(session, job_result, job)
+
+
 # ------------------------- Main Worker Running Loop ------------------------- #
 async def run_worker(config: Dict[str, Any]) -> None:
     """
@@ -61,47 +97,13 @@ async def run_worker(config: Dict[str, Any]) -> None:
             concurrency_controller=config.get('concurrency_controller', None)
         )
 
+        heartbeat.start_ping()
+
         while job_scaler.is_alive():
-            heartbeat.start_ping()
-
-            async def process_job(job):
-                if inspect.isgeneratorfunction(config["handler"]) \
-                    or inspect.isasyncgenfunction(config["handler"]):
-                    generator_output = run_job_generator(config["handler"], job)
-
-                    log.debug("Handler is a generator, streaming results.")
-                    job_result = {'output': []}
-                    async for job_stream in generator_output:
-                        if config["return_aggregate_stream"]:
-                            job_result['output'].append(job_stream)
-                        await stream_result(session, job_stream, job)
-                else:
-                    job_result = await run_job(config["handler"], job)
-
-                # If refresh_worker is set, pod will be reset after job is complete.
-                if config.get("refresh_worker", False):
-                    log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
-                    job_result["stopPod"] = True
-                    job_scaler.kill_worker()
-
-                # If rp_debugger is set, debugger output will be returned.
-                if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
-                    job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
-                    log.debug("rp_debugger | Flag set, returning debugger output.")
-
-                    # Calculate ready delay for the debugger output.
-                    ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
-                    job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
-                else:
-                    log.debug("rp_debugger | Flag not set, skipping debugger output.")
-                    rp_debugger.clear_debugger_output()
-
-                # Send the job result to SLS
-                await send_result(session, job_result, job)
 
             async for job in job_scaler.get_jobs(session):
                 # Process the job here
-                task = asyncio.create_task(process_job(job))
+                task = asyncio.create_task(_process_job(job, session, job_scaler, config))
 
                 # Track the task
                 job_scaler.track_task(task)
