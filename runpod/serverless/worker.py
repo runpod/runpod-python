@@ -56,6 +56,9 @@ async def _process_job(job, session, job_scaler, config):
             if config.get('return_aggregate_stream', False):
                 if 'output' in stream_output:
                     job_result['output'].append(stream_output['output'])
+                elif 'error' in stream_output:
+                    job_result = stream_output
+                    break
             await stream_result(session, stream_output, job)
     else:
         job_result = await run_job(config["handler"], job)
