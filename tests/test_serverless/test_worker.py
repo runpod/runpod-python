@@ -139,8 +139,8 @@ def generator_handler(job):
     Test generator_handler
     '''
     print(job)
-    yield "test"
-
+    yield "test1"
+    yield "test2"
 
 class TestRunWorker(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
@@ -226,6 +226,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         _, args, _ = mock_send_result.mock_calls[0]
         assert args[1] == {'output': [], 'stopPod': True}
 
+
     @pytest.mark.asyncio
     @patch("aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
@@ -260,7 +261,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
         # Since return_aggregate_stream is activated, we should submit a list of the outputs.
         _, args, _ = mock_send_result.mock_calls[0]
-        assert args[1] == {'output': [{'output': 'test'}], 'stopPod': True}
+        assert args[1] == {'output': [{'output': 'test1'}, {'output': 'test2'}], 'stopPod': True}
 
     @pytest.mark.asyncio
     @patch("aiohttp.ClientSession")
