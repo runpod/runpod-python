@@ -20,7 +20,8 @@ jobs:
 
       - name: Clone and patch mock-worker
         run: |
-          git clone https://github.com/runpod-workers/mock-worker /
+          mkdir -p /mock-worker
+          git clone https://github.com/runpod-workers/mock-worker /mock-worker
           cd mock-worker && echo "git+https://github.com/runpod/runpod-python.git@${{ github.sha }}" > builder/requirements.txt
 
       - name: Set up QEMU
