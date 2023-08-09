@@ -20,8 +20,7 @@ jobs:
 
       - name: Clone and patch mock-worker
         run: |
-          mkdir -p ./mock-worker
-          git clone https://github.com/runpod-workers/mock-worker ./mock-worker
+          git clone https://github.com/runpod-workers/mock-worker
           cd mock-worker && echo "git+https://github.com/runpod/runpod-python.git@${{ github.sha }}" > builder/requirements.txt
           ls -la
 
@@ -41,9 +40,12 @@ jobs:
         id: docker_tag
         run: echo "DOCKER_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
+      - name: Print Directory
+        run: ls -la
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          file: ./mock-worker/mock-worker/Dockerfile
+          file: ../mock-worker/Dockerfile
           push: true
           tags: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ env.DOCKER_TAG }}
