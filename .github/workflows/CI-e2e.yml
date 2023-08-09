@@ -21,8 +21,7 @@ jobs:
       - name: Clone and patch mock-worker
         run: |
           git clone https://github.com/runpod-workers/mock-worker
-          cd mock-worker
-          echo "git+https://github.com/runpod/runpod-python.git@${{ github.sha }}" > builder/requirements.txt
+          cd mock-worker && echo "git+https://github.com/runpod/runpod-python.git@${{ github.sha }}" > builder/requirements.txt
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -43,5 +42,6 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
+          file: ./mock-worker/Dockerfile
           push: true
           tags: ${{ steps.docker_tag.outputs.tag }}
