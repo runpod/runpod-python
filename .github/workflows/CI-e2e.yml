@@ -41,7 +41,7 @@ jobs:
 
       - name: Print Directory
         working-directory: mock-worker
-        run: cd mock-worker && ls -la
+        run: ls -la
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
