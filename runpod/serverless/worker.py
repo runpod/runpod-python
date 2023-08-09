@@ -67,16 +67,14 @@ async def run_worker(config: Dict[str, Any]) -> None:
             async def process_job(job):
                 if inspect.isgeneratorfunction(config["handler"]) \
                     or inspect.isasyncgenfunction(config["handler"]):
-                    job_result = run_job_generator(config["handler"], job)
+                    generator_output = run_job_generator(config["handler"], job)
 
                     log.debug("Handler is a generator, streaming results.")
-                    job_results = {'output': []}
-                    async for job_stream in job_result:
-                        job_results['output'].append(job_stream)
+                    job_result = {'output': []}
+                    async for job_stream in generator_output:
+                        if config["submit_stream_on_end"]:
+                            job_result['output'].append(job_stream)
                         await stream_result(session, job_stream, job)
-                    job_result = {}
-                    if config["return_aggregate_stream"]:
-                        job_result = job_results
                 else:
                     job_result = await run_job(config["handler"], job)
 
