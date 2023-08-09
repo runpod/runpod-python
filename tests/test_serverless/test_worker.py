@@ -143,7 +143,7 @@ def generator_handler_exception(job):
     '''
     print(job)
     yield "test1"
-    raise Exception() # pylint(broad-exception-raised)
+    raise Exception() # pylint: disable=broad-exception-raised
 
 
 class TestRunWorker(IsolatedAsyncioTestCase):
