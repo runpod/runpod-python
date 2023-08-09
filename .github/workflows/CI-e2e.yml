@@ -37,11 +37,11 @@ jobs:
 
       - name: Define Docker Tag
         id: docker_tag
-        run: echo ::set-output name=tag::${{ github.sha }}
+        run: echo "DOCKER_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          file: mock-worker/Dockerfile
+          file: ./mock-worker/Dockerfile
           push: true
-          tags: ${{ steps.docker_tag.outputs.tag }}
+          tags: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ env.DOCKER_TAG }}
