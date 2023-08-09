@@ -1,0 +1,47 @@
+# Performs a full test of the package within production environment.
+
+name: CI | End-to-End RunPod Python Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and push mock-worker Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Clone and patch mock-worker
+        run: |
+          git clone https://github.com/runpod-workers/mock-worker
+          cd mock-worker
+          echo "git+https://github.com/runpod/runpod-python.git@${{ github.sha }}" > builder/requirements.txt
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Define Docker Tag
+        id: docker_tag
+        run: echo ::set-output name=tag::${{ github.sha }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          tags: ${{ steps.docker_tag.outputs.tag }}
