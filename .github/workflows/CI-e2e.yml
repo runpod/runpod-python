@@ -42,6 +42,6 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          file: ./mock-worker/Dockerfile
+          file: mock-worker/Dockerfile
           push: true
           tags: ${{ steps.docker_tag.outputs.tag }}
