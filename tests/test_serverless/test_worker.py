@@ -137,6 +137,15 @@ def generator_handler(job):
     yield "test2"
 
 
+def generator_handler_exception(job):
+    '''
+    Test generator_handler
+    '''
+    print(job)
+    yield "test1"
+    raise Exception() # pylint(broad-exception-raised)
+
+
 class TestRunWorker(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
 
@@ -219,6 +228,39 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # Since return_aggregate_stream is NOT activated, we should not submit any outputs.
         _, args, _ = mock_send_result.mock_calls[0]
         assert args[1] == {'output': [], 'stopPod': True}
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.stream_result")
+    @patch("runpod.serverless.worker.send_result")
+    async def test_run_worker_generator_handler_exception(
+            self, mock_send_result, mock_stream_result, mock_run_job,
+            mock_get_job):
+        '''
+        Test run_worker with generator handler.
+
+        Args:
+            mock_stream_result (_type_): _description_
+            mock_run_job_generator (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+        '''
+        # Define the mock behaviors
+        mock_get_job.return_value = {
+            "id": "generator-123", "input": {"number": 1}}
+
+        # Test generator handler
+        generator_config = {
+            "handler": generator_handler_exception, "refresh_worker": True}
+        runpod.serverless.start(generator_config)
+
+        assert mock_stream_result.call_count == 1
+        assert not mock_run_job.called
+
+        # Since return_aggregate_stream is NOT activated, we should not submit any outputs.
+        _, args, _ = mock_send_result.mock_calls[0]
+        assert 'error' in args[1]
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")

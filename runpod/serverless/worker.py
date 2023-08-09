@@ -53,10 +53,10 @@ async def _process_job(job, session, job_scaler, config):
         log.debug("Handler is a generator, streaming results.")
         job_result = {'output': []}
         async for stream_output in generator_output:
+            if 'error' in stream_output:
+                job_result = stream_output
+                break
             if config.get('return_aggregate_stream', False):
-                if 'error' in stream_output:
-                    job_result = stream_output
-                    break
                 job_result['output'].append(stream_output['output'])
             await stream_result(session, stream_output, job)
     else:
