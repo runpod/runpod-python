@@ -261,7 +261,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
         # Since return_aggregate_stream is activated, we should submit a list of the outputs.
         _, args, _ = mock_send_result.mock_calls[0]
-        assert args[1] == {'output': [{'output': 'test1'}, {'output': 'test2'}], 'stopPod': True}
+        assert args[1] == {'output': ['test1', 'test2'], 'stopPod': True}
 
     @pytest.mark.asyncio
     @patch("aiohttp.ClientSession")
