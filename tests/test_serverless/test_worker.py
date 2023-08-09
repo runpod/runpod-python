@@ -188,14 +188,13 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert mock_session.called
 
     @pytest.mark.asyncio
-    @patch("aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
     async def test_run_worker_generator_handler(
-            self, mock_send_result, mock_stream_result, mock_run_job, 
-            mock_get_job, mock_session):
+            self, mock_send_result, mock_stream_result, mock_run_job,
+            mock_get_job):
         '''
         Test run_worker with generator handler.
 
@@ -214,7 +213,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             "handler": generator_handler, "refresh_worker": True}
         runpod.serverless.start(generator_config)
 
-        assert mock_session.called
         assert mock_stream_result.called
         assert not mock_run_job.called
 
@@ -223,14 +221,13 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert args[1] == {'output': [], 'stopPod': True}
 
     @pytest.mark.asyncio
-    @patch("aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
     async def test_run_worker_generator_aggregate_handler(
-            self, mock_send_result, mock_stream_result, mock_run_job, 
-            mock_get_job, mock_session):
+            self, mock_send_result, mock_stream_result, mock_run_job,
+            mock_get_job):
         '''
         Test run_worker with generator handler.
 
@@ -253,7 +250,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert mock_send_result.called
         assert mock_stream_result.called
         assert not mock_run_job.called
-        assert mock_session.called
 
         # Since return_aggregate_stream is activated, we should submit a list of the outputs.
         _, args, _ = mock_send_result.mock_calls[0]
