@@ -70,9 +70,14 @@ async def run_worker(config: Dict[str, Any]) -> None:
                     job_result = run_job_generator(config["handler"], job)
 
                     log.debug("Handler is a generator, streaming results.")
+                    job_outputs = []
                     async for job_stream in job_result:
+                        if config["submit_stream_on_end"]:
+                            job_outputs.append(job_stream)
                         await stream_result(session, job_stream, job)
                     job_result = {}
+                    if config["submit_stream_on_end"]:
+                        job_result = {'output': job_outputs}
                 else:
                     job_result = await run_job(config["handler"], job)
 
