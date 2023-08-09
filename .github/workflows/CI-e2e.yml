@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      #   - name: Checkout Repo
-      #     uses: actions/checkout@v3
+      - name: Checkout Repo
+        uses: actions/checkout@v3
 
       - name: Clone and patch mock-worker
         run: |
@@ -39,14 +39,8 @@ jobs:
         id: docker_tag
         run: echo "DOCKER_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
-      - name: Print Directory
-        working-directory: mock-worker
-        run: ls -la
-
       - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: mock-worker
-          file: Dockerfile
-          push: true
-          tags: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ env.DOCKER_TAG }}
+        run: |
+          docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+          docker build -t ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ env.DOCKER_TAG }} -f mock-worker/Dockerfile mock-worker
+          docker push ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ env.DOCKER_TAG }}
