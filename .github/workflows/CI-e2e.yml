@@ -25,7 +25,6 @@ jobs:
       - name: Clone and patch mock-worker
         run: |
           git clone https://github.com/runpod-workers/mock-worker
-          echo "Installing runpod-python from ${{ github.event.pull_request.head.sha }}"
           echo "git+https://github.com/runpod/runpod-python.git@${{ github.event.pull_request.head.sha }}" > mock-worker/builder/requirements.txt
 
       - name: Set up QEMU
