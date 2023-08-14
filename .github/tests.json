@@ -1,0 +1,25 @@
+[
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "gpuIds": "AMPERE_16",
+                "name": "runpod-python E2E Test - Basic"
+            }
+        },
+        "input": {
+            "mock_return": "this worked!"
+        }
+    },
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "gpuIds": "AMPERE_16",
+                "name": "runpod-python E2E Test - Long Job"
+            }
+        },
+        "input": {
+            "mock_return": "Delay test successful returned after waiting 5 minutes.",
+            "mock_delay": 120
+        }
+    }
+]

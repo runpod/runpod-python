@@ -1,0 +1,71 @@
+# Performs a full test of the package within production environment.
+
+name: CI | End-to-End RunPod Python Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  e2e-build:
+    name: Build and push mock-worker Docker image
+    runs-on: ubuntu-latest
+    outputs:
+      docker_tag: ${{ steps.output_docker_tag.outputs.docker_tag }}
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Clone and patch mock-worker
+        run: |
+          git clone https://github.com/runpod-workers/mock-worker
+          echo "Installing runpod-python from ${{ github.event.pull_request.head.sha }}"
+          echo "git+https://github.com/runpod/runpod-python.git@${{ github.event.pull_request.head.sha }}" > mock-worker/builder/requirements.txt
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Define Docker Tag
+        id: docker_tag
+        run: echo "DOCKER_TAG=$(echo ${{ github.event.pull_request.head.sha }} | cut -c 1-7)" >> $GITHUB_ENV
+
+      - name: Set Docker Tag as Output
+        id: output_docker_tag
+        run: echo "::set-output name=docker_tag::${{ env.DOCKER_TAG }}"
+
+      - name: Build and push Docker image
+        env:
+          DOCKERHUB_REPO: ${{ vars.DOCKERHUB_REPO }}
+          DOCKERHUB_IMG: ${{ vars.DOCKERHUB_IMG }}
+        run: |
+          docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+          docker build -t $DOCKERHUB_REPO/$DOCKERHUB_IMG:${{ env.DOCKER_TAG }} -f mock-worker/Dockerfile mock-worker
+          docker push $DOCKERHUB_REPO/$DOCKERHUB_IMG:${{ env.DOCKER_TAG }}
+
+  test:
+    name: Run End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [e2e-build]
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Tests
+        uses: direlines/runpod-test-runner@v1.5
+        with:
+          image-tag: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ needs.e2e-build.outputs.docker_tag }}
+          runpod-api-key: ${{ secrets.RUNPOD_API_KEY }}
