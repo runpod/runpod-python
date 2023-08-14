@@ -21,6 +21,7 @@ jobs:
       - name: Clone and patch mock-worker
         run: |
           git clone https://github.com/runpod-workers/mock-worker
+          echo "Installing runpod-python from ${{ github.sha }}"
           echo "git+https://github.com/runpod/runpod-python.git@${{ github.sha }}" > mock-worker/builder/requirements.txt
 
       - name: Set up QEMU
@@ -37,7 +38,7 @@ jobs:
 
       - name: Define Docker Tag
         id: docker_tag
-        run: echo "DOCKER_TAG=${{ github.sha }}" >> $GITHUB_ENV
+        run: echo "DOCKER_TAG=${{ github.sha }}".substring(0, 7) >> $GITHUB_ENV
 
       - name: Build and push Docker image
         run: |
