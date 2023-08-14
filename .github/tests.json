@@ -3,7 +3,7 @@
         "hardwareConfig": {
             "endpointConfig": {
                 "gpuIds": "AMPERE_16",
-                "name": "E2E SDK Test - Basic"
+                "name": "runpod-python E2E Test - Basic"
             }
         },
         "input": {
@@ -14,7 +14,7 @@
         "hardwareConfig": {
             "endpointConfig": {
                 "gpuIds": "AMPERE_16",
-                "name": "E2E SDK Test - Long Job"
+                "name": "runpod-python E2E Test - Long Job"
             }
         },
         "input": {
