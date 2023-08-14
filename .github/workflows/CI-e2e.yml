@@ -63,5 +63,5 @@ jobs:
       - name: Run Tests
         uses: direlines/runpod-test-runner@v1.5
         with:
-          image-tag: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ env.DOCKER_TAG }}
+          image-tag: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ needs.build.outputs.docker_tag }}
           runpod-api-key: ${{ secrets.RUNPOD_API_KEY }}
