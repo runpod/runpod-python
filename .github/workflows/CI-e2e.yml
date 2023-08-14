@@ -13,6 +13,8 @@ jobs:
   e2e-build:
     name: Build and push mock-worker Docker image
     runs-on: ubuntu-latest
+    outputs:
+      docker_tag: ${{ steps.output_docker_tag.outputs.docker_tag }}
 
     steps:
       - name: Checkout Repo
@@ -56,7 +58,7 @@ jobs:
   test:
     name: Run End-to-End Tests
     runs-on: ubuntu-latest
-    needs: e2e-build
+    needs: [e2e-build]
 
     steps:
       - uses: actions/checkout@v3
