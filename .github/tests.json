@@ -3,11 +3,11 @@
         "hardwareConfig": {
             "endpointConfig": {
                 "gpuIds": "AMPERE_16",
-                "name": "16GB GPU Test"
+                "name": "SDK Test E2E"
             }
         },
         "input": {
-            "mock_result": "this worked!"
+            "mock_return": "this worked!"
         }
     }
 ]
