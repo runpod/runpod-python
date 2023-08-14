@@ -19,12 +19,14 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
 
       - name: Clone and patch mock-worker
         run: |
           git clone https://github.com/runpod-workers/mock-worker
-          echo "Installing runpod-python from ${{ GITHUB_SHA }}"
-          echo "git+https://github.com/runpod/runpod-python.git@${{ GITHUB_SHA }}" > mock-worker/builder/requirements.txt
+          echo "Installing runpod-python from ${{ github.sha }}"
+          echo "git+https://github.com/runpod/runpod-python.git@${{ github.sha }}" > mock-worker/builder/requirements.txt
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -40,7 +42,7 @@ jobs:
 
       - name: Define Docker Tag
         id: docker_tag
-        run: echo "DOCKER_TAG=$(echo ${{ GITHUB_SHA }} | cut -c 1-7)" >> $GITHUB_ENV
+        run: echo "DOCKER_TAG=$(echo ${{ github.sha }} | cut -c 1-7)" >> $GITHUB_ENV
 
       - name: Set Docker Tag as Output
         id: output_docker_tag
