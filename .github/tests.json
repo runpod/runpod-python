@@ -21,5 +21,41 @@
             "mock_return": "Delay test successful returned after waiting 5 minutes.",
             "mock_delay": 120
         }
+    },
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "gpuIds": "AMPERE_16",
+                "name": "runpod-python E2E Test - Generator Handler"
+            },
+            "templateConfig": {
+                "dockerArgs": "python3 -u /handler.py --generator --return_aggregate_stream"
+            }
+        },
+        "input": {
+            "mock_return": [
+                "value1",
+                "value2",
+                "value3"
+            ]
+        }
+    },
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "gpuIds": "AMPERE_16",
+                "name": "runpod-python E2E Test - Async Generator Handler"
+            },
+            "templateConfig": {
+                "dockerArgs": "python3 -u /handler.py --async_generator --return_aggregate_stream"
+            }
+        },
+        "input": {
+            "mock_return": [
+                "value1",
+                "value2",
+                "value3"
+            ]
+        }
     }
 ]
