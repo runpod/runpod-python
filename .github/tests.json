@@ -1,0 +1,13 @@
+[
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "gpuIds": "AMPERE_16",
+                "name": "16GB GPU Test"
+            }
+        },
+        "input": {
+            "mock_result": "this worked!"
+        }
+    }
+]
