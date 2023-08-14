@@ -5,6 +5,8 @@
 &nbsp;
 [![Downloads](https://static.pepy.tech/personalized-badge/runpod?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/runpod)
 
+[![CI | End-to-End RunPod Python Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml)
+
 [![CI | Code Quality](https://github.com/runpod/runpod-python/actions/workflows/CI-pylint.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-pylint.yml)
 &nbsp;
 [![CI | Unit Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-tests.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-tests.yml)
