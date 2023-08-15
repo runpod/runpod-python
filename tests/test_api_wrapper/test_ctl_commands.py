@@ -142,7 +142,7 @@ class TestCTL(unittest.TestCase):
                                 "env": [],
                                 "gpuCount": 1,
                                 "imageName": "runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel",
-                                "lastStatusChange": "Rented by User: Tue Aug 15 2023 13:41:20 GMT+0000 (Coordinated Universal Time)",
+                                "lastStatusChange": "Rented by User: Tue Aug 15 2023",
                                 "machineId": "MACHINE_ID",
                                 "memoryInGb": 83,
                                 "name": "POD_NAME",
