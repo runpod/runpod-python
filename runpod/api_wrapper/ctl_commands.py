@@ -5,8 +5,9 @@ RunPod | API Wrapper | CTL Commands
 
 from typing import Optional
 from .queries import gpus
+from .queries import pods as pod_queries
 from .graphql import run_graphql_query
-from .mutations import pods
+from .mutations import pods as pod_mutations
 
 
 def get_gpus() -> dict:
@@ -28,6 +29,13 @@ def get_gpu(gpu_id : str):
     cleaned_return = raw_return["data"]["gpuTypes"][0]
     return cleaned_return
 
+def get_pods() -> dict:
+    '''
+    Get all pods
+    '''
+    raw_return = run_graphql_query(pod_queries.QUERY_POD)
+    cleaned_return = raw_return["data"]["myself"]["pods"]
+    return cleaned_return
 
 def create_pod(name : str, image_name : str, gpu_type_id : str, cloud_type : str="ALL",
                data_center_id : Optional[str]=None, country_code:Optional[str]=None,
@@ -58,7 +66,7 @@ def create_pod(name : str, image_name : str, gpu_type_id : str, cloud_type : str
     '''
 
     raw_response = run_graphql_query(
-        pods.generate_pod_deployment_mutation(
+        pod_mutations.generate_pod_deployment_mutation(
             name, image_name, gpu_type_id, cloud_type, data_center_id, country_code, gpu_count,
             volume_in_gb, container_disk_in_gb, min_vcpu_count, min_memory_in_gb, docker_args,
             ports, volume_mount_path, env)
@@ -80,7 +88,7 @@ def stop_pod(pod_id: str):
     >>> runpod.stop_pod(pod_id)
     '''
     raw_response = run_graphql_query(
-        pods.generate_pod_stop_mutation(pod_id)
+        pod_mutations.generate_pod_stop_mutation(pod_id)
     )
 
     cleaned_response = raw_response["data"]["podStop"]
@@ -101,7 +109,7 @@ def resume_pod(pod_id: str, gpu_count: int):
     >>> runpod.resume_pod(pod_id)
     '''
     raw_response = run_graphql_query(
-        pods.generate_pod_resume_mutation(pod_id, gpu_count)
+        pod_mutations.generate_pod_resume_mutation(pod_id, gpu_count)
     )
 
     cleaned_response = raw_response["data"]["podResume"]
@@ -120,5 +128,5 @@ def terminate_pod(pod_id: str):
     >>> runpod.terminate_pod(pod_id)
     '''
     run_graphql_query(
-        pods.generate_pod_terminate_mutation(pod_id)
+        pod_mutations.generate_pod_terminate_mutation(pod_id)
     )

@@ -122,3 +122,45 @@ class TestCTL(unittest.TestCase):
             }
 
             self.assertIsNone(ctl_commands.terminate_pod(pod_id="POD_ID"))
+
+    def test_get_pods(self):
+        '''
+        Tests get_pods
+        '''
+        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "myself": {
+                        "pods": [
+                            {
+                                "id": "POD_ID",
+                                "containerDiskInGb": 5,
+                                "costPerHr": 0.34,
+                                "desiredStatus": "RUNNING",
+                                "dockerArgs": None,
+                                "dockerId": None,
+                                "env": [],
+                                "gpuCount": 1,
+                                "imageName": "runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel",
+                                "lastStatusChange": "Rented by User: Tue Aug 15 2023 13:41:20 GMT+0000 (Coordinated Universal Time)",
+                                "machineId": "MACHINE_ID",
+                                "memoryInGb": 83,
+                                "name": "POD_NAME",
+                                "podType": "RESERVED",
+                                "port": None,
+                                "ports": "80/http",
+                                "uptimeSeconds": 0,
+                                "vcpuCount": 21,
+                                "volumeInGb": 200,
+                                "volumeMountPath": "/workspace",
+                                "machine": { "gpuDisplayName": "RTX 3090" }
+                            }
+                        ]
+                    }
+                }
+            }
+
+            pods = ctl_commands.get_pods()
+
+            self.assertEqual(len(pods), 1)
+            self.assertEqual(pods[0]["id"], "POD_ID")
