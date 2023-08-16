@@ -59,7 +59,7 @@ class JobScaler():
     INITIAL_CONCURRENT_REQUESTS = 1
     MAX_CONCURRENT_REQUESTS = 10000
     MIN_CONCURRENT_REQUESTS = 1
-    SLEEP_INTERVAL_SEC = .20
+    SLEEP_INTERVAL_SEC = 0
 
     def __init__(self, concurrency_controller: typing.Any):
         self.background_get_job_tasks = set()
