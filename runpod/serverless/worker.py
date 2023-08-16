@@ -102,8 +102,11 @@ async def run_worker(config: Dict[str, Any]) -> None:
             concurrency_controller=config.get('concurrency_controller', None)
         )
 
+        job_scaler.start(session)
+
         while job_scaler.is_alive():
-            async for job in job_scaler.get_jobs(session):
+            snapshot = job_scaler.queue.copy()
+            for job in snapshot:
                 # Process the job here
                 task = asyncio.create_task(_process_job(job, session, job_scaler, config))
 
@@ -112,6 +115,9 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # Allow job processing
                 await asyncio.sleep(0)
+            
+            # Clear snapshot from queue
+            job_scaler.queue[0:len(snapshot)] = []
 
             # Allow job processing
             await asyncio.sleep(0)

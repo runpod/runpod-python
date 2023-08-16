@@ -4,6 +4,7 @@ Provides the functionality for scaling the runpod serverless worker.
 '''
 
 import asyncio
+import threading
 import typing
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -67,6 +68,7 @@ class JobScaler():
         self.job_history = []
         self.concurrency_controller = concurrency_controller
         self._is_alive = True
+        self.queue = []
 
     def is_alive(self):
         """
@@ -87,6 +89,14 @@ class JobScaler():
         self.background_get_job_tasks.add(task)
         task.add_done_callback(self.background_get_job_tasks.discard)
 
+
+    def start(self, session):
+        """
+        empty
+        """
+        threading.Thread(target=self.get_jobs, daemon=True, args=(session,)).start()
+
+
     async def get_jobs(self, session):
         """
         Retrieve multiple jobs from the server in parallel using concurrent requests.
@@ -103,7 +113,8 @@ class JobScaler():
                 job = await get_job(session, retry=False)
                 self.job_history.append(1 if job else 0)
                 if job:
-                    yield job
+                    self.queue.append(job)
+                    #yield job
 
             # During the single processing scenario, wait for the job to finish processing.
             if self.concurrency_controller is None:
