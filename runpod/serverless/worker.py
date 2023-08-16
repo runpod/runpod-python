@@ -92,19 +92,22 @@ async def run_worker(config: Dict[str, Any]) -> None:
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
-    connector = aiohttp.TCPConnector(limit=None)
+    connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
     async with aiohttp.ClientSession(
             connector=connector, headers=_get_auth_header(), timeout=_TIMEOUT) as session:
+
 
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
         )
 
+        job_scaler.start(session)
+
         heartbeat.start_ping()
 
         while job_scaler.is_alive():
-
-            async for job in job_scaler.get_jobs(session):
+            snapshot = job_scaler.queue.copy()
+            for job in snapshot:
                 # Process the job here
                 task = asyncio.create_task(_process_job(job, session, job_scaler, config))
 
@@ -113,6 +116,12 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # Allow job processing
                 await asyncio.sleep(0)
+
+            # Clear snapshot from queue
+            job_scaler.queue[0:len(snapshot)] = []
+
+            # Allow job processing
+            await asyncio.sleep(0)
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()

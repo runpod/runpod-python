@@ -4,6 +4,7 @@ Provides the functionality for scaling the runpod serverless worker.
 '''
 
 import asyncio
+import threading
 import typing
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -12,6 +13,7 @@ from .worker_state import Jobs
 
 log = RunPodLogger()
 job_list = Jobs()
+
 
 class JobScaler():
     """
@@ -59,7 +61,7 @@ class JobScaler():
     INITIAL_CONCURRENT_REQUESTS = 1
     MAX_CONCURRENT_REQUESTS = 100
     MIN_CONCURRENT_REQUESTS = 1
-    SLEEP_INTERVAL_SEC = 1
+    SLEEP_INTERVAL_SEC = 0
 
     def __init__(self, concurrency_controller: typing.Any):
         self.background_get_job_tasks = set()
@@ -67,6 +69,7 @@ class JobScaler():
         self.job_history = []
         self.concurrency_controller = concurrency_controller
         self._is_alive = True
+        self.queue = []
 
     def is_alive(self):
         """
@@ -87,6 +90,15 @@ class JobScaler():
         self.background_get_job_tasks.add(task)
         task.add_done_callback(self.background_get_job_tasks.discard)
 
+    def start(self, session):
+        """
+        empty
+        """
+        new_loop = asyncio.new_event_loop()
+        threading.Thread(target=asyncio.ensure_future(self.get_jobs(session), loop=new_loop),
+                         daemon=True
+                         ).start()
+
     async def get_jobs(self, session):
         """
         Retrieve multiple jobs from the server in parallel using concurrent requests.
@@ -103,7 +115,8 @@ class JobScaler():
                 job = await get_job(session, retry=False)
                 self.job_history.append(1 if job else 0)
                 if job:
-                    yield job
+                    self.queue.append(job)
+                    # yield job
 
             # During the single processing scenario, wait for the job to finish processing.
             if self.concurrency_controller is None:
@@ -127,8 +140,6 @@ class JobScaler():
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
                 f"{self.num_concurrent_get_job_requests}."
             )
-
-
 
     def upscale_rate(self) -> None:
         """
