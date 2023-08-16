@@ -4,6 +4,7 @@ RunPod | API Wrapper | CTL Commands
 # pylint: disable=too-many-arguments,too-many-locals
 
 from typing import Optional
+
 from .queries import gpus
 from .graphql import run_graphql_query
 from .mutations import pods
@@ -13,19 +14,19 @@ def get_gpus() -> dict:
     '''
     Get all GPU types
     '''
-    raw_return = run_graphql_query(gpus.QUERY_GPU_TYPES)
-    cleaned_return = raw_return["data"]["gpuTypes"]
+    raw_response = run_graphql_query(gpus.QUERY_GPU_TYPES)
+    cleaned_return = raw_response["data"]["gpuTypes"]
     return cleaned_return
 
 
 def get_gpu(gpu_id : str):
     '''
     Get a specific GPU type
-    
+
     :param gpu_id: the id of the gpu
     '''
-    raw_return = run_graphql_query(gpus.generate_gpu_query(gpu_id))
-    cleaned_return = raw_return["data"]["gpuTypes"][0]
+    raw_response = run_graphql_query(gpus.generate_gpu_query(gpu_id))
+    cleaned_return = raw_response["data"]["gpuTypes"][0]
     return cleaned_return
 
 
@@ -48,7 +49,7 @@ def create_pod(name : str, image_name : str, gpu_type_id : str, cloud_type : str
     :param volume_in_gb: how big should the pod volume be
     :param ports: the ports to open in the pod, example format - "8888/http,666/tcp"
     :param volume_mount_path: where to mount the volume?
-    :param env: the environment variables to inject into the pod, 
+    :param env: the environment variables to inject into the pod,
                 for example {EXAMPLE_VAR:"example_value", EXAMPLE_VAR2:"example_value 2"}, will
                 inject EXAMPLE_VAR and EXAMPLE_VAR2 into the pod with the mentioned values
 

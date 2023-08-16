@@ -24,7 +24,7 @@ class AuthenticationError(RunPodError):
     '''
 
 
-class GraphQLQueryError(RunPodError):
+class QueryError(RunPodError):
     '''
     Raised when a GraphQL query fails
     '''
