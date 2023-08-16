@@ -94,7 +94,9 @@ class JobScaler():
         """
         empty
         """
-        threading.Thread(target=self.get_jobs, daemon=True, args=(session,)).start()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        threading.Thread(target=lambda: loop.run_until_complete(self.get_jobs(session)), daemon=True).start()
 
 
     async def get_jobs(self, session):
