@@ -57,9 +57,9 @@ class JobScaler():
     CONCURRENCY_SCALE_FACTOR = 2
     AVAILABILITY_RATIO_THRESHOLD = 0.90
     INITIAL_CONCURRENT_REQUESTS = 1
-    MAX_CONCURRENT_REQUESTS = 100
+    MAX_CONCURRENT_REQUESTS = 10000
     MIN_CONCURRENT_REQUESTS = 1
-    SLEEP_INTERVAL_SEC = 1
+    SLEEP_INTERVAL_SEC = .20
 
     def __init__(self, concurrency_controller: typing.Any):
         self.background_get_job_tasks = set()
@@ -160,7 +160,7 @@ class JobScaler():
         Scale up or down the rate at which we are handling jobs from SLS.
         """
         # Compute the availability ratio of the job queue.
-        availability_ratio = sum(self.job_history) / len(self.job_history)
+        availability_ratio = sum(self.job_history) / (len(self.job_history) + 0.0)
 
         # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
         if self.concurrency_controller() is True:

@@ -22,7 +22,7 @@ log = RunPodLogger()
 job_list = Jobs()
 heartbeat = Heartbeat()
 
-_TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
+_TIMEOUT = aiohttp.ClientTimeout(total=300, connect=10, sock_connect=10)
 
 
 def _get_auth_header() -> Dict[str, str]:
@@ -92,18 +92,17 @@ async def run_worker(config: Dict[str, Any]) -> None:
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
-    connector = aiohttp.TCPConnector(limit=None)
+    connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
     async with aiohttp.ClientSession(
             connector=connector, headers=_get_auth_header(), timeout=_TIMEOUT) as session:
+
+        heartbeat.start_ping()
 
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
         )
 
-        heartbeat.start_ping()
-
         while job_scaler.is_alive():
-
             async for job in job_scaler.get_jobs(session):
                 # Process the job here
                 task = asyncio.create_task(_process_job(job, session, job_scaler, config))
@@ -113,6 +112,9 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # Allow job processing
                 await asyncio.sleep(0)
+
+            # Allow processing
+            await asyncio.sleep(0)
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()
