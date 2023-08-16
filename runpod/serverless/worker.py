@@ -115,7 +115,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # Allow job processing
                 await asyncio.sleep(0)
-            
+
             # Clear snapshot from queue
             job_scaler.queue[0:len(snapshot)] = []
 
