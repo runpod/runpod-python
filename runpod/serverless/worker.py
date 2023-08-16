@@ -22,7 +22,7 @@ log = RunPodLogger()
 job_list = Jobs()
 heartbeat = Heartbeat()
 
-_TIMEOUT = aiohttp.ClientTimeout(total=300, connect=10, sock_connect=10)
+_TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
 
 def _get_auth_header() -> Dict[str, str]:
@@ -113,7 +113,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 # Allow job processing
                 await asyncio.sleep(0)
 
-            # Allow processing
+            # Allow job processing
             await asyncio.sleep(0)
 
         # Stops the worker loop if the kill_worker flag is set.

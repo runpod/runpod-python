@@ -126,6 +126,8 @@ class JobScaler():
             log.info(
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
                 f"{self.num_concurrent_get_job_requests}."
+                "The number of yielded jobs is "
+                f"{sum(self.job_history)} of {len(self.job_history)}."
             )
 
 
