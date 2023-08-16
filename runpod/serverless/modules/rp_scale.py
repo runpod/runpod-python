@@ -96,7 +96,7 @@ class JobScaler():
         """
         loop = asyncio.new_event_loop()
         threading.Thread(
-            target=asyncio.ensure_future(self.get_jobs(session), loop=loop),
+            target=lambda: asyncio.ensure_future(self.get_jobs(session), loop=loop),
             daemon=True
         ).start()
 
