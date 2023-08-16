@@ -96,14 +96,13 @@ async def run_worker(config: Dict[str, Any]) -> None:
     async with aiohttp.ClientSession(
             connector=connector, headers=_get_auth_header(), timeout=_TIMEOUT) as session:
 
+        heartbeat.start_ping()
 
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
         )
 
         job_scaler.start(session)
-
-        heartbeat.start_ping()
 
         while job_scaler.is_alive():
             snapshot = job_scaler.queue.copy()

@@ -59,7 +59,7 @@ class JobScaler():
     CONCURRENCY_SCALE_FACTOR = 2
     AVAILABILITY_RATIO_THRESHOLD = 0.90
     INITIAL_CONCURRENT_REQUESTS = 1
-    MAX_CONCURRENT_REQUESTS = 100
+    MAX_CONCURRENT_REQUESTS = 10000
     MIN_CONCURRENT_REQUESTS = 1
     SLEEP_INTERVAL_SEC = 0
 
@@ -94,10 +94,9 @@ class JobScaler():
         """
         empty
         """
-        new_loop = asyncio.new_event_loop()
-        threading.Thread(target=asyncio.ensure_future(self.get_jobs(session), loop=new_loop),
-                         daemon=True
-                         ).start()
+        loop = asyncio.new_event_loop()
+        threading.Thread(target=asyncio.ensure_future(self.get_jobs(session), loop=loop), daemon=True).start()
+
 
     async def get_jobs(self, session):
         """
@@ -116,7 +115,7 @@ class JobScaler():
                 self.job_history.append(1 if job else 0)
                 if job:
                     self.queue.append(job)
-                    # yield job
+                    #yield job
 
             # During the single processing scenario, wait for the job to finish processing.
             if self.concurrency_controller is None:
@@ -132,14 +131,17 @@ class JobScaler():
             # We retrieve num_concurrent_get_job_requests jobs per second.
             await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
 
-            # Rescale the retrieval rate appropriately.
-            self.rescale_request_rate()
-
             # Show logs
             log.info(
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
                 f"{self.num_concurrent_get_job_requests}."
+                "The number of yielded jobs is "
+                f"{sum(self.job_history)} of {len(self.job_history)}."
             )
+
+            # Rescale the retrieval rate appropriately.
+            self.rescale_request_rate()
+
 
     def upscale_rate(self) -> None:
         """
@@ -171,7 +173,7 @@ class JobScaler():
         Scale up or down the rate at which we are handling jobs from SLS.
         """
         # Compute the availability ratio of the job queue.
-        availability_ratio = sum(self.job_history) / len(self.job_history)
+        availability_ratio = sum(self.job_history) / (len(self.job_history) + 0.0)
 
         # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
         if self.concurrency_controller() is True:
