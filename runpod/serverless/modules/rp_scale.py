@@ -116,12 +116,6 @@ class JobScaler():
                 await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
                 break
 
-            # We retrieve num_concurrent_get_job_requests jobs per second.
-            await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
-
-            # Rescale the retrieval rate appropriately.
-            self.rescale_request_rate()
-
             # Show logs
             log.info(
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
@@ -130,6 +124,11 @@ class JobScaler():
                 f"{sum(self.job_history)} of {len(self.job_history)}."
             )
 
+            # Rescale the retrieval rate appropriately.
+            self.rescale_request_rate()
+
+            # We retrieve num_concurrent_get_job_requests jobs per second.
+            await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
 
 
     def upscale_rate(self) -> None:
