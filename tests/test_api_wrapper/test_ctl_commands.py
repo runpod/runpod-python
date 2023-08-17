@@ -123,6 +123,35 @@ class TestCTL(unittest.TestCase):
 
             self.assertIsNone(ctl_commands.terminate_pod(pod_id="POD_ID"))
 
+    def test_raised_error(self):
+        '''
+        Test raised_error
+        '''
+        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+            patch_request.return_value.json.return_value = {
+                "errors": [
+                    {
+                        "message": "Error Message"
+                    }
+                ]
+            }
+
+            with self.assertRaises(Exception) as context:
+                ctl_commands.get_gpus()
+
+            self.assertEqual(str(context.exception), "Error Message")
+
+
+        # Test Unauthorized with status code 401
+        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+            patch_request.return_value.status_code = 401
+
+            with self.assertRaises(Exception) as context:
+                ctl_commands.get_gpus()
+
+            self.assertEqual(
+                str(context.exception), "Unauthorized request, please check your API key.")
+
     def test_get_pods(self):
         '''
         Tests get_pods
