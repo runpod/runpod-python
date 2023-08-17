@@ -193,4 +193,3 @@ class TestCTL(unittest.TestCase):
 
             self.assertEqual(len(pods), 1)
             self.assertEqual(pods[0]["id"], "POD_ID")
-
