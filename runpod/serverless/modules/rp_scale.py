@@ -109,21 +109,44 @@ class JobScaler():
         Returns:
             List[Any]: A list of job data retrieved from the server.
         """
+        # A session needs to be instantiated within the coroutine.
         connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
         session = aiohttp.ClientSession(
-            connector=connector, headers={"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+            connector=connector,
+            headers={"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+        )
 
         while True:
             # Finish if the job_scale is not alive
             if not self.is_alive():
                 break
 
-            for _ in range(self.num_concurrent_get_job_requests):
-                job = await get_job(session, retry=False)
-                self.job_history.append(1 if job else 0)
-                if job:
-                    self.queue.append(job)
-                    #yield job
+            parallel_processing = len(job_list.get_job_list()) > 0
+
+            # We want to keep the jobs_in_progress fixed during the entire parallel processing flow below
+            # to avoid a race condition inside SLS.
+            # If jobs_in_progress is 0, let's do sequential. Otherwise, let's do parallel.
+            if parallel_processing:
+                tasks = [
+                    asyncio.create_task(
+                        get_job(session, force_in_progress=True, retry=False)
+                    ) for _ in range(self.num_concurrent_get_job_requests)]
+
+                for job_future in asyncio.as_completed(tasks):
+                    job = await job_future
+                    self.job_history.append(1 if job else 0)
+
+                    if job:
+                        self.queue.append(job)
+                        #yield job
+            else:
+                for _ in range(self.num_concurrent_get_job_requests):
+                    # The latency for get_job is 0.3 seconds.
+                    job = await get_job(session, retry=False)
+                    self.job_history.append(1 if job else 0)
+                    if job:
+                        self.queue.append(job)
+                        #yield job
 
             # During the single processing scenario, wait for the job to finish processing.
             if self.concurrency_controller is None:
