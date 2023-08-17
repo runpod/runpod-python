@@ -102,7 +102,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
             concurrency_controller=config.get('concurrency_controller', None)
         )
 
-        job_scaler.start(session)
+        job_scaler.start(lambda: aiohttp.ClientSession(
+            connector=connector, headers=_get_auth_header(), timeout=_TIMEOUT))
 
         while job_scaler.is_alive():
             snapshot = job_scaler.queue.copy()

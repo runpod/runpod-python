@@ -90,13 +90,13 @@ class JobScaler():
         self.background_get_job_tasks.add(task)
         task.add_done_callback(self.background_get_job_tasks.discard)
 
-    def start(self, session):
+    def start(self, createSession):
         """
         empty
         """
         loop = asyncio.new_event_loop()
         threading.Thread(
-            target=lambda: loop.run_until_complete(self.get_jobs(session)),
+            target=lambda: loop.run_until_complete(self.get_jobs(createSession())),
             daemon=True
         ).start()
 
