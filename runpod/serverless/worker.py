@@ -47,7 +47,7 @@ def _is_local(config) -> bool:
 
 async def _process_job(job, session, job_scaler, config):
     if inspect.isgeneratorfunction(config["handler"]) \
-        or inspect.isasyncgenfunction(config["handler"]):
+            or inspect.isasyncgenfunction(config["handler"]):
         generator_output = run_job_generator(config["handler"], job)
 
         log.debug("Handler is a generator, streaming results.")
@@ -64,7 +64,8 @@ async def _process_job(job, session, job_scaler, config):
 
     # If refresh_worker is set, pod will be reset after job is complete.
     if config.get("refresh_worker", False):
-        log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
+        log.info(
+            f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
         job_result["stopPod"] = True
         job_scaler.kill_worker()
 
@@ -74,7 +75,8 @@ async def _process_job(job, session, job_scaler, config):
         log.debug("rp_debugger | Flag set, returning debugger output.")
 
         # Calculate ready delay for the debugger output.
-        ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
+        ready_delay = (
+            config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
         job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
     else:
         log.debug("rp_debugger | Flag not set, skipping debugger output.")
@@ -103,13 +105,14 @@ async def run_worker(config: Dict[str, Any]) -> None:
         )
 
         job_scaler.start(lambda: aiohttp.ClientSession(
-            connector=connector, headers=_get_auth_header(), timeout=aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)))
+            connector=connector, headers=_get_auth_header()))
 
         while job_scaler.is_alive():
             snapshot = job_scaler.queue.copy()
             for job in snapshot:
                 # Process the job here
-                task = asyncio.create_task(_process_job(job, session, job_scaler, config))
+                task = asyncio.create_task(_process_job(
+                    job, session, job_scaler, config))
 
                 # Track the task
                 job_scaler.track_task(task)
