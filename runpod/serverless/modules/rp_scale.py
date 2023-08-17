@@ -121,7 +121,7 @@ class JobScaler():
             if not self.is_alive():
                 break
 
-            parallel_processing = len(job_list.get_job_list()) > 0
+            parallel_processing = job_list.get_job_list() is not None
 
             # We want to keep the jobs_in_progress fixed during the entire parallel processing flow below
             # to avoid a race condition inside SLS.
