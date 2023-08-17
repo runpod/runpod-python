@@ -96,18 +96,19 @@ class JobScaler():
         """
         loop = asyncio.new_event_loop()
         threading.Thread(
-            target=lambda: loop.run_until_complete(self.get_jobs(createSession())),
+            target=lambda: loop.run_until_complete(self.get_jobs(createSession)),
             daemon=True
         ).start()
 
 
-    async def get_jobs(self, session):
+    async def get_jobs(self, createSession):
         """
         Retrieve multiple jobs from the server in parallel using concurrent requests.
 
         Returns:
             List[Any]: A list of job data retrieved from the server.
         """
+        session = createSession()
         while True:
             # Finish if the job_scale is not alive
             if not self.is_alive():
