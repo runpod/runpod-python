@@ -6,6 +6,7 @@ import inspect
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
+import time
 import json
 import traceback
 from aiohttp import ClientSession
@@ -48,7 +49,9 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 
     while next_job is None:
         try:
+            start = time.time()
             async with session.get(_job_get_url()) as response:
+                end1 = time.time()
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if not retry:
@@ -62,7 +65,8 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 next_job = await response.json()
-                log.debug(f"Received Job | {next_job}")
+                end2 = time.time()
+                log.debug(f"Received Job | {next_job} | Latency in seconds {end1-start}, {end2-start}")
 
             # Check if the job is valid
             job_id = next_job.get("id", None)

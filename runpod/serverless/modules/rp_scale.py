@@ -7,7 +7,7 @@ import asyncio
 import threading
 import typing
 import aiohttp
-
+import os
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .rp_job import get_job
 from .worker_state import Jobs
@@ -109,7 +109,6 @@ class JobScaler():
         Returns:
             List[Any]: A list of job data retrieved from the server.
         """
-        import os
         connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
         session = aiohttp.ClientSession(
             connector=connector, headers={"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
