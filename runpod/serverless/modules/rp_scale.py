@@ -6,6 +6,7 @@ Provides the functionality for scaling the runpod serverless worker.
 import asyncio
 import threading
 import typing
+import aiohttp
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .rp_job import get_job
@@ -90,25 +91,29 @@ class JobScaler():
         self.background_get_job_tasks.add(task)
         task.add_done_callback(self.background_get_job_tasks.discard)
 
-    def start(self, createSession):
+    def start(self):
         """
         empty
         """
         loop = asyncio.new_event_loop()
         threading.Thread(
-            target=lambda: loop.run_until_complete(self.get_jobs(createSession)),
+            target=lambda: loop.run_until_complete(self.get_jobs()),
             daemon=True
         ).start()
 
 
-    async def get_jobs(self, createSession):
+    async def get_jobs(self):
         """
         Retrieve multiple jobs from the server in parallel using concurrent requests.
 
         Returns:
             List[Any]: A list of job data retrieved from the server.
         """
-        session = createSession()
+        import os
+        connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
+        session = aiohttp.ClientSession(
+            connector=connector, headers={"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+
         while True:
             # Finish if the job_scale is not alive
             if not self.is_alive():
