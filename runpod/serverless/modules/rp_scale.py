@@ -62,7 +62,7 @@ class JobScaler():
     INITIAL_CONCURRENT_REQUESTS = 1
     MAX_CONCURRENT_REQUESTS = 10000
     MIN_CONCURRENT_REQUESTS = 1
-    SLEEP_INTERVAL_SEC = 0
+    SLEEP_INTERVAL_SEC = 1
 
     def __init__(self, concurrency_controller: typing.Any):
         self.background_get_job_tasks = set()
@@ -171,7 +171,8 @@ class JobScaler():
             self.rescale_request_rate()
 
             # We retrieve num_concurrent_get_job_requests jobs per second.
-            await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
+            if parallel_processing:
+                await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
 
 
     def upscale_rate(self) -> None:
