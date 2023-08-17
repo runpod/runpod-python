@@ -49,9 +49,7 @@ async def get_job(session: ClientSession, force_in_progress=False, retry=True) -
 
     while next_job is None:
         try:
-            start = time.time()
             async with session.get(_job_get_url(force_in_progress)) as response:
-                end1 = time.time()
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if not retry:
@@ -65,8 +63,7 @@ async def get_job(session: ClientSession, force_in_progress=False, retry=True) -
                     continue
 
                 next_job = await response.json()
-                end2 = time.time()
-                log.debug(f"Received Job | {next_job} | Latency in seconds {end1-start}, {end2-start}")
+                log.debug(f"Received Job | {next_job}")
 
             # Check if the job is valid
             job_id = next_job.get("id", None)
