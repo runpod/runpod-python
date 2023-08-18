@@ -7,6 +7,7 @@ import time
 import threading
 
 import requests
+from requests.packages.urllib3.util.retry import Retry
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import Jobs, WORKER_ID
