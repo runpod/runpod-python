@@ -39,7 +39,7 @@ class Heartbeat:
 
         adapter = requests.adapters.HTTPAdapter(
             pool_connections=pool_connections,
-            pool_maxsize=pool_connections
+            pool_maxsize=pool_connections,
             max_retries=retry_strategy
         )
         self._session.mount('http://', adapter)
