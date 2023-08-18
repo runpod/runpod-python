@@ -34,7 +34,7 @@ class Heartbeat:
             total=retries,
             status_forcelist=[429, 500, 502, 503, 504],
             method_whitelist=["GET"],
-            backoff_factor=1  # Retry times 1s, 2s, 4s, 8s, etc.
+            backoff_factor=1
         )
 
         adapter = requests.adapters.HTTPAdapter(
