@@ -6,8 +6,8 @@ Provides the functionality for scaling the runpod serverless worker.
 import asyncio
 import threading
 import typing
-import aiohttp
 import os
+import aiohttp
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .rp_job import get_job
 from .worker_state import Jobs
@@ -57,12 +57,12 @@ class JobScaler():
     """
 
     # Scaling Constants
-    CONCURRENCY_SCALE_FACTOR = 2
+    CONCURRENCY_SCALE_FACTOR = 2.0
     AVAILABILITY_RATIO_THRESHOLD = 0.90
     INITIAL_CONCURRENT_REQUESTS = 1
     MAX_CONCURRENT_REQUESTS = 100
     MIN_CONCURRENT_REQUESTS = 1
-    SLEEP_INTERVAL_SEC = 1
+    SLEEP_INTERVAL_SEC = 0.30
 
     def __init__(self, concurrency_controller: typing.Any):
         self.background_get_job_tasks = set()
@@ -101,7 +101,6 @@ class JobScaler():
             daemon=True
         ).start()
 
-
     async def get_jobs(self):
         """
         Retrieve multiple jobs from the server in parallel using concurrent requests.
@@ -110,10 +109,12 @@ class JobScaler():
             List[Any]: A list of job data retrieved from the server.
         """
         # A session needs to be instantiated within the coroutine.
+        timeout = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
         connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
         session = aiohttp.ClientSession(
             connector=connector,
-            headers={"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+            headers={"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"},
+            timeout=timeout
         )
 
         while True:
@@ -208,7 +209,7 @@ class JobScaler():
         availability_ratio = sum(self.job_history) / (len(self.job_history) + 0.0)
 
         # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
-        if self.concurrency_controller() is True:
+        if self.concurrency_controller and self.concurrency_controller() is True:
             log.debug("Reducing job query rate due to full worker utilization.")
 
             self.downscale_rate()
