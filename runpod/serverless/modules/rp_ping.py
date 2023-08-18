@@ -83,5 +83,3 @@ class Heartbeat:
 
         except requests.RequestException as err:
             log.error(f"Ping Request Error: {err}, attempting to restart ping.")
-        except Exception as err: # pylint: disable=broad-except
-            log.error(f"Critical Ping Error: {err}, attempting to restart ping.")
