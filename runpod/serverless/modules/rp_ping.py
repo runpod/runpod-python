@@ -22,8 +22,27 @@ class Heartbeat:
     PING_URL = PING_URL.replace('$RUNPOD_POD_ID', WORKER_ID)
     PING_INTERVAL = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))//1000
 
-    _session = requests.Session()
-    _session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+    def __init__(self, pool_connections=100, retries=3) -> None:
+        '''
+        Initializes the Heartbeat class.
+        '''
+        self._session = requests.Session()
+        self._session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
+
+        retry_strategy = Retry(
+            total=retries,
+            status_forcelist=[429, 500, 502, 503, 504],
+            method_whitelist=["GET"],
+            backoff_factor=1  # Retry times 1s, 2s, 4s, 8s, etc.
+        )
+
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=pool_connections,
+            pool_maxsize=pool_connections
+            max_retries=retry_strategy
+        )
+        self._session.mount('http://', adapter)
+        self._session.mount('https://', adapter)
 
     def start_ping(self, test=False):
         '''
@@ -40,13 +59,8 @@ class Heartbeat:
         Sends heartbeat pings to the Runpod server.
         '''
         while True:
-            try:
-                self._send_ping()
-                time.sleep(self.PING_INTERVAL)
-            except requests.RequestException as err:
-                log.error(f"Ping Error: {err}, attempting to restart ping.")
-                if test:
-                    return
+            self._send_ping()
+            time.sleep(self.PING_INTERVAL)
 
             if test:
                 return
@@ -58,9 +72,15 @@ class Heartbeat:
         job_ids = jobs.get_job_list()
         ping_params = {'job_id': job_ids} if job_ids is not None else None
 
-        result = self._session.get(
-            self.PING_URL, params=ping_params,
-            timeout=self.PING_INTERVAL
-        )
+        try:
+            result = self._session.get(
+                self.PING_URL, params=ping_params,
+                timeout=self.PING_INTERVAL
+            )
 
-        log.debug(f"Heartbeat Sent | URL: {self.PING_URL} | Status: {result.status_code}")
+            log.debug(f"Heartbeat Sent | URL: {self.PING_URL} | Status: {result.status_code}")
+
+        except requests.RequestException as err:
+            log.error(f"Ping Request Error: {err}, attempting to restart ping.")
+        except Exception as err: # pylint: disable=broad-except
+            log.error(f"Critical Ping Error: {err}, attempting to restart ping.")
