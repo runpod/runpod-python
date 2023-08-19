@@ -134,6 +134,9 @@ runpod.api_key = "your_runpod_api_key_found_under_settings"
 # Get all my pods
 pods = runpod.get_pods()
 
+# Get a specific pod
+pod = runpod.get_pod(pod.id)
+
 # Create a pod
 pod = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
 

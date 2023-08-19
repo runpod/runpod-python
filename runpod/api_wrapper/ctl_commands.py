@@ -38,6 +38,15 @@ def get_pods() -> dict:
     cleaned_return = raw_return["data"]["myself"]["pods"]
     return cleaned_return
 
+def get_pod(pod_id : str):
+    '''
+    Get a specific pod
+
+    :param pod_id: the id of the pod
+    '''
+    raw_response = run_graphql_query(pod_queries.generate_pod_query(pod_id))
+    return raw_response["data"]["pod"]
+
 def create_pod(name : str, image_name : str, gpu_type_id : str, cloud_type : str="ALL",
                data_center_id : Optional[str]=None, country_code:Optional[str]=None,
                gpu_count:int=1, volume_in_gb:int=0, container_disk_in_gb:int=5,
