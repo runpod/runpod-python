@@ -113,7 +113,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(job_output, dict):
 
             if job_output.get("error", False):
-                run_result = {"error": str(job_output["error"])}
+                run_result["error"] = str(run_result["output"].pop("error"))
 
             if job_output.get("refresh_worker", False):
                 job_output.pop("refresh_worker")
