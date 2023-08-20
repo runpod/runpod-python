@@ -23,8 +23,6 @@ def run_graphql_query(query: str) -> Dict[str, Any]:
     data = json.dumps({"query": query})
     response = requests.post(url, headers=headers, data=data, timeout=30)
 
-    print(response.json())
-
     if response.status_code == HTTP_STATUS_UNAUTHORIZED:
         raise error.AuthenticationError("Unauthorized request, please check your API key.")
 
