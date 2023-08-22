@@ -84,7 +84,7 @@ class Heartbeat:
         ping_params = {
             'job_id': job_ids,
             'runpod_version': self.runpod_version
-        } if job_ids is not None else None
+        }
 
         try:
             result = self._session.get(
