@@ -47,8 +47,8 @@ class Heartbeat:
         self._session.mount('http://', adapter)
         self._session.mount('https://', adapter)
 
-        from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
-        self.runpod_version = runpod_version
+
+        self.runpod_version = None
 
     def start_ping(self, test=False):
         '''
@@ -59,6 +59,9 @@ class Heartbeat:
             return
 
         if not Heartbeat._thread_started:
+            from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
+            self.runpod_version = runpod_version
+
             threading.Thread(target=self.ping_loop, daemon=True, args=(test,)).start()
             Heartbeat._thread_started = True
 
