@@ -5,6 +5,7 @@ env
 test_wrapper.py
 test_logging.py
 /ignore
+IGNORE.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

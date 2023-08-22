@@ -21,11 +21,21 @@ def generate_gpu_query(gpu_id):
     return f"""
     query GpuTypes {{
       gpuTypes(input: {{id: "{gpu_id}"}}) {{
+        maxGpuCount
         id
         displayName
+        manufacturer
         memoryInGb
+        cudaCores
         secureCloud
         communityCloud
+        securePrice
+        communityPrice
+        oneMonthPrice
+        threeMonthPrice
+        oneWeekPrice
+        communitySpotPrice
+        secureSpotPrice
         lowestPrice(input: {{gpuCount: 1}}) {{
           minimumBidPrice
           uninterruptablePrice
