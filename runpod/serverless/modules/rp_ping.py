@@ -23,6 +23,8 @@ class Heartbeat:
     PING_URL = PING_URL.replace('$RUNPOD_POD_ID', WORKER_ID)
     PING_INTERVAL = int(os.environ.get('RUNPOD_PING_INTERVAL', 10000))//1000
 
+    _thread_started = False
+
     def __init__(self, pool_connections=100, retries=3) -> None:
         '''
         Initializes the Heartbeat class.
@@ -45,6 +47,9 @@ class Heartbeat:
         self._session.mount('http://', adapter)
         self._session.mount('https://', adapter)
 
+        from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
+        self.runpod_version = runpod_version
+
     def start_ping(self, test=False):
         '''
         Sends heartbeat pings to the Runpod server.
@@ -53,7 +58,9 @@ class Heartbeat:
             log.error("Ping URL not set, cannot start ping.")
             return
 
-        threading.Thread(target=self.ping_loop, daemon=True, args=(test,)).start()
+        if not Heartbeat._thread_started:
+            threading.Thread(target=self.ping_loop, daemon=True, args=(test,)).start()
+            Heartbeat._thread_started = True
 
     def ping_loop(self, test=False):
         '''
@@ -71,7 +78,10 @@ class Heartbeat:
         Sends a heartbeat to the Runpod server.
         '''
         job_ids = jobs.get_job_list()
-        ping_params = {'job_id': job_ids} if job_ids is not None else None
+        ping_params = {
+            'job_id': job_ids,
+            'runpod_version': self.runpod_version
+        } if job_ids is not None else None
 
         try:
             result = self._session.get(
