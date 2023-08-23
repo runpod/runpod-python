@@ -297,6 +297,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         _, args, _ = mock_send_result.mock_calls[0]
         assert args[1] == {'output': ['test1', 'test2'], 'stopPod': True}
 
+
     @pytest.mark.asyncio
     @patch("aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
@@ -409,6 +410,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             runpod.serverless.start(self.config)
 
         # Make assertions about the behaviors
+        # Note: These are consequential to the scaling constants selected inside rp_scale.py.
         mock_get_job.call_count = 527
         mock_run_job.call_count = 228
         mock_send_result.call_count = 198
@@ -438,15 +440,13 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
-        # Include multi-processing inside config
-        # Should go from concurrency 1 -> 2 -> 4 -> 8 -> 16 -> 8 -> 4 -> 2 -> 1
-        # 1+2+4+8+16+8+4+2+1 -> 46 calls to get_job.
+        # Using this scale up behavior, we should make a total of 46 calls to get_job.
         scale_behavior = {
             'behavior': [False, False, False, False, False, False, True, True, True, True, True],
             'counter': 0,
         }
 
-        def concurrency_controller():
+        def concurrency_controller() -> bool:
             val = scale_behavior['behavior'][scale_behavior['counter']]
             return val
 
@@ -461,8 +461,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             }
         }
 
-        # Let's mock job_scaler.is_alive so that it returns False
-        # when scale_behavior's counter is now 5.
+        # Once we finish the scale behavior demonstrated above, let's shutdown the JobScaler.
         def mock_is_alive():
             res = scale_behavior['counter'] < 10
             scale_behavior['counter'] += 1
@@ -473,9 +472,11 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
         # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
         # 1 + 2 + 4 + 8 + 16 + 8 + 4 + 2 + 1 = 46 times
-        # assert mock_get_job.call_count == 46
-        # assert mock_run_job.call_count == 0
-        # assert mock_send_result.call_count == 0
+        assert mock_get_job.call_count == 46
+
+        # We're only testing the scale up logic here.
+        assert mock_run_job.call_count == 0
+        assert mock_send_result.call_count == 0
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")
@@ -509,32 +510,40 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             }
         }
 
-        # Let's stop after the 20th call.
         scale_behavior = {
             'counter': 0
         }
 
         def mock_is_alive():
-            res = scale_behavior['counter'] < 10
+            # Utilize the count of scaling events to ascertain the
+            # status of the job scalar's liveness.
+            is_alive = scale_behavior['counter'] < 10
+
+            # Increase the count.
             scale_behavior['counter'] += 1
 
-            # Let's oscillate between upscaling, downscaling, upscaling, downscaling, ...
+            # Let's oscillate between upscaling, downscaling, upscaling, downscaling, and so on...
+            # To alternate between upscaling and downscaling, we will utilize the availability
+            # queue scaling strategy. This strategy involves using the proportion of non-Null jobs
+            # in the queue as a heuristic for the RunPod queue.
             if scale_behavior['counter'] % 2 == 0:
                 mock_get_job.return_value = {
-                    "id": "123", "input": {"number": 1}}
+                    "id": "123", "input": {"number": 1}
+                }
             else:
                 mock_get_job.return_value = None
-            return res
 
-        # Define the mock behaviors
+            return is_alive
+
+        # Specify the mock behaviors.
         mock_run_job.return_value = {"output": {"result": "odd"}}
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
         # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
         # 1 + 2 + 1 + 2 + 1 + 2 + 1 + 2 + 1 = 13 calls
-        # assert mock_get_job.call_count == 13
+        assert mock_get_job.call_count == 13
 
-        # 5 calls with actual jobs
-        # assert mock_run_job.call_count == 0
-        # assert mock_send_result.call_count == 0
+        # We're only testing the availability logic here.
+        assert mock_run_job.call_count == 0
+        assert mock_send_result.call_count == 0
