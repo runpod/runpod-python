@@ -160,11 +160,12 @@ class JobScaler():
                     if job:
                         self.queue.append(job)
 
-            # In the scenario involving a single processing worker, we employ a variant of the concurrency_controller 
-            # in which we wait or delay until the tasks have been fully completed. For instance, it is plausible 
-            # to encounter a worker handling CPU-intensive workloads. In such workloads, tasks may range from 
-            # completing within 10ms to 100ms on a single worker. Therefore, it becomes logical to enqueue 
-            # multiple jobs simultaneously within the JobScaler to manage these workloads effectively.
+            # In the scenario involving a single processing worker, we employ a variant of the
+            # concurrency_controller in which we wait or delay until the tasks have been fully
+            # completed. For instance, it is plausible to encounter a worker handling CPU-intensive
+            # workloads. In such workloads, tasks may range from completing within 10ms to 100ms on
+            # a single worker. Therefore, it becomes logical to enqueue multiple jobs simultaneously
+            # within the JobScaler to manage these workloads effectively.
             if self.concurrency_controller is None:
                 # Create a copy of the background job tasks list to keep references to the tasks.
                 job_tasks_copy = self.background_get_job_tasks.copy()
