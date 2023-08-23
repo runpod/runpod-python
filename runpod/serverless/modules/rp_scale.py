@@ -183,11 +183,11 @@ class JobScaler():
         This method increases the number of concurrent requests to the server,
         effectively retrieving more jobs per unit of time.
         """
-        self.num_concurrent_get_job_requests = min(
+        self.num_concurrent_get_job_requests = int(min(
             self.num_concurrent_get_job_requests *
             JobScaler.CONCURRENCY_SCALE_FACTOR,
             JobScaler.MAX_CONCURRENT_REQUESTS
-        )
+        ))
 
     def downscale_rate(self) -> None:
         """
