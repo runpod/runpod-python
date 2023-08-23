@@ -6,7 +6,6 @@ import inspect
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
-import time
 import json
 import traceback
 from aiohttp import ClientSession
@@ -35,7 +34,8 @@ def _job_get_url(force_in_progress=False):
     return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
 
 
-async def get_job(session: ClientSession, force_in_progress=False, retry=True) -> Optional[Dict[str, Any]]:
+async def get_job(
+    session: ClientSession, force_in_progress=False, retry=True) -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
     Will continue trying to get a job until one is available.

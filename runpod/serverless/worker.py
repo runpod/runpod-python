@@ -100,18 +100,21 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
         heartbeat.start_ping()
 
+        # Create the job take scaling mechanism.
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
         )
 
+        # Start taking jobs in the background via the job take scaling mechanism.
         job_scaler.start()
 
         while job_scaler.is_alive():
-            snapshot = job_scaler.queue.copy()
+            snapshot = job_scaler.get_from_queue()
             for job in snapshot:
                 # Process the job here
-                task = asyncio.create_task(_process_job(
-                    job, session, job_scaler, config))
+                task = asyncio.create_task(
+                    _process_job(job, session, job_scaler, config)
+                )
 
                 # Track the task
                 job_scaler.track_task(task)

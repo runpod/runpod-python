@@ -101,6 +101,12 @@ class JobScaler():
             daemon=True
         ).start()
 
+    def get_from_queue(self):
+        """
+        Retrieve jobs from the job take scaler queue.
+        """
+        return self.queue.copy()
+
     async def get_jobs(self):
         """
         Retrieve multiple jobs from the server in parallel using concurrent requests.
@@ -124,8 +130,8 @@ class JobScaler():
 
             parallel_processing = job_list.get_job_list() is not None
 
-            # We want to keep the jobs_in_progress fixed during the entire parallel processing flow below
-            # to avoid a race condition inside SLS.
+            # We want to keep the jobs_in_progress fixed during the entire parallel processing
+            # flow below to avoid a race condition inside SLS.
             # If jobs_in_progress is 0, let's do sequential. Otherwise, let's do parallel.
             if parallel_processing:
                 tasks = [
