@@ -3,9 +3,9 @@ RunPod | API Wrapper | Queries | GPUs
 """
 
 QUERY_POD = """
-query myPods {{
-    myself {{
-        pods {{
+query myPods {
+    myself {
+        pods {
             id
             containerDiskInGb
             costPerHr
@@ -26,12 +26,12 @@ query myPods {{
             vcpuCount
             volumeInGb
             volumeMountPath
-            machine {{
+            machine {
                 gpuDisplayName
-            }}
-        }}
-    }}
-}}
+            }
+        }
+    }
+}
 """
 
 def generate_pod_query(pod_id):
