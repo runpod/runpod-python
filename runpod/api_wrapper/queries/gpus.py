@@ -13,7 +13,7 @@ query GpuTypes {
 """
 
 
-def generate_gpu_query(gpu_id):
+def generate_gpu_query(gpu_id, gpu_count=1):
     '''
     Generate a query for a specific GPU type
     '''
@@ -36,7 +36,7 @@ def generate_gpu_query(gpu_id):
         oneWeekPrice
         communitySpotPrice
         secureSpotPrice
-        lowestPrice(input: {{gpuCount: 1}}) {{
+        lowestPrice(input: {{gpuCount: {gpu_count}}}) {{
           minimumBidPrice
           uninterruptablePrice
         }}
