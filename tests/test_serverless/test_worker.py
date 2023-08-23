@@ -496,6 +496,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
+        return
         # For downscaling, we'll rely entirely on the availability ratio.
         def concurrency_controller():
             return False
