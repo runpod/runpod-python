@@ -105,7 +105,13 @@ class JobScaler():
         """
         Retrieve jobs from the job take scaler queue.
         """
-        return self.queue.copy()
+        # Retrieve a snapshot of the queue.
+        snapshot = self.queue.copy()
+
+        # Clear the snapshot from the queue.
+        self.queue[0:len(snapshot)] = []
+
+        return snapshot
 
     async def get_jobs(self):
         """
@@ -114,7 +120,7 @@ class JobScaler():
         Returns:
             List[Any]: A list of job data retrieved from the server.
         """
-        # A session needs to be instantiated within the coroutine.
+        # A session needs to be instantiated within the 'get_jobs' coroutine.
         timeout = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
         connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
         session = aiohttp.ClientSession(
@@ -123,47 +129,48 @@ class JobScaler():
             timeout=timeout
         )
 
-        while True:
-            # Finish if the job_scale is not alive
-            if not self.is_alive():
-                break
+        while self.is_alive():
+            # Employ parallel processing if there are jobs in progress.
+            use_parallel_processing = job_list.get_job_list() is not None
 
-            parallel_processing = job_list.get_job_list() is not None
-
-            # We want to keep the jobs_in_progress fixed during the entire parallel processing
-            # flow below to avoid a race condition inside SLS.
-            # If jobs_in_progress is 0, let's do sequential. Otherwise, let's do parallel.
-            if parallel_processing:
+            # We intend to maintain the 'jobs_in_progress' value constant throughout the entire
+            # parallel processing flow below to prevent a race condition within SLS.
+            # If the 'jobs_in_progress' count is 0, we should proceed sequentially.
+            # Otherwise, we should proceed in parallel.
+            if use_parallel_processing:
+                # Prepare the 'get_job' tasks for parallel execution.
                 tasks = [
                     asyncio.create_task(
                         get_job(session, force_in_progress=True, retry=False)
                     ) for _ in range(self.num_concurrent_get_job_requests)]
 
+                # Wait for all the 'get_job' tasks, which are running in parallel, to be completed.
                 for job_future in asyncio.as_completed(tasks):
                     job = await job_future
                     self.job_history.append(1 if job else 0)
 
                     if job:
                         self.queue.append(job)
-                        #yield job
             else:
                 for _ in range(self.num_concurrent_get_job_requests):
                     # The latency for get_job is 0.3 seconds.
                     job = await get_job(session, retry=False)
                     self.job_history.append(1 if job else 0)
+
                     if job:
                         self.queue.append(job)
-                        #yield job
 
-            # During the single processing scenario, wait for the job to finish processing.
+            # In the scenario involving a single processing worker, we employ a variant of the concurrency_controller 
+            # in which we wait or delay until the tasks have been fully completed. For instance, it is plausible 
+            # to encounter a worker handling CPU-intensive workloads. In such workloads, tasks may range from 
+            # completing within 10ms to 100ms on a single worker. Therefore, it becomes logical to enqueue 
+            # multiple jobs simultaneously within the JobScaler to manage these workloads effectively.
             if self.concurrency_controller is None:
                 # Create a copy of the background job tasks list to keep references to the tasks.
                 job_tasks_copy = self.background_get_job_tasks.copy()
                 if job_tasks_copy:
                     # Wait for the job tasks to finish processing before continuing.
                     await asyncio.wait(job_tasks_copy)
-                # Exit the loop after processing a single job (since the handler is fully utilized).
-                await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
                 break
 
             # Show logs
@@ -174,11 +181,14 @@ class JobScaler():
                 f"{sum(self.job_history)} of {len(self.job_history)}."
             )
 
-            # Rescale the retrieval rate appropriately.
+            # Adjust the job retrieval rate by considering factors such as queue availability
+            # and the pace at which we are processing jobs within the multi-processing worker.
             self.rescale_request_rate()
 
-            # We retrieve num_concurrent_get_job_requests jobs per second.
-            if parallel_processing:
+            # In the parallel processing scenario, we intend to sleep for a certain number of
+            # seconds at each interval. However, in the case of sequential processing, this results
+            # in excessive overhead, which we strive to avoid.
+            if use_parallel_processing:
                 await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
 
 
