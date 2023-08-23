@@ -64,7 +64,7 @@ class JobScaler():
     MIN_CONCURRENT_REQUESTS = 1
     SLEEP_INTERVAL_SEC = 0.30
 
-    def __init__(self, concurrency_controller: typing.Any):
+    def __init__(self, concurrency_controller: typing.Any = None):
         self.background_get_job_tasks = set()
         self.num_concurrent_get_job_requests = JobScaler.INITIAL_CONCURRENT_REQUESTS
         self.job_history = []
@@ -125,7 +125,8 @@ class JobScaler():
         connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
         session = aiohttp.ClientSession(
             connector=connector,
-            headers={"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"},
+            headers={
+                "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"},
             timeout=timeout
         )
 
@@ -142,7 +143,9 @@ class JobScaler():
                 tasks = [
                     asyncio.create_task(
                         get_job(session, force_in_progress=True, retry=False)
-                    ) for _ in range(self.num_concurrent_get_job_requests)]
+                    )
+                    for _ in range(self.num_concurrent_get_job_requests)
+                ]
 
                 # Wait for all the 'get_job' tasks, which are running in parallel, to be completed.
                 for job_future in asyncio.as_completed(tasks):
@@ -168,10 +171,11 @@ class JobScaler():
             # within the JobScaler to manage these workloads effectively.
             if self.concurrency_controller is None:
                 # Create a copy of the background job tasks list to keep references to the tasks.
-                job_tasks_copy = self.background_get_job_tasks.copy()
-                if job_tasks_copy:
-                    # Wait for the job tasks to finish processing before continuing.
-                    await asyncio.wait(job_tasks_copy)
+                # Wait for the job tasks to finish processing before continuing.
+                # Note: asyncio.wait requires a non-empty list or it throws an exception.
+                jobs = self.background_get_job_tasks.copy()
+                if jobs:
+                    await asyncio.wait(jobs)
                 break
 
             # Show logs
@@ -191,7 +195,6 @@ class JobScaler():
             # in excessive overhead, which we strive to avoid.
             if use_parallel_processing:
                 await asyncio.sleep(JobScaler.SLEEP_INTERVAL_SEC)
-
 
     def upscale_rate(self) -> None:
         """
@@ -223,7 +226,8 @@ class JobScaler():
         Scale up or down the rate at which we are handling jobs from SLS.
         """
         # Compute the availability ratio of the job queue.
-        availability_ratio = sum(self.job_history) / (len(self.job_history) + 0.0)
+        availability_ratio = sum(self.job_history) / \
+            (len(self.job_history) + 0.0)
 
         # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
         if self.concurrency_controller and self.concurrency_controller() is True:
