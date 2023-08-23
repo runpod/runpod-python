@@ -94,13 +94,15 @@ async def run_worker(config: Dict[str, Any]) -> None:
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
-    connector = aiohttp.TCPConnector(limit=None, limit_per_host=None)
-    async with aiohttp.ClientSession(
-            connector=connector, headers=_get_auth_header(), timeout=_TIMEOUT) as session:
 
-        heartbeat.start_ping()
+    heartbeat.start_ping()
 
-        # Create the job take scaling mechanism.
+    client_session = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(limit=None),
+        headers=_get_auth_header(), timeout=_TIMEOUT
+    )
+
+    async with client_session as session:
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
         )
