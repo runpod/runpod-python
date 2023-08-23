@@ -370,6 +370,53 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
             assert mock_set_config_args.called
 
+
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession")
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.stream_result")
+    @patch("runpod.serverless.worker.send_result")
+    # pylint: disable=too-many-arguments
+    async def test_run_worker_multi_processing_parallel(
+            self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
+        '''
+        Test run_worker with multi processing enabled, using parallel processing.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+
+        # Define the mock behaviors
+        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        # Include multi-processing inside config
+        def concurrency_controller():
+            return False
+
+        # Include the concurrency_controller
+        self.config['concurrency_controller'] = concurrency_controller
+
+        # Call the function
+        with patch("runpod.serverless.modules.worker_state.Jobs.get_job_list") as mock_get_job_list:
+            # Set to not empty, so we perform parallelization for job take.
+            mock_get_job_list.return_value = [{}, {}]
+            runpod.serverless.start(self.config)
+
+        # Make assertions about the behaviors
+        mock_get_job.call_count = 527
+        mock_run_job.call_count = 228
+        mock_send_result.call_count = 198
+
+        assert mock_stream_result.called is False
+        assert mock_session.called
+
+
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
