@@ -542,7 +542,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
         # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
         # 1 + 2 + 1 + 2 + 1 + 2 + 1 + 2 + 1 = 13 calls
-        assert mock_get_job.call_count == 14
+        assert mock_get_job.call_count == 13
 
         # We're only testing the availability logic here.
         assert mock_run_job.call_count == 0
