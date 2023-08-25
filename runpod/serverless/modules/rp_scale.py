@@ -101,7 +101,7 @@ class JobScaler():
 
             # Use parallel processing whenever possible
             use_parallel_processing = self.concurrency_controller and \
-                job_list.get_job_list() is not None
+                (job_list.get_job_list() is not None or self.num_concurrent_get_job_requests > 1)
 
             if use_parallel_processing:
                 # Prepare the 'get_job' tasks for parallel execution.
