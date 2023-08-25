@@ -36,7 +36,8 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
-            assert runpod.serverless.worker._get_auth_header() == {'Authorization': 'test'}  # pylint: disable=protected-access
+            assert runpod.serverless.worker._get_auth_header(
+            ) == {'Authorization': 'test'}  # pylint: disable=protected-access
 
     def test_is_local(self):
         '''
@@ -44,11 +45,14 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
-            assert runpod.serverless.worker._is_local({"rp_args": {}}) is True  # pylint: disable=protected-access
-            assert runpod.serverless.worker._is_local({"rp_args": {"test_input": "something"}}) is True  # pylint: disable=protected-access, line-too-long
+            assert runpod.serverless.worker._is_local(
+                {"rp_args": {}}) is True  # pylint: disable=protected-access
+            assert runpod.serverless.worker._is_local(
+                {"rp_args": {"test_input": "something"}}) is True  # pylint: disable=protected-access, line-too-long
 
             mock_os.environ.get.return_value = "something"
-            assert runpod.serverless.worker._is_local(self.mock_config) is False  # pylint: disable=protected-access
+            assert runpod.serverless.worker._is_local(
+                self.mock_config) is False  # pylint: disable=protected-access
 
     def test_start(self):
         '''
@@ -67,10 +71,12 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
-            assert runpod.serverless.worker._is_local(self.mock_config) is True  # pylint: disable=protected-access
+            assert runpod.serverless.worker._is_local(
+                self.mock_config) is True  # pylint: disable=protected-access
 
             mock_os.environ.get.return_value = "something"
-            assert runpod.serverless.worker._is_local(self.mock_config) is False  # pylint: disable=protected-access
+            assert runpod.serverless.worker._is_local(
+                self.mock_config) is False  # pylint: disable=protected-access
 
     def test_local_api(self):
         '''
@@ -143,7 +149,7 @@ def generator_handler_exception(job):
     '''
     print(job)
     yield "test1"
-    raise Exception() # pylint: disable=broad-exception-raised
+    raise Exception()  # pylint: disable=broad-exception-raised
 
 
 class TestRunWorker(IsolatedAsyncioTestCase):
@@ -369,6 +375,53 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             print(mock_set_config_args.call_args_list)
 
             assert mock_set_config_args.called
+
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession")
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.stream_result")
+    @patch("runpod.serverless.worker.send_result")
+    # pylint: disable=too-many-arguments
+    async def test_run_worker_multi_processing_parallel(
+            self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
+        '''
+        Test run_worker with multi processing enabled, both async and generator handler.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+
+        # Define the mock behaviors
+        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        # Include multi-processing inside config
+        def concurrency_controller():
+            return False
+
+        # Include the concurrency_controller
+        self.config['concurrency_controller'] = concurrency_controller
+
+        # Let's mock this so that way we perform parallel processing.
+        def mock_get_job_list():
+            return '1,2,3'
+
+        with patch("runpod.serverless.modules.worker_state.Jobs.get_job_list",
+                   wraps=mock_get_job_list):
+            runpod.serverless.start(self.config)
+
+        # Make assertions about the behaviors
+        mock_get_job.assert_called_once()
+        mock_run_job.assert_called_once()
+        mock_send_result.assert_called_once()
+
+        assert mock_stream_result.called is False
+        assert mock_session.called
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")
