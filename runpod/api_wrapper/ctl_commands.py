@@ -20,13 +20,14 @@ def get_gpus() -> dict:
     return cleaned_return
 
 
-def get_gpu(gpu_id : str):
+def get_gpu(gpu_id : str, gpu_quantity : int = 1):
     '''
     Get a specific GPU type
 
     :param gpu_id: the id of the gpu
+    :param gpu_quantity: how many of the gpu should be returned
     '''
-    raw_response = run_graphql_query(gpus.generate_gpu_query(gpu_id))
+    raw_response = run_graphql_query(gpus.generate_gpu_query(gpu_id, gpu_quantity))
     cleaned_return = raw_response["data"]["gpuTypes"][0]
     return cleaned_return
 
