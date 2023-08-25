@@ -134,7 +134,7 @@ class JobScaler():
 
         while self.is_alive():
             # Employ parallel processing if there are jobs in progress.
-            use_parallel_processing = job_list.get_job_list() is not None
+            use_parallel_processing = False #job_list.get_job_list() is not None
 
             # We intend to maintain the 'jobs_in_progress' value constant throughout the entire
             # parallel processing flow below to prevent a race condition within SLS.
