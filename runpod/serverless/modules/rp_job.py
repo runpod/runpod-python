@@ -14,7 +14,8 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import WORKER_ID, Jobs
 from .rp_tips import check_return_size
 
-JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
+JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')
+                  ).replace('$ID', WORKER_ID)
 
 log = RunPodLogger()
 job_list = Jobs()
@@ -34,7 +35,8 @@ def _job_get_url(force_in_progress=False):
     return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
 
 
-async def get_job(session: ClientSession, force_in_progress=False, retry=True) -> Optional[Dict[str, Any]]:
+async def get_job(session: ClientSession, force_in_progress=False, retry=True)\
+        -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
     Will continue trying to get a job until one is available.
@@ -56,7 +58,8 @@ async def get_job(session: ClientSession, force_in_progress=False, retry=True) -
                     continue
 
                 if response.status not in [200, 400]:
-                    log.error(f"Failed to get job, status code: {response.status}")
+                    log.error(
+                        f"Failed to get job, status code: {response.status}")
                     if not retry:
                         return None
                     continue
@@ -75,7 +78,8 @@ async def get_job(session: ClientSession, force_in_progress=False, retry=True) -
                 if job_input is None:
                     missing_fields.append("input")
 
-                log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
+                log.error(
+                    f"Job has missing field(s): {', '.join(missing_fields)}.")
                 next_job = None
 
         except Exception as err:  # pylint: disable=broad-except
