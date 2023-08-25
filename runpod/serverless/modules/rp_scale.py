@@ -99,7 +99,9 @@ class JobScaler():
             if not self.is_alive():
                 break
 
-            use_parallel_processing = job_list.get_job_list() is not None
+            # Use parallel processing whenever possible
+            use_parallel_processing = job_list.get_job_list() is not None or \
+                self.num_concurrent_get_job_requests > 1
 
             if use_parallel_processing:
                 # Prepare the 'get_job' tasks for parallel execution.
@@ -144,6 +146,7 @@ class JobScaler():
             log.info(
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
                 f"{self.num_concurrent_get_job_requests}."
+                f" Parallel processing = {use_parallel_processing}"
             )
 
 
