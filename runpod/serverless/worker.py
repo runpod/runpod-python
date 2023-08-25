@@ -108,7 +108,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
         # Begin taking jobs in the background using the job-take scaling mechanism.
         job_scaler.start()
 
-        while job_scaler.is_alive():
+        # Continue until finished.
+        while True:
             for job in job_scaler.get_from_queue():
                 # Process the job here
                 task = asyncio.create_task(_process_job(job, session, job_scaler, config))
@@ -121,6 +122,9 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
             # Allow other tasks to make progress.
             await asyncio.sleep(0)
+
+            if not job_scaler.is_alive():
+                break
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()
