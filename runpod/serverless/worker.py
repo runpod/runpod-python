@@ -95,12 +95,12 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
     heartbeat.start_ping()
 
-    async with aiohttp.ClientSession(
+    client_session = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(limit=None),
-        headers=_get_auth_header(),
-        timeout=_TIMEOUT
-    ) as session:
-        # Create the job scaler, which retrieves jobs from the RunPod queue.
+        headers=_get_auth_header(), timeout=_TIMEOUT
+    )
+
+    async with client_session as session:
         job_scaler = JobScaler(
             concurrency_controller=config.get('concurrency_controller', None)
         )
@@ -109,7 +109,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
         job_scaler.start()
 
         # Continue until finished.
-        while True:
+        while job_scaler.is_alive():
             for job in job_scaler.get_from_queue():
                 # Process the job here
                 task = asyncio.create_task(_process_job(job, session, job_scaler, config))
@@ -119,12 +119,6 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
                 # Allow other tasks to make progress.
                 await asyncio.sleep(0)
-
-            # Allow other tasks to make progress.
-            await asyncio.sleep(0)
-
-            if not job_scaler.is_alive():
-                break
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()
