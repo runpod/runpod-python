@@ -99,11 +99,29 @@ class JobScaler():
             if not self.is_alive():
                 break
 
-            for _ in range(self.num_concurrent_get_job_requests):
-                job = await get_job(session, retry=False)
-                self.job_history.append(1 if job else 0)
-                if job:
-                    yield job
+            use_parallel_processing = job_list.get_job_list() is not None
+
+            if use_parallel_processing:
+                # Prepare the 'get_job' tasks for parallel execution.
+                tasks = [
+                    asyncio.create_task(
+                        get_job(session, force_in_progress=True, retry=False)
+                    )
+                    for _ in range(self.num_concurrent_get_job_requests)
+                ]
+
+                # Wait for all the 'get_job' tasks, which are running in parallel, to be completed.
+                for job_future in asyncio.as_completed(tasks):
+                    job = await job_future
+                    self.job_history.append(1 if job else 0)
+                    if job:
+                        yield job
+            else:
+                for _ in range(self.num_concurrent_get_job_requests):
+                    job = await get_job(session, retry=False)
+                    self.job_history.append(1 if job else 0)
+                    if job:
+                        yield job
 
             # During the single processing scenario, wait for the job to finish processing.
             if self.concurrency_controller is None:

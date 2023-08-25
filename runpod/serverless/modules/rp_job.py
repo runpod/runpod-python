@@ -20,7 +20,7 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
-def _job_get_url():
+def _job_get_url(force_in_progress=False):
     """
     Prepare the URL for making a 'get' request to the serverless API (sls).
 
@@ -30,11 +30,11 @@ def _job_get_url():
     Returns:
         str: The prepared URL for the 'get' request to the serverless API.
     """
-    job_in_progress = '1' if job_list.get_job_list() else '0'
+    job_in_progress = '1' if job_list.get_job_list() or force_in_progress else '0'
     return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
 
 
-async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
+async def get_job(session: ClientSession, force_in_progress=False, retry=True) -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
     Will continue trying to get a job until one is available.
@@ -48,7 +48,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 
     while next_job is None:
         try:
-            async with session.get(_job_get_url()) as response:
+            async with session.get(_job_get_url(force_in_progress)) as response:
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if not retry:
