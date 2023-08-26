@@ -4,22 +4,11 @@ runpod | cli | config.py
 A collection of functions to set and validate configurations.
 Configurations are TOML files located under ~/.runpod/
 '''
-
 import os
-
-import click
-from click import command
 
 import tomli as toml
 
 CREDENTIAL_FILE = os.path.expanduser('~/.runpod/credentials.toml')
-
-@click.group()
-def runpod_cli():
-    '''
-    A collection of CLI functions.
-    '''
-    pass
 
 
 def set_credentials(api_key: str) -> None:
@@ -40,7 +29,6 @@ def set_credentials(api_key: str) -> None:
         cred_file.write('api_key = "' + api_key + '"\n')
 
 
-@runpod_cli.command('check_creds')
 def check_credentials():
     '''
     Checks if the credentials file exists and is valid.
