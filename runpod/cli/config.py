@@ -26,11 +26,12 @@ def set_credentials(api_key: str, profile:str="default") -> None:
     api_key = "RUNPOD_API_KEY"
     '''
     os.makedirs(os.path.dirname(CREDENTIAL_FILE), exist_ok=True)
-    with open(CREDENTIAL_FILE, 'w+', encoding="UTF-8") as cred_file:
-        credentials = toml.load(cred_file)
-        if profile in credentials:
+
+    with open(CREDENTIAL_FILE, 'rb') as cred_file:
+        if profile in toml.load(cred_file):
             raise ValueError('Profile already exists. Use `update_credentials` instead.')
 
+    with open(CREDENTIAL_FILE, 'w', encoding="UTF-8") as cred_file:
         cred_file.write('[' + profile + ']\n')
         cred_file.write('api_key = "' + api_key + '"\n')
 
@@ -44,7 +45,8 @@ def check_credentials():
 
     # Check for default api_key
     try:
-        config = toml.load(CREDENTIAL_FILE)
+        with open(CREDENTIAL_FILE, 'rb') as cred_file:
+            config = toml.load(cred_file)
 
         if 'default' not in config:
             return False, 'Error: ~/.runpod/credentials.toml is missing default section.'
@@ -65,7 +67,7 @@ def get_credentials(profile='default'):
     if not os.path.exists(CREDENTIAL_FILE):
         return None
 
-    with open(CREDENTIAL_FILE, 'r', encoding="UTF-8") as cred_file:
+    with open(CREDENTIAL_FILE, 'rb') as cred_file:
         credentials = toml.load(cred_file)
 
     if profile not in credentials:
