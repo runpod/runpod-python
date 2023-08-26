@@ -5,6 +5,7 @@ A collection of functions to set and validate configurations.
 Configurations are TOML files located under ~/.runpod/
 '''
 import os
+from pathlib import Path
 
 import tomli as toml
 
@@ -26,6 +27,7 @@ def set_credentials(api_key: str, profile:str="default") -> None:
     api_key = "RUNPOD_API_KEY"
     '''
     os.makedirs(os.path.dirname(CREDENTIAL_FILE), exist_ok=True)
+    Path(CREDENTIAL_FILE).touch(exist_ok=True)
 
     with open(CREDENTIAL_FILE, 'rb') as cred_file:
         if profile in toml.load(cred_file):
