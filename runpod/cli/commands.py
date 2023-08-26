@@ -32,7 +32,8 @@ def store_api_key(api_key, profile):
 
 
 @runpod_cli.command('check_creds')
-def validate_credentials_file():
+@click.option('--profile', default='default', help='The profile to check the credentials for.')
+def validate_credentials_file(profile):
     '''
     Validates the credentials file.
     '''
