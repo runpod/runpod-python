@@ -11,21 +11,26 @@ import tomli as toml
 CREDENTIAL_FILE = os.path.expanduser('~/.runpod/credentials.toml')
 
 
-def set_credentials(api_key: str) -> None:
+def set_credentials(api_key: str, profile:str="default") -> None:
     '''
     Sets the user's credentials in ~/.runpod/credentials.toml
+    If profile already exists user must use `update_credentials` instead.
 
     Args:
         api_key (str): The user's API key.
-
+        profile (str): The profile to set the credentials for.
 
     --- File Structure ---
 
     [default]
     api_key = "RUNPOD_API_KEY"
     '''
-    with open(CREDENTIAL_FILE, 'w', encoding="UTF-8") as cred_file:
-        cred_file.write('[default]\n')
+    with open(CREDENTIAL_FILE, 'w+', encoding="UTF-8") as cred_file:
+        credentials = toml.load(cred_file)
+        if profile in credentials:
+            raise ValueError('Profile already exists. Use `update_credentials` instead.')
+
+        cred_file.write('[' + profile + ']\n')
         cred_file.write('api_key = "' + api_key + '"\n')
 
 

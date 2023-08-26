@@ -5,7 +5,7 @@ A collection of CLI functions.
 '''
 import click
 
-from .config import check_credentials
+from .config import set_credentials, check_credentials
 
 @click.group()
 def runpod_cli():
@@ -13,6 +13,22 @@ def runpod_cli():
     A collection of CLI functions.
     '''
     pass
+
+
+@runpod_cli.command('set_creds')
+@click.argument('api_key')
+@click.option('--profile', default='default', help='The profile to set the credentials for.')
+def set_profile_credentials(api_key, profile):
+    '''
+    Sets the credentials for a profile.
+    '''
+    try:
+        set_credentials(api_key, profile)
+    except ValueError as err:
+        click.echo(err)
+        exit(1)
+
+    click.echo('Credentials set for profile: ' + profile)
 
 
 @runpod_cli.command('check_creds')
