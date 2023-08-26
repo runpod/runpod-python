@@ -25,6 +25,7 @@ def set_credentials(api_key: str, profile:str="default") -> None:
     [default]
     api_key = "RUNPOD_API_KEY"
     '''
+    os.makedirs(os.path.dirname(CREDENTIAL_FILE), exist_ok=True)
     with open(CREDENTIAL_FILE, 'w+', encoding="UTF-8") as cred_file:
         credentials = toml.load(cred_file)
         if profile in credentials:
@@ -61,6 +62,9 @@ def get_credentials(profile='default'):
     '''
     Returns the credentials for the specified profile from ~/.runpod/credentials.toml
     '''
+    if not os.path.exists(CREDENTIAL_FILE):
+        return None
+
     with open(CREDENTIAL_FILE, 'r', encoding="UTF-8") as cred_file:
         credentials = toml.load(cred_file)
 

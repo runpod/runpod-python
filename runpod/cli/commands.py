@@ -15,10 +15,10 @@ def runpod_cli():
     pass
 
 
-@runpod_cli.command('set_creds')
+@runpod_cli.command('store_api_key')
 @click.argument('api_key')
 @click.option('--profile', default='default', help='The profile to set the credentials for.')
-def set_profile_credentials(api_key, profile):
+def store_api_key(api_key, profile):
     '''
     Sets the credentials for a profile.
     '''
@@ -37,6 +37,8 @@ def validate_credentials_file():
     Validates the credentials file.
     '''
     valid, error = check_credentials()
+    click.echo('Validating ~/.runpod/credentials.toml')
+
     if not valid:
         click.echo(error)
         exit(1)
