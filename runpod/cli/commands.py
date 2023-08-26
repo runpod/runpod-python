@@ -28,7 +28,7 @@ def store_api_key(api_key, profile):
         click.echo(err)
         exit(1)
 
-    click.echo('Credentials set for profile: ' + profile)
+    click.echo('Credentials set for profile: ' + profile + 'in ~/.runpod/credentials.toml')
 
 
 @runpod_cli.command('check_creds')
