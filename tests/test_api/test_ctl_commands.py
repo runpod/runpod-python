@@ -56,7 +56,11 @@ class TestCTL(unittest.TestCase):
         '''
         Tests create_pod
         '''
-        with patch("runpod.api.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request, \
+            patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
+
+            patch_get_gpu.return_value = None
+
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podFindAndDeployOnDemand": {
