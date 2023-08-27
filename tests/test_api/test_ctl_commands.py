@@ -4,7 +4,7 @@ import unittest
 
 from unittest.mock import patch
 
-from runpod.api_wrapper import ctl_commands
+from runpod.api import ctl_commands
 
 class TestCTL(unittest.TestCase):
     ''' Tests for CTL Commands '''

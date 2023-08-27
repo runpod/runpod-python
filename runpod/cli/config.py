@@ -50,11 +50,11 @@ def check_credentials(profile:str="default"):
         with open(CREDENTIAL_FILE, 'rb') as cred_file:
             config = toml.load(cred_file)
 
-        if 'default' not in config:
-            return False, '~/.runpod/credentials.toml is missing default profile.'
+        if profile not in config:
+            return False, f'~/.runpod/credentials.toml is missing {profile} profile.'
 
-        if 'api_key' not in config['default']:
-            return False, '~/.runpod/credentials.toml is missing api_key.'
+        if 'api_key' not in config[profile]:
+            return False, f'~/.runpod/credentials.toml is missing api_key for {profile} profile.'
 
     except (TypeError, ValueError):
         return False, '~/.runpod/credentials.toml is not a valid TOML file.'
