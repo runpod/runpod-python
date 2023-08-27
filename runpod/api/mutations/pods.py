@@ -22,12 +22,12 @@ def generate_pod_deployment_mutation(
     input_fields.append(f'gpuTypeId: "{gpu_type_id}"')
 
     # Default Fields
-    input_fields.append(f"cloudType: {cloud_type}")
+    # input_fields.append(f'cloudType: "{cloud_type}"')
 
     if support_public_ip:
-        input_fields.append(f"supportPublicIp: true")
+        input_fields.append('supportPublicIp: true')
     else:
-        input_fields.append(f"supportPublicIp: false")
+        input_fields.append('supportPublicIp: false')
 
     # Optional Fields
     if data_center_id is not None:

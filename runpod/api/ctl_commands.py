@@ -28,8 +28,14 @@ def get_gpu(gpu_id : str, gpu_quantity : int = 1):
     :param gpu_quantity: how many of the gpu should be returned
     '''
     raw_response = run_graphql_query(gpus.generate_gpu_query(gpu_id, gpu_quantity))
-    cleaned_return = raw_response["data"]["gpuTypes"][0]
-    return cleaned_return
+
+    cleaned_return = raw_response["data"]["gpuTypes"]
+
+    if len(cleaned_return) < 1:
+        raise ValueError("No GPU found with the specified ID, "
+                         "run runpod.get_gpus() to get a list of all GPUs")
+
+    return cleaned_return[0]
 
 def get_pods() -> dict:
     '''
@@ -79,6 +85,7 @@ def create_pod(
     >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
     '''
     # Input Validation
+    get_gpu(gpu_type_id)
     if cloud_type not in ["ALL", "COMMUNITY", "SECURE"]:
         raise ValueError("cloud_type must be one of ALL, COMMUNITY or SECURE")
 
