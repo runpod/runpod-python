@@ -23,7 +23,11 @@ def generate_pod_deployment_mutation(
 
     # Default Fields
     input_fields.append(f"cloudType: {cloud_type}")
-    input_fields.append(f"supportPublicIp: {support_public_ip}")
+
+    if support_public_ip:
+        input_fields.append(f"supportPublicIp: true")
+    else:
+        input_fields.append(f"supportPublicIp: false")
 
     # Optional Fields
     if data_center_id is not None:
