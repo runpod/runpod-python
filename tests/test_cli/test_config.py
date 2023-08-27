@@ -72,7 +72,6 @@ class TestConfig(unittest.TestCase):
         '''
         Tests the get_credentials function.
         '''
-        mock_exists = True
         mock_toml_load.return_value = {'default': {'key': 'value'}}
 
         result = config.get_credentials('default')

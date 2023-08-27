@@ -17,7 +17,6 @@ profile = "default"  # pylint: disable=invalid-name
 
 _credentials = get_credentials(profile)
 if _credentials is not None:
-    print(f"Using credentials from ~/.runpod/credentials.toml with profile: {profile}")
     api_key = _credentials['api_key']  # pylint: disable=invalid-name
 else:
     api_key = None  # pylint: disable=invalid-name
