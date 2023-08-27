@@ -29,10 +29,10 @@ class TestConfig(unittest.TestCase):
         mock_file.assert_called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
 
 
-    @patch('builtins.open',  new_callable=mock_open(read_data=b""))
+    @patch('builtins.open',  new_callable=mock_open())
     @patch('runpod.cli.config.toml.load')
     @patch('runpod.cli.config.os.path.exists')
-    def test_check_credentials(self, mock_exists, mock_toml_load):
+    def test_check_credentials(self, mock_exists, mock_toml_load, mock_open):
         '''
         Tests the check_credentials function.
         '''
@@ -45,6 +45,7 @@ class TestConfig(unittest.TestCase):
         mock_toml_load.return_value = ""
 
         passed, _ = runpod.check_credentials()
+        assert mock_open.called
         assert passed is False
 
         mock_exists.return_value = True
