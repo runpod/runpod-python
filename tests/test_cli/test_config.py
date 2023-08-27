@@ -18,11 +18,13 @@ class TestConfig(unittest.TestCase):
             'api_key = "RUNPOD_API_KEY"\n'
         )
 
+    @patch('runpod.cli.config.toml.load')
     @patch('builtins.open',  new_callable=mock_open())
-    def test_set_credentials(self, mock_file):
+    def test_set_credentials(self, mock_file, mock_toml_load):
         '''
         Tests the set_credentials function.
         '''
+        mock_toml_load.return_value = ""
         config.set_credentials('RUNPOD_API_KEY')
 
         assert mock_file.called
@@ -83,7 +85,7 @@ class TestConfig(unittest.TestCase):
     @patch('os.path.exists', return_value=True)
     @patch('runpod.cli.config.toml.load')
     @patch('builtins.open', new_callable=mock_open, read_data='[default]\nkey = "value"')
-    def test_get_credentials_non_existent_profile(self, mock_open_call, mock_toml_load, mock_exists):
+    def test_get_credentials_non_existent_profile(self, mock_open_call, mock_toml_load, mock_exists): # pylint: disable=line-too-long
         '''
         Tests the get_credentials function.
         '''
