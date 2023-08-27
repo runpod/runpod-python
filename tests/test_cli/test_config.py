@@ -29,6 +29,7 @@ class TestConfig(unittest.TestCase):
         mock_file.assert_called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
 
 
+    @patch('builtins.open',  new_callable=mock_open(read_data=b""))
     @patch('runpod.cli.config.toml.load')
     @patch('runpod.cli.config.os.path.exists')
     def test_check_credentials(self, mock_exists, mock_toml_load):
