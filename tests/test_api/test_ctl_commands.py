@@ -13,7 +13,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests get_gpus
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "gpuTypes": [
@@ -35,7 +35,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests get_gpu_by_id
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "gpuTypes": [
@@ -56,7 +56,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests create_pod
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podFindAndDeployOnDemand": {
@@ -77,7 +77,7 @@ class TestCTL(unittest.TestCase):
         '''
         Test stop_pod
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podStop": {
@@ -95,7 +95,7 @@ class TestCTL(unittest.TestCase):
         '''
         Test resume_pod
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podResume": {
@@ -112,7 +112,7 @@ class TestCTL(unittest.TestCase):
         '''
         Test terminate_pod
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podTerminate": {
@@ -127,7 +127,7 @@ class TestCTL(unittest.TestCase):
         '''
         Test raised_error
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "errors": [
                     {
@@ -143,7 +143,7 @@ class TestCTL(unittest.TestCase):
 
 
         # Test Unauthorized with status code 401
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.status_code = 401
 
             with self.assertRaises(Exception) as context:
@@ -156,7 +156,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests get_pods
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "myself": {
@@ -198,7 +198,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests get_pods
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "pod": {
