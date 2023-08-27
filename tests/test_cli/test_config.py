@@ -80,9 +80,10 @@ class TestConfig(unittest.TestCase):
         mock_open_call.assert_called_once()
         assert mock_exists.called
 
+    @patch('os.path.exists', return_value=True)
     @patch('runpod.cli.config.toml.load')
     @patch('builtins.open', new_callable=mock_open, read_data='[default]\nkey = "value"')
-    def test_get_credentials_non_existent_profile(self, mock_open_callable, mock_toml_load):
+    def test_get_credentials_non_existent_profile(self, mock_open_callable, mock_toml_load, mock_exists):
         '''
         Tests the get_credentials function.
         '''
@@ -92,3 +93,4 @@ class TestConfig(unittest.TestCase):
         self.assertIsNone(result)
 
         mock_open_callable.assert_called_once()
+        assert mock_exists.called
