@@ -67,12 +67,12 @@ def get_credentials(profile='default'):
     Returns the credentials for the specified profile from ~/.runpod/credentials.toml
     '''
     if not os.path.exists(CREDENTIAL_FILE):
-        return None
+        raise FileNotFoundError('~/.runpod/credentials.toml does not exist.')
 
     with open(CREDENTIAL_FILE, 'rb') as cred_file:
         credentials = toml.load(cred_file)
 
     if profile not in credentials:
-        return None
+        raise ValueError(f'~/.runpod/credentials.toml is missing {profile} profile.')
 
     return credentials[profile]

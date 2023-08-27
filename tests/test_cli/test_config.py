@@ -32,7 +32,7 @@ class TestConfig(unittest.TestCase):
     @patch('builtins.open',  new_callable=mock_open())
     @patch('runpod.cli.config.toml.load')
     @patch('runpod.cli.config.os.path.exists')
-    def test_check_credentials(self, mock_exists, mock_toml_load, mock_open):
+    def test_check_credentials(self, mock_exists, mock_toml_load, mock_file):
         '''
         Tests the check_credentials function.
         '''
@@ -45,7 +45,7 @@ class TestConfig(unittest.TestCase):
         mock_toml_load.return_value = ""
 
         passed, _ = runpod.check_credentials()
-        assert mock_open.called
+        assert mock_file.called
         assert passed is False
 
         mock_exists.return_value = True
@@ -65,12 +65,14 @@ class TestConfig(unittest.TestCase):
         assert passed is True
 
 
+    @patch('os.path.exists')
     @patch('runpod.cli.config.toml.load')
     @patch('builtins.open', new_callable=mock_open, read_data='[default]\nkey = "value"')
-    def test_get_credentials_existing_profile(self, mock_open_callable, mock_toml_load):
+    def test_get_credentials_existing_profile(self, mock_open_callable, mock_toml_load, mock_exists):
         '''
         Tests the get_credentials function.
         '''
+        mock_exists = True
         mock_toml_load.return_value = {'default': {'key': 'value'}}
 
         result = config.get_credentials('default')
