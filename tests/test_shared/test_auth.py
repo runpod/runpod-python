@@ -7,9 +7,10 @@ import importlib
 from unittest.mock import patch, mock_open
 
 class TestAPIKey(unittest.TestCase):
+    ''' Test the API key '''
 
     # The mocked TOML file
-    CREDENTIALS = """
+    CREDENTIALS = b"""
     [default]
     api_key = "RUNPOD_API_KEY"
     """
