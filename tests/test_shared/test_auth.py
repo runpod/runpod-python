@@ -20,6 +20,7 @@ class TestAPIKey(unittest.TestCase):
         '''
         Test that the API key is read from the credentials file
         '''
-        import runpod
+        import runpod # pylint: disable=import-outside-toplevel
         importlib.reload(runpod)
         self.assertEqual(runpod.api_key, "RUNPOD_API_KEY")
+        assert mock_file.called
