@@ -14,10 +14,6 @@ def generate_pod_deployment_mutation(
     '''
     Generates a mutation to deploy a pod on demand.
     '''
-    # Input Validation
-    if cloud_type not in ["ALL", "COMMUNITY", "SECURE"]:
-        raise ValueError("cloud_type must be one of ALL, COMMUNITY or SECURE")
-
     input_fields = []
 
     # Required Fields

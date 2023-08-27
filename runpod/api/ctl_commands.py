@@ -48,12 +48,15 @@ def get_pod(pod_id : str):
     raw_response = run_graphql_query(pod_queries.generate_pod_query(pod_id))
     return raw_response["data"]["pod"]
 
-def create_pod(name : str, image_name : str, gpu_type_id : str, cloud_type : str="ALL",
-               data_center_id : Optional[str]=None, country_code:Optional[str]=None,
-               gpu_count:int=1, volume_in_gb:int=0, container_disk_in_gb:int=5,
-               min_vcpu_count:int=1, min_memory_in_gb:int=1, docker_args:str="",
-               ports:Optional[str]=None, volume_mount_path:str="/workspace",
-               env:Optional[dict]=None):
+def create_pod(
+        name:str, image_name:str, gpu_type_id:str,
+        cloud_type:str="ALL", support_public_ip:bool=False,
+        data_center_id : Optional[str]=None, country_code:Optional[str]=None,
+        gpu_count:int=1, volume_in_gb:int=0, container_disk_in_gb:int=5,
+        min_vcpu_count:int=1, min_memory_in_gb:int=1, docker_args:str="",
+        ports:Optional[str]=None, volume_mount_path:str="/workspace",
+        env:Optional[dict]=None
+    ) -> dict:
     '''
     Create a pod
 
@@ -75,10 +78,15 @@ def create_pod(name : str, image_name : str, gpu_type_id : str, cloud_type : str
 
     >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
     '''
+    # Input Validation
+    if cloud_type not in ["ALL", "COMMUNITY", "SECURE"]:
+        raise ValueError("cloud_type must be one of ALL, COMMUNITY or SECURE")
 
     raw_response = run_graphql_query(
         pod_mutations.generate_pod_deployment_mutation(
-            name, image_name, gpu_type_id, cloud_type, data_center_id, country_code, gpu_count,
+            name, image_name, gpu_type_id,
+            cloud_type, support_public_ip,
+            data_center_id, country_code, gpu_count,
             volume_in_gb, container_disk_in_gb, min_vcpu_count, min_memory_in_gb, docker_args,
             ports, volume_mount_path, env)
     )
