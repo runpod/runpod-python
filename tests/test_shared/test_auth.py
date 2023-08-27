@@ -2,6 +2,7 @@
 Test shared functions related to authentication
 '''
 import unittest
+import importlib
 
 from unittest.mock import patch, mock_open
 
@@ -18,5 +19,6 @@ class TestAPIKey(unittest.TestCase):
         '''
         Test that the API key is read from the credentials file
         '''
-        from runpod import api_key
-        self.assertEqual(api_key, "RUNPOD_API_KEY")
+        import runpod
+        importlib.reload(runpod)
+        self.assertEqual(runpod.api_key, "RUNPOD_API_KEY")
