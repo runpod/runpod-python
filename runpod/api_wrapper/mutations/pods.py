@@ -110,7 +110,7 @@ def generate_spot_pod_resume_mutation(pod_id: str, gpu_count: int, bid: float) -
     '''
     return f"""
     mutation {{
-        podResume(input: {{ podId: "{pod_id}", gpuCount: {gpu_count}, bidPerGpu: {bid} }}) {{
+        podBidResume(input: {{ podId: "{pod_id}", gpuCount: {gpu_count}, bidPerGpu: {bid} }}) {{
             id
             desiredStatus
             imageName
