@@ -44,7 +44,8 @@ class TestCommands(unittest.TestCase):
 
             mock_check_credentials.return_value = (True, None)
             result = self.runner.invoke(
-                runpod_cli, ['check_creds', '--profile', 'test'])
+                runpod_cli, ['check_creds', '--profile', 'test_pass'])
+            assert mock_check_credentials.called_with('test_pass')
             assert result.exit_code == 0
 
 

@@ -37,8 +37,8 @@ def validate_credentials_file(profile='default'):
     '''
     Validates the credentials file.
     '''
-    valid, error = check_credentials(profile)
     click.echo('Validating ~/.runpod/credentials.toml')
+    valid, error = check_credentials(profile)
 
     if not valid:
         click.echo(error)
