@@ -26,6 +26,15 @@ query myPods {
             vcpuCount
             volumeInGb
             volumeMountPath
+            runtime {
+                ports{
+                    ip
+                    isIpPublic
+                    privatePort
+                    publicPort
+                    type
+                }
+            }
             machine {
                 gpuDisplayName
             }
@@ -62,6 +71,15 @@ def generate_pod_query(pod_id):
             vcpuCount
             volumeInGb
             volumeMountPath
+            runtime {{
+                ports {{
+                    ip
+                    isIpPublic
+                    privatePort
+                    publicPort
+                    type
+                }}
+            }}
             machine {{
                 gpuDisplayName
             }}

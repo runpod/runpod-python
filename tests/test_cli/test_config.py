@@ -5,7 +5,6 @@ Unit tests for the config command.
 import unittest
 from unittest.mock import patch, mock_open
 
-import runpod
 from runpod.cli import config
 
 
@@ -18,73 +17,78 @@ class TestConfig(unittest.TestCase):
             'api_key = "RUNPOD_API_KEY"\n'
         )
 
+    @patch('runpod.cli.config.toml.load')
     @patch('builtins.open',  new_callable=mock_open())
-    def test_set_credentials(self, mock_file):
+    def test_set_credentials(self, mock_file, mock_toml_load):
         '''
         Tests the set_credentials function.
         '''
+        mock_toml_load.return_value = ""
         config.set_credentials('RUNPOD_API_KEY')
 
-        assert mock_file.called
+
         mock_file.assert_called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
 
+        with self.assertRaises(ValueError) as context:
+            mock_toml_load.return_value = {'default': True}
+            config.set_credentials('RUNPOD_API_KEY')
 
+        self.assertEqual(str(context.exception),
+                         'Profile already exists. Use `update_credentials` instead.')
+
+    @patch('builtins.open',  new_callable=mock_open())
     @patch('runpod.cli.config.toml.load')
     @patch('runpod.cli.config.os.path.exists')
-    def test_check_credentials(self, mock_exists, mock_toml_load):
-        '''
+    def test_check_credentials(self, mock_exists, mock_toml_load, mock_file):
+        '''mock_open_call
         Tests the check_credentials function.
         '''
         mock_exists.return_value = False
-
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = ""
-
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
+        assert mock_file.called
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = dict({'default': 'something'})
-
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = ValueError
-
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = dict({'default': 'api_key'})
-
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert passed is True
 
 
+    @patch('os.path.exists', return_value=True)
     @patch('runpod.cli.config.toml.load')
     @patch('builtins.open', new_callable=mock_open, read_data='[default]\nkey = "value"')
-    def test_get_credentials_existing_profile(self, mock_open_callable, mock_toml_load):
+    def test_get_credentials_existing_profile(self, mock_open_call, mock_toml_load, mock_exists):
         '''
         Tests the get_credentials function.
         '''
         mock_toml_load.return_value = {'default': {'key': 'value'}}
-
         result = config.get_credentials('default')
-        self.assertEqual(result, {'key': 'value'})
+        assert result == {'key': 'value'}
+        assert mock_open_call.called
+        assert mock_exists.called
 
-        mock_open_callable.assert_called_once()
-
+    @patch('os.path.exists', return_value=True)
     @patch('runpod.cli.config.toml.load')
     @patch('builtins.open', new_callable=mock_open, read_data='[default]\nkey = "value"')
-    def test_get_credentials_non_existent_profile(self, mock_open_callable, mock_toml_load):
+    def test_get_credentials_non_existent_profile(self, mock_open_call, mock_toml_load, mock_exists): # pylint: disable=line-too-long
         '''
         Tests the get_credentials function.
         '''
         mock_toml_load.return_value = {'default': {'key': 'value'}}
-
         result = config.get_credentials('non_existent')
-        self.assertIsNone(result)
-
-        mock_open_callable.assert_called_once()
+        assert result is None
+        assert mock_open_call.called
+        assert mock_exists.called

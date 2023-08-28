@@ -13,7 +13,7 @@ if __name__ == "__main__":
 
         entry_points={
             'console_scripts': [
-                'runpod = runpod.cli:main'
+                'runpod = runpod.cli.commands:runpod_cli'
             ]
         }
     )
