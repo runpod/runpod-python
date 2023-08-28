@@ -7,7 +7,6 @@ import asyncio
 import unittest
 from unittest.mock import patch, MagicMock
 from unittest import IsolatedAsyncioTestCase
-import pytest
 
 from runpod.endpoint.asyncio.asyncio_runner import Job, Endpoint
 
@@ -17,7 +16,6 @@ tracemalloc.start()
 class TestJob(IsolatedAsyncioTestCase):
     ''' Tests the Job class. '''
 
-    @pytest.mark.asyncio
     async def test_status(self):
         '''
         Tests Job.status
@@ -32,7 +30,6 @@ class TestJob(IsolatedAsyncioTestCase):
             status = await job.status()
             assert status == "COMPLETED"
 
-    @pytest.mark.asyncio
     async def test_output(self):
         '''
         Tests Job.output
@@ -57,7 +54,6 @@ class TestJob(IsolatedAsyncioTestCase):
             output = await output_task
             assert output == "OUTPUT"
 
-    @pytest.mark.asyncio
     async def test_cancel(self):
         '''
         Tests Job.cancel
@@ -75,7 +71,6 @@ class TestJob(IsolatedAsyncioTestCase):
 class TestEndpoint:
     ''' Unit tests for the Endpoint class. '''
 
-    @pytest.mark.asyncio
     async def test_run(self):
         '''
         Tests Endpoint.run
