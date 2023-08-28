@@ -75,7 +75,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test stream_result function exception.
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_trans:
 
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.stream_result(Mock(), self.job_data, self.job)
@@ -83,6 +84,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
+            mock_trans.assert_called_once()
 
     async def test_transmit(self):
         '''
