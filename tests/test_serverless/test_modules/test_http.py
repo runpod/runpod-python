@@ -11,10 +11,6 @@ from runpod.serverless.modules import rp_http
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     ''' Test HTTP module. '''
 
-    def __init__(self, methodName: str = "runTest") -> None:
-        super().__init__(methodName)
-        self.session = None
-
     def setUp(self) -> None:
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
@@ -88,8 +84,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
 
-    @patch('aiohttp.ClientSession.post')
-    async def test_transmit(self, mock_post):
+    async def test_transmit(self):
         '''
         Tests the transmit function
         '''
@@ -107,25 +102,17 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         async_context_manager.__aenter__.return_value = mock_response
         session.post.return_value = async_context_manager
 
-        # Mock post method on session
-        mock_post.return_value = async_context_manager
-
         # Call the function
         await rp_http.transmit(session, job_data, url)
 
         # Check that post was called with the correct arguments
-        mock_post.assert_called_once_with(url, data=job_data, headers={
+        session.post.assert_called_once_with(url, data=job_data, headers={
             "charset": "utf-8",
             "Content-Type": "application/x-www-form-urlencoded"
         }, raise_for_status=True)
 
         # Check that text() method was called on the response
         mock_response.text.assert_called_once()
-
-    async def asyncTearDown(self):
-        if hasattr(self, 'session') and self.session:
-            await self.session.close()
-            self.session = None
 
 if __name__ == '__main__':
     unittest.main()
