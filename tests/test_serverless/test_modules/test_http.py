@@ -106,6 +106,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         # Mock context manager returned by post
         async_context_manager = AsyncMock()
         async_context_manager.__aenter__.return_value = mock_response
+        session.post.return_value = async_context_manager
 
         # Mock post method on session
         mock_post.return_value = async_context_manager
