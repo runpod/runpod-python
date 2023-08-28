@@ -111,9 +111,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         # Mock post method on session
         mock_post.return_value = async_context_manager
 
-        # Mock session
-        self.session = aiohttp.ClientSession()
-
         # Call the function
         await rp_http.transmit(session, job_data, url)
 
