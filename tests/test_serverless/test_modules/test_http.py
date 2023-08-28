@@ -76,7 +76,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Exception), \
              patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.transmit', side_effect=Exception("Forced exception")):
+             patch('runpod.serverless.modules.rp_http.transmit', side_effect=Exception("Forced exception")): # pylint: disable=line-too-long
 
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.stream_result(Mock(), self.job_data, self.job)
