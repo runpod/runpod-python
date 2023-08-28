@@ -4,7 +4,6 @@ Test rp_http.py module.
 
 import unittest
 from unittest.mock import patch, Mock, AsyncMock
-import aiohttp
 from aiohttp import ClientResponse
 
 from runpod.serverless.modules import rp_http
