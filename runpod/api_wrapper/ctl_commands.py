@@ -126,6 +126,22 @@ def resume_pod(pod_id: str, gpu_count: int):
     return cleaned_response
 
 
+def resume_spot_pod(pod_id: str, gpu_count: int, bid: float):
+    '''
+    Resume a pod
+
+    :param pod_id: the id of the pod
+    :param gpu_count: the number of GPUs to attach to the pod
+    :param bid: spot instance bid
+    '''
+    raw_response = run_graphql_query(
+        pod_mutations.generate_spot_pod_resume_mutation(pod_id, gpu_count, bid)
+    )
+
+    cleaned_response = raw_response["data"]["podResume"]
+    return cleaned_response
+
+
 def terminate_pod(pod_id: str):
     '''
     Terminate a pod
