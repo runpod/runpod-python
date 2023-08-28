@@ -91,8 +91,9 @@ class TestJob(IsolatedAsyncioTestCase):
             job = Job("endpoint_id", "job_id", mock_session)
             output = await job.output()
             assert output == "OUTPUT"
+            mock_sleep.assert_called_once_with(1)
 
-class TestEndpoint:
+class TestEndpoint(IsolatedAsyncioTestCase):
     ''' Unit tests for the Endpoint class. '''
 
     async def test_run(self):
