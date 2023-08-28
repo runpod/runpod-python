@@ -11,7 +11,6 @@ from runpod.serverless.modules import rp_http
 def mocked_transmit(*args, **kwargs):
     ''' Mock transmit function. '''
     del args, kwargs
-    print("Transmit was called!")
     raise Exception("Forced exception") # pylint: disable=broad-exception-raised
 
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
@@ -42,7 +41,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test send_result function.
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_trans, \
+             patch('runpod.serverless.modules.rp_http._transmit', new=AsyncMock()) as mock_trans, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
             mock_jobs.return_value = set(['test_id'])
@@ -61,7 +60,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test stream_result function.
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log,\
-             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_trans, \
+             patch('runpod.serverless.modules.rp_http._transmit', new=AsyncMock()) as mock_trans, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
             mock_jobs.return_value = set(['test_id'])
@@ -80,7 +79,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.transmit', side_effect=mocked_transmit):
+             patch('runpod.serverless.modules.rp_http._transmit', side_effect=mocked_transmit):
 
             mock_jobs.return_value = set(['test_id'])
             await rp_http.stream_result(Mock(), self.job_data, self.job)
@@ -108,7 +107,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         session.post.return_value = async_context_manager
 
         # Call the function
-        await rp_http.transmit(session, job_data, url)
+        await rp_http._transmit(session, job_data, url)
 
         # Check that post was called with the correct arguments
         session.post.assert_called_once_with(url, data=job_data, headers={

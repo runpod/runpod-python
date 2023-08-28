@@ -54,7 +54,7 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         await _transmit(session, job['id'], serialized_job_data, url)
         log.debug(f"{job['id']} | {log_message}")
 
-    except Exception as err: # pylint: disable=broad-except
+    except (TypeError, RuntimeError) as err: #
         log.error(f"Error while returning job result {job['id']}: {err}")
 
     if url_template == JOB_DONE_URL_TEMPLATE:
