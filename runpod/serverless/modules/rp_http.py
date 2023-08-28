@@ -6,9 +6,8 @@ import os
 import json
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import Jobs
 from .retry import retry
-from .worker_state import WORKER_ID
+from .worker_state import Jobs, WORKER_ID
 
 # Constants
 JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
