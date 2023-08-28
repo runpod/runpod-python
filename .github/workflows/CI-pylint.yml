@@ -5,9 +5,9 @@ on:
     branches-ignore:
       - "main-ci"
       - "release"
-  pull_request:
-    branches:
-      - main
+  #   pull_request:
+  #     branches:
+  #       - main
 
   workflow_dispatch:
 
