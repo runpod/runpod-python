@@ -36,18 +36,18 @@ class TestCommands(unittest.TestCase):
         with patch('click.echo') as mock_echo, \
             patch('runpod.cli.commands.validate_credentials_file') as mock_check_credentials:
 
+            mock_check_credentials.return_value = (True, None)
+            result = self.runner.invoke(
+                runpod_cli, ['check_creds', '--profile', 'test_pass'])
+            assert mock_check_credentials.called_with('test_pass')
+            assert result.exit_code == 0
+
             mock_check_credentials.return_value = (False, 'Error')
             result = self.runner.invoke(
                 runpod_cli, ['check_creds', '--profile', 'test'])
             assert result.exit_code == 1
             assert mock_check_credentials.called_with('test')
             assert mock_echo.call_count == 2
-
-            mock_check_credentials.return_value = (True, None)
-            result = self.runner.invoke(
-                runpod_cli, ['check_creds', '--profile', 'test_pass'])
-            assert mock_check_credentials.called_with('test_pass')
-            assert result.exit_code == 0
 
 
 if __name__ == "__main__":
