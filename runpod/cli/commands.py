@@ -47,3 +47,6 @@ def validate_credentials_file(profile='default'):
         sys.exit(1)
 
     click.echo('Credentials file is valid.')
+
+if __name__ == '__main__':
+    runpod_cli()
