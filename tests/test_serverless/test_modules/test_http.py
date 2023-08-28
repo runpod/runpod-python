@@ -107,7 +107,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_post.return_value = async_context_manager
 
         # Mock session
-        session = aiohttp.ClientSession()
+        self.session = aiohttp.ClientSession()
 
         # Call the function
         await rp_http.transmit(session, job_data, url)
@@ -120,6 +120,11 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
         # Check that text() method was called on the response
         mock_response.text.assert_called_once()
+
+    async def asyncTearDown(self):
+        if hasattr(self, 'session'):
+            await self.session.close()
+            self.session = None
 
 if __name__ == '__main__':
     unittest.main()
