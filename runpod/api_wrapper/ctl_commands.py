@@ -138,7 +138,7 @@ def resume_spot_pod(pod_id: str, gpu_count: int, bid: float):
         pod_mutations.generate_spot_pod_resume_mutation(pod_id, gpu_count, bid)
     )
 
-    cleaned_response = raw_response["data"]["podResume"]
+    cleaned_response = raw_response["data"]["podBidResume"]
     return cleaned_response
 
 
