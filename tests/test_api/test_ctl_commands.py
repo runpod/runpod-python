@@ -59,9 +59,10 @@ class TestCTL(unittest.TestCase):
 
             with self.assertRaises(ValueError) as context:
                 gpu = ctl_commands.get_gpu("Not a GPU")
-                self.assertEqual(str(context.exception),
-                                 "No GPU found with the specified ID, "
-                                 "run runpod.get_gpus() to get a list of all GPUs")
+
+            self.assertEqual(str(context.exception),
+                                "No GPU found with the specified ID, "
+                                "run runpod.get_gpus() to get a list of all GPUs")
 
     def test_create_pod(self):
         '''
@@ -92,11 +93,10 @@ class TestCTL(unittest.TestCase):
                     name="POD_NAME",
                     image_name="IMAGE_NAME",
                     gpu_type_id="NVIDIA A100 80GB PCIe",
-                    gpu_count=1,
                     cloud_type="NOT A CLOUD TYPE")
 
-                self.assertEqual(str(context.exception),
-                                 "cloud_type must be one of ALL, COMMUNITY or SECURE")
+            self.assertEqual(str(context.exception),
+                                "cloud_type must be one of ALL, COMMUNITY or SECURE")
 
     def test_stop_pod(self):
         '''
