@@ -8,7 +8,7 @@ from .endpoint import AsyncioEndpoint, AsyncioJob
 from .api_wrapper.ctl_commands import(
     get_gpus, get_gpu,
     get_pods, get_pod,
-    create_pod, stop_pod, resume_pod, terminate_pod
+    create_pod, stop_pod, resume_pod, resume_spot_pod, terminate_pod
 )
 from .cli.config import set_credentials, check_credentials, get_credentials
 
