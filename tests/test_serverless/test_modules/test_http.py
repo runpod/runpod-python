@@ -2,12 +2,10 @@
 Test rp_http.py module.
 '''
 
-import asyncio
 import unittest
 from unittest.mock import patch, Mock, AsyncMock
 import aiohttp
 from aiohttp import ClientResponse
-
 
 from runpod.serverless.modules import rp_http
 
@@ -36,18 +34,19 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test send_result function.
         '''
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log,\
-             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_transmit:
-            with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
-                mock_jobs.return_value = set(['test_id'])
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_trans, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
-                send_return_local = await rp_http.send_result(Mock(), self.job_data, self.job)
+            mock_jobs.return_value = set(['test_id'])
 
-                assert send_return_local is None
-                assert mock_log.debug.call_count == 1
-                assert mock_log.error.call_count == 0
-                assert mock_log.info.call_count == 1
-                mock_transmit.assert_called_once()
+            send_return_local = await rp_http.send_result(Mock(), self.job_data, self.job)
+
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 1
+            assert mock_log.error.call_count == 0
+            assert mock_log.info.call_count == 1
+            mock_trans.assert_called_once()
 
 
 
@@ -56,17 +55,18 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test stream_result function.
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log,\
-             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_transmit:
-            with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
-                mock_jobs.return_value = set(['test_id'])
-                rp_http.IS_LOCAL_TEST = True
-                send_return_local = await rp_http.stream_result(Mock(), self.job_data, self.job)
+             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_trans, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
-                assert send_return_local is None
-                assert mock_log.debug.call_count == 1
-                assert mock_log.error.call_count == 0
-                assert mock_log.info.call_count == 0
-                mock_transmit.assert_called_once()
+            mock_jobs.return_value = set(['test_id'])
+            rp_http.IS_LOCAL_TEST = True
+            send_return_local = await rp_http.stream_result(Mock(), self.job_data, self.job)
+
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 1
+            assert mock_log.error.call_count == 0
+            assert mock_log.info.call_count == 0
+            mock_trans.assert_called_once()
 
 
 
@@ -74,14 +74,15 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test stream_result function exception.
         '''
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log:
-            with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
-                mock_jobs.return_value = set(['test_id'])
-                send_return_local = await rp_http.stream_result(Mock(), self.job_data, self.job)
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
-                assert send_return_local is None
-                assert mock_log.debug.call_count == 0
-                assert mock_log.error.call_count == 1
+            mock_jobs.return_value = set(['test_id'])
+            send_return_local = await rp_http.stream_result(Mock(), self.job_data, self.job)
+
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 0
+            assert mock_log.error.call_count == 1
 
 
 
