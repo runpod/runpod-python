@@ -20,14 +20,15 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test send_result function.
         '''
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log:
-            with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
-                mock_jobs.return_value = set(['test_id'])
-                send_return_local = await rp_http.send_result(Mock(), self.job_data, self.job)
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
-                assert send_return_local is None
-                assert mock_log.debug.call_count == 0
-                assert mock_log.error.call_count == 1
+            mock_jobs.return_value = set(['test_id'])
+            send_return_local = await rp_http.send_result(Mock(), self.job_data, self.job)
+
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 0
+            assert mock_log.error.call_count == 1
 
 
     async def test_send_result(self):
@@ -84,43 +85,41 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
 
+    @patch('aiohttp.ClientSession.post')
+    async def test_transmit(self, mock_post):
+        '''
+        Tests the transmit function
+        '''
+        # Mock the session and job data
+        session = Mock()
+        job_data = {"output": "test_output"}
+        url = "http://example.com"
 
+        # Mock the response from the post request
+        mock_response = AsyncMock(spec=ClientResponse)
+        mock_response.text.return_value = "response text"
 
-@patch('aiohttp.ClientSession.post')
-async def test_transmit(mock_post):
-    '''
-    Tests the transmit function
-    '''
-    # Mock the session and job data
-    session = Mock()
-    job_data = {"output": "test_output"}
-    url = "http://example.com"
+        # Mock context manager returned by post
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__.return_value = mock_response
 
-    # Mock the response from the post request
-    mock_response = AsyncMock(spec=ClientResponse)
-    mock_response.text.return_value = "response text"
+        # Mock post method on session
+        mock_post.return_value = async_context_manager
 
-    # Mock context manager returned by post
-    async_context_manager = AsyncMock()
-    async_context_manager.__aenter__.return_value = mock_response
+        # Mock session
+        session = aiohttp.ClientSession()
 
-    # Mock post method on session
-    mock_post.return_value = async_context_manager
+        # Call the function
+        await rp_http.transmit(session, job_data, url)
 
-    # Mock session
-    session = aiohttp.ClientSession()
+        # Check that post was called with the correct arguments
+        mock_post.assert_called_once_with(url, data=job_data, headers={
+            "charset": "utf-8",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }, raise_for_status=True)
 
-    # Call the function
-    await rp_http.transmit(session, job_data, url)
-
-    # Check that post was called with the correct arguments
-    mock_post.assert_called_once_with(url, data=job_data, headers={
-        "charset": "utf-8",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }, raise_for_status=True)
-
-    # Check that text() method was called on the response
-    mock_response.text.assert_called_once()
+        # Check that text() method was called on the response
+        mock_response.text.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main()
