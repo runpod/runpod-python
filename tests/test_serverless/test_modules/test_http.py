@@ -8,6 +8,11 @@ from aiohttp import ClientResponse
 
 from runpod.serverless.modules import rp_http
 
+def mocked_transmit(*args, **kwargs):
+    ''' Mock transmit function. '''
+    print("Transmit was called!")
+    raise Exception("Forced exception")
+
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     ''' Test HTTP module. '''
 
@@ -75,12 +80,11 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Exception), \
              patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.transmit', side_effect=Exception("Forced exception")): # pylint: disable=line-too-long
+             patch('runpod.serverless.modules.rp_http.transmit', side_effect=mocked_transmit):
 
             mock_jobs.return_value = set(['test_id'])
-            send_return_local = await rp_http.stream_result(Mock(), self.job_data, self.job)
+            await rp_http.stream_result(Mock(), self.job_data, self.job)
 
-            assert send_return_local is None
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
 
