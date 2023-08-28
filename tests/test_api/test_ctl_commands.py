@@ -87,15 +87,15 @@ class TestCTL(unittest.TestCase):
 
             self.assertEqual(pod["id"], "POD_ID")
 
-            with self.assertRaises(ValueError) as context:
+            with self.assertRaises(ValueError) as create_pod_error:
                 pod = ctl_commands.create_pod(
                     name="POD_NAME",
                     image_name="IMAGE_NAME",
                     gpu_type_id="NVIDIA A100 80GB PCIe",
                     cloud_type="NOT A CLOUD TYPE")
 
-            self.assertEqual(str(context.exception),
-                                "cloud_type must be one of ALL, COMMUNITY or SECURE")
+                self.assertEqual(str(create_pod_error.exception),
+                                    "cloud_type must be one of ALL, COMMUNITY or SECURE")
 
     def test_stop_pod(self):
         '''
