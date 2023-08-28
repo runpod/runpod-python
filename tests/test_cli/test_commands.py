@@ -19,18 +19,19 @@ class TestCommands(unittest.TestCase):
         ''' Tests the runpod_cli command. '''
         with patch('click.echo') as mock_echo:
             result = self.runner.invoke(runpod_cli)
-            self.assertEqual(result.exit_code, 0)
-            mock_echo.assert_called_once()
+            assert result.exit_code == 0
+            assert mock_echo.call_count == 1
 
     def test_store_api_key(self):
         ''' Tests the store_api_key command. '''
-        with patch('click.echo') as mock_echo:
-            with patch('runpod.cli.commands.set_credentials') as mock_set_credentials:
-                result = self.runner.invoke(
-                    runpod_cli, ['store_api_key', 'API_KEY_1234', '--profile', 'test'])
-                self.assertEqual(result.exit_code, 0)
-                mock_set_credentials.assert_called_once()
-                mock_echo.assert_called_once()
+        with patch('click.echo') as mock_echo, \
+            patch('runpod.cli.commands.set_credentials') as mock_set_credentials:
+
+            result = self.runner.invoke(
+                runpod_cli, ['store_api_key', '--profile', 'test', 'API_KEY_1234'])
+            assert result.exit_code == 0
+            mock_set_credentials.assert_called_with('API_KEY_1234', 'test')
+            assert mock_echo.call_count == 2
 
 if __name__ == "__main__":
     unittest.main()
