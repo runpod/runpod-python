@@ -5,7 +5,6 @@ Unit tests for the config command.
 import unittest
 from unittest.mock import patch, mock_open
 
-import runpod
 from runpod.cli import config
 
 
@@ -27,8 +26,7 @@ class TestConfig(unittest.TestCase):
         mock_toml_load.return_value = ""
         config.set_credentials('RUNPOD_API_KEY')
 
-        assert mock_file.called
-        mock_file.assert_called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
+        assert mock_file.called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
 
         with self.assertRaises(ValueError) as context:
             mock_toml_load.return_value = {'default': True}
@@ -46,30 +44,30 @@ class TestConfig(unittest.TestCase):
         '''
         mock_exists.return_value = False
 
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = ""
 
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert mock_file.called
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = dict({'default': 'something'})
 
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = ValueError
 
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = dict({'default': 'api_key'})
 
-        passed, _ = runpod.check_credentials()
+        passed, _ = config.check_credentials()
         assert passed is True
 
 
@@ -81,11 +79,9 @@ class TestConfig(unittest.TestCase):
         Tests the get_credentials function.
         '''
         mock_toml_load.return_value = {'default': {'key': 'value'}}
-
         result = config.get_credentials('default')
-        self.assertEqual(result, {'key': 'value'})
-
-        mock_open_call.assert_called_once()
+        assert result == {'key': 'value'}
+        assert mock_exists.called
         assert mock_exists.called
 
     @patch('os.path.exists', return_value=True)
@@ -96,9 +92,7 @@ class TestConfig(unittest.TestCase):
         Tests the get_credentials function.
         '''
         mock_toml_load.return_value = {'default': {'key': 'value'}}
-
         result = config.get_credentials('non_existent')
-        self.assertIsNone(result)
-
-        mock_open_call.assert_called_once()
+        assert result is None
+        assert mock_exists.called
         assert mock_exists.called

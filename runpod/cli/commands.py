@@ -4,16 +4,13 @@ RunPod | CLI Commands
 A collection of CLI functions.
 '''
 import sys
-
 import click
 
 from .config import set_credentials, check_credentials
 
 @click.group()
 def runpod_cli():
-    '''
-    A collection of CLI functions.
-    '''
+    '''A collection of CLI functions for RunPod.'''
 
 @runpod_cli.command('store_api_key')
 @click.argument('api_key')
