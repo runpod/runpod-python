@@ -54,13 +54,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test stream_result function.
         '''
-        mock_env_vars = {
-            'RUNPOD_WEBHOOK_POST_OUTPUT': 'your_mocked_value_for_output',
-            'RUNPOD_WEBHOOK_POST_STREAM': 'your_mocked_value_for_stream'
-        }
-
-        with patch('os.environ', mock_env_vars), \
-             patch('runpod.serverless.modules.rp_http.log') as mock_log,\
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log,\
              patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_trans, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
