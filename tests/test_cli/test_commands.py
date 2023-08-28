@@ -26,6 +26,11 @@ class TestCommands(unittest.TestCase):
             assert mock_set_credentials.called_with('API_KEY_1234', 'test')
             assert mock_echo.call_count == 1
 
+            mock_set_credentials.side_effect = ValueError()
+            result = self.runner.invoke(
+                runpod_cli, ['store_api_key', '--profile', 'test', 'API_KEY_1234'])
+            assert result.exit_code == 1
+
     def test_validate_credentials_file(self):
         ''' Tests the check_creds command. '''
         with patch('click.echo') as mock_echo, \
@@ -36,6 +41,12 @@ class TestCommands(unittest.TestCase):
             assert result.exit_code == 1
             assert mock_check_credentials.called_with('test')
             assert mock_echo.call_count == 2
+
+            mock_check_credentials.return_value = True, None
+            result = self.runner.invoke(
+                runpod_cli, ['check_creds', '--profile', 'test'])
+            assert result.exit_code == 0
+
 
 if __name__ == "__main__":
     unittest.main()
