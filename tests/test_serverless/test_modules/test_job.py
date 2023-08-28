@@ -5,7 +5,6 @@ Test Serverless Job Module
 from unittest.mock import Mock, patch
 
 from unittest import IsolatedAsyncioTestCase
-import pytest
 from aiohttp import ClientResponse
 from aiohttp.test_utils import make_mocked_coro
 
@@ -14,7 +13,6 @@ from runpod.serverless.modules import rp_job
 class TestJob(IsolatedAsyncioTestCase):
     ''' Tests the Job class. '''
 
-    @pytest.mark.asyncio
     async def test_get_job_200(self):
         '''
         Tests the get_job function
@@ -46,7 +44,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job == {"id": "123", "input": {"number": 1}}
 
 
-    @pytest.mark.asyncio
     async def test_get_job_204(self):
         '''
         Tests the get_job function with a 204 response
@@ -65,7 +62,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
             assert mock_session_204.get.call_count == 1
 
-    @pytest.mark.asyncio
     async def test_get_job_500(self):
         '''
         Tests the get_job function with a 500 response
@@ -83,7 +79,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
 
 
-    @pytest.mark.asyncio
     async def test_get_job_no_id(self):
         '''
         Tests the get_job function with a 200 response but no id
@@ -104,7 +99,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
             assert mock_log.error.call_count == 1
 
-    @pytest.mark.asyncio
     async def test_get_job_no_input(self):
         '''
         Tests the get_job function with a 200 response but no input
@@ -125,7 +119,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
             assert mock_log.error.call_count == 1
 
-    @pytest.mark.asyncio
     async def test_get_job_exception(self):
         '''
         Tests the get_job function with an exception

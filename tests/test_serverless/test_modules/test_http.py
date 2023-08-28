@@ -8,7 +8,6 @@ from unittest.mock import patch, Mock, AsyncMock
 import aiohttp
 from aiohttp import ClientResponse
 
-import pytest
 
 from runpod.serverless.modules import rp_http
 
@@ -99,7 +98,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
         loop.close()
 
-@pytest.mark.asyncio
 @patch('aiohttp.ClientSession.post')
 async def test_transmit(mock_post):
     '''
