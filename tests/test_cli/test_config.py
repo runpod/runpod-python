@@ -34,7 +34,8 @@ class TestConfig(unittest.TestCase):
             mock_toml_load.return_value = {'default': True}
             config.set_credentials('RUNPOD_API_KEY')
 
-
+        self.assertEqual(str(context.exception),
+                         'Profile already exists. Use `update_credentials` instead.')
 
     @patch('builtins.open',  new_callable=mock_open())
     @patch('runpod.cli.config.toml.load')
