@@ -51,7 +51,7 @@ class TestCTL(unittest.TestCase):
             gpu = ctl_commands.get_gpu("NVIDIA A100 80GB PCIe")
             self.assertEqual(gpu["id"], "NVIDIA A100 80GB PCIe")
 
-            patch_request.json.return_value = {
+            patch_request.return_value.json.return_value = {
                 "data": {
                     "gpuTypes": []
                 }
