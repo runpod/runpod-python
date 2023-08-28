@@ -130,7 +130,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
         # Mock context manager to raise the ClientResponseError
         async_context_manager = AsyncMock()
-        async_context_manager.__aenter__.side_effect = ClientResponseError(Mock(), Mock(), status=500, message="Response error")
+        async_context_manager.__aenter__.side_effect = ClientResponseError(
+            Mock(), Mock(), status=500, message="Response error")
         session.post.return_value = async_context_manager
 
         with self.assertRaises(ClientResponseError):
