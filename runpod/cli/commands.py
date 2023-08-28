@@ -14,8 +14,6 @@ def runpod_cli():
     '''
     A collection of CLI functions.
     '''
-    click.echo('To see the available commands, run: runpod --help')
-
 
 @runpod_cli.command('store_api_key')
 @click.argument('api_key')

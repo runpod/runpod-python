@@ -15,13 +15,6 @@ class TestCommands(unittest.TestCase):
     def setUp(self):
         self.runner = CliRunner()
 
-    def test_runpod_cli(self):
-        ''' Tests the runpod_cli command. '''
-        with patch('click.echo') as mock_echo:
-            result = self.runner.invoke(runpod_cli)
-            assert result.exit_code == 0
-            assert mock_echo.call_count == 1
-
     def test_store_api_key(self):
         ''' Tests the store_api_key command. '''
         with patch('click.echo') as mock_echo, \
