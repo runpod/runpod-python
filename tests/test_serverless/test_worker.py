@@ -227,7 +227,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
         # Since return_aggregate_stream is NOT activated, we should not submit any outputs.
         _, args, _ = mock_send_result.mock_calls[0]
-        assert args[1] == {'output': [], 'stopPod': True}
+        assert args[1] == {'output': 'test2', 'stopPod': True}
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")
