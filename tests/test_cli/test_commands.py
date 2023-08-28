@@ -36,6 +36,7 @@ class TestCommands(unittest.TestCase):
         with patch('click.echo') as mock_echo, \
             patch('runpod.cli.commands.validate_credentials_file') as mock_check_credentials:
 
+            mock_check_credentials.return_value = (False, 'Error')
             result = self.runner.invoke(
                 runpod_cli, ['check_creds', '--profile', 'test'])
             assert result.exit_code == 1
