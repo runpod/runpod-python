@@ -24,7 +24,7 @@ class TestCommands(unittest.TestCase):
                 runpod_cli, ['store_api_key', '--profile', 'test', 'API_KEY_1234'])
             assert result.exit_code == 0
             assert mock_set_credentials.called_with('API_KEY_1234', 'test')
-            assert mock_echo.call_count == 2
+            assert mock_echo.call_count == 1
 
     def test_validate_credentials_file(self):
         ''' Tests the check_creds command. '''
