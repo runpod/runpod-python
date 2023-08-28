@@ -61,9 +61,9 @@ class TestCTL(unittest.TestCase):
                 gpu = ctl_commands.get_gpu("Not a GPU")
 
 
-                self.assertEqual(str(context.exception),
-                                    "No GPU found with the specified ID, "
-                                    "run runpod.get_gpus() to get a list of all GPUs")
+            self.assertEqual(str(context.exception),
+                                "No GPU found with the specified ID, "
+                                "run runpod.get_gpus() to get a list of all GPUs")
 
     def test_create_pod(self):
         '''
@@ -89,7 +89,7 @@ class TestCTL(unittest.TestCase):
 
             self.assertEqual(pod["id"], "POD_ID")
 
-            with self.assertRaises(Exception) as context:
+            with self.assertRaises(ValueError) as context:
                 pod = ctl_commands.create_pod(
                     name="POD_NAME",
                     image_name="IMAGE_NAME",
