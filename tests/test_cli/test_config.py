@@ -26,7 +26,8 @@ class TestConfig(unittest.TestCase):
         mock_toml_load.return_value = ""
         config.set_credentials('RUNPOD_API_KEY')
 
-        mock_file.called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
+
+        mock_file.assert_called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
 
         with self.assertRaises(ValueError) as context:
             mock_toml_load.return_value = {'default': True}
