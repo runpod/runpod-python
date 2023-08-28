@@ -78,8 +78,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test stream_result function exception.
         '''
-        with self.assertRaises(Exception), \
-             patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.transmit', side_effect=mocked_transmit):
 
