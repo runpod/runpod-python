@@ -10,8 +10,9 @@ from runpod.serverless.modules import rp_http
 
 def mocked_transmit(*args, **kwargs):
     ''' Mock transmit function. '''
+    del args, kwargs
     print("Transmit was called!")
-    raise Exception("Forced exception")
+    raise Exception("Forced exception") # pylint: disable=broad-exception-raised
 
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     ''' Test HTTP module. '''
