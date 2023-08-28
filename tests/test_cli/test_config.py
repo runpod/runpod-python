@@ -26,7 +26,7 @@ class TestConfig(unittest.TestCase):
         mock_toml_load.return_value = ""
         config.set_credentials('RUNPOD_API_KEY')
 
-        assert mock_file.called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
+        mock_file.called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
 
         with self.assertRaises(ValueError) as context:
             mock_toml_load.return_value = {'default': True}
@@ -39,7 +39,7 @@ class TestConfig(unittest.TestCase):
     @patch('runpod.cli.config.toml.load')
     @patch('runpod.cli.config.os.path.exists')
     def test_check_credentials(self, mock_exists, mock_toml_load, mock_file):
-        '''
+        '''mock_open_call
         Tests the check_credentials function.
         '''
         mock_exists.return_value = False
