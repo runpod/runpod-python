@@ -43,30 +43,25 @@ class TestConfig(unittest.TestCase):
         Tests the check_credentials function.
         '''
         mock_exists.return_value = False
-
         passed, _ = config.check_credentials()
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = ""
-
         passed, _ = config.check_credentials()
         assert mock_file.called
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = dict({'default': 'something'})
-
         passed, _ = config.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = ValueError
-
         passed, _ = config.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = dict({'default': 'api_key'})
-
         passed, _ = config.check_credentials()
         assert passed is True
 
@@ -81,7 +76,7 @@ class TestConfig(unittest.TestCase):
         mock_toml_load.return_value = {'default': {'key': 'value'}}
         result = config.get_credentials('default')
         assert result == {'key': 'value'}
-        assert mock_exists.called
+        assert mock_open_call.called
         assert mock_exists.called
 
     @patch('os.path.exists', return_value=True)
@@ -94,5 +89,5 @@ class TestConfig(unittest.TestCase):
         mock_toml_load.return_value = {'default': {'key': 'value'}}
         result = config.get_credentials('non_existent')
         assert result is None
-        assert mock_exists.called
+        assert mock_open_call.called
         assert mock_exists.called
