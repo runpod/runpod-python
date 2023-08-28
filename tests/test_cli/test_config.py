@@ -30,6 +30,11 @@ class TestConfig(unittest.TestCase):
         assert mock_file.called
         mock_file.assert_called_with(config.CREDENTIAL_FILE, 'w', encoding="UTF-8")
 
+        with self.assertRaises(ValueError) as context:
+            mock_toml_load.return_value = {'default': True}
+            config.set_credentials('RUNPOD_API_KEY')
+
+
 
     @patch('builtins.open',  new_callable=mock_open())
     @patch('runpod.cli.config.toml.load')
