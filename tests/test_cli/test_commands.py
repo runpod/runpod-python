@@ -46,7 +46,3 @@ class TestCommands(unittest.TestCase):
             assert result.exit_code == 1
             assert mock_check_credentials.called_with('test')
             assert mock_echo.call_count == 4
-
-
-if __name__ == "__main__":
-    unittest.main()
