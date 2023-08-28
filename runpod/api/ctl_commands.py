@@ -85,7 +85,7 @@ def create_pod(
     >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
     '''
     # Input Validation
-    get_gpu(gpu_type_id)
+    get_gpu(gpu_type_id) # Check if GPU exists, will raise ValueError if not.
     if cloud_type not in ["ALL", "COMMUNITY", "SECURE"]:
         raise ValueError("cloud_type must be one of ALL, COMMUNITY or SECURE")
 
