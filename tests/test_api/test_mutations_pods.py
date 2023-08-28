@@ -2,7 +2,7 @@
 
 import unittest
 
-from runpod.api_wrapper.mutations import pods
+from runpod.api.mutations import pods
 
 class TestPodMutations(unittest.TestCase):
     ''' Test API Wrapper Pod Mutations '''

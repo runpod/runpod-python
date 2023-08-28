@@ -35,7 +35,7 @@ class Heartbeat:
         retry_strategy = Retry(
             total=retries,
             status_forcelist=[429, 500, 502, 503, 504],
-            method_whitelist=["GET"],
+            allowed_methods=["GET"],
             backoff_factor=1
         )
 

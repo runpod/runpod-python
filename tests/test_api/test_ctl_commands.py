@@ -4,7 +4,7 @@ import unittest
 
 from unittest.mock import patch
 
-from runpod.api_wrapper import ctl_commands
+from runpod.api import ctl_commands
 
 class TestCTL(unittest.TestCase):
     ''' Tests for CTL Commands '''
@@ -13,7 +13,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests get_gpus
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "gpuTypes": [
@@ -35,7 +35,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests get_gpu_by_id
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "gpuTypes": [
@@ -49,14 +49,31 @@ class TestCTL(unittest.TestCase):
             }
 
             gpu = ctl_commands.get_gpu("NVIDIA A100 80GB PCIe")
-
             self.assertEqual(gpu["id"], "NVIDIA A100 80GB PCIe")
+
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "gpuTypes": []
+                }
+            }
+
+            with self.assertRaises(ValueError) as context:
+                gpu = ctl_commands.get_gpu("Not a GPU")
+
+
+            self.assertEqual(str(context.exception),
+                                "No GPU found with the specified ID, "
+                                "run runpod.get_gpus() to get a list of all GPUs")
 
     def test_create_pod(self):
         '''
         Tests create_pod
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request, \
+            patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
+
+            patch_get_gpu.return_value = None
+
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podFindAndDeployOnDemand": {
@@ -72,12 +89,21 @@ class TestCTL(unittest.TestCase):
 
             self.assertEqual(pod["id"], "POD_ID")
 
+            with self.assertRaises(ValueError) as context:
+                pod = ctl_commands.create_pod(
+                    name="POD_NAME",
+                    image_name="IMAGE_NAME",
+                    gpu_type_id="NVIDIA A100 80GB PCIe",
+                    cloud_type="NOT A CLOUD TYPE")
+
+            self.assertEqual(str(context.exception),
+                                "cloud_type must be one of ALL, COMMUNITY or SECURE")
 
     def test_stop_pod(self):
         '''
         Test stop_pod
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podStop": {
@@ -95,7 +121,7 @@ class TestCTL(unittest.TestCase):
         '''
         Test resume_pod
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podResume": {
@@ -112,7 +138,7 @@ class TestCTL(unittest.TestCase):
         '''
         Test terminate_pod
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "podTerminate": {
@@ -127,7 +153,7 @@ class TestCTL(unittest.TestCase):
         '''
         Test raised_error
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "errors": [
                     {
@@ -143,7 +169,7 @@ class TestCTL(unittest.TestCase):
 
 
         # Test Unauthorized with status code 401
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.status_code = 401
 
             with self.assertRaises(Exception) as context:
@@ -156,7 +182,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests get_pods
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "myself": {
@@ -198,7 +224,7 @@ class TestCTL(unittest.TestCase):
         '''
         Tests get_pods
         '''
-        with patch("runpod.api_wrapper.graphql.requests.post") as patch_request:
+        with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.json.return_value = {
                 "data": {
                     "pod": {

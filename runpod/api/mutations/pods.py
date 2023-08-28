@@ -5,17 +5,32 @@ RunPod | API Wrapper | Mutations | Pods
 
 
 def generate_pod_deployment_mutation(
-        name, image_name, gpu_type_id, cloud_type=None, data_center_id=None, country_code=None,
+        name:str, image_name:str, gpu_type_id:str,
+        cloud_type:str="ALL", support_public_ip:bool=False,
+        data_center_id=None, country_code=None,
         gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
-        env=None, support_public_ip=None):
+        env=None):
     '''
     Generates a mutation to deploy a pod on demand.
     '''
     input_fields = []
 
-    if cloud_type is not None:
-        input_fields.append(f"cloudType: {cloud_type}")
+    # Required Fields
+    input_fields.append(f'name: "{name}"')
+    input_fields.append(f'imageName: "{image_name}"')
+    input_fields.append(f'gpuTypeId: "{gpu_type_id}"')
+
+    # Default Fields
+    del cloud_type # Temporarily remove cloud_type
+    # input_fields.append(f'cloudType: "{cloud_type}"')
+
+    if support_public_ip:
+        input_fields.append('supportPublicIp: true')
+    else:
+        input_fields.append('supportPublicIp: false')
+
+    # Optional Fields
     if data_center_id is not None:
         input_fields.append(f'dataCenterId: "{data_center_id}"')
     if country_code is not None:
@@ -30,12 +45,6 @@ def generate_pod_deployment_mutation(
         input_fields.append(f"minVcpuCount: {min_vcpu_count}")
     if min_memory_in_gb is not None:
         input_fields.append(f"minMemoryInGb: {min_memory_in_gb}")
-    if gpu_type_id is not None:
-        input_fields.append(f'gpuTypeId: "{gpu_type_id}"')
-    if name is not None:
-        input_fields.append(f'name: "{name}"')
-    if image_name is not None:
-        input_fields.append(f'imageName: "{image_name}"')
     if docker_args is not None:
         input_fields.append(f'dockerArgs: "{docker_args}"')
     if ports is not None:
@@ -46,9 +55,9 @@ def generate_pod_deployment_mutation(
         env_string = ", ".join(
             [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()])
         input_fields.append(f"env: [{env_string}]")
-    if support_public_ip is not None:
-        input_fields.append(f"supportPublicIp: {support_public_ip}")
 
+
+    # Format input fields
     input_string = ", ".join(input_fields)
 
     return f"""
