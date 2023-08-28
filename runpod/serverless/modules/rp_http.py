@@ -4,6 +4,7 @@
 
 import os
 import json
+from aiohttp import ClientResponseError, ClientConnectionError, ClientError
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .retry import retry
@@ -26,15 +27,20 @@ job_list = Jobs()
 
 
 @retry(max_attempts=3, base_delay=1, max_delay=3)
-async def transmit(session, job_data, url):
+async def _transmit(session, job_id, data, url):
     """
     Wrapper for sending results.
     """
-    async with session.post(url,
-                            data=job_data,
-                            headers=HEADERS,
-                            raise_for_status=True) as resp:
-        await resp.text()
+    try:
+        async with session.post(url, data=data, headers=HEADERS, raise_for_status=True) as resp:
+            await resp.text()
+
+    except ClientResponseError as err:
+        log.error(f"HTTP response error for job {job_id}: {err}")
+    except ClientConnectionError as err:
+        log.error(f"Connection error for job {job_id}: {err}")
+    except ClientError as err:
+        log.error(f"Other client error for job {job_id}: {err}")
 
 
 async def _handle_result(session, job_data, job, url_template, log_message):
@@ -45,7 +51,7 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
         url = url_template.replace('$ID', job['id'])
 
-        await transmit(session, serialized_job_data, url)
+        await _transmit(session, job['id'], serialized_job_data, url)
         log.debug(f"{job['id']} | {log_message}")
 
     except Exception as err: # pylint: disable=broad-except
