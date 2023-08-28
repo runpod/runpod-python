@@ -88,6 +88,16 @@ class TestCTL(unittest.TestCase):
             self.assertEqual(pod["id"], "POD_ID")
 
             with self.assertRaises(ValueError) as create_pod_error:
+                patch_get_gpu.return_value = None
+
+                patch_request.return_value.json.return_value = {
+                    "data": {
+                        "podFindAndDeployOnDemand": {
+                            "id": "POD_ID"
+                        }
+                    }
+                }
+
                 pod = ctl_commands.create_pod(
                     name="POD_NAME",
                     image_name="IMAGE_NAME",
