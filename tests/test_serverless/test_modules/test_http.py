@@ -94,6 +94,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         # Mock the session and job data
         session = Mock()
+        job_id = "test_id"
         job_data = {"output": "test_output"}
         url = "http://example.com"
 
@@ -107,7 +108,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         session.post.return_value = async_context_manager
 
         # Call the function
-        await rp_http._transmit(session, job_data, url)
+        await rp_http._transmit(session, job_id, job_data, url) # pylint: disable=protected-access
 
         # Check that post was called with the correct arguments
         session.post.assert_called_once_with(url, data=job_data, headers={
