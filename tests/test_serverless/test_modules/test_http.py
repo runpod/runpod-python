@@ -15,6 +15,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
 
+
     async def test_send_result_exception(self):
         '''
         Test send_result function.
@@ -49,7 +50,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_trans.assert_called_once()
 
 
-
     async def test_stream_result(self):
         '''
         Test stream_result function.
@@ -68,7 +68,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_trans.assert_called_once()
 
 
-
     async def test_stream_result_exception(self):
         '''
         Test stream_result function exception.
@@ -84,6 +83,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
+
 
     async def test_transmit(self):
         '''
