@@ -126,7 +126,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_response.text.assert_called_once()
 
     async def asyncTearDown(self):
-        if hasattr(self, 'session'):
+        if hasattr(self, 'session') and self.session:
             await self.session.close()
             self.session = None
 
