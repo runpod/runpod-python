@@ -12,7 +12,8 @@ from runpod.serverless.modules import rp_http
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     ''' Test HTTP module. '''
 
-    def __init__(self):
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
         self.session = None
 
     def setUp(self) -> None:
