@@ -114,5 +114,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         # Check that text() method was called on the response
         mock_response.text.assert_called_once()
 
+
 if __name__ == '__main__':
     unittest.main()

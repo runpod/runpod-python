@@ -10,11 +10,17 @@ from .worker_state import Jobs
 from .retry import retry
 from .worker_state import WORKER_ID
 
+# Constants
 JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT'))
 JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
 JOB_STREAM_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_STREAM'))
 JOB_STREAM_URL_TEMPLATE = JOB_STREAM_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
+
+HEADERS = {
+    "charset": "utf-8",
+    "Content-Type": "application/x-www-form-urlencoded"
+}
 
 log = RunPodLogger()
 job_list = Jobs()
@@ -25,46 +31,42 @@ async def transmit(session, job_data, url):
     """
     Wrapper for sending results.
     """
-    headers = {
-        "charset": "utf-8",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-
     async with session.post(url,
                             data=job_data,
-                            headers=headers,
+                            headers=HEADERS,
                             raise_for_status=True) as resp:
         await resp.text()
 
 
-async def send_result(session, job_data, job):
-    '''
-    Return the job results.
-    '''
+async def _handle_result(session, job_data, job, url_template, log_message):
+    """
+    A helper function to handle the result, either for sending or streaming.
+    """
     try:
-        job_data = json.dumps(job_data, ensure_ascii=False)
-        job_done_url = JOB_DONE_URL_TEMPLATE.replace('$ID', job['id'])
+        serialized_job_data = json.dumps(job_data, ensure_ascii=False)
+        url = url_template.replace('$ID', job['id'])
 
-        await transmit(session, job_data, job_done_url)
-        log.debug(f"{job['id']} | Results sent.")
+        await transmit(session, serialized_job_data, url)
+        log.debug(f"{job['id']} | {log_message}")
 
+    except Exception as err: # pylint: disable=broad-except
+        log.error(f"Error while returning job result {job['id']}: {err}")
+
+    if url_template == JOB_DONE_URL_TEMPLATE:
         job_list.remove_job(job["id"])
         log.info(f'{job["id"]} | Finished')
 
-    except Exception as err:  # pylint: disable=broad-except
-        log.error(f"Error while returning job result {job['id']}: {err}")
+
+async def send_result(session, job_data, job):
+    """
+    Return the job results.
+    """
+    await _handle_result(session, job_data, job, JOB_DONE_URL_TEMPLATE, "Results sent.")
 
 
 async def stream_result(session, job_data, job):
-    '''
+    """
     Return the stream job results.
-    '''
-    try:
-        job_data = json.dumps(job_data, ensure_ascii=False)
-        job_done_url = JOB_STREAM_URL_TEMPLATE.replace('$ID', job['id'])
-
-        await transmit(session, job_data, job_done_url)
-        log.debug(f"{job['id']} | Intermediate Results sent.")
-
-    except Exception as err:  # pylint: disable=broad-except
-        log.error(f"Error while returning job result {job['id']}: {err}")
+    """
+    await _handle_result(
+        session, job_data, job, JOB_STREAM_URL_TEMPLATE, "Intermediate Results sent.")
