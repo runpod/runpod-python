@@ -104,6 +104,26 @@ def generate_pod_resume_mutation(pod_id: str, gpu_count: int) -> str:
     """
 
 
+def generate_spot_pod_resume_mutation(pod_id: str, gpu_count: int, bid: float) -> str:
+    '''
+    Generates a mutation to resume a pod.
+    '''
+    return f"""
+    mutation {{
+        podResume(input: {{ podId: "{pod_id}", gpuCount: {gpu_count}, bidPerGpu: {bid} }}) {{
+            id
+            desiredStatus
+            imageName
+            env
+            machineId
+            machine {{
+                podHostId
+            }}
+        }}
+    }}
+    """
+
+
 def generate_pod_terminate_mutation(pod_id: str) -> str:
     '''
     Generates a mutation to terminate a pod.
