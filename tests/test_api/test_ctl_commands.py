@@ -95,7 +95,8 @@ class TestCTL(unittest.TestCase):
                     gpu_count=1,
                     cloud_type="NOT A CLOUD TYPE")
 
-                self.assertEqual(str(context.exception), "cloud_type must be one of ALL, COMMUNITY or SECURE")
+                self.assertEqual(str(context.exception),
+                                 "cloud_type must be one of ALL, COMMUNITY or SECURE")
 
     def test_stop_pod(self):
         '''
