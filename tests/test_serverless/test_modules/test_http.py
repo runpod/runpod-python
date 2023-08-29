@@ -4,7 +4,7 @@ Test rp_http.py module.
 
 import unittest
 from unittest.mock import patch, Mock, AsyncMock, PropertyMock
-from aiohttp import ClientResponse
+import aiohttp
 from aiohttp import ClientResponseError, ClientConnectionError, ClientError
 
 from runpod.serverless.modules import rp_http
@@ -25,12 +25,12 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test send_result function.
         '''
-        mock_response = AsyncMock(spec=ClientResponse)
+        mock_response = AsyncMock(spec=aiohttp.ClientResponse)
         type(mock_response).status = PropertyMock(return_value=200)
         mock_response.text.return_value = "response text"
 
-        mock_session = AsyncMock(spec=ClientResponse)
-        mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
+        mock_session = AsyncMock(spec=aiohttp.ClientSession)
+        mock_session.post.return_value = mock_response
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
@@ -126,7 +126,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         url = "http://example.com"
 
         # Mock the response from the post request
-        mock_response = AsyncMock(spec=ClientResponse)
+        mock_response = AsyncMock(spec=aiohttp.ClientResponse)
         mock_response.text.return_value = "response text"
 
         # Mock context manager returned by post
