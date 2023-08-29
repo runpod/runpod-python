@@ -36,9 +36,9 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
             assert send_return_local is None
-            assert mock_log.debug.call_count == 1
+            assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 0
-            assert mock_log.info.call_count == 0
+            assert mock_log.info.call_count == 1
 
             mock_retry.post.assert_called_with(
                 'JOB_DONE_URL',
@@ -50,7 +50,25 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 raise_for_status=True
             )
 
+    async def test_send_result_client_response_error(self):
+        '''
+        Test send_result function with ClientResponseError.
+        '''
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
+            mock_retry.post.return_value = AsyncMock()
+            mock_retry.post.return_value.__aenter__.return_value.text.return_value = "response text"
+            mock_retry.post.return_value.__aenter__.return_value.status = 500
+
+            mock_jobs.return_value = set(['test_id'])
+            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
+
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 0
+            assert mock_log.error.call_count == 0
+            assert mock_log.info.call_count == 1
 
     async def test_send_result_exception(self):
         '''
