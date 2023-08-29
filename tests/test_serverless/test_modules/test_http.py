@@ -21,10 +21,13 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
 
-    async def test_send_result(self):
+    @patch('aiohttp.ClientSession.post')
+    async def test_send_result(self, mock_post):
         '''
         Test send_result function.
         '''
+        mock_post.return_value.__aenter__.return_value.text.return_value = "response text"
+
         mock_session = AsyncMock()
         mock_session.post.return_value = AsyncMock()
 
