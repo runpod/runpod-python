@@ -35,13 +35,8 @@ async def _transmit(session, job_id, data, url):
         async with session.post(url, data=data, headers=HEADERS, raise_for_status=True) as resp:
             await resp.text()
 
-    except ClientResponseError as err:
-        log.error(f"HTTP response error for job {job_id}: {err}")
-    except ClientConnectionError as err:
-        log.error(f"Connection error for job {job_id}: {err}")
-    except ClientError as err:
-        log.error(f"Other client error for job {job_id}: {err}")
-
+    except (ClientResponseError, ClientConnectionError, ClientError) as err:
+        log.error(f"Transmit error for job {job_id}: {err}")
 
 async def _handle_result(session, job_data, job, url_template, log_message):
     """
