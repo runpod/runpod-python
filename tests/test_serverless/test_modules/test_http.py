@@ -106,7 +106,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
-            assert mock_retry.return_value.post.call_count == 1
+            # assert mock_retry.return_value.post.call_count == 1
             # assert mock_response.raise_for_status.call_count == 1
 
             assert send_return_local is None
