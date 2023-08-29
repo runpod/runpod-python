@@ -18,6 +18,8 @@ class MockRequestInfo:
         self.headers = {"Content-Type": "application/json"}
         self.real_url = "http://test_url"
 
+    real_url = "http://test_url"
+
 
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     ''' Test HTTP module. '''
