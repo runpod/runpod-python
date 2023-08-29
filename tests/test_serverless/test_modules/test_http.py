@@ -30,6 +30,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_session.post.return_value = AsyncMock()
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http._transmit', new=AsyncMock()) as mock_trans, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
             mock_jobs.return_value = set(['test_id'])
@@ -38,6 +39,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
+            assert mock_log.info.call_count == 0
+            mock_trans.assert_called_once()
 
 
     async def test_send_result(self):
