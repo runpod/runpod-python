@@ -25,7 +25,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test send_result function.
         '''
-        mock_session = AsyncMock()
+        mock_session = AsyncMock(spec=ClientResponse)
         mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
