@@ -4,6 +4,7 @@ retry helper
 import random
 import asyncio
 from functools import wraps
+from aiohttp import ClientResponseError, ClientConnectionError, ClientError
 
 
 def retry(max_attempts, base_delay, max_delay):
@@ -25,7 +26,7 @@ def retry(max_attempts, base_delay, max_delay):
             while True:
                 try:
                     return await func(*args, **kwargs)
-                except Exception as err:  # pylint: disable=broad-except
+                except (ClientResponseError, ClientConnectionError, ClientError) as err:
                     if attempt >= max_attempts:
                         raise err
 
