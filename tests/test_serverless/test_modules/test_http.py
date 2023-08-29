@@ -27,7 +27,9 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         mock_response = AsyncMock(spec=aiohttp.ClientResponse)
         type(mock_response).status = PropertyMock(return_value=200)
-        mock_response.text.return_value = "response text"
+        mock_response.text = AsyncMock(return_value="response text")
+        mock_response.__aenter__.return_value = mock_response
+        mock_response.__aexit__.return_value = None
 
         mock_session = AsyncMock(spec=aiohttp.ClientSession)
         mock_session.post.return_value = mock_response
