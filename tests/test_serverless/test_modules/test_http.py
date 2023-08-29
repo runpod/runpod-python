@@ -66,19 +66,21 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 real_url="http://test_url"
             )
 
-            mock_retry.return_value.post.return_value = AsyncMock()
-            mock_retry.return_value.post.side_effect = aiohttp.ClientResponseError(
+            mock_response = AsyncMock()
+            mock_response.raise_for_status.side_effect = aiohttp.ClientResponseError(
                 request_info=mock_request_info,
                 history=None,
                 status=500,
                 message="Error message"
             )
 
+            mock_retry.return_value.post.return_value.__aenter__.return_value = mock_response
+
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
-            assert mock_retry.post.call_count == 1
-            assert mock_retry.post.return_value.__aenter__.return_value.raise_for_status.call_count == 1 # pylint: disable=line-too-long
+            assert mock_retry.return_value.post.call_count == 1
+            assert mock_response.raise_for_status.call_count == 1
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 1
