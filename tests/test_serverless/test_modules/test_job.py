@@ -62,6 +62,24 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
             assert mock_session_204.get.call_count == 1
 
+    async def test_get_job_400(self):
+        '''
+        Test the get_job function with a 400 response
+        '''
+        # 400 Mock
+        response_400 = Mock(ClientResponse)
+        response_400.status = 400
+
+        with patch("runpod.serverless.modules.rp_job.sys.exit") as mock_exit, \
+             patch("aiohttp.ClientSession") as mock_session_400, \
+             patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+
+            mock_session_400.get.return_value.__aenter__.return_value = response_400
+            job = await rp_job.get_job(mock_session_400, retry=False)
+
+            assert job is None
+            assert mock_exit.call_count == 1
+
     async def test_get_job_500(self):
         '''
         Tests the get_job function with a 500 response

@@ -1,7 +1,9 @@
 """
 Job related helpers.
 """
+# pylint: disable=too-many-branches
 
+import sys
 import inspect
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
@@ -55,7 +57,11 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                         return None
                     continue
 
-                if response.status not in [200, 400]:
+                if response.status == 400:
+                    log.info("Received 400 status, stopping worker.")
+                    sys.exit(0)
+
+                if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
                     if not retry:
                         return None

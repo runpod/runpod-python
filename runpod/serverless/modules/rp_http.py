@@ -49,7 +49,7 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         log.debug(f"{job['id']} | {log_message}")
 
     except aiohttp.ClientError as err:
-        log.error(f"{job['id']} | Client response error while transmitting job. | {err}")
+        log.error(f"{job['id']} | Failed to return job results. | {err}")
 
     except (TypeError, RuntimeError) as err:
         log.error(f"Error while returning job result {job['id']}: {err}")
