@@ -3,7 +3,7 @@ Test rp_http.py module.
 '''
 
 import unittest
-from unittest.mock import patch, Mock, AsyncMock
+from unittest.mock import patch, Mock, AsyncMock, MagicMock
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError, ClientConnectionError, ClientError
 
@@ -28,8 +28,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         mock_post.return_value.__aenter__.return_value.text.return_value = "response text"
 
-        mock_session = AsyncMock()
-        mock_session.post.return_value = AsyncMock()
+        mock_session = MagicMock()
+        mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
