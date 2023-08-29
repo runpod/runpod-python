@@ -3,7 +3,6 @@ Job related helpers.
 """
 # pylint: disable=too-many-branches
 
-import sys
 import inspect
 from typing import Any, Callable, Dict, Generator, Optional, Union
 
