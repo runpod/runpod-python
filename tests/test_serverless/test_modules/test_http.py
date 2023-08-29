@@ -4,8 +4,7 @@ Test rp_http.py module.
 
 import unittest
 from unittest.mock import patch, Mock, AsyncMock
-from aiohttp import ClientResponse
-from aiohttp import ClientResponseError, ClientConnectionError, ClientError
+import aiohttp
 
 from runpod.serverless.modules import rp_http
 
@@ -59,9 +58,10 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
-            mock_retry.post.return_value = AsyncMock()
-            mock_retry.post.return_value.__aenter__.return_value.text.return_value = "response text"
-            mock_retry.post.return_value.__aenter__.return_value.status = 500
+            mock_retry.post.return_value.__aenter__.return_value.raise_for_status.side_effect = aiohttp.ClientResponseError(url="mocked_url", status=500, message="mocked_error", headers={}) # pylint: disable=line-too-long
+
+            # Raise ClientResponseError
+
 
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
