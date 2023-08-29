@@ -68,6 +68,9 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
+            assert mock_retry.post.call_count == 1
+            assert mock_retry.post.return_value.__aenter__.return_value.raise_for_status.call_count == 1 # pylint: disable=line-too-long
+
             assert send_return_local is None
             assert mock_log.debug.call_count == 1
             assert mock_log.error.call_count == 1
