@@ -100,7 +100,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test send_result function with TypeError.
         '''
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+        with self.assertRaises(TypeError), \
+             patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps, \
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
