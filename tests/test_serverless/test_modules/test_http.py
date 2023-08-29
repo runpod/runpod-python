@@ -3,7 +3,7 @@ Test rp_http.py module.
 '''
 
 import unittest
-from unittest.mock import patch, Mock, AsyncMock, MagicMock
+from unittest.mock import patch, Mock, AsyncMock, PropertyMock
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError, ClientConnectionError, ClientError
 
@@ -26,7 +26,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test send_result function.
         '''
         mock_response = AsyncMock()
-        mock_response.status = 200
+        type(mock_response).status = PropertyMock(return_value=200)
         mock_response.text = AsyncMock(return_value="response text")
 
         mock_session = AsyncMock()
