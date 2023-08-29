@@ -1,6 +1,8 @@
 '''
 Test rp_http.py module.
 '''
+# pylint: disable=too-few-public-methods
+
 import json
 import unittest
 from unittest.mock import patch, AsyncMock
@@ -110,7 +112,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             # assert mock_response.raise_for_status.call_count == 1
 
             assert send_return_local is None
-            assert mock_log.debug.call_count == 1
+            assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
             assert mock_log.info.call_count == 1
 
