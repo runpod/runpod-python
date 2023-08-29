@@ -8,15 +8,6 @@ import aiohttp
 
 from runpod.serverless.modules import rp_http
 
-def mock_request_info_init(self, *args, **kwargs):
-    '''
-    Mock aiohttp.RequestInfo.__init__ method.
-    '''
-    del args, kwargs
-    self.url = "http://test_url"
-    self.method = "POST"
-    self.headers = {"Content-Type": "application/json"}
-    self.real_url = "http://test_url"
 
 
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
@@ -25,6 +16,16 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
+
+    def mock_request_info_init(self, *args, **kwargs):
+        '''
+        Mock aiohttp.RequestInfo.__init__ method.
+        '''
+        del args, kwargs
+        self.url = "http://test_url"
+        self.method = "POST"
+        self.headers = {"Content-Type": "application/json"}
+        self.real_url = "http://test_url"
 
 
     async def test_send_result(self):
@@ -64,7 +65,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry, \
-             patch.object(aiohttp.RequestInfo, "__init__", mock_request_info_init):
+             patch.object(aiohttp.RequestInfo, "__init__", self.mock_request_info_init):
 
             mock_request_info = aiohttp.RequestInfo(
                 url="http://test_url",
