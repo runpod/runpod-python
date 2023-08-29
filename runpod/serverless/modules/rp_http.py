@@ -31,7 +31,7 @@ async def _transmit(session, url, job_id, job_data ):
             "headers": {"charset": "utf-8", "Content-Type": "application/x-www-form-urlencoded"},
             "raise_for_status": True
             }
-        async with session.post(url, post_kwargs) as client_response:
+        async with session.post(url, **post_kwargs) as client_response:
             await client_response.text()
     except aiohttp.ClientResponseError as err:
         log.error(f"{job_id} | Client response error while transmitting job. | {err}")
