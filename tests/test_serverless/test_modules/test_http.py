@@ -8,6 +8,15 @@ import aiohttp
 
 from runpod.serverless.modules import rp_http
 
+class MockRequestInfo:
+    ''' Mock aiohttp.RequestInfo class. '''
+
+    def __init__(self, *args, **kwargs):
+        del args, kwargs
+        self.url = "http://test_url"
+        self.method = "POST"
+        self.headers = {"Content-Type": "application/json"}
+        self.real_url = "http://test_url"
 
 
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
@@ -16,8 +25,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
-
-
 
 
     async def test_send_result(self):
@@ -88,7 +95,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
 
             mock_retry.side_effect = aiohttp.ClientResponseError(
-                request_info=mock_request_info_init,
+                request_info=MockRequestInfo,
                 history=None,
                 status=500,
                 message="Error message"
