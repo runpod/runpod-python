@@ -80,24 +80,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry, \
              patch.object(aiohttp.RequestInfo, "__init__", mock_request_info_init):
 
-            # mock_request_info = aiohttp.RequestInfo(
-            #     url="http://test_url",
-            #     method="POST",
-            #     headers={"Content-Type": "application/json"},
-            #     real_url="http://test_url"
-            # )
-
-            # mock_response = AsyncMock()
-            # mock_response.raise_for_status.side_effect = aiohttp.ClientResponseError(
-            #     request_info=mock_request_info,
-            #     history=None,
-            #     status=500,
-            #     message="Error message"
-            # )
-
-            # mock_retry.return_value.post.return_value.__aenter__.return_value = mock_response
-            # mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
-
             mock_retry.side_effect = aiohttp.ClientResponseError(
                 request_info=MockRequestInfo,
                 history=None,
@@ -107,9 +89,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
-
-            # assert mock_retry.return_value.post.call_count == 1
-            # assert mock_response.raise_for_status.call_count == 1
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
@@ -123,7 +102,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps:
+             patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps, \
+             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
             mock_dumps.side_effect = TypeError("Forced exception")
 
@@ -134,6 +114,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
             assert mock_log.info.call_count == 1
+            assert mock_retry.return_value.post.call_count == 0
 
 
     async def test_stream_result(self):
