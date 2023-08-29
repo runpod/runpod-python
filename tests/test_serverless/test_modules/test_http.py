@@ -1,7 +1,7 @@
 '''
 Test rp_http.py module.
 '''
-
+import json
 import unittest
 from unittest.mock import patch, AsyncMock
 import aiohttp
@@ -41,7 +41,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
             mock_retry.return_value.post.assert_called_with(
                 'JOB_DONE_URL',
-                data=str('{"output": "test_output"}'),
+                data=json.dumps(self.job_data, ensure_ascii=False),
                 headers={
                     "charset": "utf-8",
                     "Content-Type": "application/x-www-form-urlencoded"
