@@ -142,7 +142,10 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         url = "http://example.com"
 
         errors = [
-            (ClientResponseError(Mock(), Mock(), status=500, message="Response error"), ClientResponseError),
+            (
+                ClientResponseError(Mock(), Mock(), status=500, message="Response error"),
+                ClientResponseError
+            ),
             (ClientConnectionError("Connection error"), ClientConnectionError),
             (ClientError("Generic client error"), ClientError)
         ]
