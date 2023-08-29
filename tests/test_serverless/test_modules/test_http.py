@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch, Mock, AsyncMock, PropertyMock
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError, ClientConnectionError, ClientError
+from aiohttp_retry import RetryClient
 
 from runpod.serverless.modules import rp_http
 
@@ -33,8 +34,17 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_session.post.return_value.__aenter__ = AsyncMock(return_value=mock_response)
         mock_session.post.return_value.__aexit__ = AsyncMock()
 
+        class MockRetryClient:
+            def __init__(self, client_session, *args, **kwargs):
+                self.client_session = client_session
+
+            def post(self, *args, **kwargs):
+                return self.client_session.post(*args, **kwargs)
+
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+             patch.object(RetryClient, 'post', mock_session.post), \
+             patch('runpod.serverless.modules.rp_http.RetryClient', MockRetryClient):
 
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(mock_session, self.job_data, self.job)
