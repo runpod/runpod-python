@@ -27,21 +27,19 @@ async def _transmit(client_session, url, job_id, job_data ):
     """
     Wrapper for transmitting results via POST.
     """
-    try:
-        retry_options = ExponentialRetry(attempts=3)
-        retry_client = RetryClient(client_session=client_session, retry_options=retry_options)
+    retry_options = ExponentialRetry(attempts=3)
+    retry_client = RetryClient(client_session=client_session, retry_options=retry_options)
 
-        kwargs = {
-            "data": job_data,
-            "headers": {"charset": "utf-8", "Content-Type": "application/x-www-form-urlencoded"},
-            "raise_for_status": True
-            }
+    kwargs = {
+        "data": job_data,
+        "headers": {"charset": "utf-8", "Content-Type": "application/x-www-form-urlencoded"},
+        "raise_for_status": True
+        }
 
-        async with retry_client.post(url, **kwargs) as client_response:
-            await client_response.text()
+    async with retry_client.post(url, **kwargs) as client_response:
+        await client_response.text()
 
-    except aiohttp.ClientResponseError as err:
-        log.error(f"{job_id} | Client response error while transmitting job. | {err}")
+
 
 
 async def _handle_result(session, job_data, job, url_template, log_message):
@@ -55,13 +53,10 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         await _transmit(session, url, job['id'], serialized_job_data)
         log.debug(f"{job['id']} | {log_message}")
 
+    except aiohttp.ClientResponseError as err:
+        log.error(f"{job['id']} | Client response error while transmitting job. | {err}")
+
     except (TypeError, RuntimeError) as err:
-        print(err)
-        print(type(err))
-
-        # Stack trace
-        print(traceback.format_exc())
-
         log.error(f"Error while returning job result {job['id']}: {err}")
 
     finally:
