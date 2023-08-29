@@ -35,6 +35,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_session.post.status = 200
         mock_session.status = 200
         mock_session.return_status(200)
+        mock_session.post.return_value.__aenter__.return_value.status = 200
         mock_session.post.return_value.__aenter__.return_value.status.return_value = 200
         mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
