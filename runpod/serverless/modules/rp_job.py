@@ -58,8 +58,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 if response.status == 400:
-                    log.info("Received 400 status, stopping worker.")
-                    sys.exit(0)
+                    log.info("Received 400 status, expected when FlashBoot enabled.")
 
                 if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
