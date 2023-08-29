@@ -60,7 +60,12 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
             mock_retry.return_value.post.return_value = AsyncMock()
             mock_retry.return_value.post.side_effect = aiohttp.ClientResponseError(
-                request_info=None,
+                request_info={
+                    "url": "http://test_url",
+                    "headers": {"Content-Type": "application/json"},
+                    "method": "POST",
+                    "real_url": "http://test_url"
+                },
                 history=None,
                 status=500,
                 message="Error message"
