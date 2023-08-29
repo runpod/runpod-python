@@ -56,6 +56,11 @@ async def _handle_result(session, job_data, job, url_template, log_message):
 
     except (TypeError, RuntimeError) as err:
         print(err)
+        print(type(err))
+
+        # Stack trace
+        print(err.__traceback__)
+
         log.error(f"Error while returning job result {job['id']}: {err}")
 
     finally:
