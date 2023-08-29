@@ -30,7 +30,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_session.post.return_value = AsyncMock()
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http._transmit', new=AsyncMock()) as mock_trans, \
+             patch('runpod.serverless.modules.rp_http._transmit') as mock_trans, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
             mock_jobs.return_value = set(['test_id'])
@@ -51,7 +51,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_session.post.return_value = AsyncMock()
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http._transmit', new=AsyncMock()) as mock_trans, \
+             patch('runpod.serverless.modules.rp_http._transmit') as mock_trans, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
             mock_jobs.return_value = set(['test_id'])
@@ -73,7 +73,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_session.post.return_value = AsyncMock()
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log,\
-             patch('runpod.serverless.modules.rp_http._transmit', new=AsyncMock()) as mock_trans, \
+             patch('runpod.serverless.modules.rp_http._transmit') as mock_trans, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
             mock_jobs.return_value = set(['test_id'])
@@ -124,7 +124,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         session.post.return_value = async_context_manager
 
         # Call the function
-        await rp_http._transmit(session, job_id, job_data, url) # pylint: disable=protected-access
+        await rp_http._transmit(session, url, job_id, job_data) # pylint: disable=protected-access
 
         # Check that post was called with the correct arguments
         session.post.assert_called_once_with(url, data=job_data, headers={
@@ -162,10 +162,10 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 session.post.return_value = async_context_manager
 
                 with self.assertRaises(error_type):
-                    await rp_http._transmit(session, job_id, job_data, url) # pylint: disable=protected-access
+                    await rp_http._transmit(session, url, job_id, job_data) # pylint: disable=protected-access
 
         with self.assertRaises(ClientError):
-            await rp_http._transmit(session, job_id, job_data, url)  # pylint: disable=protected-access
+            await rp_http._transmit(session, url, job_id, job_data)  # pylint: disable=protected-access
 
 
 if __name__ == '__main__':
