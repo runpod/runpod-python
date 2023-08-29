@@ -29,14 +29,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
         # Return client response with status code 200
         mock_session.post.return_value = AsyncMock(spec=ClientResponse)
-        mock_session.post.return_value.status = 200
-
-
-        mock_session.post.status = 200
-        mock_session.status = 200
-        mock_session.return_status(200)
         mock_session.post.return_value.__aenter__.return_value.status = 200
-        mock_session.post.return_value.__aenter__.return_value.status.return_value = 200
         mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
