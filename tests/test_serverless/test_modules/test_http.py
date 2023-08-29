@@ -26,6 +26,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test send_result function.
         '''
         mock_session = AsyncMock()
+        mock_session.return_status(200)
         mock_session.post.return_value.__aenter__.return_value.status.return_value = 200
         mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 

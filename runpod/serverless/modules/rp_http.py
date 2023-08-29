@@ -4,8 +4,8 @@
 
 import os
 import json
-import aiohttp
 import traceback
+import aiohttp
 from aiohttp_retry import RetryClient, ExponentialRetry
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
