@@ -28,7 +28,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         mock_post.return_value.__aenter__.return_value.text.return_value = "response text"
 
-        mock_session = MagicMock()
+        mock_session = AsyncMock()
         mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
