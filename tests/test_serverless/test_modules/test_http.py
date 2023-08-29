@@ -122,7 +122,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
             mock_retry.return_value.post.assert_called_with(
                 'JOB_STREAM_URL',
-                data=self.job_data,
+                data=str(json.dumps(self.job_data, ensure_ascii=False)),
                 headers={
                     "charset": "utf-8",
                     "Content-Type": "application/x-www-form-urlencoded"
