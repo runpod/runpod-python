@@ -73,9 +73,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_retry.return_value.post.return_value.__aenter__.return_value = mock_response
             mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
 
-            mock_jobs.return_value = set(['test_id'])
-            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
-
             mock_retry.side_effect = aiohttp.ClientResponseError(
                 request_info=mock_request_info,
                 history=None,
@@ -83,6 +80,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 message="Error message"
             )
 
+            mock_jobs.return_value = set(['test_id'])
+            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
             assert mock_retry.return_value.post.call_count == 1
             assert mock_response.raise_for_status.call_count == 1
