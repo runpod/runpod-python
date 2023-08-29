@@ -56,16 +56,19 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
+             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry, \
+             patch.object(aiohttp.RequestInfo, "__init__", lambda x, y: None):
+
+            mock_request_info = aiohttp.RequestInfo(
+                url="http://test_url",
+                method="POST",
+                headers={"Content-Type": "application/json"},
+                real_url="http://test_url"
+            )
 
             mock_retry.return_value.post.return_value = AsyncMock()
             mock_retry.return_value.post.side_effect = aiohttp.ClientResponseError(
-                request_info={
-                    "url": "http://test_url",
-                    "headers": {"Content-Type": "application/json"},
-                    "method": "POST",
-                    "real_url": "http://test_url"
-                },
+                request_info=mock_request_info,
                 history=None,
                 status=500,
                 message="Error message"
