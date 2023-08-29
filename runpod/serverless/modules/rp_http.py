@@ -5,6 +5,7 @@
 import os
 import json
 import aiohttp
+import traceback
 from aiohttp_retry import RetryClient, ExponentialRetry
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -59,7 +60,7 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         print(type(err))
 
         # Stack trace
-        print(err.__traceback__)
+        print(traceback.format_exc())
 
         log.error(f"Error while returning job result {job['id']}: {err}")
 
