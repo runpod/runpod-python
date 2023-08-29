@@ -41,7 +41,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
             mock_retry.return_value.post.assert_called_with(
                 'JOB_DONE_URL',
-                data=f'{self.job_data}',
+                data='{"output": "test_output"}',
                 headers={
                     "charset": "utf-8",
                     "Content-Type": "application/x-www-form-urlencoded"
@@ -58,7 +58,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
-            mock_retry.post.return_value.__aenter__.return_value.raise_for_status.side_effect = aiohttp.ClientResponseError(url="mocked_url", status=500, message="mocked_error", headers={}) # pylint: disable=line-too-long
+            mock_retry.post.return_value.__aenter__.return_value.raise_for_status.side_effect = aiohttp.ClientResponseError() # pylint: disable=line-too-long
 
             # Raise ClientResponseError
 
