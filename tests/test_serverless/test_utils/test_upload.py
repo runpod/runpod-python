@@ -22,8 +22,12 @@ class TestBotoConfig(unittest.TestCase):
     ''' Tests for boto config '''
 
     def setUp(self) -> None:
+        self.original_environ = os.environ.copy()
         self.mock_transfer_config = MagicMock()
         self.mock_boto_client = MagicMock()
+
+    def tearDown(self):
+        os.environ = self.original_environ
 
     def test_get_boto_client(self):
         '''

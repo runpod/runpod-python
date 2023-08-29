@@ -115,7 +115,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.error.call_count == 1
             assert mock_log.info.call_count == 1
             assert mock_retry.return_value.post.call_count == 0
-            mock_log.error.assert_called_with("Error while returning job result test_id: Forced exception")
+            mock_log.error.assert_called_with("Error while returning job result test_id: Forced exception") # pylint: disable=line-too-long
 
 
     async def test_stream_result(self):
