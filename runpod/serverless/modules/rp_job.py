@@ -1,6 +1,7 @@
 """
 Job related helpers.
 """
+# pylint: disable=too-many-branches
 
 import sys
 import inspect
