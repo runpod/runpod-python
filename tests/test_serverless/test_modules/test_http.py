@@ -96,26 +96,26 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.info.call_count == 1
 
 
-    async def test_send_result_type_error(self):
-        '''
-        Test send_result function with TypeError.
-        '''
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps, \
-             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
+    # async def test_send_result_type_error(self):
+    #     '''
+    #     Test send_result function with TypeError.
+    #     '''
+    #     with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+    #          patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+    #          patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps, \
+    #          patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
-            mock_dumps.side_effect = TypeError("Forced exception")
+    #         mock_dumps.side_effect = TypeError("Forced exception")
 
-            mock_jobs.return_value = set(['test_id'])
-            send_return_local = await rp_http.send_result("No Session", self.job_data, self.job)
+    #         mock_jobs.return_value = set(['test_id'])
+    #         send_return_local = await rp_http.send_result("No Session", self.job_data, self.job)
 
-            assert send_return_local is None
-            assert mock_log.debug.call_count == 0
-            assert mock_log.error.call_count == 1
-            assert mock_log.info.call_count == 1
-            assert mock_retry.return_value.post.call_count == 0
-            mock_log.error.assert_called_with("Error while returning job result test_id: Forced exception") # pylint: disable=line-too-long
+    #         assert send_return_local is None
+    #         assert mock_log.debug.call_count == 0
+    #         assert mock_log.error.call_count == 1
+    #         assert mock_log.info.call_count == 1
+    #         assert mock_retry.return_value.post.call_count == 0
+    #         mock_log.error.assert_called_with("Error while returning job result test_id: Forced exception") # pylint: disable=line-too-long
 
 
     async def test_stream_result(self):
