@@ -29,8 +29,8 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
-            mock_retry.post.return_value = AsyncMock()
-            mock_retry.post.return_value.__aenter__.return_value.text.return_value = "response text"
+            mock_retry.return_value.post.return_value = AsyncMock()
+            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
 
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
@@ -40,7 +40,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.error.call_count == 0
             assert mock_log.info.call_count == 1
 
-            mock_retry.post.assert_called_with(
+            mock_retry.return_value.post.assert_called_with(
                 'JOB_DONE_URL',
                 data=self.job_data,
                 headers={

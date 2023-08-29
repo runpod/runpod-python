@@ -4,12 +4,10 @@
 
 import os
 import json
-import traceback
 import aiohttp
 from aiohttp_retry import RetryClient, ExponentialRetry
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
-# from .retry import retry
 from .worker_state import Jobs, WORKER_ID
 
 JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', 'JOB_DONE_URL'))
@@ -22,7 +20,6 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
-# @retry(max_attempts=3, base_delay=1, max_delay=3)
 async def _transmit(client_session, url, job_id, job_data ):
     """
     Wrapper for transmitting results via POST.
@@ -38,8 +35,6 @@ async def _transmit(client_session, url, job_id, job_data ):
 
     async with retry_client.post(url, **kwargs) as client_response:
         await client_response.text()
-
-
 
 
 async def _handle_result(session, job_data, job, url_template, log_message):
