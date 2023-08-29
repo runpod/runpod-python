@@ -29,12 +29,14 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
+            mock_retry.post.return_value = AsyncMock()
             mock_retry.post.return_value.__aenter__.return_value.text.return_value = "response text"
+
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
             assert send_return_local is None
-            assert mock_log.debug.call_count == 0
+            assert mock_log.debug.call_count == 1
             assert mock_log.error.call_count == 0
             assert mock_log.info.call_count == 0
 
