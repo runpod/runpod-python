@@ -58,7 +58,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
-            mock_retry.post.return_value.__aenter__.return_value.raise_for_status.side_effect = aiohttp.ClientResponseError() # pylint: disable=line-too-long
+            mock_retry.post.return_value.__aenter__.return_value.raise_for_status.side_effect = aiohttp.ClientResponseError(request_info=None, history=None) # pylint: disable=line-too-long
 
             # Raise ClientResponseError
 
@@ -108,7 +108,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert send_return_local is None
             assert mock_log.debug.call_count == 1
             assert mock_log.error.call_count == 0
-            assert mock_log.info.call_count == 1
+            assert mock_log.info.call_count == 0
 
             mock_retry.return_value.post.assert_called_with(
                 'JOB_STREAM_URL',
