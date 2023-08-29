@@ -3,7 +3,7 @@ Test rp_http.py module.
 '''
 
 import unittest
-from unittest.mock import patch, Mock, AsyncMock, MagicMock
+from unittest.mock import patch, Mock, AsyncMock
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError, ClientConnectionError, ClientError
 
@@ -21,13 +21,10 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
 
-    @patch('aiohttp.ClientSession.post')
     async def test_send_result(self, mock_post):
         '''
         Test send_result function.
         '''
-        mock_post.return_value.__aenter__.return_value.text.return_value = "response text"
-
         mock_session = AsyncMock()
         mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
