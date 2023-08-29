@@ -21,7 +21,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
 
-    async def test_send_result(self, mock_post):
+    async def test_send_result(self):
         '''
         Test send_result function.
         '''
