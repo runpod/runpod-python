@@ -4,39 +4,38 @@
 
 import os
 import json
-from aiohttp import ClientResponseError, ClientConnectionError, ClientError
+import aiohttp
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .retry import retry
 from .worker_state import Jobs, WORKER_ID
 
-# Constants
 JOB_DONE_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_OUTPUT', 'JOB_DONE_URL'))
-JOB_DONE_URL_TEMPLATE = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
+JOB_DONE_URL = JOB_DONE_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
 JOB_STREAM_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_STREAM', 'JOB_STREAM_URL'))
-JOB_STREAM_URL_TEMPLATE = JOB_STREAM_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
-
-HEADERS = {
-    "charset": "utf-8",
-    "Content-Type": "application/x-www-form-urlencoded"
-}
+JOB_STREAM_URL = JOB_STREAM_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
 log = RunPodLogger()
 job_list = Jobs()
 
 
 @retry(max_attempts=3, base_delay=1, max_delay=3)
-async def _transmit(session, job_id, data, url):
+async def _transmit(session, url, job_id, job_data ):
     """
-    Wrapper for sending results.
+    Wrapper for transmitting results via POST.
     """
     try:
-        async with session.post(url, data=data, headers=HEADERS, raise_for_status=True) as resp:
-            await resp.text()
+        post_kwargs = {
+            "data": job_data,
+            "headers": {"charset": "utf-8", "Content-Type": "application/x-www-form-urlencoded"},
+            "raise_for_status": True
+            }
+        async with session.post(url, post_kwargs) as client_response:
+            await client_response.text()
+    except aiohttp.ClientResponseError as err:
+        log.error(f"{job_id} | Client response error while transmitting job. | {err}")
 
-    except (ClientResponseError, ClientConnectionError, ClientError) as err:
-        log.error(f"Transmit error for job {job_id}: {err}")
 
 async def _handle_result(session, job_data, job, url_template, log_message):
     """
@@ -46,13 +45,13 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
         url = url_template.replace('$ID', job['id'])
 
-        await _transmit(session, job['id'], serialized_job_data, url)
+        await _transmit(session, url, job['id'], serialized_job_data)
         log.debug(f"{job['id']} | {log_message}")
 
     except (TypeError, RuntimeError) as err:
         log.error(f"Error while returning job result {job['id']}: {err}")
 
-    if url_template == JOB_DONE_URL_TEMPLATE:
+    if url_template == JOB_DONE_URL:
         job_list.remove_job(job["id"])
         log.info(f'{job["id"]} | Finished')
 
@@ -61,12 +60,11 @@ async def send_result(session, job_data, job):
     """
     Return the job results.
     """
-    await _handle_result(session, job_data, job, JOB_DONE_URL_TEMPLATE, "Results sent.")
+    await _handle_result(session, job_data, job, JOB_DONE_URL, "Results sent.")
 
 
 async def stream_result(session, job_data, job):
     """
     Return the stream job results.
     """
-    await _handle_result(
-        session, job_data, job, JOB_STREAM_URL_TEMPLATE, "Intermediate Results sent.")
+    await _handle_result(session, job_data, job, JOB_STREAM_URL, "Intermediate results sent.")
