@@ -52,8 +52,6 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         log.error(f"{job['id']} | Client response error while transmitting job. | {err}")
 
     except (TypeError, RuntimeError) as err:
-        print(err)
-        print(type(err))
         log.error(f"Error while returning job result {job['id']}: {err}")
 
     finally:
