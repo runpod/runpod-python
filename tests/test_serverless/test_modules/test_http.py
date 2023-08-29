@@ -15,6 +15,20 @@ def mocked_transmit(*args, **kwargs):
     del args, kwargs
     raise Exception("Forced exception") # pylint: disable=broad-exception-raised
 
+
+class MockRetryClient:
+    ''' Mock RetryClient class. '''
+
+    def __init__(self, client_session, *args, **kwargs):
+        self.client_session = client_session
+
+    def post(self, *args, **kwargs):
+        '''
+        Mock post function.
+        '''
+        return self.client_session.post(*args, **kwargs)
+
+
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     ''' Test HTTP module. '''
 
@@ -26,24 +40,12 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test send_result function.
         '''
-        mock_response = AsyncMock()
-        type(mock_response).status = PropertyMock(return_value=200)
-        mock_response.text = AsyncMock(return_value="response text")
-
         mock_session = AsyncMock()
-        mock_session.post.return_value.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_session.post.return_value.__aexit__ = AsyncMock()
-
-        class MockRetryClient:
-            def __init__(self, client_session, *args, **kwargs):
-                self.client_session = client_session
-
-            def post(self, *args, **kwargs):
-                return self.client_session.post(*args, **kwargs)
+        mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch.object(RetryClient, 'post', mock_session.post), \
+             patch.object(RetryClient, 'post', mock_session), \
              patch('runpod.serverless.modules.rp_http.RetryClient', MockRetryClient):
 
             mock_jobs.return_value = set(['test_id'])
