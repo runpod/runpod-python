@@ -5,7 +5,7 @@ Test rp_http.py module.
 
 import json
 import unittest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, Mock
 import aiohttp
 
 from runpod.serverless.modules import rp_http
@@ -128,7 +128,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_dumps.side_effect = TypeError("Forced exception")
 
             mock_jobs.return_value = set(['test_id'])
-            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
+            send_return_local = await rp_http.send_result(Mock(), self.job_data, self.job)
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
