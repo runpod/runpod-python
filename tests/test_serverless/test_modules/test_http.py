@@ -88,7 +88,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
 
             mock_retry.side_effect = aiohttp.ClientResponseError(
-                request_info=mock_request_info,
+                request_info=mock_request_info_init,
                 history=None,
                 status=500,
                 message="Error message"
