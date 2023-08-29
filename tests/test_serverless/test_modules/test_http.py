@@ -65,14 +65,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 message="Error message"
             )
 
-            # mock_retry raise ClientResponseError
-            mock_retry.post.return_value = aiohttp.ClientResponseError(
-                request_info=None,
-                history=None,
-                status=500,
-                message="Error message"
-            )
-
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
