@@ -26,9 +26,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test send_result function.
         '''
         mock_session = AsyncMock()
-
-        # Return client response with status code 200
-        mock_session.post.return_value = AsyncMock(spec=ClientResponse)
         mock_session.post.return_value.__aenter__.return_value.status = 200
         mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
