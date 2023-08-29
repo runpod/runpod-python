@@ -3,7 +3,7 @@ Test rp_http.py module.
 '''
 
 import unittest
-from unittest.mock import patch, Mock, AsyncMock, PropertyMock
+from unittest.mock import patch, Mock, AsyncMock
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError, ClientConnectionError, ClientError
 from aiohttp_retry import RetryClient
@@ -46,8 +46,9 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch.object(RetryClient, 'post', mock_session), \
-             patch('runpod.serverless.modules.rp_http.RetryClient', MockRetryClient):
+             patch('runpod.serverless.modules.rp_http.RetryClient', MockRetryClient) as mock_retry:
 
+            mock_retry.post.return_value.__aenter__.return_value.text.return_value = "response text"
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(mock_session, self.job_data, self.job)
 
@@ -56,7 +57,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.error.call_count == 0
             assert mock_log.info.call_count == 0
 
-            mock_session.post.assert_called_with(
+            mock_retry.post.assert_called_with(
                 'JOB_DONE_URL',
                 data=self.job_data,
                 headers={
