@@ -3,8 +3,8 @@ Test rp_http.py module.
 '''
 
 import unittest
-from unittest.mock import patch, Mock, AsyncMock, PropertyMock
-import aiohttp
+from unittest.mock import patch, Mock, AsyncMock
+from aiohttp import ClientResponse
 from aiohttp import ClientResponseError, ClientConnectionError, ClientError
 
 from runpod.serverless.modules import rp_http
@@ -25,21 +25,17 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         '''
         Test send_result function.
         '''
-        mock_response = AsyncMock(spec=aiohttp.ClientResponse)
-        type(mock_response).status = PropertyMock(return_value=200)
-        mock_response.text = AsyncMock(return_value="response text")
-        mock_response.__aenter__.return_value = mock_response
-        mock_response.__aexit__.return_value = None
-
-        mock_session = AsyncMock(spec=aiohttp.ClientSession)
-        mock_session.post.return_value = mock_response
+        mock_session = AsyncMock()
+        mock_session.post.return_value.__aenter__.return_value.status.return_value = 200
+        mock_session.post.return_value.__aenter__.return_value.text.return_value = "response text"
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
 
             mock_jobs.return_value = set(['test_id'])
-            await rp_http.send_result(mock_session, self.job_data, self.job)
+            send_return_local = await rp_http.send_result(mock_session, self.job_data, self.job)
 
+            assert send_return_local is None
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 0
             assert mock_log.info.call_count == 0
@@ -127,7 +123,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         url = "http://example.com"
 
         # Mock the response from the post request
-        mock_response = AsyncMock(spec=aiohttp.ClientResponse)
+        mock_response = AsyncMock(spec=ClientResponse)
         mock_response.text.return_value = "response text"
 
         # Mock context manager returned by post
