@@ -133,48 +133,30 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         mock_response.text.assert_called_once()
 
 
-    async def test_transmit_response_error(self):
-        ''' Tests the transmit function with ClientResponseError. '''
+    async def test_transmit_errors(self):
+        ''' Tests the transmit function with different client errors. '''
+
         session = Mock()
         job_id = "test_id"
         job_data = {"output": "test_output"}
         url = "http://example.com"
 
-        # Mock context manager to raise the ClientResponseError
-        async_context_manager = AsyncMock()
-        async_context_manager.__aenter__.side_effect = ClientResponseError(
-            Mock(), Mock(), status=500, message="Response error")
-        session.post.return_value = async_context_manager
+        errors = [
+            (ClientResponseError(Mock(), Mock(), status=500, message="Response error"), ClientResponseError),
+            (ClientConnectionError("Connection error"), ClientConnectionError),
+            (ClientError("Generic client error"), ClientError)
+        ]
 
-        with self.assertRaises(ClientResponseError):
-            await rp_http._transmit(session, job_id, job_data, url)  # pylint: disable=protected-access
+        for error_instance, error_type in errors:
+            with self.subTest(error_type=error_type):
 
-    async def test_transmit_connection_error(self):
-        ''' Tests the transmit function with ClientConnectionError. '''
-        session = Mock()
-        job_id = "test_id"
-        job_data = {"output": "test_output"}
-        url = "http://example.com"
+                # Mock context manager to raise the respective error
+                async_context_manager = AsyncMock()
+                async_context_manager.__aenter__.side_effect = error_instance
+                session.post.return_value = async_context_manager
 
-        # Mock context manager to raise the ClientConnectionError
-        async_context_manager = AsyncMock()
-        async_context_manager.__aenter__.side_effect = ClientConnectionError("Connection error")
-        session.post.return_value = async_context_manager
-
-        with self.assertRaises(ClientConnectionError):
-            await rp_http._transmit(session, job_id, job_data, url)  # pylint: disable=protected-access
-
-    async def test_transmit_generic_client_error(self):
-        ''' Tests the transmit function with ClientError. '''
-        session = Mock()
-        job_id = "test_id"
-        job_data = {"output": "test_output"}
-        url = "http://example.com"
-
-        # Mock context manager to raise the ClientError
-        async_context_manager = AsyncMock()
-        async_context_manager.__aenter__.side_effect = ClientError("Generic client error")
-        session.post.return_value = async_context_manager
+                with self.assertRaises(error_type):
+                    await rp_http._transmit(session, job_id, job_data, url) # pylint: disable=protected-access
 
         with self.assertRaises(ClientError):
             await rp_http._transmit(session, job_id, job_data, url)  # pylint: disable=protected-access
