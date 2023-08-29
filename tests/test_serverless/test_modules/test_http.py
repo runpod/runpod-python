@@ -70,7 +70,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 message="Error message"
             )
 
-            mock_retry.return_value.post.return_value.__aenter__.return_value.s
+            mock_retry.return_value.post.return_value.__aenter__.return_value = mock_response
             mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
 
             mock_jobs.return_value = set(['test_id'])
