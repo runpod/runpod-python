@@ -8,10 +8,6 @@ import aiohttp
 
 from runpod.serverless.modules import rp_http
 
-def mocked_transmit(*args, **kwargs):
-    ''' Mock transmit function. '''
-    del args, kwargs
-    raise Exception("Forced exception") # pylint: disable=broad-exception-raised
 
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     ''' Test HTTP module. '''
@@ -57,7 +53,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
              patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
              patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry, \
-             patch.object(aiohttp.RequestInfo, "__init__", lambda x, y: None):
+             patch.object(aiohttp.RequestInfo, "__init__", lambda *args, **kwargs: None):
 
             mock_request_info = aiohttp.RequestInfo(
                 url="http://test_url",
