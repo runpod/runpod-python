@@ -22,13 +22,13 @@ job_list = Jobs()
 
 
 # @retry(max_attempts=3, base_delay=1, max_delay=3)
-async def _transmit(session, url, job_id, job_data ):
+async def _transmit(client_session, url, job_id, job_data ):
     """
     Wrapper for transmitting results via POST.
     """
     try:
         retry_options = ExponentialRetry(attempts=3)
-        retry_client = RetryClient(client_session=session, retry_options=retry_options)
+        retry_client = RetryClient(client_session=client_session, retry_options=retry_options)
 
         kwargs = {
             "data": job_data,
@@ -55,6 +55,7 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         log.debug(f"{job['id']} | {log_message}")
 
     except (TypeError, RuntimeError) as err:
+        print(err)
         log.error(f"Error while returning job result {job['id']}: {err}")
 
     if url_template == JOB_DONE_URL:
