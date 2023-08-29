@@ -50,6 +50,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 raise_for_status=True
             )
 
+
     async def test_send_result_client_response_error(self):
         '''
         Test send_result function with ClientResponseError.
@@ -67,28 +68,27 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
-            assert mock_log.error.call_count == 0
+            assert mock_log.error.call_count == 1
             assert mock_log.info.call_count == 1
 
-    async def test_send_result_exception(self):
-        '''
-        Test send_result function.
-        '''
-        mock_session = AsyncMock()
-        mock_session.post.return_value = AsyncMock()
 
+    async def test_send_result_type_error(self):
+        '''
+        Test send_result function with TypeError.
+        '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http._transmit') as mock_trans, \
-             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+             patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps:
+
+            mock_dumps.side_effect = TypeError("Forced exception")
 
             mock_jobs.return_value = set(['test_id'])
-            send_return_local = await rp_http.send_result(mock_session, self.job_data, self.job)
+            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
-            assert mock_log.info.call_count == 0
-            mock_trans.assert_called_once()
+            assert mock_log.info.call_count == 1
 
 
     async def test_stream_result(self):
