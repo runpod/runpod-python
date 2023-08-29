@@ -20,7 +20,7 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
-async def _transmit(client_session, url, job_id, job_data ):
+async def _transmit(client_session, url, job_data ):
     """
     Wrapper for transmitting results via POST.
     """
@@ -45,7 +45,7 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
         url = url_template.replace('$ID', job['id'])
 
-        await _transmit(session, url, job['id'], serialized_job_data)
+        await _transmit(session, url, serialized_job_data)
         log.debug(f"{job['id']} | {log_message}")
 
     except aiohttp.ClientResponseError as err:

@@ -19,7 +19,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self) -> None:
         self.job = {"id": "test_id"}
-        self.job_data = {"output": "test_output"}
+        self.job_data = '{"output": "test_output"}'
 
     async def test_send_result(self):
         '''
