@@ -5,7 +5,7 @@
 import os
 import json
 import aiohttp
-from aiohttp_retry import RetryClient, RandomRetry
+from aiohttp_retry import RetryClient, ExponentialRetry
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 # from .retry import retry
@@ -27,7 +27,7 @@ async def _transmit(session, url, job_id, job_data ):
     Wrapper for transmitting results via POST.
     """
     try:
-        retry_options = RandomRetry(attempts=1)
+        retry_options = ExponentialRetry(attempts=3)
         retry_client = RetryClient(client_session=session, retry_options=retry_options)
 
         kwargs = {

@@ -39,6 +39,16 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.error.call_count == 0
             assert mock_log.info.call_count == 0
 
+            mock_session.post.assert_called_with(
+                'JOB_DONE_URL',
+                data=self.job_data,
+                headers={
+                    "charset": "utf-8",
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
+                raise_for_status=True
+            )
+
 
 
     async def test_send_result_exception(self):
