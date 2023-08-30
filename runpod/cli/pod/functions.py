@@ -14,6 +14,8 @@ def open_ssh_connection(pod_id):
     '''
     pod = get_pod(pod_id)
 
+    print(pod)
+
     if pod['desiredStatus'] == 'running':
         for port in pod['runtime']['ports']:
             if port['privatePort'] == 22:
