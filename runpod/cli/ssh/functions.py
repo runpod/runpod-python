@@ -2,6 +2,7 @@
 RunPod | CLI | SSH | Functions
 '''
 
+import os
 import base64
 import hashlib
 import paramiko
