@@ -14,5 +14,8 @@ setuptools_scm == 7.1.0
 
 fastapi[all] == 0.103.0
 
+# Minimum versions for dependencies
+urllib3 >= 1.26.6
+
 # Testing Requirements
 nest_asyncio == 1.5.7
