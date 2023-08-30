@@ -20,7 +20,7 @@ def list_pods():
 
     table = PrettyTable(['ID', 'Name', 'Status', 'Image'])
     for pod in pod_list:
-        table.add_row((pod['id'], pod['name'], pod['lastStatusChange'], pod['imageName']))
+        table.add_row((pod['id'], pod['name'], pod['desiredStatus'], pod['imageName']))
 
     click.echo(table)
 
@@ -39,7 +39,7 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template
     if quick_launch:
         name = 'RunPod-Default-Pod'
         image = 'runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel'
-        gpu_type = 'nvidia-tesla-t4'
+        gpu_type = 'NVIDIA GeForce RTX3090'
         support_public_ip = True
 
         click.echo('Launching default pod...')
