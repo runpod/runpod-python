@@ -44,7 +44,9 @@ class RunPodLogger:
     '''Singleton class for logging.'''
 
     __instance = None
-    level = _validate_log_level(os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG'))
+    level = _validate_log_level(os.environ.get(
+        'RUNPOD_LOG_LEVEL',
+        os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG')))
 
     def __new__(cls):
         if RunPodLogger.__instance is None:
