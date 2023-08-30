@@ -20,6 +20,6 @@ def list_keys():
     table = PrettyTable(['Key', 'Type', 'Fingerprint'])
 
     for key in key_list:
-        table.add_row((key['key'], key['type'], key['fingerprint']))
+        table.add_row((key['name'], key['type'], key['fingerprint']))
 
     click.echo(table)

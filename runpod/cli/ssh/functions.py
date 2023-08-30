@@ -18,6 +18,7 @@ def get_user_pub_keys():
     for key in keys:
         key_dict = {}
         key = key.split(' ')
+        key_dict['name'] = key[3]
         key_dict['key'] = key[2]
         key_dict['type'] = key[0]
         key_dict['fingerprint'] = key[1]

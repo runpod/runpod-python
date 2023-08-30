@@ -14,7 +14,7 @@ def config_wizard(profile, api_key):
     Starts the config wizard.
     '''
     if api_key is None:
-        api_key = click.prompt('Enter your RunPod API key: ', type=str, hide_input=False)
+        api_key = click.prompt('Enter your RunPod API key', type=str, hide_input=False)
     set_credentials(api_key, profile)
     click.echo('Credentials set for profile: ' + profile + ' in ~/.runpod/config.toml')
 
