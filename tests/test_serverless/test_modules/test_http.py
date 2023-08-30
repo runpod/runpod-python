@@ -1,16 +1,28 @@
 '''
 Test rp_http.py module.
 '''
+# pylint: disable=too-few-public-methods
 
-import asyncio
+import gc
+import json
 import unittest
-from unittest.mock import patch, Mock, AsyncMock
+from unittest.mock import patch, AsyncMock
 import aiohttp
-from aiohttp import ClientResponse
-
-import pytest
 
 from runpod.serverless.modules import rp_http
+
+class MockRequestInfo:
+    ''' Mock aiohttp.RequestInfo class. '''
+
+    def __init__(self, *args, **kwargs):
+        del args, kwargs
+        self.url = "http://test_url"
+        self.method = "POST"
+        self.headers = {"Content-Type": "application/json"}
+        self.real_url = "http://test_url"
+
+    real_url = "http://test_url"
+
 
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     ''' Test HTTP module. '''
@@ -19,119 +31,126 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
 
-    def test_send_result_exception(self):
+    def tearDown(self) -> None:
+        gc.collect()
+
+
+    async def test_send_result(self):
         '''
         Test send_result function.
         '''
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log:
-            with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
-                mock_jobs.return_value = set(['test_id'])
-                send_return_local = asyncio.run(
-                    rp_http.send_result(Mock(), self.job_data, self.job))
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
-                assert send_return_local is None
-                assert mock_log.debug.call_count == 0
-                assert mock_log.error.call_count == 1
+            mock_retry.return_value.post.return_value = AsyncMock()
+            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
 
-        loop.close()
+            mock_jobs.return_value = set(['test_id'])
+            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
-    def test_send_result(self):
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 1
+            assert mock_log.error.call_count == 0
+            assert mock_log.info.call_count == 1
+
+            mock_retry.return_value.post.assert_called_with(
+                'JOB_DONE_URL',
+                data=str(json.dumps(self.job_data, ensure_ascii=False)),
+                headers={
+                    "charset": "utf-8",
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
+                raise_for_status=True
+            )
+
+
+    async def test_send_result_client_response_error(self):
         '''
-        Test send_result function.
+        Test send_result function with ClientResponseError.
         '''
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log,\
-             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_transmit:
-            with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
-                mock_jobs.return_value = set(['test_id'])
+        def mock_request_info_init(self, *args, **kwargs):
+            '''
+            Mock aiohttp.RequestInfo.__init__ method.
+            '''
+            del args, kwargs
+            self.url = "http://test_url"
+            self.method = "POST"
+            self.headers = {"Content-Type": "application/json"}
+            self.real_url = "http://test_url"
 
-                send_return_local = asyncio.run(
-                    rp_http.send_result(Mock(), self.job_data, self.job))
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry, \
+             patch.object(aiohttp.RequestInfo, "__init__", mock_request_info_init):
 
-                assert send_return_local is None
-                assert mock_log.debug.call_count == 1
-                assert mock_log.error.call_count == 0
-                assert mock_log.info.call_count == 1
-                mock_transmit.assert_called_once()
+            mock_retry.side_effect = aiohttp.ClientResponseError(
+                request_info=MockRequestInfo,
+                history=None,
+                status=500,
+                message="Error message"
+            )
 
-        loop.close()
+            mock_jobs.return_value = set(['test_id'])
+            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
+
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 0
+            assert mock_log.error.call_count == 1
+            assert mock_log.info.call_count == 1
+
+
+    async def test_send_result_type_error(self):
+        '''
+        Test send_result function with TypeError.
+        '''
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+             patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps, \
+             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
+
+            mock_dumps.side_effect = TypeError("Forced exception")
+
+            mock_jobs.return_value = set(['test_id'])
+            send_return_local = await rp_http.send_result("No Session", self.job_data, self.job)
+
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 0
+            assert mock_log.error.call_count == 1
+            assert mock_log.info.call_count == 1
+            assert mock_retry.return_value.post.call_count == 0
+            mock_log.error.assert_called_with("Error while returning job result test_id: Forced exception") # pylint: disable=line-too-long
+
 
     async def test_stream_result(self):
         '''
         Test stream_result function.
         '''
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log,\
-             patch('runpod.serverless.modules.rp_http.transmit', new=AsyncMock()) as mock_transmit:
-            with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
-                mock_jobs.return_value = set(['test_id'])
-                rp_http.IS_LOCAL_TEST = True
-                send_return_local = asyncio.run(
-                    rp_http.stream_result(Mock(), self.job_data, self.job))
+        with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
+             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
-                assert send_return_local is None
-                assert mock_log.debug.call_count == 1
-                assert mock_log.error.call_count == 0
-                assert mock_log.info.call_count == 0
-                mock_transmit.assert_called_once()
+            mock_retry.return_value.post.return_value = AsyncMock()
+            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
 
-        loop.close()
+            mock_jobs.return_value = set(['test_id'])
+            send_return_local = await rp_http.stream_result(AsyncMock(), self.job_data, self.job)
 
-    def test_stream_result_exception(self):
-        '''
-        Test stream_result function exception.
-        '''
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        with patch('runpod.serverless.modules.rp_http.log') as mock_log:
-            with patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs:
-                mock_jobs.return_value = set(['test_id'])
-                send_return_local = asyncio.run(
-                    rp_http.stream_result(Mock(), self.job_data, self.job))
+            assert send_return_local is None
+            assert mock_log.debug.call_count == 1
+            assert mock_log.error.call_count == 0
+            assert mock_log.info.call_count == 0
 
-                assert send_return_local is None
-                assert mock_log.debug.call_count == 0
-                assert mock_log.error.call_count == 1
+            mock_retry.return_value.post.assert_called_with(
+                'JOB_STREAM_URL',
+                data=str(json.dumps(self.job_data, ensure_ascii=False)),
+                headers={
+                    "charset": "utf-8",
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
+                raise_for_status=True
+            )
 
-        loop.close()
 
-@pytest.mark.asyncio
-@patch('aiohttp.ClientSession.post')
-async def test_transmit(mock_post):
-    '''
-    Tests the transmit function
-    '''
-    # Mock the session and job data
-    session = Mock()
-    job_data = {"output": "test_output"}
-    url = "http://example.com"
-
-    # Mock the response from the post request
-    mock_response = AsyncMock(spec=ClientResponse)
-    mock_response.text.return_value = "response text"
-
-    # Mock context manager returned by post
-    async_context_manager = AsyncMock()
-    async_context_manager.__aenter__.return_value = mock_response
-
-    # Mock post method on session
-    mock_post.return_value = async_context_manager
-
-    # Mock session
-    session = aiohttp.ClientSession()
-
-    # Call the function
-    await rp_http.transmit(session, job_data, url)
-
-    # Check that post was called with the correct arguments
-    mock_post.assert_called_once_with(url, data=job_data, headers={
-        "charset": "utf-8",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }, raise_for_status=True)
-
-    # Check that text() method was called on the response
-    mock_response.text.assert_called_once()
+if __name__ == '__main__':
+    unittest.main()

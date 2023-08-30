@@ -5,7 +5,6 @@ Test Serverless Job Module
 from unittest.mock import Mock, patch
 
 from unittest import IsolatedAsyncioTestCase
-import pytest
 from aiohttp import ClientResponse
 from aiohttp.test_utils import make_mocked_coro
 
@@ -14,7 +13,6 @@ from runpod.serverless.modules import rp_job
 class TestJob(IsolatedAsyncioTestCase):
     ''' Tests the Job class. '''
 
-    @pytest.mark.asyncio
     async def test_get_job_200(self):
         '''
         Tests the get_job function
@@ -26,19 +24,26 @@ class TestJob(IsolatedAsyncioTestCase):
 
         # Mock the non-200 response
         response2 = Mock()
-        response2.status = 204
+        response2.status = 400
         response2.json = make_mocked_coro(return_value=None)
 
-        # Mock the 200 response
+        # Mock the non-200 response
         response3 = Mock()
-        response3.status = 200
-        response3.json = make_mocked_coro(return_value={"id": "123", "input": {"number": 1}})
+        response3.status = 204
+        response3.json = make_mocked_coro(return_value=None)
+
+        # Mock the 200 response
+        response4 = Mock()
+        response4.status = 200
+        response4.json = make_mocked_coro(return_value={"id": "123", "input": {"number": 1}})
 
         with patch("aiohttp.ClientSession") as mock_session, \
             patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             # Set side_effect to a list of mock responses
-            mock_session.get.return_value.__aenter__.side_effect = [response1, response2, response3]
+            mock_session.get.return_value.__aenter__.side_effect = [
+                response1, response2, response3, response4
+                ]
 
             job = await rp_job.get_job(mock_session, retry=True)
 
@@ -46,7 +51,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job == {"id": "123", "input": {"number": 1}}
 
 
-    @pytest.mark.asyncio
     async def test_get_job_204(self):
         '''
         Tests the get_job function with a 204 response
@@ -65,7 +69,23 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
             assert mock_session_204.get.call_count == 1
 
-    @pytest.mark.asyncio
+    async def test_get_job_400(self):
+        '''
+        Test the get_job function with a 400 response
+        '''
+        # 400 Mock
+        response_400 = Mock(ClientResponse)
+        response_400.status = 400
+
+        with patch("aiohttp.ClientSession") as mock_session_400, \
+             patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+
+            mock_session_400.get.return_value.__aenter__.return_value = response_400
+            job = await rp_job.get_job(mock_session_400, retry=False)
+
+            assert job is None
+
+
     async def test_get_job_500(self):
         '''
         Tests the get_job function with a 500 response
@@ -83,7 +103,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
 
 
-    @pytest.mark.asyncio
     async def test_get_job_no_id(self):
         '''
         Tests the get_job function with a 200 response but no id
@@ -104,7 +123,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
             assert mock_log.error.call_count == 1
 
-    @pytest.mark.asyncio
     async def test_get_job_no_input(self):
         '''
         Tests the get_job function with a 200 response but no input
@@ -125,7 +143,6 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
             assert mock_log.error.call_count == 1
 
-    @pytest.mark.asyncio
     async def test_get_job_exception(self):
         '''
         Tests the get_job function with an exception

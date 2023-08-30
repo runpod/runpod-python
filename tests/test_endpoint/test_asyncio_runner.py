@@ -1,13 +1,11 @@
 ''' Unit tests for the asyncio_runner module. '''
 # pylint: disable=too-few-public-methods
 
-
 import tracemalloc
 import asyncio
 import unittest
 from unittest.mock import patch, MagicMock
 from unittest import IsolatedAsyncioTestCase
-import pytest
 
 from runpod.endpoint.asyncio.asyncio_runner import Job, Endpoint
 
@@ -17,7 +15,6 @@ tracemalloc.start()
 class TestJob(IsolatedAsyncioTestCase):
     ''' Tests the Job class. '''
 
-    @pytest.mark.asyncio
     async def test_status(self):
         '''
         Tests Job.status
@@ -32,7 +29,6 @@ class TestJob(IsolatedAsyncioTestCase):
             status = await job.status()
             assert status == "COMPLETED"
 
-    @pytest.mark.asyncio
     async def test_output(self):
         '''
         Tests Job.output
@@ -57,7 +53,6 @@ class TestJob(IsolatedAsyncioTestCase):
             output = await output_task
             assert output == "OUTPUT"
 
-    @pytest.mark.asyncio
     async def test_cancel(self):
         '''
         Tests Job.cancel
@@ -72,10 +67,35 @@ class TestJob(IsolatedAsyncioTestCase):
             cancel_result = await job.cancel()
             assert cancel_result == {"result": "CANCELLED"}
 
-class TestEndpoint:
+    async def test_output_in_progress_then_completed(self):
+        '''Tests Job.output when status is initially IN_PROGRESS and then changes to COMPLETED'''
+        with (
+            patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep,
+            patch("aiohttp.ClientSession") as mock_session
+        ):
+            mock_resp = MagicMock()
+            responses = [
+                {"status": "IN_PROGRESS"},
+                {"status": "COMPLETED"},
+                {"output": "OUTPUT"}
+            ]
+
+            async def json_side_effect():
+                if responses:
+                    return responses.pop(0)
+                return {"status": "IN_PROGRESS"}
+
+            mock_resp.json = json_side_effect
+            mock_session.get.return_value.__aenter__.return_value = mock_resp
+
+            job = Job("endpoint_id", "job_id", mock_session)
+            output = await job.output()
+            assert output == "OUTPUT"
+            mock_sleep.assert_called_once_with(1)
+
+class TestEndpoint(IsolatedAsyncioTestCase):
     ''' Unit tests for the Endpoint class. '''
 
-    @pytest.mark.asyncio
     async def test_run(self):
         '''
         Tests Endpoint.run
@@ -89,6 +109,17 @@ class TestEndpoint:
             endpoint = Endpoint("endpoint_id", mock_session)
             job = await endpoint.run({"input": "INPUT"})
             assert job.job_id == "job_id"
+
+class TestEndpointInitialization(unittest.TestCase):
+    '''Tests for the Endpoint class initialization.'''
+
+    def test_endpoint_initialization(self):
+        '''Tests initialization of Endpoint class.'''
+        with patch("aiohttp.ClientSession"):
+            endpoint = Endpoint("endpoint_id", MagicMock())
+            self.assertEqual(endpoint.endpoint_url, "https://api.runpod.ai/v2/endpoint_id/run")
+            self.assertIn("Content-Type", endpoint.headers)
+            self.assertIn("Authorization", endpoint.headers)
 
 if __name__ == "__main__":
     unittest.main()

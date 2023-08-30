@@ -5,7 +5,6 @@ import argparse
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
 from unittest import IsolatedAsyncioTestCase
-import pytest
 import nest_asyncio
 
 import runpod
@@ -162,7 +161,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             }
         }
 
-    @pytest.mark.asyncio
     @patch("aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
@@ -196,7 +194,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert mock_stream_result.called is False
         assert mock_session.called
 
-    @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
@@ -229,7 +226,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         _, args, _ = mock_send_result.mock_calls[0]
         assert args[1] == {'output': [], 'stopPod': True}
 
-    @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
@@ -262,7 +258,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         _, args, _ = mock_send_result.mock_calls[0]
         assert 'error' in args[1]
 
-    @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
@@ -297,7 +292,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         _, args, _ = mock_send_result.mock_calls[0]
         assert args[1] == {'output': ['test1', 'test2'], 'stopPod': True}
 
-    @pytest.mark.asyncio
     @patch("aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
@@ -369,7 +363,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             print(mock_set_config_args.call_args_list)
 
             assert mock_set_config_args.called
-
 
     @pytest.mark.asyncio
     @patch("aiohttp.ClientSession")
@@ -479,7 +472,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert mock_run_job.call_count == 46
         assert mock_send_result.call_count == 46
 
-    @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.send_result")

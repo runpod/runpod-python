@@ -1,6 +1,7 @@
 """
 Job related helpers.
 """
+# pylint: disable=too-many-branches
 
 import inspect
 from typing import Any, Callable, Dict, Generator, Optional, Union
@@ -56,7 +57,13 @@ async def get_job(session: ClientSession, force_in_progress=False, retry=True)\
                         return None
                     continue
 
-                if response.status not in [200, 400]:
+                if response.status == 400:
+                    log.debug("Received 400 status, expected when FlashBoot is enabled.")
+                    if not retry:
+                        return None
+                    continue
+
+                if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
                     if not retry:
                         return None
