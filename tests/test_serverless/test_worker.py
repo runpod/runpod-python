@@ -6,7 +6,7 @@ from unittest.mock import patch, mock_open, Mock, MagicMock
 
 from unittest import IsolatedAsyncioTestCase
 import nest_asyncio
-
+import pytest
 import runpod
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
