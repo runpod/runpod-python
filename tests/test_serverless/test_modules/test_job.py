@@ -24,19 +24,26 @@ class TestJob(IsolatedAsyncioTestCase):
 
         # Mock the non-200 response
         response2 = Mock()
-        response2.status = 204
+        response2.status = 400
         response2.json = make_mocked_coro(return_value=None)
 
-        # Mock the 200 response
+        # Mock the non-200 response
         response3 = Mock()
-        response3.status = 200
-        response3.json = make_mocked_coro(return_value={"id": "123", "input": {"number": 1}})
+        response3.status = 204
+        response3.json = make_mocked_coro(return_value=None)
+
+        # Mock the 200 response
+        response4 = Mock()
+        response4.status = 200
+        response4.json = make_mocked_coro(return_value={"id": "123", "input": {"number": 1}})
 
         with patch("aiohttp.ClientSession") as mock_session, \
             patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             # Set side_effect to a list of mock responses
-            mock_session.get.return_value.__aenter__.side_effect = [response1, response2, response3]
+            mock_session.get.return_value.__aenter__.side_effect = [
+                response1, response2, response3, response4
+                ]
 
             job = await rp_job.get_job(mock_session, retry=True)
 
