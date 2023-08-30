@@ -6,7 +6,6 @@ import click
 
 from .functions import set_credentials, check_credentials
 
-
 @click.command('config')
 @click.option('--profile', default='default', help='The profile to set the credentials for.')
 @click.option('--api-key', default=None, help='The user\'s API key.')
