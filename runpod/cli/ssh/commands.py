@@ -17,7 +17,7 @@ def list_keys():
     '''
     key_list = get_user_pub_keys()
 
-    table = PrettyTable(['Key', 'Type', 'Fingerprint'])
+    table = PrettyTable(['Public Key', 'Type', 'Fingerprint'])
 
     for key in key_list:
         table.add_row((key['name'], key['type'], key['fingerprint']))

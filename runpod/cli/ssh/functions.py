@@ -67,7 +67,7 @@ def generate_ssh_key_pair(filename):
 
     # Generate public key
     with open(f"{SSH_FILES}/{filename}.pub", "w", encoding="UTF-8") as public_file:
-        public_key = f"{private_key.get_name()} {private_key.get_base64()}"
+        public_key = f"{private_key.get_name()} {private_key.get_base64()} {filename}"
         public_file.write(public_key)
 
     add_ssh_key(public_key)
@@ -82,9 +82,7 @@ def add_ssh_key(public_key):
     user = get_user()
     current_keys = user['pubKey']
 
-    updated_keys = current_keys + ('\n' if current_keys else '') + public_key
-
-    print(updated_keys)
+    updated_keys = current_keys + ('\n\n' if current_keys else '') + public_key
 
     # Update the user's keys
     update_user_settings(f"{updated_keys}")
