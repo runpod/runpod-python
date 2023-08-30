@@ -28,7 +28,7 @@ def list_keys():
 @click.option('--profile', default='default', help='The profile to add the key to.')
 @click.option('--key', default=None, help='The public key to add.')
 @click.option('--key-file', default=None, help='The file containing the public key to add.')
-def add_key(profile, key, key_file):
+def add_key(key, key_file):
     '''
     Adds an SSH key to the current user account.
     If no key is provided, one will be generated.
@@ -37,6 +37,6 @@ def add_key(profile, key, key_file):
     key_name = click.prompt('Please enter a name for this key', default='RunPod-Key', type=str)
     key_name = key_name.replace(' ', '-')
 
-    private_key, _ = generate_ssh_key_pair(profile, key_name)
+    generate_ssh_key_pair(key_name)
 
     click.echo('The key has been added to your account.')

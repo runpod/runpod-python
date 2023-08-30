@@ -10,7 +10,8 @@ import tomli as toml
 
 from runpod.api.ctl_commands import get_user, update_user_settings
 
-CONFIG_FILE = os.path.expanduser('~/.runpod/config.toml')
+SSH_FILES = os.path.expanduser('~/.runpod/ssh')
+os.makedirs(os.path.join(SSH_FILES), exist_ok=True)
 
 def get_ssh_key_fingerprint(public_key):
     '''
@@ -54,7 +55,7 @@ def get_user_pub_keys():
 
     return key_list
 
-def generate_ssh_key_pair(profile, filename):
+def generate_ssh_key_pair(filename):
     """
     Generate an RSA SSH key pair and save it to disk.
 
@@ -63,23 +64,14 @@ def generate_ssh_key_pair(profile, filename):
     """
     # Generate private key
     private_key = paramiko.RSAKey.generate(bits=2048)
-    private_key.write_private_key_file(filename)
+    private_key.write_private_key_file(os.path.join(SSH_FILES, filename))
 
     # Generate public key
-    with open(f"{filename}.pub", "w", encoding="UTF-8") as public_file:
+    with open(f"{SSH_FILES}/{filename}.pub", "w", encoding="UTF-8") as public_file:
         public_key = f"{private_key.get_name()} {private_key.get_base64()}"
         public_file.write(public_key)
 
     add_ssh_key(public_key)
-
-    # Add to config file
-    with open(CONFIG_FILE, 'rb') as config_file:
-        config = toml.load(config_file)
-
-    with open(CONFIG_FILE, 'w', encoding="UTF-8") as config_file:
-        config_file.write('[' + profile + ']\n')
-        config_file.write('api_key = "' + config[profile]['api_key'] + '"\n')
-        config_file.write('ssh_key = "' + filename + '"\n')
 
     return private_key, public_key
 
@@ -102,7 +94,7 @@ def add_ssh_key(public_key):
 
     # Add the key
     keys.append(public_key)
-    keys = '\n'.join(keys)
+    key_str = '\n'.join(keys)
 
     # Update the user's keys
-    update_user_settings(pubkey=keys)
+    update_user_settings(pubkey=str(key_str))
