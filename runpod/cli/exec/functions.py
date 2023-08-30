@@ -28,10 +28,16 @@ def python_over_ssh(pod_id, file):
 
     for key_file in key_files:
         try:
-            ssh.connect(pod_ip, port=pod_port, username='root', key_filename=os.path.join(SSH_KEY_FOLDER, key_file))
-            return
+            ssh.connect(pod_ip, port=pod_port, username='root', key_filename=key_file)
+            break
         except paramiko.ssh_exception.AuthenticationException:
             pass
+        except Exception as e:
+            print(f"An error occurred with key {key_file}: {e}")
+
+    else:
+        print("Failed to connect using all available keys.")
+        return
 
     # Setup sftp connection and upload the file
     sftp = ssh.open_sftp()
