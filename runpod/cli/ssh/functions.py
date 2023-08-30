@@ -62,7 +62,7 @@ def generate_ssh_key_pair(filename):
     - filename (str): The base filename to save the key pair. The public key will have '.pub' appended to it.
     """
     # Generate private key
-    private_key = paramiko.RSAKey.generate(bits=2048)
+    private_key = paramiko.Ed25519Key.generate()
     private_key.write_private_key_file(os.path.join(SSH_FILES, filename))
 
     # Generate public key
@@ -84,10 +84,7 @@ def add_ssh_key(public_key):
 
     updated_keys = current_keys + ('\n' if current_keys else '') + public_key
 
-    # Encode the keys
-    updated_keys.replace('\n', '%0A')
-
     print(updated_keys)
 
     # Update the user's keys
-    update_user_settings(updated_keys)
+    update_user_settings(f"{updated_keys}")
