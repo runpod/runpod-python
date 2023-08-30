@@ -4,7 +4,6 @@ Commands for the config command group
 import sys
 import click
 
-from runpod.cli.entry import runpod_cli
 from .functions import set_credentials, check_credentials
 
 
@@ -21,7 +20,7 @@ def config_wizard(profile, api_key):
     click.echo('Credentials set for profile: ' + profile + ' in ~/.runpod/config.toml')
 
 
-@runpod_cli.command('store_api_key')
+@click.command('store_api_key')
 @click.argument('api_key')
 @click.option('--profile', default='default', help='The profile to set the credentials for.')
 def store_api_key(api_key, profile):
@@ -37,7 +36,7 @@ def store_api_key(api_key, profile):
 
     click.echo('Credentials set for profile: ' + profile + ' in ~/.runpod/config.toml')
 
-@runpod_cli.command('check_creds')
+@click.command('check_creds')
 @click.option('--profile', default='default', help='The profile to check the credentials for.')
 def validate_credentials_file(profile='default'):
     '''
