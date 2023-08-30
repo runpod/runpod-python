@@ -6,7 +6,6 @@ import os
 import base64
 import hashlib
 import paramiko
-import tomli as toml
 
 from runpod.api.ctl_commands import get_user, update_user_settings
 
@@ -95,6 +94,8 @@ def add_ssh_key(public_key):
     # Add the key
     keys.append(public_key)
     key_str = '\n'.join(keys)
+
+    print(key_str)
 
     # Update the user's keys
     update_user_settings(str(key_str))
