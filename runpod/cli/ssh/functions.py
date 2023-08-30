@@ -65,6 +65,9 @@ def generate_ssh_key_pair(filename):
     private_key = paramiko.RSAKey.generate(bits=2048)
     private_key.write_private_key_file(os.path.join(SSH_FILES, filename))
 
+    # Set permissions
+    os.chmod(os.path.join(SSH_FILES, filename), 0o600)
+
     # Generate public key
     with open(f"{SSH_FILES}/{filename}.pub", "w", encoding="UTF-8") as public_file:
         public_key = f"{private_key.get_name()} {private_key.get_base64()} {filename}"

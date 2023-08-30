@@ -8,6 +8,7 @@ import click
 from .config.commands import config_wizard, store_api_key, validate_credentials_file
 from .ssh.commands import ssh_cli
 from .pod.commands import pod_cli
+from .exec.commands import exec_cli
 
 @click.group()
 def runpod_cli():
@@ -19,3 +20,4 @@ runpod_cli.add_command(validate_credentials_file)
 
 runpod_cli.add_command(ssh_cli)
 runpod_cli.add_command(pod_cli)
+runpod_cli.add_command(exec_cli)
