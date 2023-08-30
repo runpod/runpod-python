@@ -39,7 +39,7 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template
     if quick_launch:
         name = 'RunPod-Default-Pod'
         image = 'runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel'
-        gpu_type = 'NVIDIA GeForce RTX3090'
+        gpu_type = 'NVIDIA GeForce RTX 3090'
         support_public_ip = True
 
         click.echo('Launching default pod...')
