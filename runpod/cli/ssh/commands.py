@@ -7,6 +7,10 @@ from prettytable import PrettyTable
 from runpod.cli.entry import ssh_cli
 from .functions import get_user_pub_keys
 
+@click.group('ssh')
+def ssh_cli():
+    '''A collection of CLI functions for SSH.'''
+
 @ssh_cli.command('list-keys')
 def list_keys():
     '''
