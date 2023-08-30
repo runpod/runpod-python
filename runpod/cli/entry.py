@@ -5,8 +5,8 @@ The entry point for the CLI.
 '''
 import click
 
-from runpod.cli.config.commands import config_wizard, store_api_key, validate_credentials_file
-from runpod.cli.ssh.commands import ssh_cli
+from .config.commands import config_wizard, store_api_key, validate_credentials_file
+from .ssh.commands import ssh_cli
 
 @click.group()
 def runpod_cli():

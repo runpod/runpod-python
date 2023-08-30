@@ -13,7 +13,6 @@ from .api.ctl_commands import(
 )
 from .cli.config.functions import set_credentials, check_credentials, get_credentials
 
-
 profile = "default"  # pylint: disable=invalid-name
 
 _credentials = get_credentials(profile)
