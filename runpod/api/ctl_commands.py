@@ -26,6 +26,7 @@ def update_user_settings(pubkey : str) -> dict:
 
     :param pubkey: the public key of the user
     '''
+    print(user_mutations.generate_user_mutation(pubkey))
     raw_response = run_graphql_query(user_mutations.generate_user_mutation(pubkey))
     cleaned_return = raw_response["data"]["updateUserSettings"]
     return cleaned_return
