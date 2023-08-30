@@ -97,4 +97,4 @@ def add_ssh_key(public_key):
     key_str = '\n'.join(keys)
 
     # Update the user's keys
-    update_user_settings(pubkey=str(key_str))
+    update_user_settings(str(key_str))
