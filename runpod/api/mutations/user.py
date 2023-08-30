@@ -8,7 +8,8 @@ def generate_user_mutation(pubkey):
     '''
     input_fields = []
 
-    input_fields.append(f'pubKey: "{pubkey}"')
+    escaped_pubkey = pubkey.replace('\n', '\\n')
+    input_fields.append(f'pubKey: "{escaped_pubkey}"')
 
     # Format input fields
     input_string = ", ".join(input_fields)
