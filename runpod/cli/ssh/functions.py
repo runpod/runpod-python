@@ -1,7 +1,7 @@
 '''
 RunPod | CLI | SSH | Functions
 '''
-from runpod import get_user
+from runpod.api.ctl_commands import get_user
 
 def get_user_pub_keys():
     '''

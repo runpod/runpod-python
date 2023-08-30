@@ -4,7 +4,6 @@ RunPod | CLI | SSH | Commands
 
 import click
 from prettytable import PrettyTable
-from runpod.cli.entry import ssh_cli
 from .functions import get_user_pub_keys
 
 @click.group('ssh')
