@@ -9,9 +9,9 @@ runpod config
 runpod ssh list-keys
 runpod ssh add-key
 
-runpod list pods
-runpod create pod
-runpod connect pod
+runpod pod list
+runpod pod create
+runpod pod connect
 
 runpod exec python file.py
 ```
