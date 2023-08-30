@@ -6,6 +6,7 @@ RunPod | API Wrapper | CTL Commands
 from typing import Optional
 
 from .queries import user as user_queries
+from .mutations import user as user_mutations
 from .queries import gpus
 from .queries import pods as pod_queries
 from .graphql import run_graphql_query
@@ -17,6 +18,17 @@ def get_user() -> dict:
     '''
     raw_response = run_graphql_query(user_queries.QUERY_USER)
     cleaned_return = raw_response["data"]["myself"]
+    return cleaned_return
+
+def update_user_settings(pubkey : str) -> dict:
+    '''
+    Update the current user
+
+    :param pubkey: the public key of the user
+    '''
+    raw_response = run_graphql_query(user_mutations.generate_user_mutation(pubkey))
+    print(raw_response)
+    cleaned_return = raw_response["data"]["updateUserSettings"]
     return cleaned_return
 
 def get_gpus() -> dict:

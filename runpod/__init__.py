@@ -6,7 +6,7 @@ from . import serverless
 from .endpoint import Endpoint
 from .endpoint import AsyncioEndpoint, AsyncioJob
 from .api.ctl_commands import(
-    get_user,
+    get_user, update_user_settings,
     get_gpus, get_gpu,
     get_pods, get_pod,
     create_pod, stop_pod, resume_pod, terminate_pod
