@@ -6,6 +6,7 @@ import click
 from prettytable import PrettyTable
 
 from runpod import get_pods, create_pod
+from .functions import open_ssh_connection
 
 @click.group('pod')
 def pod_cli():
@@ -56,3 +57,4 @@ def connect_to_pod(pod_id):
     Connects to a pod.
     '''
     click.echo(f'Connecting to pod {pod_id}...')
+    open_ssh_connection(pod_id)
