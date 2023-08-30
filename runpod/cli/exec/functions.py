@@ -30,11 +30,10 @@ def python_over_ssh(pod_id, file):
         try:
             ssh.connect(pod_ip, port=pod_port, username='root', key_filename=key_file)
             break
-        except paramiko.ssh_exception.AuthenticationException:
+        except paramiko.ssh_exception.SSHException:
             pass
         except Exception as err:
             print(f"An error occurred with key {key_file}: {err}")
-            print(type(err))
 
     else:
         print("Failed to connect using all available keys.")
