@@ -33,7 +33,7 @@ def python_over_ssh(pod_id, file):
         except paramiko.ssh_exception.AuthenticationException:
             pass
         except Exception as err:
-            print(f"An error occurred with key {key_file}: {e}")
+            print(f"An error occurred with key {key_file}: {err}")
             print(type(err))
 
     else:
