@@ -2,11 +2,19 @@
 RunPod | CLI | Exec | Functions
 '''
 import os
+import logging
+
 import paramiko
 
 from runpod import get_pod
 
+logging.basicConfig()
+logging.getLogger("paramiko").setLevel(logging.WARNING)
+
+
 SSH_KEY_FOLDER = os.path.expanduser('~/.runpod/ssh')
+
+
 
 def python_over_ssh(pod_id, file):
     '''
