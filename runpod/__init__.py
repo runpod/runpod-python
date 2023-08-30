@@ -6,11 +6,12 @@ from . import serverless
 from .endpoint import Endpoint
 from .endpoint import AsyncioEndpoint, AsyncioJob
 from .api.ctl_commands import(
+    get_user,
     get_gpus, get_gpu,
     get_pods, get_pod,
     create_pod, stop_pod, resume_pod, terminate_pod
 )
-from .cli.config import set_credentials, check_credentials, get_credentials
+from .cli.config.functions import set_credentials, check_credentials, get_credentials
 
 
 profile = "default"  # pylint: disable=invalid-name

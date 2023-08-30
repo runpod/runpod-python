@@ -5,6 +5,7 @@ backoff == 2.2.1
 boto3 >= 1.26.165
 click >= 8.1.7
 pillow >= 9.5.0
+prettytable >= 3.8.0
 py-cpuinfo == 9.0.0
 python-dotenv >= 1.0.0
 requests >= 2.31.0

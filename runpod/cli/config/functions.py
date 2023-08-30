@@ -9,12 +9,12 @@ from pathlib import Path
 
 import tomli as toml
 
-CREDENTIAL_FILE = os.path.expanduser('~/.runpod/credentials.toml')
+CREDENTIAL_FILE = os.path.expanduser('~/.runpod/config.toml')
 
 
 def set_credentials(api_key: str, profile:str="default") -> None:
     '''
-    Sets the user's credentials in ~/.runpod/credentials.toml
+    Sets the user's credentials in ~/.runpod/config.toml
     If profile already exists user must use `update_credentials` instead.
 
     Args:
@@ -43,7 +43,7 @@ def check_credentials(profile:str="default"):
     Checks if the credentials file exists and is valid.
     '''
     if not os.path.exists(CREDENTIAL_FILE):
-        return False, '~/.runpod/credentials.toml does not exist.'
+        return False, '~/.runpod/config.toml does not exist.'
 
     # Check for default api_key
     try:
@@ -51,20 +51,20 @@ def check_credentials(profile:str="default"):
             config = toml.load(cred_file)
 
         if profile not in config:
-            return False, f'~/.runpod/credentials.toml is missing {profile} profile.'
+            return False, f'~/.runpod/config.toml is missing {profile} profile.'
 
         if 'api_key' not in config[profile]:
-            return False, f'~/.runpod/credentials.toml is missing api_key for {profile} profile.'
+            return False, f'~/.runpod/config.toml is missing api_key for {profile} profile.'
 
     except (TypeError, ValueError):
-        return False, '~/.runpod/credentials.toml is not a valid TOML file.'
+        return False, '~/.runpod/config.toml is not a valid TOML file.'
 
     return True, None
 
 
 def get_credentials(profile='default'):
     '''
-    Returns the credentials for the specified profile from ~/.runpod/credentials.toml
+    Returns the credentials for the specified profile from ~/.runpod/config.toml
     '''
     if not os.path.exists(CREDENTIAL_FILE):
         return None

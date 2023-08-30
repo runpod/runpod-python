@@ -2,6 +2,20 @@
 
 Note: This CLI is not the same as runpodctl and provides a different set of features.
 
+```bash
+# Auth
+runpod config
+
+runpod ssh list-keys
+runpod ssh add-key
+
+runpod list pods
+runpod create pod
+runpod connect pod
+
+runpod exec python file.py
+```
+
 ## Overview
 
 ```bash

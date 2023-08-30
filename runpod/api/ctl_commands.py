@@ -5,11 +5,19 @@ RunPod | API Wrapper | CTL Commands
 
 from typing import Optional
 
+from .queries import user as user_queries
 from .queries import gpus
 from .queries import pods as pod_queries
 from .graphql import run_graphql_query
 from .mutations import pods as pod_mutations
 
+def get_user() -> dict:
+    '''
+    Get the current user
+    '''
+    raw_response = run_graphql_query(user_queries.QUERY_USER)
+    cleaned_return = raw_response["data"]["myself"]
+    return cleaned_return
 
 def get_gpus() -> dict:
     '''
