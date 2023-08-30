@@ -84,5 +84,7 @@ def add_ssh_key(public_key):
 
     updated_keys = current_keys + ('\n' if current_keys else '') + str(public_key)
 
+    print(updated_keys)
+
     # Update the user's keys
     update_user_settings(updated_keys)
