@@ -25,7 +25,6 @@ def list_keys():
     click.echo(table)
 
 @ssh_cli.command('add-key')
-@click.option('--profile', default='default', help='The profile to add the key to.')
 @click.option('--key', default=None, help='The public key to add.')
 @click.option('--key-file', default=None, help='The file containing the public key to add.')
 def add_key(key, key_file):
