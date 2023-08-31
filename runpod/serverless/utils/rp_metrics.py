@@ -29,9 +29,9 @@ class MetricsCollector():
 
         The constructor initializes an empty metrics dictionary to store collected metrics.
         """
-        self.metrics = {}
+        self.metrics: dict = {}
 
-    def push_metrics_internal(self, job_id, metrics):
+    def push_metrics_internal(self, job_id: str, metrics):
         """
         Store metrics for a specific job internally.
 
@@ -56,7 +56,7 @@ class MetricsCollector():
         self.metrics[job_id] = metrics
 
 
-    def pop_metrics_internal(self, job_id):
+    def pop_metrics_internal(self, job_id: str):
         """
         Remove metrics associated with a specific job ID from internal storage.
 
@@ -74,7 +74,7 @@ class MetricsCollector():
             >>> job_id = "job123"
             >>> metrics_collector.pop_metrics_internal(job_id)
         """
-        if self.metrics[job_id]:
+        if job_id in self.metrics:
             metrics = self.metrics[job_id]
             del self.metrics[job_id]
             return metrics

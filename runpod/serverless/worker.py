@@ -129,6 +129,8 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 # Allow job processing
                 await asyncio.sleep(0)
 
+            await asyncio.sleep(0)
+
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()
 
