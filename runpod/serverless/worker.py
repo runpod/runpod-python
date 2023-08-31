@@ -11,7 +11,7 @@ import aiohttp
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless.modules.rp_scale import JobScaler
-from runpod.serverless.utils.rp_metrics import MetricsCollector
+from runpod.serverless.modules.rp_metrics import MetricsCollector
 from .modules import rp_local
 from .modules.rp_ping import Heartbeat
 from .modules.rp_job import run_job, run_job_generator

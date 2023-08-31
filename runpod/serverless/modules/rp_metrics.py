@@ -23,13 +23,19 @@ class MetricsCollector():
         >>> metrics = {"accuracy": 0.85, "loss": 0.15}
         >>> metrics_collector.push_metrics_internal(job_id, metrics)
     """
-    def __init__(self):
+    _instance = None
+    metrics = {}
+
+    def __new__(cls):
         """
         Initialize an instance of MetricsCollector.
 
         The constructor initializes an empty metrics dictionary to store collected metrics.
         """
-        self.metrics: dict = {}
+        if MetricsCollector._instance is None:
+            MetricsCollector._instance = object.__new__(cls)
+            MetricsCollector._instance.metrics = {}
+        return MetricsCollector._instance
 
     def push_metrics_internal(self, job_id: str, metrics):
         """
@@ -79,3 +85,5 @@ class MetricsCollector():
             del self.metrics[job_id]
             return metrics
         return None
+
+metrics_collector = MetricsCollector()
