@@ -11,6 +11,7 @@ import aiohttp
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless.modules.rp_scale import JobScaler
+from runpod.serverless.utils.rp_metrics import MetricsCollector
 from .modules import rp_local
 from .modules.rp_ping import Heartbeat
 from .modules.rp_job import run_job, run_job_generator
@@ -21,6 +22,7 @@ from .utils import rp_debugger
 log = RunPodLogger()
 job_list = Jobs()
 heartbeat = Heartbeat()
+metrics_collector = MetricsCollector()
 
 _TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
@@ -56,11 +58,22 @@ async def _process_job(job, session, job_scaler, config):
             if 'error' in stream_output:
                 job_result = stream_output
                 break
+
             if config.get('return_aggregate_stream', False):
                 job_result['output'].append(stream_output['output'])
+
+            # Incorporate internal metrics
+            metrics = metrics_collector.pop_metrics_internal(job['id'])
+            if metrics:
+                stream_output['metrics'] = metrics
             await stream_result(session, stream_output, job)
     else:
         job_result = await run_job(config["handler"], job)
+
+        # Incorporate internal metrics
+        metrics = metrics_collector.pop_metrics_internal(job['id'])
+        if metrics:
+            job_result['metrics'] = metrics
 
     # If refresh_worker is set, pod will be reset after job is complete.
     if config.get("refresh_worker", False):
