@@ -134,13 +134,15 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
         check_return_size(run_result)  # Checks the size of the return body.
     except Exception as err:    # pylint: disable=broad-except
+        from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
         error_content = json.dumps(
             {
                 "error_type": str(type(err)),
                 "error_message": str(err),
                 "error_traceback": traceback.format_exc(),
-                "host_name": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
-                "pod_id": os.environ.get("RUNPOD_POD_ID", "unknown")
+                "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
+                "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
+                "runpod_version": runpod_version
             }, indent=4)
 
         log.error(f'{job["id"]} | Captured Handler Exception')

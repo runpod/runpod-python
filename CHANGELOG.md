@@ -1,5 +1,12 @@
 # Change Log
 
+## Release 1.2.1 (TBD)
+
+### Added
+
+- Version reported when an error is returned in serverless.
+- Log level can be set with `RUNPOD_LOG_LEVEL` environment variable.
+
 ## Release 1.2.0 (8/29/23)
 
 ### Added
