@@ -59,7 +59,8 @@ def generate_ssh_key_pair(filename):
     Generate an RSA SSH key pair and save it to disk.
 
     Args:
-    - filename (str): The base filename to save the key pair. The public key will have '.pub' appended to it.
+    - filename (str):   The base filename to save the key pair.
+                        The public key will have '.pub' appended to it.
     """
     # Generate private key
     private_key = paramiko.RSAKey.generate(bits=2048)

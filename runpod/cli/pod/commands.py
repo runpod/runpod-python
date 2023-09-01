@@ -26,19 +26,21 @@ def list_pods():
     click.echo(table)
 
 @pod_cli.command('create')
-@click.option('--name', default=None, help='The name of the pod.')
+@click.argument('name', required=False)
 @click.option('--image', default=None, help='The image to use for the pod.')
 @click.option('--gpu-type', default=None, help='The GPU type to use for the pod.')
-@click.option('--gpu-count', default=None, help='The number of GPUs to use for the pod.')
+@click.option('--gpu-count', default=1, help='The number of GPUs to use for the pod.')
 @click.option('--support-public-ip', default=False, help='Whether or not to support a public IP.')
 @click.option('--template-file', default=None, help='The template file to use for the pod.')
-def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template_file):
+def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template_file): # pylint: disable=too-many-arguments
     '''
     Creates a pod.
     '''
+    if not name:
+        name = click.prompt('Enter pod name', default='RunPod-CLI-Pod')
+
     quick_launch = click.confirm('Would you like to launch default pod?', abort=True)
     if quick_launch:
-        name = 'RunPod-Default-Pod'
         image = 'runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel'
         gpu_type = 'NVIDIA GeForce RTX 3090'
         support_public_ip = True
@@ -46,7 +48,7 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template
 
         click.echo('Launching default pod...')
 
-    new_pod = create_pod(name, image, gpu_type, support_public_ip=support_public_ip, ports=ports)
+    new_pod = create_pod(name, image, gpu_type, gpu_count=gpu_count, support_public_ip=support_public_ip, ports=ports)
 
     click.echo(f'Pod {new_pod["id"]} has been created.')
 
