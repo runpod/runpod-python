@@ -39,3 +39,6 @@ def new_project_wizard():
     click.echo(f"Python Version: {python_version}")
 
     create_new_project(project_name, runpod_volume_id, python_version)
+
+    click.echo(f"Project {project_name} created successfully.")
+    click.echo(f"Navigate to the project folder with `cd {project_name}`. Run `runpod project start` to start the project.")
