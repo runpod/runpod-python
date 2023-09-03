@@ -1,5 +1,6 @@
 """ Allows runpod to be imported as a module. """
 
+import os
 from pkg_resources import get_distribution, DistributionNotFound
 
 from . import serverless
@@ -12,6 +13,11 @@ from .api.ctl_commands import(
     create_pod, stop_pod, resume_pod, terminate_pod
 )
 from .cli.config.functions import set_credentials, check_credentials, get_credentials
+
+
+# ------------------------------- Config Paths ------------------------------- #
+SSH_KEY_FOLDER = os.path.expanduser('~/.runpod/ssh')
+
 
 profile = "default"  # pylint: disable=invalid-name
 

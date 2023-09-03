@@ -6,14 +6,10 @@ import logging
 
 import paramiko
 
-from runpod import get_pod
+from runpod import SSH_KEY_FOLDER, get_pod
 
 logging.basicConfig()
 logging.getLogger("paramiko").setLevel(logging.WARNING)
-
-
-SSH_KEY_FOLDER = os.path.expanduser('~/.runpod/ssh')
-
 
 
 def python_over_ssh(pod_id, file):
@@ -28,7 +24,10 @@ def python_over_ssh(pod_id, file):
                 pod_ip = port['ip']
                 pod_port = port['publicPort']
 
-    key_files = [os.path.join(SSH_KEY_FOLDER, f) for f in os.listdir(SSH_KEY_FOLDER) if os.path.isfile(os.path.join(SSH_KEY_FOLDER, f))]
+    key_files = []
+    for key_file in os.listdir(SSH_KEY_FOLDER):
+        if os.path.isfile(os.path.join(SSH_KEY_FOLDER, key_file)):
+            key_files.append(key_file)
 
     # Connect to the pod
     ssh = paramiko.SSHClient()
