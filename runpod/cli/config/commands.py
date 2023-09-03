@@ -19,9 +19,9 @@ def config_wizard(api_key, profile):
         click.confirm(f'Credentials already set for profile: {profile}. Overwrite?', abort=True)
 
     if api_key is None:
-        api_key = click.prompt('API Key', hide_input=False, confirmation_prompt=True)
+        api_key = click.prompt('API Key', hide_input=False, confirmation_prompt=False)
 
-    set_credentials(api_key, profile)
+    set_credentials(api_key, profile, overwrite=True)
     click.echo(f'Credentials set for profile: {profile} in ~/.runpod/config.toml')
 
 

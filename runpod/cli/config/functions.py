@@ -12,7 +12,7 @@ import tomli as toml
 CREDENTIAL_FILE = os.path.expanduser('~/.runpod/config.toml')
 
 
-def set_credentials(api_key: str, profile:str="default") -> None:
+def set_credentials(api_key: str, profile:str="default", overwrite=False) -> None:
     '''
     Sets the user's credentials in ~/.runpod/config.toml
     If profile already exists user must use `update_credentials` instead.
@@ -29,9 +29,10 @@ def set_credentials(api_key: str, profile:str="default") -> None:
     os.makedirs(os.path.dirname(CREDENTIAL_FILE), exist_ok=True)
     Path(CREDENTIAL_FILE).touch(exist_ok=True)
 
-    with open(CREDENTIAL_FILE, 'rb') as cred_file:
-        if profile in toml.load(cred_file):
-            raise ValueError('Profile already exists. Use `update_credentials` instead.')
+    if not overwrite:
+        with open(CREDENTIAL_FILE, 'rb') as cred_file:
+            if profile in toml.load(cred_file):
+                raise ValueError('Profile already exists. Use `update_credentials` instead.')
 
     with open(CREDENTIAL_FILE, 'w', encoding="UTF-8") as cred_file:
         cred_file.write('[' + profile + ']\n')
