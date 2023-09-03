@@ -27,20 +27,22 @@ class TestExecCommands(unittest.TestCase):
 
     def test_remote_python_without_provided_pod_id_stored(self):
         ''' Tests the remote_python command when pod_id is retrieved from storage. '''
-        with patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh, \
+        with tempfile.NamedTemporaryFile() as temp_file, \
+             patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh, \
              patch('runpod.cli.utils.userspace.get_or_prompt_for_pod_id', return_value='stored_pod_id') as mock_get_pod_id: # pylint: disable=line-too-long
             mock_python_over_ssh.return_value = None
-            result = self.runner.invoke(runpod_cli, ['exec', 'python', 'sample_file.py'])
+            result = self.runner.invoke(runpod_cli, ['exec', 'python', temp_file.name])
             assert result.exit_code == 0
             mock_get_pod_id.assert_called_once()
-            mock_python_over_ssh.assert_called_with('stored_pod_id', 'sample_file.py')
+            mock_python_over_ssh.assert_called_with('stored_pod_id', temp_file.name)
 
     def test_remote_python_without_provided_pod_id_prompt(self):
         ''' Tests the remote_python command when pod_id is prompted to user. '''
-        with patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh, \
+        with tempfile.NamedTemporaryFile() as temp_file, \
+             patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh, \
              patch('runpod.cli.utils.userspace.get_or_prompt_for_pod_id', side_effect=lambda: click.prompt('Please provide the pod ID', 'prompted_pod_id')) as mock_get_pod_id: # pylint: disable=line-too-long
             mock_python_over_ssh.return_value = None
-            result = self.runner.invoke(runpod_cli, ['exec', 'python', 'sample_file.py'])
+            result = self.runner.invoke(runpod_cli, ['exec', 'python', temp_file.name])
             assert result.exit_code == 0
             mock_get_pod_id.assert_called_once()
-            mock_python_over_ssh.assert_called_with('prompted_pod_id', 'sample_file.py')
+            mock_python_over_ssh.assert_called_with('prompted_pod_id', temp_file.name)
