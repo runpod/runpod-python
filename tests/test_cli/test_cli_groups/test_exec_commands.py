@@ -28,7 +28,7 @@ class TestExecCommands(unittest.TestCase):
         with patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh, \
              patch('runpod.cli.utils.userspace.get_or_prompt_for_pod_id', return_value='stored_pod_id') as mock_get_pod_id: # pylint: disable=line-too-long
             mock_python_over_ssh.return_value = None
-            result = self.runner.invoke(remote_python, ['sample_file.py'])
+            result = self.runner.invoke(runpod_cli, ['exec', 'python', 'sample_file.py'])
             assert result.exit_code == 0
             mock_get_pod_id.assert_called_once()
             mock_python_over_ssh.assert_called_with('stored_pod_id', 'sample_file.py')
@@ -38,7 +38,7 @@ class TestExecCommands(unittest.TestCase):
         with patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh, \
              patch('runpod.cli.utils.userspace.get_or_prompt_for_pod_id', side_effect=lambda: click.prompt('Please provide the pod ID', 'prompted_pod_id')) as mock_get_pod_id: # pylint: disable=line-too-long
             mock_python_over_ssh.return_value = None
-            result = self.runner.invoke(remote_python, ['sample_file.py'])
+            result = self.runner.invoke(runpod_cli, ['exec', 'python', 'sample_file.py'])
             assert result.exit_code == 0
             mock_get_pod_id.assert_called_once()
             mock_python_over_ssh.assert_called_with('prompted_pod_id', 'sample_file.py')
