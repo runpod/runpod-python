@@ -28,13 +28,13 @@ class TestCommands(unittest.TestCase):
             # Successful Call with Direct Key
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test', 'KEY'])
             assert result.exit_code == 0
-            mock_set_credentials.assert_called_with('KEY', 'test')
+            mock_set_credentials.assert_called_with('KEY', 'test', overwrite=True)
             assert mock_echo.call_count == 1
 
             # Successful Call with Prompted Key (since direct key isn't provided)
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
             assert result.exit_code == 0
-            mock_set_credentials.assert_called_with('KEY', 'test')
+            mock_set_credentials.assert_called_with('KEY', 'test', overwrite=True)
             mock_prompt.assert_called_with('API Key', hide_input=False, confirmation_prompt=False)
 
             # Simulating existing credentials, prompting for overwrite
