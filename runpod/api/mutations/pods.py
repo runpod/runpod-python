@@ -6,7 +6,7 @@ RunPod | API Wrapper | Mutations | Pods
 
 def generate_pod_deployment_mutation(
         name:str, image_name:str, gpu_type_id:str,
-        cloud_type:str="ALL", support_public_ip:bool=False,
+        cloud_type:str="ALL", support_public_ip:bool=True, startSsh:bool=True,
         data_center_id=None, country_code=None,
         gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
@@ -22,8 +22,9 @@ def generate_pod_deployment_mutation(
     input_fields.append(f'gpuTypeId: "{gpu_type_id}"')
 
     # Default Fields
-    del cloud_type # Temporarily remove cloud_type
-    # input_fields.append(f'cloudType: "{cloud_type}"')
+    # del cloud_type # Temporarily remove cloud_type
+    input_fields.append(f'cloudType: {cloud_type}')
+    input_fields.append(f'startSsh: {startSsh}')
 
     if support_public_ip:
         input_fields.append('supportPublicIp: true')

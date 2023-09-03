@@ -6,6 +6,7 @@ import subprocess
 import configparser
 
 from runpod import get_pod, create_pod
+from runpod.cli.utils import get_ssh_ip_port
 
 SSH_KEY_FOLDER = os.path.expanduser('~/.runpod/ssh')
 
@@ -27,13 +28,7 @@ def open_ssh_connection(pod_id):
     Opens an SSH connection to a pod.
     '''
     pod = get_pod(pod_id)
-
-    if pod['desiredStatus'] == 'RUNNING':
-        for port in pod['runtime']['ports']:
-            if port['privatePort'] == 22:
-                pod_ip = port['ip']
-                pod_port = port['publicPort']
-
+    pod_ip, pod_port = get_ssh_ip_port(pod)
 
 
     key_files = []

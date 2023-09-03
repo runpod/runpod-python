@@ -7,6 +7,7 @@ import logging
 import paramiko
 
 from runpod import SSH_KEY_FOLDER, get_pod
+from runpod.cli.utils import get_ssh_ip_port
 
 logging.basicConfig()
 logging.getLogger("paramiko").setLevel(logging.WARNING)
@@ -17,12 +18,7 @@ def python_over_ssh(pod_id, file):
     Runs a Python file over SSH.
     '''
     pod = get_pod(pod_id)
-
-    if pod['desiredStatus'] == 'RUNNING':
-        for port in pod['runtime']['ports']:
-            if port['privatePort'] == 22:
-                pod_ip = port['ip']
-                pod_port = port['publicPort']
+    pod_ip, pod_port = get_ssh_ip_port(pod)
 
     key_files = []
     for key_file in os.listdir(SSH_KEY_FOLDER):
