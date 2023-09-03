@@ -31,7 +31,8 @@ def python_over_ssh(pod_id, file):
 
     for key_file in key_files:
         try:
-            ssh.connect(pod_ip, port=pod_port, username='root', key_filename=key_file)
+            ssh.connect(pod_ip, port=pod_port, username='root',
+                        key_filename=os.path.join(SSH_KEY_FOLDER, key_file))
             break
         except paramiko.ssh_exception.SSHException:
             pass
