@@ -112,7 +112,7 @@ def create_pod(
     raw_response = run_graphql_query(
         pod_mutations.generate_pod_deployment_mutation(
             name, image_name, gpu_type_id,
-            cloud_type, support_public_ip,
+            cloud_type, support_public_ip, start_ssh,
             data_center_id, country_code, gpu_count,
             volume_in_gb, container_disk_in_gb, min_vcpu_count, min_memory_in_gb, docker_args,
             ports, volume_mount_path, env)
