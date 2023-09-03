@@ -7,16 +7,14 @@ import click
 from .functions import set_credentials, check_credentials
 
 @click.command('config')
+@click.option('--api-key', prompt='Enter your RunPod API key', help='The API key to use.')
 @click.option('--profile', default='default', help='The profile to set the credentials for.')
-@click.option('--api-key', default=None, help='The user\'s API key.')
-def config_wizard(profile, api_key):
+def config_wizard(api_key, profile):
     '''
     Starts the config wizard.
     '''
-    if api_key is None:
-        api_key = click.prompt('Enter your RunPod API key', type=str, hide_input=False)
     set_credentials(api_key, profile)
-    click.echo('Credentials set for profile: ' + profile + ' in ~/.runpod/config.toml')
+    click.echo(f'Credentials set for profile: {profile} in ~/.runpod/config.toml')
 
 
 @click.command('store_api_key')

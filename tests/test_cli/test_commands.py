@@ -14,6 +14,22 @@ class TestCommands(unittest.TestCase):
     def setUp(self):
         self.runner = CliRunner()
 
+    def test_config_wizard(self):
+        ''' Tests the config command. '''
+        with patch('click.echo') as mock_echo, \
+             patch('runpod.cli.config.functions.set_credentials') as mock_set_credentials:
+
+            # Successful Call
+            result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test', 'KEY'])
+            assert result.exit_code == 0
+            assert mock_set_credentials.called_with('KEY', 'test')
+            assert mock_echo.call_count == 1
+
+            # Unsuccessful Call
+            mock_set_credentials.side_effect = ValueError()
+            result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test', 'KEY'])
+            assert result.exit_code == 1
+
     def test_store_api_key(self):
         ''' Tests the store_api_key command. '''
         with patch('click.echo') as mock_echo, \
