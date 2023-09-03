@@ -29,7 +29,7 @@ class TestExecCommands(unittest.TestCase):
         ''' Tests the remote_python command when pod_id is retrieved from storage. '''
         with tempfile.NamedTemporaryFile() as temp_file, \
              patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh, \
-             patch('runpod.cli.utils.userspace.get_or_prompt_for_pod_id', return_value='stored_pod_id') as mock_get_pod_id: # pylint: disable=line-too-long
+             patch('runpod.cli.exec.commands.get_or_prompt_for_pod_id', return_value='stored_pod_id') as mock_get_pod_id: # pylint: disable=line-too-long
             mock_python_over_ssh.return_value = None
             result = self.runner.invoke(runpod_cli, ['exec', 'python', temp_file.name])
             assert result.exit_code == 0
