@@ -2,6 +2,8 @@
 import re
 import click
 
+from .functions import create_new_project
+
 @click.group('project')
 def project_cli():
     ''' Launch new project on RunPod '''
@@ -35,3 +37,5 @@ def new_project_wizard():
     click.echo(f"Project Name: {project_name}")
     click.echo(f"RunPod Volume ID: {runpod_volume_id}")
     click.echo(f"Python Version: {python_version}")
+
+    create_new_project(project_name, runpod_volume_id, python_version)

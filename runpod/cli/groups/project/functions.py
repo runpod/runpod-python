@@ -5,9 +5,9 @@ from configparser import ConfigParser
 
 PROJECT_TEMPLATE_FOLDER = os.path.join(os.path.dirname(__file__), 'template')
 
-def create_project_toml(project_name, runpod_volume_id, python_version):
+def create_new_project(project_name, runpod_volume_id, python_version):
     '''
-    Create a runpod.toml file for the project
+    Create a new project with the given name.
     '''
     project_folder = os.path.join(os.getcwd(), project_name)
     if not os.path.exists(project_folder):
