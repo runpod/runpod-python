@@ -1,6 +1,7 @@
 '''
 Tests for Runpod CLI exec commands.
 '''
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -16,12 +17,13 @@ class TestExecCommands(unittest.TestCase):
 
     def test_remote_python_with_provided_pod_id(self):
         ''' Tests the remote_python command when pod_id is provided directly. '''
-        with patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh:
+        with tempfile.NamedTemporaryFile() as temp_file, \
+             patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh:
             result = self.runner.invoke(runpod_cli,
                                         ['exec', 'python',
-                                         '--pod_id', 'sample_pod_id', 'sample_file.py'])
+                                         '--pod_id', 'sample_pod_id', temp_file.name])
             assert result.exit_code == 0
-            mock_python_over_ssh.assert_called_with('sample_pod_id', 'sample_file.py')
+            mock_python_over_ssh.assert_called_with('sample_pod_id', temp_file.name)
 
     def test_remote_python_without_provided_pod_id_stored(self):
         ''' Tests the remote_python command when pod_id is retrieved from storage. '''
