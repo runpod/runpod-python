@@ -33,12 +33,13 @@ class TestCommands(unittest.TestCase):
     def test_validate_credentials_file(self):
         ''' Tests the check_creds command. '''
         with patch('click.echo') as mock_echo, \
-             patch('runpod.cli.config.functions.check_credentials') as mock_check_credentials:
+             patch('runpod.cli.config.commands.check_credentials') as mock_check_credentials:
 
             # Successful Validation
             mock_check_credentials.return_value = (True, None)
             result = self.runner.invoke(runpod_cli, ['check_creds', '--profile', 'test_pass'])
             assert mock_check_credentials.called_with('test_pass')
+            assert mock_check_credentials.return_value == (True, None)
             assert result.exit_code == 0
 
             # Unsuccessful Validation

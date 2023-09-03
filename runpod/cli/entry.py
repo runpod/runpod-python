@@ -14,10 +14,10 @@ from .exec.commands import exec_cli
 def runpod_cli():
     '''A collection of CLI functions for RunPod.'''
 
-runpod_cli.add_command(config_wizard)
+runpod_cli.add_command(config_wizard) # runpod config
 runpod_cli.add_command(store_api_key)
 runpod_cli.add_command(validate_credentials_file)
 
-runpod_cli.add_command(ssh_cli)
-runpod_cli.add_command(pod_cli)
-runpod_cli.add_command(exec_cli)
+runpod_cli.add_command(ssh_cli) # runpod ssh
+runpod_cli.add_command(pod_cli) # runpod pod
+runpod_cli.add_command(exec_cli) # runpod exec
