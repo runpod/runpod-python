@@ -35,12 +35,13 @@ class TestCommands(unittest.TestCase):
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
             assert result.exit_code == 0
             mock_set_credentials.assert_called_with('KEY', 'test')
-            mock_prompt.assert_called_with('API Key', hide_input=True, confirmation_prompt=True)
+            mock_prompt.assert_called_with('API Key', hide_input=False, confirmation_prompt=True)
 
             # Simulating existing credentials, prompting for overwrite
             mock_check_credentials.return_value = (True, None)
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
-            mock_confirm.assert_called_with('Credentials already set for profile: test. Overwrite?', abort=True)
+            mock_confirm.assert_called_with(
+                'Credentials already set for profile: test. Overwrite?', abort=True)
 
             # Unsuccessful Call
             mock_set_credentials.side_effect = ValueError()
