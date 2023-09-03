@@ -17,8 +17,8 @@ class TestCommands(unittest.TestCase):
     def test_config_wizard(self):
         ''' Tests the config command. '''
         with patch('click.echo') as mock_echo, \
-            patch('runpod.cli.config.functions.set_credentials') as mock_set_credentials, \
-            patch('runpod.cli.config.functions.check_credentials') as mock_check_credentials, \
+            patch('runpod.cli.config.commands.set_credentials') as mock_set_credentials, \
+            patch('runpod.cli.config.commands.check_credentials') as mock_check_credentials, \
             patch('click.confirm', return_value=True) as mock_confirm, \
             patch('click.prompt', return_value='KEY') as mock_prompt:
 
