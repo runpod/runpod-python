@@ -9,6 +9,40 @@ from runpod.api import ctl_commands
 class TestCTL(unittest.TestCase):
     ''' Tests for CTL Commands '''
 
+    def test_get_user(self):
+        '''
+        Tests get_user
+        '''
+        with patch("runpod.api.graphql.requests.post") as patch_request:
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "myself": {
+                        "id": "USER_ID",
+                    }
+                }
+            }
+
+            user = ctl_commands.get_user()
+            self.assertEqual(user["id"], "USER_ID")
+
+    def test_update_user_settings(self):
+        '''
+        Tests update_user_settings
+        '''
+        with patch("runpod.api.graphql.requests.post") as patch_request:
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "updateUserSettings": {
+                        "id": "USER_ID",
+                        'publicKey': 'PUBLIC_KEY'
+                    }
+                }
+            }
+
+            user = ctl_commands.update_user_settings("PUBLIC_KEY")
+            self.assertEqual(user["id"], "USER_ID")
+            self.assertEqual(user["publicKey"], "PUBLIC_KEY")
+
     def test_get_gpus(self):
         '''
         Tests get_gpus
