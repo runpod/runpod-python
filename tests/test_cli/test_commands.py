@@ -40,7 +40,7 @@ class TestCommands(unittest.TestCase):
             # Simulating existing credentials, prompting for overwrite
             mock_check_credentials.return_value = (True, None)
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
-            mock_confirm.assert_called_with('Credentials already set for profile: test. Overwrite?')
+            mock_confirm.assert_called_with('Credentials already set for profile: test. Overwrite?', abort=True)
 
             # Unsuccessful Call
             mock_set_credentials.side_effect = ValueError()
