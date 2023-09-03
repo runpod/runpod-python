@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import click
 
-from runpod.cli.exec.commands import remote_python
+from runpod.cli.entry import runpod_cli
 
 class TestExecCommands(unittest.TestCase):
     ''' Tests for Runpod CLI exec commands. '''
@@ -17,10 +17,9 @@ class TestExecCommands(unittest.TestCase):
     def test_remote_python_with_provided_pod_id(self):
         ''' Tests the remote_python command when pod_id is provided directly. '''
         with patch('runpod.cli.exec.commands.python_over_ssh') as mock_python_over_ssh:
-            mock_python_over_ssh.return_value = None
-
-            result = self.runner.invoke(remote_python,
-                                        ['--pod_id', 'sample_pod_id', 'sample_file.py'])
+            result = self.runner.invoke(runpod_cli,
+                                        ['exec', 'python',
+                                         '--pod_id', 'sample_pod_id', 'sample_file.py'])
             assert result.exit_code == 0
             mock_python_over_ssh.assert_called_with('sample_pod_id', 'sample_file.py')
 
