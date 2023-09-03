@@ -7,12 +7,20 @@ import click
 from .functions import set_credentials, check_credentials
 
 @click.command('config')
-@click.option('--api-key', prompt='Enter your RunPod API key', help='The API key to use.')
+@click.argument('api-key', required=False, default=None)
 @click.option('--profile', default='default', help='The profile to set the credentials for.')
 def config_wizard(api_key, profile):
     '''
     Starts the config wizard.
+    Should check if credentials are already set and prompt the user to overwrite them.
     '''
+    valid, _ = check_credentials(profile)
+    if valid:
+        click.confirm(f'Credentials already set for profile: {profile}. Overwrite?', abort=True)
+
+    if api_key is None:
+        api_key = click.prompt('API Key', hide_input=True, confirmation_prompt=True)
+
     set_credentials(api_key, profile)
     click.echo(f'Credentials set for profile: {profile} in ~/.runpod/config.toml')
 
