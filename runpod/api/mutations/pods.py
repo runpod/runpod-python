@@ -16,22 +16,23 @@ def generate_pod_deployment_mutation(
     '''
     input_fields = []
 
-    # Required Fields
+    # ------------------------------ Required Fields ----------------------------- #
     input_fields.append(f'name: "{name}"')
     input_fields.append(f'imageName: "{image_name}"')
     input_fields.append(f'gpuTypeId: "{gpu_type_id}"')
 
-    # Default Fields
-    # del cloud_type # Temporarily remove cloud_type
+    # ------------------------------ Default Fields ------------------------------ #
     input_fields.append(f'cloudType: {cloud_type}')
-    input_fields.append(f'startSsh: {start_ssh}')
+
+    if start_ssh:
+        input_fields.append('startSsh: true')
 
     if support_public_ip:
         input_fields.append('supportPublicIp: true')
     else:
         input_fields.append('supportPublicIp: false')
 
-    # Optional Fields
+    # ------------------------------ Optional Fields ----------------------------- #
     if data_center_id is not None:
         input_fields.append(f'dataCenterId: "{data_center_id}"')
     if country_code is not None:

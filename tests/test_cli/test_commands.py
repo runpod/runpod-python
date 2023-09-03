@@ -17,7 +17,7 @@ class TestCommands(unittest.TestCase):
     def test_store_api_key(self):
         ''' Tests the store_api_key command. '''
         with patch('click.echo') as mock_echo, \
-             patch('runpod.cli.commands.set_credentials') as mock_set_credentials:
+             patch('runpod.cli.config.functions.set_credentials') as mock_set_credentials:
 
             # Successful Call
             result = self.runner.invoke(runpod_cli, ['store_api_key', '--profile', 'test', 'KEY'])
@@ -33,7 +33,7 @@ class TestCommands(unittest.TestCase):
     def test_validate_credentials_file(self):
         ''' Tests the check_creds command. '''
         with patch('click.echo') as mock_echo, \
-             patch('runpod.cli.commands.check_credentials') as mock_check_credentials:
+             patch('runpod.cli.config.functions.check_credentials') as mock_check_credentials:
 
             # Successful Validation
             mock_check_credentials.return_value = (True, None)

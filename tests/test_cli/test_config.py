@@ -18,7 +18,7 @@ class TestConfig(unittest.TestCase):
             'api_key = "RUNPOD_API_KEY"\n'
         )
 
-    @patch('runpod.cli.config.toml.load')
+    @patch('runpod.cli.config.functions.toml.load')
     @patch('builtins.open',  new_callable=mock_open())
     def test_set_credentials(self, mock_file, mock_toml_load):
         '''
@@ -38,8 +38,8 @@ class TestConfig(unittest.TestCase):
                          'Profile already exists. Use `update_credentials` instead.')
 
     @patch('builtins.open',  new_callable=mock_open())
-    @patch('runpod.cli.config.toml.load')
-    @patch('runpod.cli.config.os.path.exists')
+    @patch('runpod.cli.config.functions.toml.load')
+    @patch('runpod.cli.config.functions.os.path.exists')
     def test_check_credentials(self, mock_exists, mock_toml_load, mock_file):
         '''mock_open_call
         Tests the check_credentials function.
