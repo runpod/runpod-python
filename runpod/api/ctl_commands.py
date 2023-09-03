@@ -76,6 +76,7 @@ def get_pod(pod_id : str):
 def create_pod(
         name:str, image_name:str, gpu_type_id:str,
         cloud_type:str="ALL", support_public_ip:bool=False,
+        start_ssh:bool=True,
         data_center_id : Optional[str]=None, country_code:Optional[str]=None,
         gpu_count:int=1, volume_in_gb:int=0, container_disk_in_gb:int=5,
         min_vcpu_count:int=1, min_memory_in_gb:int=1, docker_args:str="",
