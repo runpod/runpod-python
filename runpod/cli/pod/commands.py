@@ -48,7 +48,8 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template
 
         click.echo('Launching default pod...')
 
-    new_pod = create_pod(name, image, gpu_type, gpu_count=gpu_count, support_public_ip=support_public_ip, ports=ports)
+    new_pod = create_pod(name, image, gpu_type,
+                         gpu_count=gpu_count, support_public_ip=support_public_ip, ports=ports)
 
     click.echo(f'Pod {new_pod["id"]} has been created.')
 

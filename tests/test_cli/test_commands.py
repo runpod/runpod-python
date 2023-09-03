@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 from click.testing import CliRunner
 
-from runpod.cli.commands import runpod_cli
+from runpod.cli.entry import runpod_cli
 
 class TestCommands(unittest.TestCase):
     ''' A collection of tests for the CLI commands. '''

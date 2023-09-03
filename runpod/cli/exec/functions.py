@@ -40,7 +40,7 @@ def python_over_ssh(pod_id, file):
             break
         except paramiko.ssh_exception.SSHException:
             pass
-        except Exception as err:
+        except Exception as err: # pylint: disable=broad-except
             print(f"An error occurred with key {key_file}: {err}")
 
     else:
