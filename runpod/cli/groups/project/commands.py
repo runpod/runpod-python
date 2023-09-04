@@ -45,7 +45,7 @@ def new_project_wizard():
 
 @project_cli.command('launch')
 @click.argument('project_file', type=click.Path(exists=True))
-def launch_project(project_file):
+def launch_project_pod(project_file):
     '''
     Launch the project development environment from runpod.toml
     '''
