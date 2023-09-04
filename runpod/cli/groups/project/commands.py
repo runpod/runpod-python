@@ -2,7 +2,7 @@
 import re
 import click
 
-from .functions import create_new_project, launch_project
+from .functions import create_new_project, launch_project, start_project_api
 
 @click.group('project')
 def project_cli():
@@ -51,3 +51,12 @@ def launch_project_pod(project_file):
     '''
     click.echo("Launching project development environment...")
     launch_project(project_file)
+
+@project_cli.command('start')
+@click.argument('project_file', type=click.Path(exists=True))
+def start_project_pod(project_file):
+    '''
+    Starts the API server from the handler file.
+    '''
+    click.echo("Starting project API server...")
+    start_project_api(project_file)

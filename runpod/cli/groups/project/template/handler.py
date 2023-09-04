@@ -7,7 +7,7 @@ def handler(job):
     This is the handler function for the job.
     '''
     job_input = job['input']
-    example_name = job_input.get('example_name', 'World')
-    return f"Hello, {example_name}!"
+    name = job_input.get('name', 'World')
+    return f"Hello, {name}!"
 
 runpod.serverless.start({"handler": handler})

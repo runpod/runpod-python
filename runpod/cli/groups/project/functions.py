@@ -3,7 +3,7 @@ import shutil
 import uuid
 from configparser import ConfigParser
 
-from runpod import create_pod, get_pod
+from runpod import create_pod, get_pod, get_pods
 from runpod.cli.utils.ssh_cmd import SSHConnection
 
 PROJECT_TEMPLATE_FOLDER = os.path.join(os.path.dirname(__file__), 'template')
@@ -113,3 +113,28 @@ def launch_project(project_file):
     ]
 
     ssh_conn.run_commands(commands)
+
+
+def start_project_api(project_file):
+    '''
+    python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080
+    '''
+    with open(project_file, 'r', encoding="UTF-8") as config_file:
+        config = ConfigParser()
+        config.read_file(config_file)
+
+    user_pods = get_pods()
+
+    for pod in user_pods:
+        if config['PROJECT']['UUID'] in pod['name']:
+            project_pod = pod
+            break
+
+    ssh_conn = SSHConnection(project_pod['id'])
+    launch_api_server = [
+        f'source {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/venv/bin/activate',
+        f'cd {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}',
+        'python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080'
+    ]
+
+    ssh_conn.run_commands(launch_api_server)
