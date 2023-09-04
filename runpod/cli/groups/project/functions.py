@@ -86,7 +86,8 @@ def launch_project(project_file):
     current_dir = os.getcwd()
     project_files = os.listdir(current_dir)
 
-    project_path = f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}'
+    project_path_uuid = f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}'
+    project_path = f'{project_path_uuid}/{config["PROJECT"]["Name"]}'
 
     command_list = [
         f'mkdir -p {project_path}',
@@ -102,13 +103,13 @@ def launch_project(project_file):
         else:
             ssh_conn.put_file(local_path, remote_path)
 
-    venv_path = os.path.join(project_path, "venv")
+    venv_path = os.path.join(project_path_uuid, "venv")
     python_version = config["ENVIRONMENT"]["PythonVersion"]
     commands = [
-        f'cd {project_path}',
         f'python{python_version} -m venv {venv_path}',
         f'source {venv_path}/bin/activate',
-        f'pip install -r requirements.txt'
+        f'cd {project_path}',
+        'pip install -r requirements.txt'
     ]
 
     ssh_conn.run_commands(commands)
