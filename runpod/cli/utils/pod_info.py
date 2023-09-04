@@ -14,7 +14,11 @@ def get_ssh_ip_port(pod):
 
     for attempt in range(3):
         if pod['desiredStatus'] == 'RUNNING':
-            for port in pod['runtime'].get('ports', []):  # Safe access to 'ports' key
+            ports = []  # Default to an empty list
+            if pod.get('runtime'):
+                ports = pod['runtime'].get('ports', [])
+
+            for port in ports:
                 if port['privatePort'] == 22:
                     pod_ip = port['ip']
                     pod_port = port['publicPort']
