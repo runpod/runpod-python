@@ -5,10 +5,8 @@ import os
 import subprocess
 import configparser
 
-from runpod import get_pod, create_pod
+from runpod import get_pod, create_pod, SSH_KEY_FOLDER
 from runpod.cli.utils import get_ssh_ip_port
-
-SSH_KEY_FOLDER = os.path.expanduser('~/.runpod/ssh')
 
 def pod_from_template(template_file):
     '''

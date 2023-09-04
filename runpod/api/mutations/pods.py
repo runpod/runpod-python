@@ -10,7 +10,8 @@ def generate_pod_deployment_mutation(
         data_center_id=None, country_code=None,
         gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
-        env=None):
+        env=None, network_volume_id=None
+        ):
     '''
     Generates a mutation to deploy a pod on demand.
     '''
@@ -58,6 +59,14 @@ def generate_pod_deployment_mutation(
             [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()])
         input_fields.append(f"env: [{env_string}]")
 
+    if network_volume_id is not None:
+        # network_volume_fragment = f'''
+        # networkVolume: {{
+        #     id: "{network_volume_id}"
+        # }}
+        # '''
+        network_volume_fragment = f'networkVolumeId: "{network_volume_id}"'
+        input_fields.append(network_volume_fragment)
 
     # Format input fields
     input_string = ", ".join(input_fields)

@@ -40,5 +40,12 @@ def new_project_wizard():
 
     create_new_project(project_name, runpod_volume_id, python_version)
 
-    click.echo(f"Project {project_name} created successfully.")
-    click.echo(f"Navigate to the project folder with `cd {project_name}`. Run `runpod project start` to start the project.")
+    click.echo(f"Project {project_name} created successfully!")
+    click.echo(f"Navigate to the project folder with `cd {project_name}`. Run `runpod project launch` to launch the project development environment.")
+
+@project_cli.command('launch')
+def launch_project():
+    '''
+    Launch the project development environment from runpod.toml
+    '''
+    click.echo("Launching project development environment...")

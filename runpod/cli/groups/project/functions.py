@@ -3,6 +3,9 @@ import shutil
 import uuid
 from configparser import ConfigParser
 
+from runpod import create_pod, get_pod
+from runpod.cli.utils.ssh_cmd import SSHConnection
+
 PROJECT_TEMPLATE_FOLDER = os.path.join(os.path.dirname(__file__), 'template')
 
 def create_new_project(project_name, runpod_volume_id, python_version):
@@ -41,3 +44,54 @@ def create_new_project(project_name, runpod_volume_id, python_version):
 
     with open(os.path.join(project_folder, "runpod.toml"), 'w', encoding="UTF-8") as config_file:
         config.write(config_file)
+
+def launch_project(project_file):
+    '''
+    Launch the project development environment from runpod.toml
+    '''
+    with open(project_file, 'r', encoding="UTF-8") as config_file:
+        config = ConfigParser()
+        config.read_file(config_file)
+
+    project_pod = create_pod(
+        f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
+        'runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel',
+        'NVIDIA GeForce RTX 3090',
+        gpu_count=1,
+        support_public_ip=True,
+        ports=f'{config["PROJECT"]["Ports"]}',
+        network_volume_id=f'{config["PROJECT"]["StorageID"]}',
+        volume_mount_path=f'{config["PROJECT"]["VolumeMountPath"]}',
+        container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"])
+    )
+
+    while project_pod['status'] != 'RUNNING':
+        project_pod = get_pod(project_pod['id'])
+
+    print(f"Project {config['PROJECT']['Name']} launched successfully!")
+
+    # SSH into the pod and create a project folder within the volume
+    # Create a folder in the volume for the project that matches the project UUID
+    # Create a folder in the project folder that matches the project name
+    # Copy the project files into the project folder
+    # crate a virtual environment using the python version specified in the project config
+    # install the requirements.txt file
+
+    ssh_conn = SSHConnection(project_pod['id'])
+
+    project_files = os.listdir(os.path.dirname(project_file))
+
+    command_list = [
+        f'mkdir -p {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}',
+        f'mkdir -p {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}',
+    ]
+
+    ssh_conn.run_commands(command_list)
+
+    for file in project_files:
+        ssh_conn.put_file(os.path.join(os.path.dirname(project_file), file), f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}/{file}')
+
+    ssh_conn.run_commands([
+        f'cd {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}',
+        f'python{config["ENVIRONMENT"]["PythonVersion"]} -m venv venv'
+    ])
