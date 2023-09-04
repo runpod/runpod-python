@@ -107,8 +107,8 @@ def launch_project(project_file):
     python_version = config["ENVIRONMENT"]["PythonVersion"]
     commands = [
         f'python{python_version} -m venv {venv_path}',
-        f'source {venv_path}/bin/activate',
-        f'cd {project_path}',
+        f'source {venv_path}/bin/activate &&' \
+        f'cd {project_path} &&' \
         'pip install -r requirements.txt'
     ]
 
