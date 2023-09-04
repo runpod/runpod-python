@@ -65,9 +65,8 @@ def launch_project(project_file):
         container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"])
     )
 
-    project_pod = get_pod(project_pod['id'])
 
-    while project_pod['status'] != 'RUNNING':
+    while project_pod['desiredStatus'] != 'RUNNING':
         project_pod = get_pod(project_pod['id'])
 
     print(f"Project {config['PROJECT']['Name']} launched successfully!")
