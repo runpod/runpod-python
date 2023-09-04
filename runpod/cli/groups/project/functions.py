@@ -83,7 +83,7 @@ def launch_project(project_file):
 
     ssh_conn = SSHConnection(project_pod['id'])
 
-    current_dir = os.path.dirname(project_file)
+    current_dir = os.getcwd()
     project_files = os.listdir(current_dir)
 
     project_path = f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}'
