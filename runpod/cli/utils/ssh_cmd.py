@@ -13,6 +13,7 @@ from .userspace import find_ssh_key_file
 class SSHConnection:
     def __init__(self, pod_id):
         self.pod = get_pod(pod_id)
+        print(self.pod)
         self.pod_ip, self.pod_port = get_ssh_ip_port(self.pod)
         self.key_file = find_ssh_key_file(self.pod_ip, self.pod_port)
 
