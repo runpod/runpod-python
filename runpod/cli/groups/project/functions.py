@@ -132,8 +132,8 @@ def start_project_api(project_file):
 
     ssh_conn = SSHConnection(project_pod['id'])
     launch_api_server = [
-        f'source {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/venv/bin/activate',
-        f'cd {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}',
+        f'source {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/venv/bin/activate &&' \
+        f'cd {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]} &&' \
         'python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080'
     ]
 
