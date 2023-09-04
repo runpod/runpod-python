@@ -27,6 +27,8 @@ class SSHConnection:
             stdin, stdout, stderr = self.ssh.exec_command(command)
             for line in stdout:
                 print(line.strip())  # Using strip() to remove leading/trailing whitespace
+            for line in stderr:
+                print("[ERROR]", line.strip())  # Prefixing with [ERROR] to distinguish from regular output
 
     def put_directory(self, local_path, remote_path):
         ''' Copy local directory to remote machine over SSH. '''
