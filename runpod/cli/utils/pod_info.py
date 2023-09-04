@@ -12,7 +12,7 @@ def get_ssh_ip_port(pod):
     pod_ip = None
     pod_port = None
 
-    for attempt in range(3):
+    for attempt in range(5):
         if pod['desiredStatus'] == 'RUNNING':
             ports = []  # Default to an empty list
             if pod.get('runtime'):
