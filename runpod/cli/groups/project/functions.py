@@ -83,19 +83,32 @@ def launch_project(project_file):
 
     ssh_conn = SSHConnection(project_pod['id'])
 
-    project_files = os.listdir(os.path.dirname(project_file))
+    current_dir = os.path.dirname(project_file)
+    project_files = os.listdir(current_dir)
+
+    project_path = f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}'
 
     command_list = [
-        f'mkdir -p {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}',
-        f'mkdir -p {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}',
+        f'mkdir -p {project_path}',
     ]
 
     ssh_conn.run_commands(command_list)
 
     for file in project_files:
-        ssh_conn.put_file(os.path.join(os.path.dirname(project_file), file), f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}/{file}')
+        local_path = os.path.join(current_dir, file)
+        remote_path = f'{project_path}/{file}'
+        if os.path.isdir(local_path):
+            ssh_conn.put_directory(local_path, remote_path)
+        else:
+            ssh_conn.put_file(local_path, remote_path)
 
-    ssh_conn.run_commands([
-        f'cd {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]}',
-        f'python{config["ENVIRONMENT"]["PythonVersion"]} -m venv venv'
-    ])
+    venv_path = os.path.join(project_path, "venv")
+    python_version = config["ENVIRONMENT"]["PythonVersion"]
+    commands = [
+        f'cd {project_path}',
+        f'python{python_version} -m venv {venv_path}',
+        f'source {venv_path}/bin/activate',
+        f'pip install -r requirements.txt'
+    ]
+
+    ssh_conn.run_commands(commands)
