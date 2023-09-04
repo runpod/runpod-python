@@ -51,6 +51,7 @@ def generate_pod_deployment_mutation(
     if docker_args is not None:
         input_fields.append(f'dockerArgs: "{docker_args}"')
     if ports is not None:
+        ports = ports.replace(" ", "")
         input_fields.append(f'ports: "{ports}"')
     if volume_mount_path is not None:
         input_fields.append(f'volumeMountPath: "{volume_mount_path}"')
