@@ -9,6 +9,12 @@ query myself {
     myself {
         id
         pubKey
+        networkVolumes {
+            id
+            name
+            size
+            dataCenterId
+        }
     }
 }
 """
