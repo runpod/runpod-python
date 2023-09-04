@@ -69,7 +69,7 @@ def launch_project(project_file):
     )
 
     new_pod= get_pod(project_pod['id'])
-    while new_pod['desiredStatus'] != 'RUNNING' and new_pod['runtime'] is not None:
+    while new_pod['desiredStatus'] != 'RUNNING' and new_pod['runtime'] is None:
         new_pod = get_pod(project_pod['id'])
 
     print(f"Project {config['PROJECT']['Name']} launched successfully!")
