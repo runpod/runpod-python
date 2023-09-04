@@ -2,7 +2,7 @@
 import re
 import click
 
-from .functions import create_new_project
+from .functions import create_new_project, launch_project
 
 @click.group('project')
 def project_cli():
@@ -44,8 +44,10 @@ def new_project_wizard():
     click.echo(f"Navigate to the project folder with `cd {project_name}`. Run `runpod project launch` to launch the project development environment.")
 
 @project_cli.command('launch')
-def launch_project():
+@click.argument('project_file', type=click.Path(exists=True))
+def launch_project(project_file):
     '''
     Launch the project development environment from runpod.toml
     '''
     click.echo("Launching project development environment...")
+    launch_project(project_file)

@@ -1,0 +1,13 @@
+[PROJECT]
+uuid = dbedb4a1
+name = example project
+baseimage = runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel
+storageid = v4siqtf0lr
+volumemountpath = /runpod_volume
+ports = 8080/http, 22/tcp
+containerdisksizegb = 10
+
+[ENVIRONMENT]
+pythonversion = 3.10
+requirementspath = /mnt/c/Users/justi/Documents/GitHub/runpod-python/example project/requirements.txt
+
