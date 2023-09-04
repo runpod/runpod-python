@@ -79,7 +79,6 @@ def generate_pod_deployment_mutation(
         }}
       ) {{
         id
-        status
         imageName
         env
         machineId
