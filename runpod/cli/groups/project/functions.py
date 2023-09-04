@@ -53,7 +53,8 @@ def launch_project(project_file):
         config = ConfigParser()
         config.read_file(config_file)
 
-    print(config)
+    for config_item in config['PROJECT']:
+        print(f'{config_item}: {config["PROJECT"][config_item]}')
 
     project_pod = create_pod(
         f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
