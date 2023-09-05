@@ -31,6 +31,7 @@ def create_new_project(project_name, runpod_volume_id, python_version):
         'UUID': str(uuid.uuid4())[:8],  # Short UUID
         'Name': project_name,
         'BaseImage': 'runpod/base:0.0.0',
+        'GPU': 'NVIDIA RTX A4500',
         'StorageID': runpod_volume_id,
         'VolumeMountPath': '/runpod_volume',
         'Ports': '8080/http, 22/tcp',
@@ -59,7 +60,7 @@ def launch_project(project_file):
     project_pod = create_pod(
         f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
         config['PROJECT']['BaseImage'],
-        'NVIDIA RTX A4500',
+        config['PROJECT']['GPU'],
         gpu_count=1,
         support_public_ip=True,
         ports=f'{config["PROJECT"]["Ports"]}',
