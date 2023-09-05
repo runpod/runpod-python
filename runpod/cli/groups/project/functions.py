@@ -59,7 +59,7 @@ def launch_project(project_file):
     project_pod = create_pod(
         f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
         config['PROJECT']['BaseImage'],
-        'NVIDIA GeForce RTX 4090',
+        'NVIDIA RTX A4500',
         gpu_count=1,
         support_public_ip=True,
         ports=f'{config["PROJECT"]["Ports"]}',
