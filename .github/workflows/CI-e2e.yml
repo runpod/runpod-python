@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
@@ -62,7 +62,7 @@ jobs:
     needs: [e2e-build]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Run Tests
         uses: direlines/runpod-test-runner@v1.6
         with:
