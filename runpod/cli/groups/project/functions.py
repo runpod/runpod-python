@@ -58,7 +58,7 @@ def launch_project(project_file):
 
     project_pod = create_pod(
         f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
-        'runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel',
+        config['PROJECT']['BaseImage'],
         'NVIDIA GeForce RTX 4090',
         gpu_count=1,
         support_public_ip=True,
