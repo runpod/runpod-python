@@ -30,7 +30,7 @@ def create_new_project(project_name, runpod_volume_id, python_version):
     config['PROJECT'] = {
         'UUID': str(uuid.uuid4())[:8],  # Short UUID
         'Name': project_name,
-        'BaseImage': 'runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel',
+        'BaseImage': 'runpod/base:0.0.0',
         'StorageID': runpod_volume_id,
         'VolumeMountPath': '/runpod_volume',
         'Ports': '8080/http, 22/tcp',
