@@ -49,7 +49,7 @@ def python_over_ssh(pod_id, file):
     sftp.close()
 
     # Run the file
-    stdout = ssh.exec_command(f'python /root/{file}')[1]
+    stdout = ssh.exec_command(f'python3.10 /root/{file}')[1]
     for line in stdout:
         print(line)
 

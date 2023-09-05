@@ -109,6 +109,7 @@ def launch_project(project_file):
         f'python{python_version} -m venv {venv_path}',
         f'source {venv_path}/bin/activate &&' \
         f'cd {project_path} &&' \
+        'pip install --upgrade pip &&'
         'pip install -r requirements.txt'
     ]
 
