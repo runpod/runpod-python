@@ -4,12 +4,17 @@ RunPod | CLI | Utils | SSH Command
 Connect and run commands over SSH.
 '''
 import os
+import logging
 import colorama
 import paramiko
 
 from runpod import get_pod, SSH_KEY_FOLDER
 from .pod_info import get_ssh_ip_port
 from .userspace import find_ssh_key_file
+
+logging.basicConfig()
+logging.getLogger("paramiko").setLevel(logging.WARNING)
+
 
 class SSHConnection:
     ''' Connect and run commands over SSH. '''
