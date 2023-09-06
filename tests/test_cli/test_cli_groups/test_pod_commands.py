@@ -6,7 +6,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 from prettytable import PrettyTable
 
-from runpod.cli.groups.pod import commands
+from runpod.cli.entry import runpod_cli
 
 class TestPodCommands(unittest.TestCase):
     ''' Test CLI pod commands '''
@@ -23,10 +23,11 @@ class TestPodCommands(unittest.TestCase):
             {'id': '2', 'name': 'Pod2', 'desiredStatus': 'Stopped', 'imageName': 'Image2'}
         ]
 
-        # Call the function
-        commands.list_pods()
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ['pod', 'list'])
 
         # Create expected table
+        assert result.exit_code == 0, result.exception
         expected_table = PrettyTable(['ID', 'Name', 'Status', 'Image'])
         expected_table.add_row(('1', 'Pod1', 'Running', 'Image1'))
         expected_table.add_row(('2', 'Pod2', 'Stopped', 'Image2'))
@@ -52,14 +53,16 @@ class TestPodCommands(unittest.TestCase):
         mock_create_pod.return_value = {'id': 'sample_id'}
 
         runner = CliRunner()
-        result = runner.invoke(commands.create_new_pod, [
-            'test_name',
-            '--image', 'runpod/base:0.0.0',
-            '--gpu-type', 'NVIDIA GeForce RTX 3090',
-            '--gpu-count', '1',
-            '--support-public-ip',
-            '--ports', '22/tcp'
-            ]) # pylint: disable=line-too-long
+        result = runner.invoke(runpod_cli, [
+                'pod', 'create',
+                'test_name',
+                '--image', 'runpod/base:0.0.0',
+                '--gpu-type', 'NVIDIA GeForce RTX 3090',
+                '--gpu-count', '1',
+                '--support-public-ip',
+                '--ports', '22/tcp'
+            ]
+        )
 
         # Assertions
         assert result.exit_code == 0, result.exception
