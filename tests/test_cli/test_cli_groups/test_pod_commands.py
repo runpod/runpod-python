@@ -67,9 +67,10 @@ class TestPodCommands(unittest.TestCase):
         mock_echo.assert_called_with('Pod sample_id has been created.')
 
         with tempfile.NamedTemporaryFile() as template_file:
-            result = runner.invoke(runpod_cli, ['pod', 'create', '--template-file', template_file.name])
+            result = runner.invoke(runpod_cli,
+                                   ['pod', 'create', '--template-file', template_file.name])
             assert result.exit_code == 0, result.exception
-            assert mock_pod_from_template.called()
+            assert mock_pod_from_template.called
             mock_echo.assert_called_with('Pod RunPod-CLI-Pod has been created.')
 
 
