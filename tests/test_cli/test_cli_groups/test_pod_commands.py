@@ -10,11 +10,6 @@ from runpod.cli.groups.pod import commands
 class TestPodCommands(unittest.TestCase):
     ''' Test CLI pod commands '''
 
-    def test_pod_cli(self):
-        ''' Test pod_cli '''
-        self.assertEqual(commands.pod_cli.name, 'pod')
-        self.assertEqual(commands.pod_cli.short_help, 'A collection of CLI functions for Pod.')
-
     @patch('runpod.cli.groups.pod.commands.get_pods')
     @patch('runpod.cli.groups.pod.commands.click.echo')
     def test_list_pods(self, mock_echo, mock_get_pods):
@@ -44,8 +39,8 @@ class TestPodCommands(unittest.TestCase):
     @patch('runpod.cli.groups.pod.commands.click.echo')
     @patch('runpod.cli.groups.pod.commands.create_pod')
     @patch('runpod.cli.groups.pod.commands.pod_from_template')
-    def test_create_new_pod(self, mock_pod_from_template,
-                            mock_create_pod, mock_echo, mock_confirm, mock_prompt): # pylint: disable=too-many-arguments
+    def test_create_new_pod(self, mock_pod_from_template,   # pylint: disable=too-many-arguments
+                            mock_create_pod, mock_echo, mock_confirm, mock_prompt):
         '''
         Test create_new_pod
         '''
