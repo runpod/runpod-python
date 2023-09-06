@@ -128,7 +128,8 @@ class TestCTL(unittest.TestCase):
             pod = ctl_commands.create_pod(
                 name="POD_NAME",
                 image_name="IMAGE_NAME",
-                gpu_type_id="NVIDIA A100 80GB PCIe")
+                gpu_type_id="NVIDIA A100 80GB PCIe",
+                network_volume_id="NETWORK_VOLUME_ID")
 
             self.assertEqual(pod["id"], "POD_ID")
 
@@ -137,8 +138,7 @@ class TestCTL(unittest.TestCase):
                     name="POD_NAME",
                     image_name="IMAGE_NAME",
                     gpu_type_id="NVIDIA A100 80GB PCIe",
-                    cloud_type="NOT A CLOUD TYPE",
-                    network_volume_id="NETWORK_VOLUME_ID")
+                    cloud_type="NOT A CLOUD TYPE")
 
             self.assertEqual(str(context.exception),
                                 "cloud_type must be one of ALL, COMMUNITY or SECURE")
