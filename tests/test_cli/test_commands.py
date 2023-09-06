@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 from click.testing import CliRunner
 
-from runpod.cli.entry import runpod_cli
+from runpod.cli.groups.entry import runpod_cli
 
 class TestCommands(unittest.TestCase):
     ''' A collection of tests for the CLI commands. '''
@@ -17,8 +17,8 @@ class TestCommands(unittest.TestCase):
     def test_config_wizard(self):
         ''' Tests the config command. '''
         with patch('click.echo') as mock_echo, \
-            patch('runpod.cli.config.commands.set_credentials') as mock_set_credentials, \
-            patch('runpod.cli.config.commands.check_credentials') as mock_check_credentials, \
+            patch('runpod.cli.groups.config.commands.set_credentials') as mock_set_credentials, \
+            patch('runpod.cli.groups.config.commands.check_credentials') as mock_check_credentials, \
             patch('click.confirm', return_value=True) as mock_confirm, \
             patch('click.prompt', return_value='KEY') as mock_prompt:
 
@@ -51,7 +51,7 @@ class TestCommands(unittest.TestCase):
     def test_store_api_key(self):
         ''' Tests the store_api_key command. '''
         with patch('click.echo') as mock_echo, \
-             patch('runpod.cli.config.functions.set_credentials') as mock_set_credentials:
+             patch('runpod.cli.groups.config.functions.set_credentials') as mock_set_credentials:
 
             # Successful Call
             result = self.runner.invoke(runpod_cli, ['store_api_key', '--profile', 'test', 'KEY'])
@@ -67,7 +67,7 @@ class TestCommands(unittest.TestCase):
     def test_validate_credentials_file(self):
         ''' Tests the check_creds command. '''
         with patch('click.echo') as mock_echo, \
-             patch('runpod.cli.config.commands.check_credentials') as mock_check_credentials:
+             patch('runpod.cli.groups.config.commands.check_credentials') as mock_check_credentials:
 
             # Successful Validation
             mock_check_credentials.return_value = (True, None)

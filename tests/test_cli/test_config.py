@@ -5,8 +5,8 @@ Unit tests for the config command.
 import unittest
 from unittest.mock import patch, mock_open
 
-from runpod.cli.config import commands
-from runpod.cli.config import functions
+from runpod.cli.groups.config import commands
+from runpod.cli.groups.config import functions
 
 
 class TestConfig(unittest.TestCase):
@@ -18,7 +18,7 @@ class TestConfig(unittest.TestCase):
             'api_key = "RUNPOD_API_KEY"\n'
         )
 
-    @patch('runpod.cli.config.functions.toml.load')
+    @patch('runpod.cli.groups.config.functions.toml.load')
     @patch('builtins.open',  new_callable=mock_open())
     def test_set_credentials(self, mock_file, mock_toml_load):
         '''
@@ -38,8 +38,8 @@ class TestConfig(unittest.TestCase):
                          'Profile already exists. Use `update_credentials` instead.')
 
     @patch('builtins.open',  new_callable=mock_open())
-    @patch('runpod.cli.config.functions.toml.load')
-    @patch('runpod.cli.config.functions.os.path.exists')
+    @patch('runpod.cli.groups.config.functions.toml.load')
+    @patch('runpod.cli.groups.config.functions.os.path.exists')
     def test_check_credentials(self, mock_exists, mock_toml_load, mock_file):
         '''mock_open_call
         Tests the check_credentials function.
@@ -69,7 +69,7 @@ class TestConfig(unittest.TestCase):
 
 
     @patch('os.path.exists', return_value=True)
-    @patch('runpod.cli.config.functions.toml.load')
+    @patch('runpod.cli.groups.config.functions.toml.load')
     @patch('builtins.open', new_callable=mock_open, read_data='[default]\nkey = "value"')
     def test_get_credentials_existing_profile(self, mock_open_call, mock_toml_load, mock_exists):
         '''
@@ -82,7 +82,7 @@ class TestConfig(unittest.TestCase):
         assert mock_exists.called
 
     @patch('os.path.exists', return_value=True)
-    @patch('runpod.cli.config.functions.toml.load')
+    @patch('runpod.cli.groups.config.functions.toml.load')
     @patch('builtins.open', new_callable=mock_open, read_data='[default]\nkey = "value"')
     def test_get_credentials_non_existent_profile(self, mock_open_call, mock_toml_load, mock_exists): # pylint: disable=line-too-long
         '''
