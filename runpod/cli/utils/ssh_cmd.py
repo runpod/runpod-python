@@ -31,7 +31,7 @@ class SSHConnection:
     def run_commands(self, commands):
         ''' Runs a list of bash commands over SSH. '''
         for command in commands:
-            stdin, stdout, stderr = self.ssh.exec_command(command)
+            _, stdout, stderr = self.ssh.exec_command(command)
             for line in stdout:
                 print(colorama.Fore.GREEN + f"[{self.pod_id}]", line.strip())
             for line in stderr:
