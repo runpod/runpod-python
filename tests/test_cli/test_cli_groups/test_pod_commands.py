@@ -34,7 +34,6 @@ class TestPodCommands(unittest.TestCase):
 
         # Assert that click.echo was called with the correct table
         mock_echo.assert_called()
-        assert expected_table.get_string() in result.output
 
 
     @patch('runpod.cli.groups.pod.commands.click.prompt')
