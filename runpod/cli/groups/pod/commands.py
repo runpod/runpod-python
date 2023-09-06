@@ -8,6 +8,8 @@ from prettytable import PrettyTable
 from runpod import get_pods, create_pod
 from .functions import pod_from_template, open_ssh_connection
 
+# from ...utils import get_ssh_ip_port
+
 @click.group('pod')
 def pod_cli():
     '''A collection of CLI functions for Pod.'''

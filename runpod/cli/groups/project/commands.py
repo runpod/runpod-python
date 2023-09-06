@@ -25,7 +25,7 @@ def validate_project_name(name):
 @project_cli.command('new')
 @click.option('--name', '-n', 'project_name', type=str, default=None, help="The project name.")
 @click.option('--type', '-t', 'model_type', type=click.Choice(['llama2'], case_sensitive=False),
-              default=None, help="The type of Hugging Face model.")
+              default="default", help="The type of Hugging Face model.")
 @click.option('--model', '-m', 'model_name', type=str, default=None,
               help="The name of the Hugging Face model. (e.g. meta-llama/Llama-2-7b)")
 def new_project_wizard(project_name, model_type, model_name):
