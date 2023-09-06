@@ -77,6 +77,8 @@ def launch_project():
     for config_item in config['PROJECT']:
         print(f'{config_item}: {config["PROJECT"][config_item]}')
 
+    print("Launching pod on RunPod...")
+
     new_pod = create_pod(
         f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
         config['PROJECT']['BaseImage'],
