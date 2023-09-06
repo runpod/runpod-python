@@ -5,6 +5,7 @@ Connect and run commands over SSH.
 '''
 import os
 import logging
+import subprocess
 import colorama
 import paramiko
 
@@ -79,3 +80,14 @@ class SSHConnection:
     def close(self):
         ''' Close the SSH connection. '''
         self.ssh.close()
+
+    def launch_terminal(self):
+        ''' Launch an interactive terminal over SSH. '''
+        cmd = [
+            "ssh" , "-p", str(self.pod_port),
+            "-o", "StrictHostKeyChecking=no",
+            "-i", os.path.join(SSH_KEY_FOLDER, self.key_file),
+            f"root@{self.pod_ip}"
+        ]
+
+        subprocess.run(cmd, check=True)

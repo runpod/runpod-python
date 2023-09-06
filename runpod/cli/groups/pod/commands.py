@@ -1,14 +1,13 @@
 '''
 RunPod | CLI | Pod | Commands
 '''
-
 import click
 from prettytable import PrettyTable
 
 from runpod import get_pods, create_pod
-from .functions import pod_from_template, open_ssh_connection
+from .functions import pod_from_template
 
-# from ...utils import get_ssh_ip_port
+from ...utils import ssh_cmd
 
 @click.group('pod')
 def pod_cli():
@@ -66,4 +65,7 @@ def connect_to_pod(pod_id):
     Connects to a pod.
     '''
     click.echo(f'Connecting to pod {pod_id}...')
-    open_ssh_connection(pod_id)
+    ssh = ssh_cmd.SSHConnection(pod_id)
+    # open_ssh_connection(pod_id)
+
+    ssh.launch_terminal()

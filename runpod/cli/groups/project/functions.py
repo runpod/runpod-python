@@ -14,13 +14,16 @@ STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
 # -------------------------------- New Project ------------------------------- #
 def create_new_project(project_name, runpod_volume_id, python_version,
-                       model_type="default", model_name=None):
+                       model_type=None, model_name=None):
     '''
     Create a new project with the given name.
     '''
     project_folder = os.path.join(os.getcwd(), project_name)
     if not os.path.exists(project_folder):
         os.makedirs(project_folder)
+
+    if model_type is None:
+        model_type = "default"
 
     template_dir = os.path.join(STARTER_TEMPLATES, model_type)
 
