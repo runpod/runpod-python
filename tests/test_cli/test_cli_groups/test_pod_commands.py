@@ -1,7 +1,7 @@
 ''' Test CLI pod commands '''
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from prettytable import PrettyTable
 
@@ -16,7 +16,7 @@ class TestPodCommands(unittest.TestCase):
         self.assertEqual(commands.pod_cli.short_help, 'A collection of CLI functions for Pod.')
 
     @patch('runpod.cli.groups.pod.commands.get_pods')
-    @patch('runpod.cli.groups.pod.commands.echo')
+    @patch('runpod.cli.groups.pod.commands.click.echo')
     def test_list_pods(self, mock_echo, mock_get_pods):
         '''
         Test list_pods
@@ -45,7 +45,7 @@ class TestPodCommands(unittest.TestCase):
     @patch('runpod.cli.groups.pod.commands.create_pod')
     @patch('runpod.cli.groups.pod.commands.pod_from_template')
     def test_create_new_pod(self, mock_pod_from_template,
-                            mock_create_pod, mock_echo, mock_confirm, mock_prompt):
+                            mock_create_pod, mock_echo, mock_confirm, mock_prompt): # pylint: disable=too-many-arguments
         '''
         Test create_new_pod
         '''
@@ -62,6 +62,8 @@ class TestPodCommands(unittest.TestCase):
         # Assertions
         mock_prompt.assert_called_once_with('Enter pod name', default='RunPod-CLI-Pod')
         mock_echo.assert_called_with('Launching default pod...')
-        mock_create_pod.assert_called_with('RunPod-CLI-Pod', 'runpod/base:0.0.0', 'NVIDIA GeForce RTX 3090',
+        mock_create_pod.assert_called_with('RunPod-CLI-Pod',
+                                           'runpod/base:0.0.0',
+                                           'NVIDIA GeForce RTX 3090',
                                            gpu_count=1, support_public_ip=True, ports='22/tcp')
         mock_echo.assert_called_with('Pod sample_id has been created.')
