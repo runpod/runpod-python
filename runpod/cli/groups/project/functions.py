@@ -10,12 +10,11 @@ from configparser import ConfigParser
 from runpod import create_pod, get_pod, get_pods
 from runpod.cli.utils.ssh_cmd import SSHConnection
 
-PROJECT_TEMPLATE_FOLDER = os.path.join(os.path.dirname(__file__), 'template')
-
+STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
 # -------------------------------- New Project ------------------------------- #
 def create_new_project(project_name, runpod_volume_id, python_version,
-                       model_type=None, model_name=None):
+                       model_type="default", model_name=None):
     '''
     Create a new project with the given name.
     '''
@@ -23,14 +22,28 @@ def create_new_project(project_name, runpod_volume_id, python_version,
     if not os.path.exists(project_folder):
         os.makedirs(project_folder)
 
-    for item in os.listdir(PROJECT_TEMPLATE_FOLDER):
-        source_item = os.path.join(PROJECT_TEMPLATE_FOLDER, item)
+    template_dir = os.path.join(STARTER_TEMPLATES, model_type)
+
+    for item in os.listdir(template_dir):
+        source_item = os.path.join(template_dir, item)
         destination_item = os.path.join(project_folder, item)
 
         if os.path.isdir(source_item):
             shutil.copytree(source_item, destination_item)
         else:
             shutil.copy2(source_item, destination_item)
+
+    # If there's a model_name, replace placeholders in handler.py
+    if model_name:
+        handler_path = os.path.join(project_folder, "handler.py")
+        if os.path.exists(handler_path):
+            with open(handler_path, 'r', encoding='utf-8') as file:
+                handler_content = file.read()
+
+            handler_content = handler_content.replace('<<MODEL_NAME>>', model_name)
+
+            with open(handler_path, 'w', encoding='utf-8') as file:
+                file.write(handler_content)
 
     config = ConfigParser()
 
@@ -44,6 +57,11 @@ def create_new_project(project_name, runpod_volume_id, python_version,
         'VolumeMountPath': '/runpod_volume',
         'Ports': '8080/http, 22/tcp',
         'ContainerDiskSizeGB': 10
+    }
+
+    config['TEMPLATE'] = {
+        'ModelType': model_type,
+        'ModelName': model_name
     }
 
     config['ENVIRONMENT'] = {

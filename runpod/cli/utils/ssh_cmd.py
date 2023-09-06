@@ -33,9 +33,9 @@ class SSHConnection:
         for command in commands:
             stdin, stdout, stderr = self.ssh.exec_command(command)
             for line in stdout:
-                print(colorama.Fore.GREEN + f"[POD {self.pod_id}]", line.strip())
+                print(colorama.Fore.GREEN + f"[{self.pod_id}]", line.strip())
             for line in stderr:
-                print(colorama.Fore.RED + f"[POD {self.pod_id} ERROR]", line.strip())
+                print(colorama.Fore.RED + f"[{self.pod_id} ERROR]", line.strip())
 
     def put_directory(self, local_path, remote_path):
         ''' Copy local directory to remote machine over SSH. '''
