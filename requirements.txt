@@ -4,6 +4,7 @@ aiohttp-retry >= 2.8.3
 backoff == 2.2.1
 boto3 >= 1.26.165
 click >= 8.1.7
+colorama >= 0.4.6
 paramiko >= 3.3.1
 pillow >= 9.5.0
 prettytable >= 3.8.0

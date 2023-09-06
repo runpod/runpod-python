@@ -4,6 +4,7 @@ RunPod | CLI | Utils | SSH Command
 Connect and run commands over SSH.
 '''
 import os
+import colorama
 import paramiko
 
 from runpod import get_pod, SSH_KEY_FOLDER
@@ -11,7 +12,10 @@ from .pod_info import get_ssh_ip_port
 from .userspace import find_ssh_key_file
 
 class SSHConnection:
+    ''' Connect and run commands over SSH. '''
+
     def __init__(self, pod_id):
+        self.pod_id = pod_id
         self.pod = get_pod(pod_id)
         self.pod_ip, self.pod_port = get_ssh_ip_port(self.pod)
         self.key_file = find_ssh_key_file(self.pod_ip, self.pod_port)
@@ -21,14 +25,17 @@ class SSHConnection:
         self.ssh.connect(self.pod_ip, port=self.pod_port, username='root',
                          key_filename=os.path.join(SSH_KEY_FOLDER, self.key_file))
 
+        # Initialize colorama
+        colorama.init(autoreset=True)
+
     def run_commands(self, commands):
         ''' Runs a list of bash commands over SSH. '''
         for command in commands:
             stdin, stdout, stderr = self.ssh.exec_command(command)
             for line in stdout:
-                print(line.strip())  # Using strip() to remove leading/trailing whitespace
+                print(colorama.Fore.GREEN + f"[POD {self.pod_id}]", line.strip())
             for line in stderr:
-                print("[ERROR]", line.strip())  # Prefixing with [ERROR] to distinguish from regular output
+                print(colorama.Fore.RED + f"[POD {self.pod_id} ERROR]", line.strip())
 
     def put_directory(self, local_path, remote_path):
         ''' Copy local directory to remote machine over SSH. '''

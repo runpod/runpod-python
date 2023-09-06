@@ -1,3 +1,7 @@
+'''
+RunPod | CLI | Project | Functions
+'''
+
 import os
 import shutil
 import uuid
@@ -8,7 +12,9 @@ from runpod.cli.utils.ssh_cmd import SSHConnection
 
 PROJECT_TEMPLATE_FOLDER = os.path.join(os.path.dirname(__file__), 'template')
 
-def create_new_project(project_name, runpod_volume_id, python_version):
+
+# -------------------------------- New Project ------------------------------- #
+def create_new_project(project_name, runpod_volume_id, python_version, model_type=None, model_name=None):
     '''
     Create a new project with the given name.
     '''
@@ -32,6 +38,7 @@ def create_new_project(project_name, runpod_volume_id, python_version):
         'Name': project_name,
         'BaseImage': 'runpod/base:0.0.0',
         'GPU': 'NVIDIA RTX A4500',
+        'GPUCount': 1,
         'StorageID': runpod_volume_id,
         'VolumeMountPath': '/runpod_volume',
         'Ports': '8080/http, 22/tcp',
@@ -46,9 +53,17 @@ def create_new_project(project_name, runpod_volume_id, python_version):
     with open(os.path.join(project_folder, "runpod.toml"), 'w', encoding="UTF-8") as config_file:
         config.write(config_file)
 
+
+# ------------------------------ Launch Project ------------------------------ #
 def launch_project(project_file):
     '''
     Launch the project development environment from runpod.toml
+    # SSH into the pod and create a project folder within the volume
+    # Create a folder in the volume for the project that matches the project UUID
+    # Create a folder in the project folder that matches the project name
+    # Copy the project files into the project folder
+    # crate a virtual environment using the python version specified in the project config
+    # install the requirements.txt file
     '''
     with open(project_file, 'r', encoding="UTF-8") as config_file:
         config = ConfigParser()
@@ -57,11 +72,11 @@ def launch_project(project_file):
     for config_item in config['PROJECT']:
         print(f'{config_item}: {config["PROJECT"][config_item]}')
 
-    project_pod = create_pod(
+    new_pod = create_pod(
         f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
         config['PROJECT']['BaseImage'],
         config['PROJECT']['GPU'],
-        gpu_count=1,
+        gpu_count=int(config['PROJECT']['GPUCount']),
         support_public_ip=True,
         ports=f'{config["PROJECT"]["Ports"]}',
         network_volume_id=f'{config["PROJECT"]["StorageID"]}',
@@ -69,20 +84,12 @@ def launch_project(project_file):
         container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"])
     )
 
-    new_pod= get_pod(project_pod['id'])
-    while new_pod['desiredStatus'] != 'RUNNING' or new_pod['runtime'] is None:
-        new_pod = get_pod(project_pod['id'])
+    while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
+        new_pod = get_pod(new_pod['id'])
 
-    print(f"Project {config['PROJECT']['Name']} launched successfully!")
+    print(f"Project {config['PROJECT']['Name']} pod ({new_pod['id']}) created.")
 
-    # SSH into the pod and create a project folder within the volume
-    # Create a folder in the volume for the project that matches the project UUID
-    # Create a folder in the project folder that matches the project name
-    # Copy the project files into the project folder
-    # crate a virtual environment using the python version specified in the project config
-    # install the requirements.txt file
-
-    ssh_conn = SSHConnection(project_pod['id'])
+    ssh_conn = SSHConnection(new_pod['id'])
 
     current_dir = os.getcwd()
     project_files = os.listdir(current_dir)
@@ -90,6 +97,7 @@ def launch_project(project_file):
     project_path_uuid = f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}'
     project_path = f'{project_path_uuid}/{config["PROJECT"]["Name"]}'
 
+    print(f'Creating project folder: {project_path} on pod {new_pod["id"]}')
     command_list = [
         f'mkdir -p {project_path}',
     ]
@@ -106,6 +114,8 @@ def launch_project(project_file):
 
     venv_path = os.path.join(project_path_uuid, "venv")
     python_version = config["ENVIRONMENT"]["PythonVersion"]
+
+    print(f'Creating virtual environment: {venv_path} on pod {new_pod["id"]}')
     commands = [
         f'python{python_version} -m venv {venv_path}',
         f'source {venv_path}/bin/activate &&' \
@@ -117,6 +127,7 @@ def launch_project(project_file):
     ssh_conn.run_commands(commands)
 
 
+# ------------------------------- Start Project ------------------------------ #
 def start_project_api(project_file):
     '''
     python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080
