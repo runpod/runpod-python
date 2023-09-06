@@ -24,6 +24,7 @@ def get_or_prompt_for_pod_id():
     os.makedirs(os.path.dirname(POD_ID_FILE), exist_ok=True)
     with open(POD_ID_FILE, 'w', encoding="UTF-8") as pod_file:
         pod_file.write(pod_id)
+
     return pod_id
 
 
@@ -52,4 +53,4 @@ def find_ssh_key_file(pod_ip, pod_port):
             print(f"An error occurred with key {key_file}: {err}")
 
     print("Failed to connect using all available keys.")
-    return
+    return None

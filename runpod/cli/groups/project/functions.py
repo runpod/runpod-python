@@ -68,7 +68,7 @@ def launch_project():
     '''
     project_file = os.path.join(os.getcwd(), 'runpod.toml')
     if not os.path.exists(project_file):
-        raise Exception("runpod.toml not found in the current directory.")
+        raise FileNotFoundError("runpod.toml not found in the current directory.")
 
     with open(project_file, 'r', encoding="UTF-8") as config_file:
         config = ConfigParser()
@@ -97,34 +97,25 @@ def launch_project():
     print(f"Project {config['PROJECT']['Name']} pod ({new_pod['id']}) created.")
 
     ssh_conn = SSHConnection(new_pod['id'])
-
-    current_dir = os.getcwd()
-    project_files = os.listdir(current_dir)
+    project_files = os.listdir(os.getcwd())
 
     project_path_uuid = f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}'
     project_path = f'{project_path_uuid}/{config["PROJECT"]["Name"]}'
 
     print(f'Creating project folder: {project_path} on pod {new_pod["id"]}')
-    command_list = [
-        f'mkdir -p {project_path}',
-    ]
-
-    ssh_conn.run_commands(command_list)
+    ssh_conn.run_commands([f'mkdir -p {project_path}'])
 
     for file in project_files:
-        local_path = os.path.join(current_dir, file)
-        remote_path = f'{project_path}/{file}'
-        if os.path.isdir(local_path):
-            ssh_conn.put_directory(local_path, remote_path)
+        if os.path.isdir(file):
+            ssh_conn.put_directory(file, f'{project_path}/{file}')
         else:
-            ssh_conn.put_file(local_path, remote_path)
+            ssh_conn.put_file(file, f'{project_path}/{file}')
 
     venv_path = os.path.join(project_path_uuid, "venv")
-    python_version = config["ENVIRONMENT"]["PythonVersion"]
 
     print(f'Creating virtual environment: {venv_path} on pod {new_pod["id"]}')
     commands = [
-        f'python{python_version} -m venv {venv_path}',
+        f'python{config["ENVIRONMENT"]["PythonVersion"]} -m venv {venv_path}',
         f'source {venv_path}/bin/activate &&' \
         f'cd {project_path} &&' \
         'pip install --upgrade pip &&'
