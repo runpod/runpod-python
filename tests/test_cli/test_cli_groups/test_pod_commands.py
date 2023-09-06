@@ -68,6 +68,7 @@ class TestPodCommands(unittest.TestCase):
         result = runner.invoke(runpod_cli, ['pod', 'create', '--template-file', 'template_file'])
         assert result.exit_code == 0, result.exception
         assert mock_pod_from_template.called()
+        mock_echo.assert_called_with('Pod RunPod-CLI-Pod has been created.')
 
 
     @patch('runpod.cli.groups.pod.commands.click.echo')
