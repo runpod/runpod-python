@@ -17,10 +17,8 @@ def list_pods():
     '''
     Lists the pods for the current user.
     '''
-    pod_list = get_pods()
-
     table = PrettyTable(['ID', 'Name', 'Status', 'Image'])
-    for pod in pod_list:
+    for pod in get_pods():
         table.add_row((pod['id'], pod['name'], pod['desiredStatus'], pod['imageName']))
 
     click.echo(table)
