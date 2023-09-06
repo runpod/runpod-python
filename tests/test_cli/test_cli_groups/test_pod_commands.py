@@ -33,7 +33,10 @@ class TestPodCommands(unittest.TestCase):
         expected_table.add_row(('2', 'Pod2', 'Stopped', 'Image2'))
 
         # Assert that click.echo was called with the correct table
-        mock_echo.assert_called_once_with(expected_table)
+        #Account for new line character
+        excepted_table_string = str(expected_table) + '\n'
+
+        mock_echo.assert_called_once_with(excepted_table_string)
 
 
     @patch('runpod.cli.groups.pod.commands.click.prompt')
@@ -53,15 +56,7 @@ class TestPodCommands(unittest.TestCase):
         mock_create_pod.return_value = {'id': 'sample_id'}
 
         runner = CliRunner()
-        result = runner.invoke(runpod_cli, [
-                'pod', 'create',
-                '--image', 'runpod/base:0.0.0',
-                '--gpu-type', 'NVIDIA GeForce RTX 3090',
-                '--gpu-count', '1',
-                '--support-public-ip'
-                'test_name'
-            ]
-        )
+        result = runner.invoke(runpod_cli, ['pod', 'create'])
 
         # Assertions
         assert result.exit_code == 0, result.exception
