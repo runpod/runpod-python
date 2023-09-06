@@ -22,8 +22,7 @@ class SSHConnection:
 
     def __init__(self, pod_id):
         self.pod_id = pod_id
-        self.pod = get_pod(pod_id)
-        self.pod_ip, self.pod_port = get_ssh_ip_port(self.pod)
+        self.pod_ip, self.pod_port = get_ssh_ip_port(pod_id)
         self.key_file = find_ssh_key_file(self.pod_ip, self.pod_port)
 
         self.ssh = paramiko.SSHClient()
