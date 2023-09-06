@@ -14,7 +14,8 @@ PROJECT_TEMPLATE_FOLDER = os.path.join(os.path.dirname(__file__), 'template')
 
 
 # -------------------------------- New Project ------------------------------- #
-def create_new_project(project_name, runpod_volume_id, python_version, model_type=None, model_name=None):
+def create_new_project(project_name, runpod_volume_id, python_version,
+                       model_type=None, model_name=None):
     '''
     Create a new project with the given name.
     '''
@@ -55,7 +56,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, model_typ
 
 
 # ------------------------------ Launch Project ------------------------------ #
-def launch_project(project_file):
+def launch_project():
     '''
     Launch the project development environment from runpod.toml
     # SSH into the pod and create a project folder within the volume
@@ -65,6 +66,10 @@ def launch_project(project_file):
     # crate a virtual environment using the python version specified in the project config
     # install the requirements.txt file
     '''
+    project_file = os.path.join(os.getcwd(), 'runpod.toml')
+    if not os.path.exists(project_file):
+        raise Exception("runpod.toml not found in the current directory.")
+
     with open(project_file, 'r', encoding="UTF-8") as config_file:
         config = ConfigParser()
         config.read_file(config_file)
@@ -136,18 +141,22 @@ def start_project_api(project_file):
         config = ConfigParser()
         config.read_file(config_file)
 
-    user_pods = get_pods()
-
-    for pod in user_pods:
+    # Get the project pod.
+    for pod in get_pods():
         if config['PROJECT']['UUID'] in pod['name']:
             project_pod = pod
             break
 
     ssh_conn = SSHConnection(project_pod['id'])
+
+    volume_mount_path = config["PROJECT"]["VolumeMountPath"]
+    project_uuid = config["PROJECT"]["UUID"]
+    project_name = config["PROJECT"]["Name"]
+
     launch_api_server = [
-        f'source {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/venv/bin/activate &&' \
-        f'cd {config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}/{config["PROJECT"]["Name"]} &&' \
-        'python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080'
+        f'''source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
+           cd {volume_mount_path}/{project_uuid}/{project_name} &&
+           python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080'''
     ]
 
     ssh_conn.run_commands(launch_api_server)

@@ -1,4 +1,8 @@
 
+'''
+RunPod | CLI | Project | Commands
+'''
+
 import re
 import click
 
@@ -57,8 +61,7 @@ def new_project_wizard(project_name, model_type, model_name):
 
 # ------------------------------ Launch Project ------------------------------ #
 @project_cli.command('launch')
-@click.argument('project_file', type=click.Path(exists=True))
-def launch_project_pod(project_file):
+def launch_project_pod():
     '''
     Launch the project development environment from runpod.toml
     '''
@@ -68,7 +71,7 @@ def launch_project_pod(project_file):
     click.confirm("Do you want to continue?", abort=True)
 
     click.echo("Launching project development environment...")
-    launch_project(project_file)
+    launch_project()
 
 
 # ------------------------------- Start Project ------------------------------ #
