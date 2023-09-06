@@ -12,7 +12,7 @@ from .api.ctl_commands import(
     get_pods, get_pod,
     create_pod, stop_pod, resume_pod, terminate_pod
 )
-from .cli.config.functions import set_credentials, check_credentials, get_credentials
+from .cli.groups.config.functions import set_credentials, check_credentials, get_credentials
 
 
 # ------------------------------- Config Paths ------------------------------- #

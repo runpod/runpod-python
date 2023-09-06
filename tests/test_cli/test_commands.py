@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 from click.testing import CliRunner
 
-from runpod.cli.groups.entry import runpod_cli
+from runpod.cli.entry import runpod_cli
 
 class TestCommands(unittest.TestCase):
     ''' A collection of tests for the CLI commands. '''
@@ -18,12 +18,12 @@ class TestCommands(unittest.TestCase):
         ''' Tests the config command. '''
         with patch('click.echo') as mock_echo, \
             patch('runpod.cli.groups.config.commands.set_credentials') as mock_set_credentials, \
-            patch('runpod.cli.groups.config.commands.check_credentials') as mock_check_credentials, \
+            patch('runpod.cli.groups.config.commands.check_credentials') as mock_check_creds, \
             patch('click.confirm', return_value=True) as mock_confirm, \
             patch('click.prompt', return_value='KEY') as mock_prompt:
 
             # Assuming credentials aren't set (doesn't prompt for overwrite)
-            mock_check_credentials.return_value = (False, None)
+            mock_check_creds.return_value = (False, None)
 
             # Successful Call with Direct Key
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test', 'KEY'])
@@ -38,7 +38,7 @@ class TestCommands(unittest.TestCase):
             mock_prompt.assert_called_with('API Key', hide_input=False, confirmation_prompt=False)
 
             # Simulating existing credentials, prompting for overwrite
-            mock_check_credentials.return_value = (True, None)
+            mock_check_creds.return_value = (True, None)
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
             mock_confirm.assert_called_with(
                 'Credentials already set for profile: test. Overwrite?', abort=True)

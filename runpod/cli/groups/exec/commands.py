@@ -5,7 +5,7 @@ RunPod | CLI | Exec | Commands
 import click
 
 from .functions import python_over_ssh
-from ..utils.userspace import get_or_prompt_for_pod_id
+from ...utils.userspace import get_or_prompt_for_pod_id
 
 @click.group('exec')
 def exec_cli():
