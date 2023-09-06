@@ -6,7 +6,7 @@ import time
 
 from runpod import get_pod
 
-def get_ssh_ip_port(pod_id, timeout=60):
+def get_ssh_ip_port(pod_id, timeout=300):
     '''
     Returns the IP and port for SSH access to a pod.
     '''
