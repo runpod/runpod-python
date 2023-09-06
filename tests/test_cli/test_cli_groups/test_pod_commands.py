@@ -59,8 +59,7 @@ class TestPodCommands(unittest.TestCase):
                 '--image', 'runpod/base:0.0.0',
                 '--gpu-type', 'NVIDIA GeForce RTX 3090',
                 '--gpu-count', '1',
-                '--support-public-ip',
-                '--ports', '22/tcp'
+                '--support-public-ip'
             ]
         )
 
