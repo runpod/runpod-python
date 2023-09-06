@@ -39,8 +39,7 @@ class TestPodCommands(unittest.TestCase):
     @patch('runpod.cli.groups.pod.commands.click.echo')
     @patch('runpod.cli.groups.pod.commands.create_pod')
     @patch('runpod.cli.groups.pod.commands.pod_from_template')
-    def test_create_new_pod(self, mock_pod_from_template,   # pylint: disable=too-many-arguments
-                            mock_create_pod, mock_echo, mock_confirm, mock_prompt):
+    def test_create_new_pod(self, mock_pod_from_template, mock_create_pod, mock_echo, mock_confirm, mock_prompt): # pylint: disable=too-many-arguments,line-too-long
         '''
         Test create_new_pod
         '''
