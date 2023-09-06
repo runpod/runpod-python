@@ -38,6 +38,7 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template
     if template_file:
         pod_from_template(template_file)
         click.echo(f'Pod {name} has been created.')
+        return
 
     if not name:
         name = click.prompt('Enter pod name', default='RunPod-CLI-Pod')

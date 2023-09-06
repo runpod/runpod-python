@@ -64,3 +64,30 @@ class TestPodCommands(unittest.TestCase):
                                            'NVIDIA GeForce RTX 3090',
                                            gpu_count=1, support_public_ip=True, ports='22/tcp')
         mock_echo.assert_called_with('Pod sample_id has been created.')
+
+        result = runner.invoke(runpod_cli, ['pod', 'create', '--template-file', 'template_file'])
+        assert result.exit_code == 0, result.exception
+        assert mock_pod_from_template.called()
+
+
+    @patch('runpod.cli.groups.pod.commands.click.echo')
+    @patch('runpod.cli.groups.pod.commands.open_ssh_connection')
+    def test_connect_to_pod(self, mock_open_ssh_connection, mock_echo):
+        '''
+        Test connect_to_pod function
+        '''
+        # Given a sample pod_id
+        pod_id = 'sample_id'
+
+        # Using CliRunner to simulate the command line invocation
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ['pod', 'connect', pod_id])
+
+        # Check if the function exited without any issues
+        assert result.exit_code == 0, result.exception
+
+        # Ensure the echo function was called with the right message
+        mock_echo.assert_called_once_with(f'Connecting to pod {pod_id}...')
+
+        # Ensure the open_ssh_connection function was called with the right pod_id
+        mock_open_ssh_connection.assert_called_once_with(pod_id)
