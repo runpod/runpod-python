@@ -9,7 +9,7 @@ import subprocess
 import colorama
 import paramiko
 
-from runpod import get_pod, SSH_KEY_FOLDER
+from runpod import SSH_KEY_FOLDER
 from .pod_info import get_ssh_ip_port
 from .userspace import find_ssh_key_file
 

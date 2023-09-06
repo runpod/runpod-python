@@ -66,6 +66,4 @@ def connect_to_pod(pod_id):
     '''
     click.echo(f'Connecting to pod {pod_id}...')
     ssh = ssh_cmd.SSHConnection(pod_id)
-    # open_ssh_connection(pod_id)
-
     ssh.launch_terminal()

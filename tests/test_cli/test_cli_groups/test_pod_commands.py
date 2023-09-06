@@ -2,7 +2,7 @@
 
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from click.testing import CliRunner
 from prettytable import PrettyTable
@@ -75,23 +75,20 @@ class TestPodCommands(unittest.TestCase):
 
 
     @patch('runpod.cli.groups.pod.commands.click.echo')
-    @patch('runpod.cli.groups.pod.commands.open_ssh_connection')
-    def test_connect_to_pod(self, mock_open_ssh_connection, mock_echo):
+    @patch('runpod.cli.groups.pod.commands.ssh_cmd.SSHConnection')
+    def test_connect_to_pod(self, mock_ssh_connection, mock_echo):
         '''
         Test connect_to_pod function
         '''
-        # Given a sample pod_id
         pod_id = 'sample_id'
 
-        # Using CliRunner to simulate the command line invocation
+        mock_ssh = MagicMock()
+        mock_ssh_connection.return_value = mock_ssh
+
         runner = CliRunner()
         result = runner.invoke(runpod_cli, ['pod', 'connect', pod_id])
 
-        # Check if the function exited without any issues
         assert result.exit_code == 0, result.exception
-
-        # Ensure the echo function was called with the right message
         mock_echo.assert_called_once_with(f'Connecting to pod {pod_id}...')
-
-        # Ensure the open_ssh_connection function was called with the right pod_id
-        mock_open_ssh_connection.assert_called_once_with(pod_id)
+        mock_ssh_connection.assert_called_once_with(pod_id)
+        mock_ssh.launch_terminal.assert_called_once_with()
