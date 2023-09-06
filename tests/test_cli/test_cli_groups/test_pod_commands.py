@@ -3,6 +3,7 @@
 import unittest
 from unittest.mock import patch
 
+from click.testing import CliRunner
 from prettytable import PrettyTable
 
 from runpod.cli.groups.pod import commands
@@ -50,10 +51,18 @@ class TestPodCommands(unittest.TestCase):
         mock_prompt.return_value = 'RunPod-CLI-Pod'
         mock_create_pod.return_value = {'id': 'sample_id'}
 
-        # Call the function
-        commands.create_new_pod(None, None, None, 1, False, None)
+        runner = CliRunner()
+        result = runner.invoke(commands.create_new_pod, [
+            'test_name',
+            '--image', 'runpod/base:0.0.0',
+            '--gpu-type', 'NVIDIA GeForce RTX 3090',
+            '--gpu-count', '1',
+            '--support-public-ip',
+            '--ports', '22/tcp'
+            ]) # pylint: disable=line-too-long
 
         # Assertions
+        assert result.exit_code == 0, result.exception
         mock_prompt.assert_called_once_with('Enter pod name', default='RunPod-CLI-Pod')
         mock_echo.assert_called_with('Launching default pod...')
         mock_create_pod.assert_called_with('RunPod-CLI-Pod',
