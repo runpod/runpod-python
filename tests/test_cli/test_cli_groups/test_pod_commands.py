@@ -55,11 +55,11 @@ class TestPodCommands(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(runpod_cli, [
                 'pod', 'create',
-                'test_name',
                 '--image', 'runpod/base:0.0.0',
                 '--gpu-type', 'NVIDIA GeForce RTX 3090',
                 '--gpu-count', '1',
                 '--support-public-ip'
+                'test_name'
             ]
         )
 
