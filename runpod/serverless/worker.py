@@ -67,6 +67,11 @@ async def _process_job(job, session, job_scaler, config):
             if metrics:
                 stream_output['metrics'] = metrics
             await stream_result(session, stream_output, job)
+
+        # Use special aggregation function to transform the stream into its final output.
+        aggregation_function = metrics_collector.pop_stream_aggregate(job['id'])
+        if config.get('return_aggregate_stream', False) and aggregation_function:
+            job_result['output'] = aggregation_function(job_result['output'])
     else:
         job_result = await run_job(config["handler"], job)
 

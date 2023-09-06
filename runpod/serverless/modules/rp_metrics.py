@@ -25,6 +25,7 @@ class MetricsCollector():
     """
     _instance = None
     metrics = {}
+    job_stream_agg_func = {}
 
     def __new__(cls):
         """
@@ -84,6 +85,24 @@ class MetricsCollector():
             metrics = self.metrics[job_id]
             del self.metrics[job_id]
             return metrics
+        return None
+
+
+    def update_stream_aggregate(self, job_id: str, aggregate_function):
+        """
+        Updates the aggregate function for a job's stream output.
+        """
+        self.job_stream_agg_func[job_id] = aggregate_function
+
+
+    def pop_stream_aggregate(self, job_id: str):
+        """
+        Pop the aggregate function for an aggregate job stream.
+        """
+        if job_id in self.job_stream_agg_func:
+            job_stream_agg_func = self.job_stream_agg_func[job_id]
+            del self.job_stream_agg_func[job_id]
+            return job_stream_agg_func
         return None
 
 metrics_collector = MetricsCollector()
