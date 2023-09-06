@@ -46,8 +46,6 @@ class TestPodCommands(unittest.TestCase):
         '''
         Test create_new_pod
         '''
-        mock_pod_from_template.return_value = None
-
         # Mock values
         mock_confirm.return_value = True  # for the quick_launch option
         mock_prompt.return_value = 'RunPod-CLI-Pod'
@@ -67,6 +65,7 @@ class TestPodCommands(unittest.TestCase):
         mock_echo.assert_called_with('Pod sample_id has been created.')
 
         with tempfile.NamedTemporaryFile() as template_file:
+            mock_pod_from_template.return_value = None
             result = runner.invoke(runpod_cli,
                                    ['pod', 'create', '--template-file', template_file.name])
             assert result.exit_code == 0, result.exception

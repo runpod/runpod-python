@@ -48,7 +48,6 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template
     if quick_launch:
         image = 'runpod/base:0.0.0'
         gpu_type = 'NVIDIA GeForce RTX 3090'
-        support_public_ip = True
         ports ='22/tcp'
 
         click.echo('Launching default pod...')
