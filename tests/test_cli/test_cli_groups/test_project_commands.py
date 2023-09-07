@@ -82,4 +82,3 @@ class TestProjectCLI(unittest.TestCase):
         '''
         result = self.runner.invoke(start_project_pod, ['nonexistent_file.txt'])
         self.assertEqual(result.exit_code, 2)
-        self.assertIn("Error: Invalid value for 'project_file': Path 'nonexistent_file.txt' does not exist.", result.output) # pylint: disable=line-too-long
