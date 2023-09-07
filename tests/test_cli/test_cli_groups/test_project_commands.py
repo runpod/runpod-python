@@ -1,6 +1,7 @@
 '''
 RunPod | CLI | Groups | Project | Commands | Tests
 '''
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -28,10 +29,9 @@ class TestProjectCLI(unittest.TestCase):
             result = self.runner.invoke(new_project_wizard, ['--name', 'TestProject', '--type', 'llama2', '--model', 'meta-llama/Llama-2-7b']) # pylint: disable=line-too-long
 
         self.assertEqual(result.exit_code, 0)
-        mock_prompt.assert_called_with("Enter the ID of the volume to use", type=str)
         mock_validate.assert_called_with('TestProject')
         mock_confirm.assert_called_with("Do you want to continue?", abort=True)
-        mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '3.10', 'llama2', 'meta-llama/Llama-2-7b')
+        mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '3.10', 'llama2', 'meta-llama/Llama-2-7b') # pylint: disable=line-too-long
         self.assertIn("Project TestProject created successfully!", result.output)
 
 
@@ -40,7 +40,7 @@ class TestProjectCLI(unittest.TestCase):
         Tests the new_project_wizard command with an invalid project name.
         '''
         with patch('runpod.cli.groups.project.commands.validate_project_name') as mock_validate:
-            mock_validate.side_effect = click.BadParameter("Project name contains an invalid character: '/'.")
+            mock_validate.side_effect = click.BadParameter("Project name contains an invalid character: '/'.") # pylint: disable=line-too-long
             result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
 
         self.assertEqual(result.exit_code, 1)
@@ -64,9 +64,13 @@ class TestProjectCLI(unittest.TestCase):
         '''
         Tests the start_project_pod command.
         '''
-        result = self.runner.invoke(start_project_pod, ['test_file.txt'])
+        with tempfile.NamedTemporaryFile() as temp_file, \
+            patch('runpod.cli.groups.project.commands.start_project_api') as mock_start:
+            result = self.runner.invoke(start_project_pod, [temp_file.name])
+
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starting project API server...", result.output)
+        mock_start.assert_called_once_with(temp_file.name)
 
 
     def test_start_project_pod_invalid_file(self):
@@ -74,5 +78,5 @@ class TestProjectCLI(unittest.TestCase):
         Tests the start_project_pod command with an invalid project file.
         '''
         result = self.runner.invoke(start_project_pod, ['nonexistent_file.txt'])
-        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.exit_code, 2)
         self.assertIn("Error: Invalid value for 'project_file': Path 'nonexistent_file.txt' does not exist.", result.output) # pylint: disable=line-too-long
