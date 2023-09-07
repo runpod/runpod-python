@@ -46,7 +46,7 @@ class TestProjectCLI(unittest.TestCase):
             mock_validate.side_effect = click.BadParameter("Project name contains an invalid character: '/'.") # pylint: disable=line-too-long
             result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
 
-        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.exit_code, 2)
         self.assertIn("Project name contains an invalid character", result.output)
 
 
