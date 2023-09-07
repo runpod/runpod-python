@@ -18,7 +18,7 @@ def pod_from_template(template_file):
         pod_config['pod'].pop('name'), pod_config['pod'].pop('image'),
         pod_config['pod'].pop('gpu_type'), **pod_config['pod'])
 
-    return new_pod['id']
+    return new_pod
 
 
 def open_ssh_connection(pod_id):

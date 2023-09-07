@@ -37,8 +37,8 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template
     Creates a pod.
     '''
     if template_file:
-        pod_from_template(template_file)
-        click.echo(f'Pod {name} has been created.')
+        new_pod = pod_from_template(template_file)
+        click.echo(f'Pod {new_pod["id"]} has been created.')
         return
 
     if not name:
