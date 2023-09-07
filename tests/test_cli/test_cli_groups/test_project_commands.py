@@ -21,10 +21,13 @@ class TestProjectCLI(unittest.TestCase):
         '''
         Tests the new_project_wizard command.
         '''
-        with patch('click.prompt', return_value='XYZ_VOLUME') as mock_prompt, \
+        with patch('click.prompt') as mock_prompt, \
              patch('runpod.cli.groups.project.commands.validate_project_name') as mock_validate, \
              patch('click.confirm', return_value=True) as mock_confirm, \
              patch('runpod.cli.groups.project.commands.create_new_project') as mock_create:
+
+            mock_prompt.side_effect = ['XYZ_VOLUME', '3.10']
+
             mock_validate.return_value = 'TestProject'
             result = self.runner.invoke(new_project_wizard, ['--name', 'TestProject', '--type', 'llama2', '--model', 'meta-llama/Llama-2-7b']) # pylint: disable=line-too-long
 
