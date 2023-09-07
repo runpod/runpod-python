@@ -5,7 +5,6 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import click
 from click.testing import CliRunner
 from runpod.cli.groups.project.commands import (
     new_project_wizard, launch_project_pod, start_project_pod)
@@ -22,17 +21,14 @@ class TestProjectCLI(unittest.TestCase):
         Tests the new_project_wizard command.
         '''
         with patch('click.prompt') as mock_prompt, \
-             patch('runpod.cli.groups.project.commands.validate_project_name') as mock_validate, \
              patch('click.confirm', return_value=True) as mock_confirm, \
              patch('runpod.cli.groups.project.commands.create_new_project') as mock_create:
 
-            mock_prompt.side_effect = ['XYZ_VOLUME', '3.10']
+            mock_prompt.side_effect = ['TestProject', 'XYZ_VOLUME', '3.10']
 
-            mock_validate.return_value = 'TestProject'
-            result = self.runner.invoke(new_project_wizard, ['--name', 'TestProject', '--type', 'llama2', '--model', 'meta-llama/Llama-2-7b']) # pylint: disable=line-too-long
+            result = self.runner.invoke(new_project_wizard, ['--type', 'llama2', '--model', 'meta-llama/Llama-2-7b']) # pylint: disable=line-too-long
 
         self.assertEqual(result.exit_code, 0)
-        mock_validate.assert_called_with('TestProject')
         mock_confirm.assert_called_with("Do you want to continue?", abort=True)
         mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '3.10', 'llama2', 'meta-llama/Llama-2-7b') # pylint: disable=line-too-long
         self.assertIn("Project TestProject created successfully!", result.output)
