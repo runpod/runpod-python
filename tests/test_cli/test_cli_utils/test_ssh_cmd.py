@@ -11,7 +11,7 @@ class TestSSHConnection(unittest.TestCase):
 
     def setUp(self):
         # Mocking the external functions and methods
-        patcher1 = patch('ssh_connection.get_ssh_ip_port', return_value=('127.0.0.1', 22))
+        patcher1 = patch('runpod.cli.utils.ssh_cmd.get_ssh_ip_port', return_value=('127.0.0.1', 22))
         self.mock_get_ssh_ip_port = patcher1.start()
         self.addCleanup(patcher1.stop)
 
