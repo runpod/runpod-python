@@ -30,8 +30,7 @@ class SSHConnection:
         self.ssh.connect(self.pod_ip, port=self.pod_port, username='root',
                          key_filename=os.path.join(SSH_KEY_FOLDER, self.key_file))
 
-        # Initialize colorama
-        colorama.init(autoreset=True)
+        colorama.init(autoreset=True) # Initialize colorama
 
     def run_commands(self, commands):
         ''' Runs a list of bash commands over SSH. '''
@@ -45,25 +44,21 @@ class SSHConnection:
     def put_directory(self, local_path, remote_path):
         ''' Copy local directory to remote machine over SSH. '''
         with self.ssh.open_sftp() as sftp:
-            # Check if the directory exists on the remote machine
             try:
                 sftp.stat(remote_path)
             except IOError:
-                # Directory doesn't exist and needs to be created
                 sftp.mkdir(remote_path)
 
             for file in os.listdir(local_path):
                 local_file_path = os.path.join(local_path, file)
                 remote_file_path = os.path.join(remote_path, file)
                 if os.path.isdir(local_file_path):
-                    # The item is a directory, so create it and recurse into it
                     try:
                         sftp.stat(remote_file_path)
                     except IOError:
                         sftp.mkdir(remote_file_path)
                     self.put_directory(local_file_path, remote_file_path)
                 else:
-                    # The item is a file, so copy it
                     sftp.put(local_file_path, remote_file_path)
 
     def put_file(self, local_path, remote_path):
