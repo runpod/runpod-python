@@ -13,29 +13,45 @@ class TestProjectCLI(unittest.TestCase):
         self.runner = CliRunner()
 
     def test_new_project_wizard_success(self):
+        '''
+        Tests the new_project_wizard command.
+        '''
         with patch('click.prompt', return_value='XYZ_VOLUME') as mock_prompt:
-            result = self.runner.invoke(new_project_wizard, ['--name', 'TestProject', '--type', 'llama2', '--model', 'meta-llama/Llama-2-7b'])
+            result = self.runner.invoke(new_project_wizard, ['--name', 'TestProject', '--type', 'llama2', '--model', 'meta-llama/Llama-2-7b']) # pylint: disable=line-too-long
         mock_prompt.assert_called_with("Enter the ID of the volume to use", type=str)
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Project TestProject created successfully!", result.output)
 
     def test_new_project_wizard_invalid_name(self):
+        '''
+        Tests the new_project_wizard command with an invalid project name.
+        '''
         result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
         self.assertEqual(result.exit_code, 1)
         self.assertIn("Project name contains an invalid character", result.output)
 
     def test_launch_project_pod(self):
-        result = self.runner.invoke(launch_project_pod)
+        '''
+        Tests the launch_project_pod command.
+        '''
+        with patch('click.confirm', return_value=True) as mock_confirm:
+            result = self.runner.invoke(launch_project_pod)
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Launching project development environment...", result.output)
 
 
     def test_start_project_pod(self):
+        '''
+        Tests the start_project_pod command.
+        '''
         result = self.runner.invoke(start_project_pod, ['test_file.txt'])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starting project API server...", result.output)
 
     def test_start_project_pod_invalid_file(self):
+        '''
+        Tests the start_project_pod command with an invalid project file.
+        '''
         result = self.runner.invoke(start_project_pod, ['nonexistent_file.txt'])
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: Invalid value for 'project_file': Path 'nonexistent_file.txt' does not exist.", result.output)
+        self.assertIn("Error: Invalid value for 'project_file': Path 'nonexistent_file.txt' does not exist.", result.output) # pylint: disable=line-too-long
