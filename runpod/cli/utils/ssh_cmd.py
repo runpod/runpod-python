@@ -71,10 +71,6 @@ class SSHConnection:
         with self.ssh.open_sftp() as sftp:
             sftp.get(remote_path, local_path)
 
-    def close(self):
-        ''' Close the SSH connection. '''
-        self.ssh.close()
-
     def launch_terminal(self):
         ''' Launch an interactive terminal over SSH. '''
         cmd = [
@@ -85,3 +81,19 @@ class SSHConnection:
         ]
 
         subprocess.run(cmd, check=True)
+
+    def rsync(self, local_path, remote_path):
+        '''
+        Sync a local directory to a remote directory over SSH.
+        '''
+        rsync_cmd = [
+            "rsync", "-avz", "-e"
+            "-e", f"ssh -p {self.pod_port} -i {os.path.join(SSH_KEY_FOLDER, self.key_file)}",
+            local_path, f"root@{self.pod_ip}:{remote_path}"
+        ]
+
+        return subprocess.Popen(rsync_cmd)
+
+    def close(self):
+        ''' Close the SSH connection. '''
+        self.ssh.close()

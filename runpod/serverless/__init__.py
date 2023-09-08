@@ -113,7 +113,8 @@ def start(config: Dict[str, Any]):
         api_server.start_uvicorn(
             api_host=config['rp_args']['rp_api_host'],
             api_port=config['rp_args']['rp_api_port'],
-            api_concurrency=config['rp_args']['rp_api_concurrency']
+            api_concurrency=config['rp_args']['rp_api_concurrency'],
+            auto_reload=True
         )
 
     elif realtime_port:

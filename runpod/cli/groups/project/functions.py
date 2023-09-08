@@ -166,6 +166,9 @@ def start_project_api(project_file):
     volume_mount_path = config["PROJECT"]["VolumeMountPath"]
     project_uuid = config["PROJECT"]["UUID"]
     project_name = config["PROJECT"]["Name"]
+    remote_project_path = f'{volume_mount_path}/{project_uuid}/{project_name}'
+
+    rsync = ssh_conn.rsync(os.getcwd(), remote_project_path)
 
     launch_api_server = [
         f'''source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
@@ -173,4 +176,8 @@ def start_project_api(project_file):
            python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080'''
     ]
 
-    ssh_conn.run_commands(launch_api_server)
+    try:
+        ssh_conn.run_commands(launch_api_server)
+    finally:
+        rsync.terminate()
+        ssh_conn.close()
