@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from .rp_job import run_job
 from .worker_state import Jobs
 from .rp_ping import Heartbeat
-from runpod import __version__ as runpod_Version
+from ...version import __version__ as runpod_Version
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 

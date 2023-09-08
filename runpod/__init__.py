@@ -1,8 +1,8 @@
 """ Allows runpod to be imported as a module. """
 
 import os
-from pkg_resources import get_distribution, DistributionNotFound
 
+from .version import __version__
 from . import serverless
 from .endpoint import Endpoint
 from .endpoint import AsyncioEndpoint, AsyncioJob
@@ -30,9 +30,3 @@ else:
 api_url_base = "https://api.runpod.io"  # pylint: disable=invalid-name
 
 endpoint_url_base = "https://api.runpod.ai/v2"  # pylint: disable=invalid-name
-
-
-try:
-    __version__ = get_distribution("runpod").version
-except DistributionNotFound:
-    __version__ = "unknown"
