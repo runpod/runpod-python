@@ -164,6 +164,8 @@ def start_project_api():
         if config['PROJECT']['UUID'] in pod['name']:
             project_pod = pod
             break
+    else:
+        raise ValueError(f'Project pod not found for UUID: {config["PROJECT"]["UUID"]}')
 
     ssh_conn = SSHConnection(project_pod['id'])
 

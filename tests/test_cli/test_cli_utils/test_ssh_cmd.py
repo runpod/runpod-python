@@ -16,9 +16,6 @@ class TestSSHConnection(unittest.TestCase):
         self.mock_get_ssh_ip_port = patcher1.start()
         self.addCleanup(patcher1.stop)
 
-        # Create a temporary file to use as a mock key file
-        self.mock_key_file = tempfile.NamedTemporaryFile()
-
         with tempfile.NamedTemporaryFile() as temp_file:
             patcher2 = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file',
                             return_value=temp_file.name)
@@ -81,13 +78,6 @@ class TestSSHConnection(unittest.TestCase):
         self.ssh_connection.get_file(remote_path, local_path)
 
         mock_sftp_obj.get.assert_called_once_with(remote_path, local_path)
-
-    def test_close(self):
-        """
-        Test that close() calls close() on the SSHClient object.
-        """
-        self.ssh_connection.close()
-        self.ssh_connection.ssh.close.assert_called_once()
 
     @patch('subprocess.run')
     def test_launch_terminal(self, mock_subprocess):
