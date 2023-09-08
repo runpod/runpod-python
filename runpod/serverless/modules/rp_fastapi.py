@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from .rp_job import run_job
 from .worker_state import Jobs
 from .rp_ping import Heartbeat
+from runpod import __version__ as runpod_Version
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
@@ -30,6 +31,12 @@ The URLs provided are named to match the endpoints that you will be provided whe
 job_list = Jobs()
 
 heartbeat = Heartbeat()
+
+rp_app = FastAPI(
+    title="RunPod | Test Worker | API",
+    description=DESCRIPTION,
+    version=runpod_Version,
+)
 
 
 # ------------------------------- Input Objects ------------------------------ #
@@ -57,21 +64,13 @@ class WorkerAPI:
         2. Initializes the FastAPI web server.
         3. Sets the handler for processing jobs.
         '''
+        self.rp_app = rp_app
+
         # Start the heartbeat thread.
         heartbeat.start_ping()
 
         # Set the handler for processing jobs.
         self.config = {"handler": handler}
-
-        # Initialize the FastAPI web server.
-
-        import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
-
-        self.rp_app = FastAPI(
-            title="RunPod | Test Worker | API",
-            description=DESCRIPTION,
-            version=runpod.__version__,
-        )
 
         # Create an APIRouter and add the route for processing jobs.
         api_router = APIRouter()
@@ -88,8 +87,10 @@ class WorkerAPI:
         '''
         Starts the Uvicorn server.
         '''
+        module_name = os.path.splitext(os.path.basename(__file__))[0]
+        app_name = "rp_app"
         uvicorn.run(
-            self.rp_app, host=api_host,
+            f"{module_name}:{app_name}", host=api_host,
             port=int(api_port), workers=int(api_concurrency),
             log_level="info",
             access_log=False,

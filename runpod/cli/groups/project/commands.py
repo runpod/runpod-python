@@ -75,10 +75,9 @@ def launch_project_pod():
 
 # ------------------------------- Start Project ------------------------------ #
 @project_cli.command('start')
-@click.argument('project_file', type=click.Path(exists=True))
-def start_project_pod(project_file):
+def start_project_pod():
     '''
     Starts the API server from the handler file.
     '''
     click.echo("Starting project API server...")
-    start_project_api(project_file)
+    start_project_api()

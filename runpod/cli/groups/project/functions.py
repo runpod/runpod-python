@@ -147,10 +147,14 @@ def launch_project():
 
 
 # ------------------------------- Start Project ------------------------------ #
-def start_project_api(project_file):
+def start_project_api():
     '''
     python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080
     '''
+    project_file = os.path.join(os.getcwd(), 'runpod.toml')
+    if not os.path.exists(project_file):
+        raise FileNotFoundError("runpod.toml not found in the current directory.")
+
     with open(project_file, 'r', encoding="UTF-8") as config_file:
         config = ConfigParser()
         config.read_file(config_file)
