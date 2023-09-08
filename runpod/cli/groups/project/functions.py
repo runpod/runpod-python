@@ -63,8 +63,8 @@ def create_new_project(project_name, runpod_volume_id, python_version,
     }
 
     config['TEMPLATE'] = {
-        'ModelType': model_type,
-        'ModelName': model_name
+        'ModelType': str(model_type),
+        'ModelName': str(model_name)
     }
 
     config['ENVIRONMENT'] = {
