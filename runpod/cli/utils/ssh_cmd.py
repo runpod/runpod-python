@@ -35,7 +35,8 @@ class SSHConnection:
     def run_commands(self, commands):
         ''' Runs a list of bash commands over SSH. '''
         for command in commands:
-            command = f'source ~/.bashrc && {command}'
+            command = f'source /root/.bashrc && {command}'
+            command = f'source /etc/rp_environment && {command}'
             _, stdout, stderr = self.ssh.exec_command(command)
             for line in stdout:
                 print(colorama.Fore.GREEN + f"[{self.pod_id}]", line.strip())
@@ -95,7 +96,7 @@ class SSHConnection:
         ]
 
         rsync_cmd = [
-            "rsync", "-avz", "--exclude", "__pycache__/", "--exclude *.pyc",
+            "rsync", "-avz", "--exclude", "__pycache__/", "--exclude", "*.pyc",
             "-e", f"ssh {' '.join(ssh_options)}",
             local_path,
             f"root@{self.pod_ip}:{remote_path}"
