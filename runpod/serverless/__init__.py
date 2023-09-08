@@ -114,7 +114,7 @@ def start(config: Dict[str, Any]):
             api_host=config['rp_args']['rp_api_host'],
             api_port=config['rp_args']['rp_api_port'],
             api_concurrency=config['rp_args']['rp_api_concurrency'],
-            auto_reload=True
+            reload=True
         )
 
     elif realtime_port:

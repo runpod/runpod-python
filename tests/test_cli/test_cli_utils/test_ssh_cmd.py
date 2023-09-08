@@ -15,7 +15,7 @@ class TestSSHConnection(unittest.TestCase):
         self.mock_get_ssh_ip_port = patcher1.start()
         self.addCleanup(patcher1.stop)
 
-        patcher2 = patch('ssh_connection.find_ssh_key_file', return_value='mock_key')
+        patcher2 = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file', return_value='mock_key')
         self.mock_find_ssh_key_file = patcher2.start()
         self.addCleanup(patcher2.stop)
 

@@ -84,7 +84,7 @@ class WorkerAPI:
         # Include the APIRouter in the FastAPI application.
         self.rp_app.include_router(api_router)
 
-    def start_uvicorn(self, api_host='localhost', api_port=8000, api_concurrency=1, auto_reload=False):
+    def start_uvicorn(self, api_host='localhost', api_port=8000, api_concurrency=1, reload=False):
         '''
         Starts the Uvicorn server.
         '''
@@ -93,7 +93,7 @@ class WorkerAPI:
             port=int(api_port), workers=int(api_concurrency),
             log_level="info",
             access_log=False,
-            reload=auto_reload
+            reload=reload
         )
 
     async def _run(self, job: Job):
