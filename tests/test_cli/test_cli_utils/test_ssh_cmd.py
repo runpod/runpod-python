@@ -3,11 +3,12 @@ RunPod | CLI | Utils | SSH Command
 '''
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch
 
 from runpod.cli.utils.ssh_cmd import SSHConnection
 
 class TestSSHConnection(unittest.TestCase):
+    """ Test the SSHConnection class. """
 
     def setUp(self):
         patcher1 = patch('runpod.cli.utils.ssh_cmd.get_ssh_ip_port',
@@ -18,8 +19,9 @@ class TestSSHConnection(unittest.TestCase):
         # Create a temporary file to use as a mock key file
         self.mock_key_file = tempfile.NamedTemporaryFile()
 
-        patcher2 = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file',
-                         return_value=self.mock_key_file.name)
+        with tempfile.NamedTemporaryFile() as temp_file:
+            patcher2 = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file',
+                            return_value=temp_file.name)
         self.mock_find_ssh_key_file = patcher2.start()
         self.addCleanup(patcher2.stop)
 
@@ -50,6 +52,7 @@ class TestSSHConnection(unittest.TestCase):
 
         self.ssh_connection.put_directory(local_path, remote_path)
 
+        mock_isdir.assert_called_once_with(local_path)
         mock_sftp_obj.put.assert_called()
         mock_sftp_obj.mkdir.assert_called_once_with(remote_path)
 
