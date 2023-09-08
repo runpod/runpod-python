@@ -109,7 +109,8 @@ def launch_project():
         ports=f'{config["PROJECT"]["Ports"]}',
         network_volume_id=f'{config["PROJECT"]["StorageID"]}',
         volume_mount_path=f'{config["PROJECT"]["VolumeMountPath"]}',
-        container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"])
+        container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"]),
+        env={"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
     )
 
     while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
@@ -179,7 +180,7 @@ def start_project_api():
     launch_api_server = [
         f'''source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
            cd {volume_mount_path}/{project_uuid}/{project_name} &&
-           python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080'''
+           python handler.py'''
     ]
 
     try:

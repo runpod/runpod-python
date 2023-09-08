@@ -67,6 +67,12 @@ def _set_config_args(config) -> dict:
     if config["rp_args"]["rp_log_level"]:
         log.set_level(config["rp_args"]["rp_log_level"])
 
+    if os.environ.get("RUNPOD_PROJECT_ID", None):
+        config["rp_args"]["rp_serve_api"] = True
+        config["rp_args"]["rp_api_host"] = "0.0.0.0"
+        config["rp_args"]["rp_api_port"] = 8080
+
+
     return config
 
 

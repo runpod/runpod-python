@@ -1,7 +1,6 @@
 '''
 RunPod | CLI | Groups | Project | Commands | Tests
 '''
-import tempfile
 import unittest
 from unittest.mock import patch
 
