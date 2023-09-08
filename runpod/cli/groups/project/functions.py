@@ -180,7 +180,7 @@ def start_project_api():
     launch_api_server = [
         f'''source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
            cd {volume_mount_path}/{project_uuid}/{project_name} &&
-           python handler.py'''
+           python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080'''
     ]
 
     try:

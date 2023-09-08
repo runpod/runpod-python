@@ -86,10 +86,18 @@ class SSHConnection:
         '''
         Sync a local directory to a remote directory over SSH.
         '''
+        ssh_options = [
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-p", str(self.pod_port),
+            "-i", os.path.join(SSH_KEY_FOLDER, self.key_file)
+        ]
+
         rsync_cmd = [
             "rsync", "-avz",
-            "-e", f"ssh -p {self.pod_port} -i {os.path.join(SSH_KEY_FOLDER, self.key_file)}",
-            local_path, f"root@{self.pod_ip}:{remote_path}"
+            "-e", f"ssh {' '.join(ssh_options)}",
+            local_path,
+            f"root@{self.pod_ip}:{remote_path}"
         ]
 
         return subprocess.Popen(rsync_cmd)

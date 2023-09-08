@@ -67,11 +67,11 @@ def _set_config_args(config) -> dict:
     if config["rp_args"]["rp_log_level"]:
         log.set_level(config["rp_args"]["rp_log_level"])
 
-    if os.environ.get("RUNPOD_PROJECT_ID", None):
+    if os.environ.get("RUNPOD_PROJECT_ID", False) and _get_realtime_port() == 0:
+        print("Project pod detected, starting API server.")
         config["rp_args"]["rp_serve_api"] = True
         config["rp_args"]["rp_api_host"] = "0.0.0.0"
         config["rp_args"]["rp_api_port"] = 8080
-
 
     return config
 
