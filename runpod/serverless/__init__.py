@@ -68,8 +68,6 @@ def _set_config_args(config) -> dict:
         log.set_level(config["rp_args"]["rp_log_level"])
 
     # Sanity check for project pod
-    print("Checking for project pod...")
-    print(f"RUNPOD_PROJECT_ID: {os.environ.get('RUNPOD_PROJECT_ID', False)}")
     if os.environ.get("RUNPOD_PROJECT_ID", False) and _get_realtime_port() == 0:
         print("Project pod detected, starting API server.")
         config["rp_args"]["rp_serve_api"] = True
