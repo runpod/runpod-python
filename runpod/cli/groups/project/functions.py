@@ -57,7 +57,7 @@ def create_new_project(project_name, runpod_volume_id, python_version,
         'GPU': 'NVIDIA RTX A4500',
         'GPUCount': 1,
         'StorageID': runpod_volume_id,
-        'VolumeMountPath': '/runpod_volume',
+        'VolumeMountPath': '/runpod-volume',
         'Ports': '8080/http, 22/tcp',
         'ContainerDiskSizeGB': 10
     }
