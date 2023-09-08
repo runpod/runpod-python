@@ -75,6 +75,7 @@ def _set_config_args(config) -> dict:
         config["rp_args"]["rp_serve_api"] = True
         config["rp_args"]["rp_api_host"] = "0.0.0.0"
         config["rp_args"]["rp_api_port"] = 8080
+        config["rp_args"]["rp_api_concurrency"] = 1
 
     return config
 
