@@ -87,7 +87,7 @@ class SSHConnection:
         Sync a local directory to a remote directory over SSH.
         '''
         rsync_cmd = [
-            "rsync", "-avz", "-e"
+            "rsync", "-avz",
             "-e", f"ssh -p {self.pod_port} -i {os.path.join(SSH_KEY_FOLDER, self.key_file)}",
             local_path, f"root@{self.pod_ip}:{remote_path}"
         ]

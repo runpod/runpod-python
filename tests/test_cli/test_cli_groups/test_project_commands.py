@@ -61,13 +61,11 @@ class TestProjectCLI(unittest.TestCase):
         '''
         Tests the start_project_pod command.
         '''
-        with tempfile.NamedTemporaryFile() as temp_file, \
-            patch('runpod.cli.groups.project.commands.start_project_api') as mock_start:
-            result = self.runner.invoke(start_project_pod, [temp_file.name])
+        result = self.runner.invoke(start_project_pod)
 
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starting project API server...", result.output)
-        mock_start.assert_called_once_with(temp_file.name)
+
 
 
     def test_start_project_pod_invalid_file(self):

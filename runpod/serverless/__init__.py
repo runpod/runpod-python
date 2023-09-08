@@ -14,6 +14,7 @@ from typing import Dict, Any
 from . import worker
 from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
+from ..version import __version__ as runpod_version
 
 log = RunPodLogger()
 
@@ -97,7 +98,6 @@ def start(config: Dict[str, Any]):
 
     config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
     """
-    from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
     print(f"--- Starting Serverless Worker |  Version {runpod_version} ---")
 
     config["reference_counter_start"] = time.perf_counter()
@@ -107,6 +107,7 @@ def start(config: Dict[str, Any]):
     realtime_concurrency = _get_realtime_concurrency()
 
     if config["rp_args"]["rp_serve_api"]:
+        print("Starting API server.")
         api_server = rp_fastapi.WorkerAPI()
         api_server.config = config
 
@@ -118,6 +119,7 @@ def start(config: Dict[str, Any]):
         )
 
     elif realtime_port:
+        print("Starting API server for realtime.")
         api_server = rp_fastapi.WorkerAPI()
         api_server.config = config
 
