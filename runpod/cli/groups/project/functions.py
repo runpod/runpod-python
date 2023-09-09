@@ -220,7 +220,7 @@ def start_project_api():
                 exit 1
             fi
 
-            sleep 1
+            sleep 1 #Debounce
 
             python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
             last_pid=$!
