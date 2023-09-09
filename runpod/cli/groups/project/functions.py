@@ -183,7 +183,7 @@ def start_project_api():
         python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
         last_pid=$!
         while true; do
-            inotifywait -r -e modify,create,delete --exclude '(__pycache__|\.pyc$)' {remote_project_path}
+            inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path}
             kill $last_pid
             sleep 1
             python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
