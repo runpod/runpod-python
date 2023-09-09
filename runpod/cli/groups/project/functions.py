@@ -177,11 +177,19 @@ def start_project_api():
 
     rsync = ssh_conn.rsync(os.getcwd(), remote_project_path)
 
-    launch_api_server = [
-        f'''source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
-           cd {volume_mount_path}/{project_uuid}/{project_name} &&
-           python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080'''
-    ]
+    launch_api_server = [f'''
+        source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
+        cd {volume_mount_path}/{project_uuid}/{project_name} &&
+        python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
+        last_pid=$!
+        while true; do
+            inotifywait -r -e modify,create,delete --exclude '(__pycache__|\.pyc$)' {remote_project_path}
+            kill $last_pid
+            sleep 1
+            python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
+            last_pid=$!
+        done
+    ''']
 
     try:
         ssh_conn.run_commands(launch_api_server)

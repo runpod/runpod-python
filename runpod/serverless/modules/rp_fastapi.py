@@ -32,12 +32,6 @@ job_list = Jobs()
 
 heartbeat = Heartbeat()
 
-rp_app = FastAPI(
-    title="RunPod | Test Worker | API",
-    description=DESCRIPTION,
-    version=runpod_Version,
-)
-
 
 # ------------------------------- Input Objects ------------------------------ #
 class Job(BaseModel):
@@ -64,13 +58,18 @@ class WorkerAPI:
         2. Initializes the FastAPI web server.
         3. Sets the handler for processing jobs.
         '''
-        self.rp_app = rp_app
-
         # Start the heartbeat thread.
         heartbeat.start_ping()
 
         # Set the handler for processing jobs.
         self.config = {"handler": handler}
+
+        # Initialize the FastAPI web server.
+        self.rp_app = FastAPI(
+            title="RunPod | Test Worker | API",
+            description=DESCRIPTION,
+            version=runpod_Version
+        )
 
         # Create an APIRouter and add the route for processing jobs.
         api_router = APIRouter()
@@ -83,18 +82,15 @@ class WorkerAPI:
         # Include the APIRouter in the FastAPI application.
         self.rp_app.include_router(api_router)
 
-    def start_uvicorn(self, api_host='localhost', api_port=8000, api_concurrency=1, reload=False):
+    def start_uvicorn(self, api_host='localhost', api_port=8000, api_concurrency=1):
         '''
         Starts the Uvicorn server.
         '''
-        module_name = os.path.splitext(os.path.basename(__file__))[0]
-        app_name = "rp_app"
         uvicorn.run(
-            f"{module_name}:{app_name}", host=api_host,
+            self.rp_app, host=api_host,
             port=int(api_port), workers=int(api_concurrency),
             log_level="info",
-            access_log=False,
-            reload=reload
+            access_log=False
         )
 
     async def _run(self, job: Job):
