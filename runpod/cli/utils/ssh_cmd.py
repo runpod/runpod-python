@@ -102,7 +102,7 @@ class SSHConnection:
             f"root@{self.pod_ip}:{remote_path}"
         ]
 
-        return subprocess.Popen(rsync_cmd)
+        return subprocess.run(rsync_cmd, check=True)
 
     def close(self):
         ''' Close the SSH connection. '''

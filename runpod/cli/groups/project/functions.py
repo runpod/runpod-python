@@ -9,6 +9,7 @@ from configparser import ConfigParser
 
 from runpod import create_pod, get_pod, get_pods
 from runpod.cli.utils.ssh_cmd import SSHConnection
+from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
@@ -175,7 +176,8 @@ def start_project_api():
     project_name = config["PROJECT"]["Name"]
     remote_project_path = f'{volume_mount_path}/{project_uuid}/{project_name}'
 
-    rsync = ssh_conn.rsync(os.getcwd(), remote_project_path)
+    # ssh_conn.rsync(os.path.join(os.getcwd(), ''), remote_project_path)
+    sync_directory(ssh_conn, os.getcwd(), remote_project_path)
 
     launch_api_server = [f'''
         source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
@@ -194,5 +196,4 @@ def start_project_api():
     try:
         ssh_conn.run_commands(launch_api_server)
     finally:
-        rsync.terminate()
         ssh_conn.close()
