@@ -180,6 +180,8 @@ def start_project_api():
     sync_directory(ssh_conn, os.getcwd(), remote_project_path)
 
     launch_api_server = [f'''
+        pkill inotify
+
         function cleanup {{
             echo "Cleaning up..."
             kill $last_pid 2>/dev/null
