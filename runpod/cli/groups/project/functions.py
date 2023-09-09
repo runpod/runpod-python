@@ -180,16 +180,35 @@ def start_project_api():
     sync_directory(ssh_conn, os.getcwd(), remote_project_path)
 
     launch_api_server = [f'''
+        function cleanup {{
+            echo "Cleaning up..."
+            kill $last_pid 2>/dev/null
+        }}
+
+        trap cleanup EXIT
+
         source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
+        echo "Activated virtual environment." &&
+
         cd {volume_mount_path}/{project_uuid}/{project_name} &&
+        echo "Changed to project directory." &&
+
         python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
         last_pid=$!
+        echo "Started API server with PID: $last_pid" &&
+
         while true; do
-            inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path}
-            kill $last_pid
-            sleep 1
+            inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path} &&
+            echo "Detected changes in the project directory." &&
+
+            kill $last_pid &&
+            echo "Killed API server with PID: $last_pid" &&
+
+            sleep 1 &&
+
             python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
             last_pid=$!
+            echo "Restarted API server with PID: $last_pid" &&
         done
     ''']
 
