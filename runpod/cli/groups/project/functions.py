@@ -187,30 +187,47 @@ def start_project_api():
 
         trap cleanup EXIT
 
-        source {volume_mount_path}/{project_uuid}/venv/bin/activate &&
-        echo "Activated virtual environment." &&
+        if source {volume_mount_path}/{project_uuid}/venv/bin/activate; then
+            echo "Activated virtual environment."
+        else
+            echo "Failed to activate virtual environment."
+            exit 1
+        fi
 
-        cd {volume_mount_path}/{project_uuid}/{project_name} &&
-        echo "Changed to project directory." &&
+        if cd {volume_mount_path}/{project_uuid}/{project_name}; then
+            echo "Changed to project directory."
+        else
+            echo "Failed to change directory."
+            exit 1
+        fi
 
         python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
         last_pid=$!
         echo "Started API server with PID: $last_pid"
 
         while true; do
-            changed_file=$(inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path} --format '%w%f') &&
-            echo "Detected changes in: $changed_file" &&
+            if changed_file=$(inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path} --format '%w%f'); then
+                echo "Detected changes in: $changed_file"
+            else
+                echo "Failed to detect changes."
+                exit 1
+            fi
 
-            kill $last_pid &&
-            echo "Killed API server with PID: $last_pid" &&
+            if kill $last_pid; then
+                echo "Killed API server with PID: $last_pid"
+            else
+                echo "Failed to kill server."
+                exit 1
+            fi
 
-            sleep 2 &&  # Debounce time
+            sleep 2  # Debounce time
 
             python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
             last_pid=$!
             echo "Restarted API server with PID: $last_pid"
         done
     ''']
+
 
 
     try:
