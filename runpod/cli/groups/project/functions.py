@@ -198,19 +198,20 @@ def start_project_api():
         echo "Started API server with PID: $last_pid"
 
         while true; do
-            inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path} &&
-            echo "Detected changes in the project directory." &&
+            changed_file=$(inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path} --format '%w%f') &&
+            echo "Detected changes in: $changed_file" &&
 
             kill $last_pid &&
             echo "Killed API server with PID: $last_pid" &&
 
-            sleep 1 &&
+            sleep 2 &&  # Debounce time
 
             python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
             last_pid=$!
             echo "Restarted API server with PID: $last_pid"
         done
     ''']
+
 
     try:
         ssh_conn.run_commands(launch_api_server)
