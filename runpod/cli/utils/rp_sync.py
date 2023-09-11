@@ -24,6 +24,11 @@ class WatcherHandler(FileSystemEventHandler):
 
         return False
 
+    def dispatch(self, event):
+        print(f"Event {event.event_type} triggered for {event.src_path}.")
+        super().dispatch(event)
+
+
     def on_modified(self, event):
         if event.is_directory or self.should_ignore(event.src_path):
             return
