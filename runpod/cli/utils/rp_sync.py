@@ -30,6 +30,13 @@ class WatcherHandler(FileSystemEventHandler):
         print(f'File {event.src_path} has been modified.')
         self.ssh_client.rsync(os.path.join(self.local_path, ''), self.remote_path)
 
+    def on_moved(self, event):
+        if event.is_directory or self.should_ignore(event.dest_path):
+            return
+        print(f'File {event.dest_path} has been moved or renamed.')
+        self.ssh_client.rsync(os.path.join(self.local_path, ''), self.remote_path)
+
+
     def on_created(self, event):
         if event.is_directory or self.should_ignore(event.src_path):
             return
