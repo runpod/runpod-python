@@ -96,7 +96,7 @@ class SSHConnection:
         ]
 
         rsync_cmd = [
-            "rsync", "-avz",
+            "rsync", "-avz", "-no-owner", "-no-group",
             "--exclude", "__pycache__/", "--exclude", "*.pyc", "--exclude", ".*.swp",
             "-e", f"ssh {' '.join(ssh_options)}",
             local_path,
