@@ -90,7 +90,6 @@ class SSHConnection:
         '''
         ssh_options = [
             "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
             "-p", str(self.pod_port),
             "-i", os.path.join(SSH_KEY_FOLDER, self.key_file)
         ]
