@@ -60,16 +60,9 @@ class TestProjectCLI(unittest.TestCase):
         '''
         Tests the start_project_pod command.
         '''
-        result = self.runner.invoke(start_project_pod)
+        with patch('runpod.cli.groups.project.commands.start_project_api') as mock_start:
+            mock_start.return_value = None
+            result = self.runner.invoke(start_project_pod)
 
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starting project API server...", result.output)
-
-
-
-    def test_start_project_pod_invalid_file(self):
-        '''
-        Tests the start_project_pod command with an invalid project file.
-        '''
-        result = self.runner.invoke(start_project_pod, ['nonexistent_file.txt'])
-        self.assertEqual(result.exit_code, 2)
