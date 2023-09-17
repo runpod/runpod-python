@@ -19,8 +19,8 @@ class TestSSHConnection(unittest.TestCase):
         with tempfile.NamedTemporaryFile() as temp_file:
             patcher2 = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file',
                             return_value=temp_file.name)
-        self.mock_find_ssh_key_file = patcher2.start()
-        self.addCleanup(patcher2.stop)
+            self.mock_find_ssh_key_file = patcher2.start()
+            self.addCleanup(patcher2.stop)
 
         self.ssh_connection = SSHConnection('pod_id_mock')
 
