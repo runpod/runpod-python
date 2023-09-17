@@ -69,7 +69,7 @@ class TestSSHConnection(unittest.TestCase):
 
         mock_sftp_obj.put.assert_called_once_with(local_path, remote_path)
 
-    @patch('paramiko.SSHClient.open_sftp')
+    @patch('runpod.cli.utils.ssh_cmd.paramiko.SSHClient.open_sftp')
     def test_get_file(self, mock_sftp):
         """
         Test that get_file() calls get() on the SFTP object.
