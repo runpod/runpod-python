@@ -1,7 +1,6 @@
 '''
 RunPod | CLI | Utils | SSH Command
 '''
-import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -11,16 +10,20 @@ class TestSSHConnection(unittest.TestCase):
     """ Test the SSHConnection class. """
 
     def setUp(self):
+
         patcher1 = patch('runpod.cli.utils.ssh_cmd.get_ssh_ip_port',
                          return_value=('127.0.0.1', 22))
         self.mock_get_ssh_ip_port = patcher1.start()
         self.addCleanup(patcher1.stop)
 
-        with tempfile.NamedTemporaryFile() as temp_file:
-            patcher2 = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file',
-                            return_value=temp_file.name)
-            self.mock_find_ssh_key_file = patcher2.start()
-            self.addCleanup(patcher2.stop)
+        patcher2 = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file',
+                        return_value='key_file')
+        self.mock_find_ssh_key_file = patcher2.start()
+        self.addCleanup(patcher2.stop)
+
+        patcher3 = patch('runpod.cli.utils.ssh_cmd.paramiko.SSHClient')
+        self.mock_ssh_client = patcher3.start()
+        self.addCleanup(patcher3.stop)
 
         self.ssh_connection = SSHConnection('pod_id_mock')
 
