@@ -69,7 +69,7 @@ class TestBotoConfig(unittest.TestCase):
 
             mock_session.return_value.client.assert_called_with(
                 's3',
-                endpoint_url=bucket_creds['endpointUrl'],
+                endpoint_url=creds_s3['endpointUrl'],
                 aws_access_key_id=bucket_creds['accessId'],
                 aws_secret_access_key=bucket_creds['accessSecret'],
                 config=unittest.mock.ANY,
@@ -83,7 +83,7 @@ class TestBotoConfig(unittest.TestCase):
 
             mock_session.return_value.client.assert_called_with(
                 's3',
-                endpoint_url=bucket_creds['endpointUrl'],
+                endpoint_url=creds_do['endpointUrl'],
                 aws_access_key_id=bucket_creds['accessId'],
                 aws_secret_access_key=bucket_creds['accessSecret'],
                 config=unittest.mock.ANY,
