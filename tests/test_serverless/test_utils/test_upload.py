@@ -58,7 +58,8 @@ class TestBotoConfig(unittest.TestCase):
                 endpoint_url=bucket_creds['endpointUrl'],
                 aws_access_key_id=bucket_creds['accessId'],
                 aws_secret_access_key=bucket_creds['accessSecret'],
-                config=unittest.mock.ANY
+                config=unittest.mock.ANY,
+                region_name=None
             )
 
     def test_get_boto_client_environ(self):
