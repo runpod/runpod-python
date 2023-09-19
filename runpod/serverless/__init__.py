@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import time
+import signal
 import argparse
 from typing import Dict, Any
 
@@ -82,6 +83,13 @@ def _get_realtime_concurrency() -> int:
     """
     return int(os.environ.get("RUNPOD_REALTIME_CONCURRENCY", "1"))
 
+def _signal_handler(sig, frame):
+    """
+    Handles the SIGINT signal.
+    """
+    del sig, frame
+    log.info("SIGINT received. Shutting down.")
+    sys.exit(0)
 
 # ---------------------------------------------------------------------------- #
 #                            Start Serverless Worker                           #
@@ -99,6 +107,8 @@ def start(config: Dict[str, Any]):
     """
     from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
     print(f"--- Starting Serverless Worker |  Version {runpod_version} ---")
+
+    signal.signal(signal.SIGINT, _signal_handler)
 
     config["reference_counter_start"] = time.perf_counter()
     config = _set_config_args(config)
