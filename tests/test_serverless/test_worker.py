@@ -93,12 +93,13 @@ class TestWorker(IsolatedAsyncioTestCase):
 
             assert mock_fastapi.WorkerAPI.called
 
-    @patch('runpod.serverless.RunPodLogger')
+    @patch('runpod.serverless.log')
     @patch('runpod.serverless.sys.exit')
     def test_signal_handler(self, mock_exit, mock_logger):
         '''
         Test signal handler.
         '''
+
         _signal_handler(None, None)
 
         assert mock_exit.called
