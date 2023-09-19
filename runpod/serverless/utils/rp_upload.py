@@ -10,6 +10,7 @@ import logging
 import threading
 import multiprocessing
 from io import BytesIO
+from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 import boto3
@@ -18,7 +19,7 @@ from boto3 import session
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from tqdm_loggable.auto import tqdm
-from urllib.parse import urlparse
+
 
 logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
@@ -32,8 +33,9 @@ def extract_region_from_url(endpoint_url):
     # AWS/backblaze S3-like URL
     if '.s3.' in endpoint_url:
         return endpoint_url.split('.s3.')[1].split('.')[0]
+
     # DigitalOcean Spaces-like URL
-    elif parsed_url.netloc.endswith('.digitaloceanspaces.com'):
+    if parsed_url.netloc.endswith('.digitaloceanspaces.com'):
         return endpoint_url.split('.')[1].split('.digitaloceanspaces.com')[0]
 
     return None
