@@ -27,6 +27,7 @@ class TestSSHConnection(unittest.TestCase):
 
         self.ssh_connection = SSHConnection('pod_id_mock')
 
+
     @patch.object(SSHConnection, 'run_commands')
     def test_run_commands(self, mock_run_commands):
         '''
