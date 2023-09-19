@@ -9,7 +9,7 @@ import nest_asyncio
 
 import runpod
 from runpod.serverless.modules.rp_logger import RunPodLogger
-
+from runpod.serverless import _signal_handler
 
 nest_asyncio.apply()
 
@@ -93,6 +93,16 @@ class TestWorker(IsolatedAsyncioTestCase):
 
             assert mock_fastapi.WorkerAPI.called
 
+    @patch('runpod.serverless.RunPodLogger')
+    @patch('runpod.serverless.sys.exit')
+    def test_signal_handler(self, mock_exit, mock_logger):
+        '''
+        Test signal handler.
+        '''
+        _signal_handler(None, None)
+
+        assert mock_exit.called
+        assert mock_logger.info.called
 
 class TestWorkerTestInput(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
