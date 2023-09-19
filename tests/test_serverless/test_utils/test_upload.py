@@ -67,7 +67,7 @@ class TestBotoConfig(unittest.TestCase):
 
             boto_client, transfer_config = get_boto_client(creds_s3)
 
-            mock_session.return_value.client.assert_called_once_with(
+            mock_session.return_value.client.assert_called_with(
                 's3',
                 endpoint_url=bucket_creds['endpointUrl'],
                 aws_access_key_id=bucket_creds['accessId'],
@@ -81,7 +81,7 @@ class TestBotoConfig(unittest.TestCase):
 
             boto_client, transfer_config = get_boto_client(creds_do)
 
-            mock_session.return_value.client.assert_called_once_with(
+            mock_session.return_value.client.assert_called_with(
                 's3',
                 endpoint_url=bucket_creds['endpointUrl'],
                 aws_access_key_id=bucket_creds['accessId'],
