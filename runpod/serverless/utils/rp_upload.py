@@ -10,6 +10,7 @@ import logging
 import threading
 import multiprocessing
 from io import BytesIO
+from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 import boto3
@@ -18,24 +19,27 @@ from boto3 import session
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from tqdm_loggable.auto import tqdm
-from urllib.parse import urlparse
+
 
 logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
 logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHandler()])
 
 def extract_region_from_url(endpoint_url):
+    """
+    Extracts the region from the endpoint URL.
+    """
     parsed_url = urlparse(endpoint_url)
     # AWS/backblaze S3-like URL
     if '.s3.' in endpoint_url:
         return endpoint_url.split('.s3.')[1].split('.')[0]
+
     # DigitalOcean Spaces-like URL
-    elif parsed_url.netloc.endswith('.digitaloceanspaces.com'):
+    if parsed_url.netloc.endswith('.digitaloceanspaces.com'):
         return endpoint_url.split('.')[1].split('.digitaloceanspaces.com')[0]
-    else:
-        # Additional cases can be added here
-        return None
-  
+
+    return None
+
 
 # --------------------------- S3 Bucket Connection --------------------------- #
 def get_boto_client(
@@ -72,7 +76,7 @@ def get_boto_client(
     if endpoint_url and access_key_id and secret_access_key:
         # Extract region from the endpoint URL
         region = extract_region_from_url(endpoint_url)
-        
+
         boto_client = bucket_session.client(
             's3',
             endpoint_url=endpoint_url,
