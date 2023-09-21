@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import ANY, patch
 from threading import Event
 
-from runpod.serverless.modules.rp_progress import progress_update, _thread_target
+from runpod.serverless.modules.rp_progress import progress_update, _thread_target, send_result
 
 class TestProgressUpdate(unittest.TestCase):
     """ Tests for the progress_update function. """
@@ -36,10 +36,11 @@ class TestProgressUpdate(unittest.TestCase):
         mock_os_get.return_value = "fake_api_key"
 
         # Call the function
-        job = "fake_job"
+        job = {"id": "fake_job"}
         progress = "50%"
         progress_update(job, progress)
         _thread_target(job, progress)
+
 
         assert mock_thread_target.called, "Thread function was not started"
         mock_thread_target.assert_called_once_with(job, progress)
