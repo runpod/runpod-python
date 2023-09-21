@@ -4,8 +4,9 @@ Tests for the rp_progress.py module.
 
 import unittest
 from unittest.mock import patch, Mock
-from runpod.serverless import progress_update
 from threading import Event
+
+from runpod.serverless import progress_update
 
 class TestProgressUpdate(unittest.TestCase):
     """ Tests for the progress_update function. """
@@ -14,14 +15,13 @@ class TestProgressUpdate(unittest.TestCase):
     @patch("runpod.serverless.modules.rp_progress.aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_progress.send_result")
     @patch("runpod.serverless.modules.rp_progress.threading.Thread")
-    def test_progress_update(self, mock_thread, mock_send_result, mock_client_session, mock_os_get):
+    def test_progress_update(self, mock_thread, mock_result, mock_client_session, mock_os_get):
         """
-        Tests that the progress_update function calls the send_result function with the correct arguments.
+        Tests that the progress_update function.
         """
         # Create an event to track thread completion
         thread_event = Event()
 
-        # Replace the thread's start method to execute the thread target immediately (to avoid real threading)
         def mock_start(self):
             self._target(*self._args, **self._kwargs)
             thread_event.set()  # Set the event after thread completion
@@ -49,4 +49,4 @@ class TestProgressUpdate(unittest.TestCase):
             "status": "IN_PROGRESS",
             "output": progress
         }
-        mock_send_result.assert_called_once_with(fake_session, expected_job_data, job)
+        mock_result.assert_called_once_with(fake_session, expected_job_data, job)
