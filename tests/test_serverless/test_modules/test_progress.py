@@ -34,7 +34,6 @@ class TestProgressUpdate(unittest.TestCase):
 
         # Set mock values
         mock_os_get.return_value = "fake_api_key"
-        thread_event.clear()
 
         # Call the function
         job = "fake_job"
