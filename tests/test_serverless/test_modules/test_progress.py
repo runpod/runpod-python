@@ -13,7 +13,7 @@ class TestProgressUpdate(unittest.IsolatedAsyncioTestCase):
     @patch("runpod.serverless.modules.rp_progress.os.environ.get")
     @patch("runpod.serverless.modules.rp_progress.aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_progress.send_result")
-    def test_progress_update(self, mock_send_result, mock_client_session, mock_os_get):
+    async def test_progress_update(self, mock_send_result, mock_client_session, mock_os_get):
         """
         Tests that the progress_update function calls the send_result function with the correct
         """
