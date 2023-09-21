@@ -6,6 +6,7 @@ import os
 import asyncio
 import threading
 import aiohttp
+from typing import Dict, Any
 
 from .rp_http import send_result
 
@@ -34,25 +35,22 @@ async def _async_progress_update(session, job, progress):
 
     await send_result(session, job_data, job)
 
-def _thread_target(job, progress):
+def _thread_target(job: Dict[str, Any], progress: str):
     """
     A wrapper around _async_progress_update to handle the event loop.
     """
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-        print(f"Starting loop for {job}")
+    print(f"Starting loop for {job}")
 
-        session = loop.run_until_complete(_create_session_async())
-        loop.run_until_complete(_async_progress_update(session, job, progress))
+    session = loop.run_until_complete(_create_session_async())
+    loop.run_until_complete(_async_progress_update(session, job, progress))
 
-        print(f"Closing loop for {job}")
+    print(f"Closing loop for {job}")
 
-        session.close()
-        loop.close()
-    except Exception as err: # pylint: disable=broad-except
-        print(f"Exception in thread target: {err}")
+    session.close()
+
 
 def progress_update(job, progress):
     """
