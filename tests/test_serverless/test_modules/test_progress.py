@@ -37,10 +37,14 @@ class TestProgressUpdate(unittest.TestCase):
         fake_session = Mock()
         mock_client_session.return_value = fake_session
 
+        thread_event.clear()
+
         # Call the function
         job = "fake_job"
         progress = "50%"
         progress_update(job, progress)
+
+        assert mock_thread.called, "Thread was not started"
 
         assert thread_event.wait(timeout=10), "Thread did not complete within expected time"
 
