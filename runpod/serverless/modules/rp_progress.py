@@ -13,6 +13,7 @@ async def _create_session_async():
     """
     Creates an aiohttp session.
     """
+    print("Creating new aiohttp session")
     auth_header = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
     timeout = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
@@ -25,6 +26,7 @@ async def _async_progress_update(session, job, progress):
     """
     The actual asynchronous function that sends the update.
     """
+    print(f"Sending progress update for {job['id']}")
     job_data = {
         "status": "IN_PROGRESS",
         "output": progress
