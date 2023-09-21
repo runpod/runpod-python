@@ -2,21 +2,32 @@
 Tests for the rp_progress.py module.
 """
 
-
 import unittest
 from unittest.mock import patch, Mock
 from runpod.serverless import progress_update
+from threading import Event
 
-class TestProgressUpdate(unittest.IsolatedAsyncioTestCase):
+class TestProgressUpdate(unittest.TestCase):
     """ Tests for the progress_update function. """
 
     @patch("runpod.serverless.modules.rp_progress.os.environ.get")
     @patch("runpod.serverless.modules.rp_progress.aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_progress.send_result")
-    async def test_progress_update(self, mock_send_result, mock_client_session, mock_os_get):
+    @patch("runpod.serverless.modules.rp_progress.threading.Thread")
+    def test_progress_update(self, mock_thread, mock_send_result, mock_client_session, mock_os_get):
         """
-        Tests that the progress_update function calls the send_result function with the correct
+        Tests that the progress_update function calls the send_result function with the correct arguments.
         """
+        # Create an event to track thread completion
+        thread_event = Event()
+
+        # Replace the thread's start method to execute the thread target immediately (to avoid real threading)
+        def mock_start(self):
+            self._target(*self._args, **self._kwargs)
+            thread_event.set()  # Set the event after thread completion
+
+        mock_thread.start = mock_start
+
         # Set mock values
         mock_os_get.return_value = "fake_api_key"
         fake_session = Mock()
@@ -26,6 +37,9 @@ class TestProgressUpdate(unittest.IsolatedAsyncioTestCase):
         job = "fake_job"
         progress = "50%"
         progress_update(job, progress)
+
+        # Wait for the "thread" to complete
+        thread_event.wait()
 
         # Assertions
         mock_os_get.assert_called_once_with('RUNPOD_AI_API_KEY')

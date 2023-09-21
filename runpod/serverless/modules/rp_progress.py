@@ -4,8 +4,9 @@ RunPod Progress Module
 
 import os
 import asyncio
-import aiohttp
 import threading
+import aiohttp
+
 from .rp_http import send_result
 
 def _create_session():
