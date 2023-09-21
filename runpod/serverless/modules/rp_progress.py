@@ -41,8 +41,12 @@ def _thread_target(job, progress):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+    print(f"Starting loop for {job}")
+
     session = loop.run_until_complete(_create_session_async())
     loop.run_until_complete(_async_progress_update(session, job, progress))
+
+    print(f"Closing loop for {job}")
 
     session.close()
     loop.close()
