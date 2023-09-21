@@ -57,3 +57,4 @@ def progress_update(job, progress):
     """
     thread = threading.Thread(target=_thread_target, args=(job, progress), daemon=True)
     thread.start()
+    thread.join()
