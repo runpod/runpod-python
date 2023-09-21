@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch, Mock
 from threading import Event
 
-from runpod.serverless import progress_update
+from runpod.serverless.modules.rp_progress import progress_update
 
 class TestProgressUpdate(unittest.TestCase):
     """ Tests for the progress_update function. """
