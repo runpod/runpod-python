@@ -19,7 +19,7 @@ def _create_session():
         headers=auth_header, timeout=timeout
     )
 
-def progress_update(job, progress):
+async def progress_update(job, progress):
     """
     Updates the progress of a currently running job.
     """
@@ -30,4 +30,4 @@ def progress_update(job, progress):
         "output": progress
     }
 
-    send_result(session, job_data, job)
+    await send_result(session, job_data, job)
