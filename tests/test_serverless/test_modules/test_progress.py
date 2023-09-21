@@ -45,6 +45,7 @@ class TestProgressUpdate(unittest.TestCase):
         assert thread_event.wait(timeout=30), "Thread did not complete within expected time"
 
         # Assertions
+        print(mock_os_get.call_args_list)
         mock_os_get.assert_called_once_with('RUNPOD_AI_API_KEY')
         expected_job_data = {
             "status": "IN_PROGRESS",
