@@ -38,18 +38,21 @@ def _thread_target(job, progress):
     """
     A wrapper around _async_progress_update to handle the event loop.
     """
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    print(f"Starting loop for {job}")
+        print(f"Starting loop for {job}")
 
-    session = loop.run_until_complete(_create_session_async())
-    loop.run_until_complete(_async_progress_update(session, job, progress))
+        session = loop.run_until_complete(_create_session_async())
+        loop.run_until_complete(_async_progress_update(session, job, progress))
 
-    print(f"Closing loop for {job}")
+        print(f"Closing loop for {job}")
 
-    session.close()
-    loop.close()
+        session.close()
+        loop.close()
+    except Exception as err: # pylint: disable=broad-except
+        print(f"Exception in thread target: {err}")
 
 def progress_update(job, progress):
     """
@@ -57,4 +60,5 @@ def progress_update(job, progress):
     """
     thread = threading.Thread(target=_thread_target, args=(job, progress), daemon=True)
     thread.start()
+    print("Thread alive?", thread.is_alive())
     thread.join()
