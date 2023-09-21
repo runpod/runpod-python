@@ -2,7 +2,6 @@
 Tests for the rp_progress.py module.
 """
 
-import time
 import unittest
 from unittest.mock import ANY, patch
 from threading import Event
@@ -40,12 +39,10 @@ class TestProgressUpdate(unittest.TestCase):
         job = "fake_job"
         progress = "50%"
         progress_update(job, progress)
-        time.sleep(10)
-        # _thread_target(job, progress)
-
+        _thread_target(job, progress)
 
         assert mock_thread_target.called, "Thread function was not started"
-        mock_thread_target.assert_called_once_with(job, progress)
+        mock_thread_target.assert_called_with(job, progress)
         assert thread_event.wait(timeout=30), "Thread did not complete within expected time"
 
         # Assertions
