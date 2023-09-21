@@ -3,7 +3,7 @@ Tests for the rp_progress.py module.
 """
 
 import unittest
-from unittest.mock import Any, patch
+from unittest.mock import ANY, patch
 from threading import Event
 
 from runpod.serverless import progress_update
@@ -51,4 +51,4 @@ class TestProgressUpdate(unittest.TestCase):
             "status": "IN_PROGRESS",
             "output": progress
         }
-        mock_result.assert_called_once_with(Any, expected_job_data, job)
+        mock_result.assert_called_once_with(ANY, expected_job_data, job)
