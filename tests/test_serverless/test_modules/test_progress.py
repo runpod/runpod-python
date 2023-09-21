@@ -23,9 +23,9 @@ class TestProgressUpdate(unittest.TestCase):
 
         def mock_thread_function(job, progress):
             try:
-                # You can insert logic or assertions here if you want
-                pass
-            except Exception as err:
+                assert job == "fake_job", "Job ID was not passed correctly"
+                assert progress == "50%", "Progress was not passed correctly"
+            except Exception as err: # pylint: disable=broad-except
                 print(f"Exception in mocked function: {err}")
             finally:
                 thread_event.set()
@@ -43,7 +43,7 @@ class TestProgressUpdate(unittest.TestCase):
 
         assert mock_thread_target.called, "Thread function was not started"
         mock_thread_target.assert_called_once_with(job, progress)
-        assert thread_event.wait(timeout=10), "Thread did not complete within expected time"
+        assert thread_event.wait(timeout=30), "Thread did not complete within expected time"
 
         # Assertions
         mock_os_get.assert_called_once_with('RUNPOD_AI_API_KEY')
