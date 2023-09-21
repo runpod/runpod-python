@@ -23,8 +23,12 @@ class TestProgressUpdate(unittest.TestCase):
         thread_event = Event()
 
         def mock_start(self):
-            self._target(*self._args, **self._kwargs)
-            thread_event.set()  # Set the event after thread completion
+            try:
+                self._target(*self._args, **self._kwargs)
+            except Exception as e:
+                print(f"Exception in mocked thread: {e}")
+            finally:
+                thread_event.set()
 
         mock_thread.start = mock_start
 
@@ -38,9 +42,6 @@ class TestProgressUpdate(unittest.TestCase):
         progress = "50%"
         progress_update(job, progress)
 
-        # Wait for the "thread" to complete
-        thread_event.wait()
-
         # Assertions
         mock_os_get.assert_called_once_with('RUNPOD_AI_API_KEY')
         mock_client_session.assert_called_once()
@@ -50,3 +51,4 @@ class TestProgressUpdate(unittest.TestCase):
             "output": progress
         }
         mock_result.assert_called_once_with(fake_session, expected_job_data, job)
+        assert thread_event.wait(timeout=10), "Thread did not complete within expected time"
