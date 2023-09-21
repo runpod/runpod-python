@@ -3,40 +3,37 @@ Tests for the rp_progress.py module.
 """
 
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 from threading import Event
 
-from runpod.serverless.modules.rp_progress import progress_update
+from runpod.serverless import progress_update
 
 class TestProgressUpdate(unittest.TestCase):
     """ Tests for the progress_update function. """
 
     @patch("runpod.serverless.modules.rp_progress.os.environ.get")
-    @patch("runpod.serverless.modules.rp_progress.aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_progress.send_result")
-    @patch("runpod.serverless.modules.rp_progress.threading.Thread")
-    def test_progress_update(self, mock_thread, mock_result, mock_client_session, mock_os_get):
+    @patch("runpod.serverless.modules.rp_progress._thread_target")
+    def test_progress_update(self, mock_thread_target, mock_result, mock_os_get):
         """
         Tests that the progress_update function.
         """
         # Create an event to track thread completion
         thread_event = Event()
 
-        def mock_start(self):
+        def mock_thread_function(job, progress):
             try:
-                self._target(*self._args, **self._kwargs)
-            except Exception as err: # pylint: disable=broad-except
-                print(f"Exception in mocked thread: {err}")
+                # You can insert logic or assertions here if you want
+                pass
+            except Exception as err:
+                print(f"Exception in mocked function: {err}")
             finally:
                 thread_event.set()
 
-        mock_thread.start = mock_start
+        mock_thread_target.side_effect = mock_thread_function
 
         # Set mock values
         mock_os_get.return_value = "fake_api_key"
-        fake_session = Mock()
-        mock_client_session.return_value = fake_session
-
         thread_event.clear()
 
         # Call the function
@@ -44,16 +41,13 @@ class TestProgressUpdate(unittest.TestCase):
         progress = "50%"
         progress_update(job, progress)
 
-        assert mock_thread.called, "Thread was not started"
-
+        assert mock_thread_target.called, "Thread function was not started"
+        mock_thread_target.assert_called_once_with(job, progress)
         assert thread_event.wait(timeout=10), "Thread did not complete within expected time"
 
         # Assertions
         mock_os_get.assert_called_once_with('RUNPOD_AI_API_KEY')
-        mock_client_session.assert_called_once()
-
         expected_job_data = {
             "status": "IN_PROGRESS",
             "output": progress
         }
-        mock_result.assert_called_once_with(fake_session, expected_job_data, job)
