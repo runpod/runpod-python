@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import ANY, patch
 from threading import Event
 
-from runpod.serverless.modules.rp_progress import progress_update, _thread_target, send_result
+from runpod.serverless.modules.rp_progress import progress_update, _thread_target
 
 class TestProgressUpdate(unittest.TestCase):
     """ Tests for the progress_update function. """
@@ -47,7 +47,6 @@ class TestProgressUpdate(unittest.TestCase):
         assert thread_event.wait(timeout=30), "Thread did not complete within expected time"
 
         # Assertions
-        print(mock_os_get.call_args_list)
         mock_os_get.assert_called_with('RUNPOD_AI_API_KEY')
         expected_job_data = {
             "status": "IN_PROGRESS",
