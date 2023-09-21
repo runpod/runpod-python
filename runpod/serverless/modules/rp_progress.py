@@ -41,5 +41,5 @@ def progress_update(job, progress):
     """
     Updates the progress of a currently running job in a separate thread.
     """
-    thread = threading.Thread(target=_async_progress_update, args=(job, progress))
+    thread = threading.Thread(target=_async_progress_update, args=(job, progress), daemon=True)
     thread.start()

@@ -25,8 +25,8 @@ class TestProgressUpdate(unittest.TestCase):
         def mock_start(self):
             try:
                 self._target(*self._args, **self._kwargs)
-            except Exception as e:
-                print(f"Exception in mocked thread: {e}")
+            except Exception as err: # pylint: disable=broad-except
+                print(f"Exception in mocked thread: {err}")
             finally:
                 thread_event.set()
 
@@ -42,6 +42,8 @@ class TestProgressUpdate(unittest.TestCase):
         progress = "50%"
         progress_update(job, progress)
 
+        assert thread_event.wait(timeout=10), "Thread did not complete within expected time"
+
         # Assertions
         mock_os_get.assert_called_once_with('RUNPOD_AI_API_KEY')
         mock_client_session.assert_called_once()
@@ -51,4 +53,3 @@ class TestProgressUpdate(unittest.TestCase):
             "output": progress
         }
         mock_result.assert_called_once_with(fake_session, expected_job_data, job)
-        assert thread_event.wait(timeout=10), "Thread did not complete within expected time"
