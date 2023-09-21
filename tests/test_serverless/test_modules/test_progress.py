@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import patch, Mock
 from runpod.serverless import progress_update
 
-class TestProgressUpdate(unittest.TestCase):
+class TestProgressUpdate(unittest.IsolatedAsyncioTestCase):
+    """ Tests for the progress_update function. """
 
     @patch("runpod.serverless.modules.rp_progress.os.environ.get")
     @patch("runpod.serverless.modules.rp_progress.aiohttp.ClientSession")
