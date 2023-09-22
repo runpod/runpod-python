@@ -9,7 +9,10 @@ from typing import Dict, Any
 
 import aiohttp
 
+from runpod.serverless.modules.rp_logger import RunPodLogger
 from .rp_http import send_result
+
+log = RunPodLogger()
 
 async def _create_session_async():
     """
@@ -48,6 +51,8 @@ def _thread_target(job: Dict[str, Any], progress: str):
                 await _async_progress_update(session, job, progress)
 
         loop.run_until_complete(main())
+
+        log.debug(f'{job["id"]} | Progress Update Sent: {progress}')
     finally:
         loop.close()
 
@@ -56,5 +61,6 @@ def progress_update(job, progress):
     """
     Updates the progress of a currently running job in a separate thread.
     """
+    log.debug(f'{job["id"]} | Sending Progress Update: {progress}')
     thread = threading.Thread(target=_thread_target, args=(job, progress), daemon=True)
     thread.start()
