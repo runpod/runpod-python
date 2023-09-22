@@ -43,7 +43,8 @@ def _thread_target(job: Dict[str, Any], progress: str):
 
     try:
         async def main():
-            async with _create_session_async() as session:
+            session = await _create_session_async()
+            async with session:
                 await _async_progress_update(session, job, progress)
 
         loop.run_until_complete(main())
