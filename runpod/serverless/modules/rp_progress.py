@@ -41,10 +41,15 @@ def _thread_target(job: Dict[str, Any], progress: str):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    session = loop.run_until_complete(_create_session_async())
-    loop.run_until_complete(_async_progress_update(session, job, progress))
+    try:
+        async def main():
+            session = await _create_session_async()
+            async with session:
+                await _async_progress_update(session, job, progress)
 
-    session.close()
+        loop.run_until_complete(main())
+    finally:
+        loop.close()
 
 
 def progress_update(job, progress):
