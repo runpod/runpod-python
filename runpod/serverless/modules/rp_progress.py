@@ -1,13 +1,17 @@
 """
-Provides a method to update the progress of a currently running job.
+RunPod Progress Module
 """
 
 import os
+import asyncio
+import threading
+from typing import Dict, Any
+
 import aiohttp
+
 from .rp_http import send_result
 
-
-def _create_session():
+async def _create_session_async():
     """
     Creates an aiohttp session.
     """
@@ -19,15 +23,33 @@ def _create_session():
         headers=auth_header, timeout=timeout
     )
 
-def progress_update(job, progress):
+async def _async_progress_update(session, job, progress):
     """
-    Updates the progress of a currently running job.
+    The actual asynchronous function that sends the update.
     """
-    session = _create_session()
-
     job_data = {
         "status": "IN_PROGRESS",
         "output": progress
     }
 
-    send_result(session, job_data, job)
+    await send_result(session, job_data, job)
+
+def _thread_target(job: Dict[str, Any], progress: str):
+    """
+    A wrapper around _async_progress_update to handle the event loop.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    session = loop.run_until_complete(_create_session_async())
+    loop.run_until_complete(_async_progress_update(session, job, progress))
+
+    session.close()
+
+
+def progress_update(job, progress):
+    """
+    Updates the progress of a currently running job in a separate thread.
+    """
+    thread = threading.Thread(target=_thread_target, args=(job, progress), daemon=True)
+    thread.start()
