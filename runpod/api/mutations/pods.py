@@ -10,7 +10,7 @@ def generate_pod_deployment_mutation(
         data_center_id=None, country_code=None,
         gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
-        env=None):
+        env=None, template_id=None):
     '''
     Generates a mutation to deploy a pod on demand.
     '''
@@ -55,6 +55,8 @@ def generate_pod_deployment_mutation(
         env_string = ", ".join(
             [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()])
         input_fields.append(f"env: [{env_string}]")
+    if template_id is not None:
+        input_fields.append(f'templateId: "{template_id}"')
 
 
     # Format input fields
