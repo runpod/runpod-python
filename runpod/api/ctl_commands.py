@@ -61,7 +61,7 @@ def create_pod(
         gpu_count:int=1, volume_in_gb:int=0, container_disk_in_gb:int=5,
         min_vcpu_count:int=1, min_memory_in_gb:int=1, docker_args:str="",
         ports:Optional[str]=None, volume_mount_path:str="/workspace",
-        env:Optional[dict]=None
+        env:Optional[dict]=None, template_id:Optional[str]=None
     ) -> dict:
     '''
     Create a pod
@@ -79,6 +79,7 @@ def create_pod(
     :param env: the environment variables to inject into the pod,
                 for example {EXAMPLE_VAR:"example_value", EXAMPLE_VAR2:"example_value 2"}, will
                 inject EXAMPLE_VAR and EXAMPLE_VAR2 into the pod with the mentioned values
+    :param template_id: the id of the template to use for the pod
 
     :example:
 
@@ -95,7 +96,7 @@ def create_pod(
             cloud_type, support_public_ip,
             data_center_id, country_code, gpu_count,
             volume_in_gb, container_disk_in_gb, min_vcpu_count, min_memory_in_gb, docker_args,
-            ports, volume_mount_path, env)
+            ports, volume_mount_path, env, template_id)
     )
 
     cleaned_response = raw_response["data"]["podFindAndDeployOnDemand"]
