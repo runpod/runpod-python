@@ -81,7 +81,8 @@ def create_pod(
         gpu_count:int=1, volume_in_gb:int=0, container_disk_in_gb:int=5,
         min_vcpu_count:int=1, min_memory_in_gb:int=1, docker_args:str="",
         ports:Optional[str]=None, volume_mount_path:str="/runpod_volume",
-        env:Optional[dict]=None, network_volume_id:Optional[str]=None
+        env:Optional[dict]=None,  template_id:Optional[str]=None,
+        network_volume_id:Optional[str]=None
     ) -> dict:
     '''
     Create a pod
