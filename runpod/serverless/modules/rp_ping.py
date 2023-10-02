@@ -25,7 +25,7 @@ class Heartbeat:
 
     _thread_started = False
 
-    def __init__(self, pool_connections=100, retries=3) -> None:
+    def __init__(self, pool_connections=10, retries=5) -> None:
         '''
         Initializes the Heartbeat class.
         '''
@@ -46,7 +46,6 @@ class Heartbeat:
         )
         self._session.mount('http://', adapter)
         self._session.mount('https://', adapter)
-
 
         self.runpod_version = None
 
@@ -89,7 +88,7 @@ class Heartbeat:
         try:
             result = self._session.get(
                 self.PING_URL, params=ping_params,
-                timeout=self.PING_INTERVAL
+                timeout=self.PING_INTERVAL*2
             )
 
             log.debug(f"Heartbeat Sent | URL: {self.PING_URL} | Status: {result.status_code}")
