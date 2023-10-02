@@ -25,7 +25,7 @@ class Heartbeat:
 
     _thread_started = False
 
-    def __init__(self, pool_connections=10, retries=5) -> None:
+    def __init__(self, pool_connections=10, retries=3) -> None:
         '''
         Initializes the Heartbeat class.
         '''
