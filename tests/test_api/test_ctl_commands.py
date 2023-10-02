@@ -9,6 +9,40 @@ from runpod.api import ctl_commands
 class TestCTL(unittest.TestCase):
     ''' Tests for CTL Commands '''
 
+    def test_get_user(self):
+        '''
+        Tests get_user
+        '''
+        with patch("runpod.api.graphql.requests.post") as patch_request:
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "myself": {
+                        "id": "USER_ID",
+                    }
+                }
+            }
+
+            user = ctl_commands.get_user()
+            self.assertEqual(user["id"], "USER_ID")
+
+    def test_update_user_settings(self):
+        '''
+        Tests update_user_settings
+        '''
+        with patch("runpod.api.graphql.requests.post") as patch_request:
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "updateUserSettings": {
+                        "id": "USER_ID",
+                        'publicKey': 'PUBLIC_KEY'
+                    }
+                }
+            }
+
+            user = ctl_commands.update_user_settings("PUBLIC_KEY")
+            self.assertEqual(user["id"], "USER_ID")
+            self.assertEqual(user["publicKey"], "PUBLIC_KEY")
+
     def test_get_gpus(self):
         '''
         Tests get_gpus
@@ -70,9 +104,8 @@ class TestCTL(unittest.TestCase):
         Tests create_pod
         '''
         with patch("runpod.api.graphql.requests.post") as patch_request, \
-            patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
-
-            patch_get_gpu.return_value = None
+             patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu,\
+             patch("runpod.api.ctl_commands.get_user") as patch_get_user:
 
             patch_request.return_value.json.return_value = {
                 "data": {
@@ -82,10 +115,21 @@ class TestCTL(unittest.TestCase):
                 }
             }
 
+            patch_get_gpu.return_value = None
+            patch_get_user.return_value = {
+                "networkVolumes": [
+                    {
+                        "id": "NETWORK_VOLUME_ID",
+                        "dataCenterId": "us-east-1"
+                    }
+                ]
+            }
+
             pod = ctl_commands.create_pod(
                 name="POD_NAME",
                 image_name="IMAGE_NAME",
-                gpu_type_id="NVIDIA A100 80GB PCIe")
+                gpu_type_id="NVIDIA A100 80GB PCIe",
+                network_volume_id="NETWORK_VOLUME_ID")
 
             self.assertEqual(pod["id"], "POD_ID")
 

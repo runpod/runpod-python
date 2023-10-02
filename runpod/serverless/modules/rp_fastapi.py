@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from .rp_job import run_job
 from .worker_state import Jobs
 from .rp_ping import Heartbeat
+from ...version import __version__ as runpod_Version
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
@@ -64,13 +65,10 @@ class WorkerAPI:
         self.config = {"handler": handler}
 
         # Initialize the FastAPI web server.
-
-        import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
-
         self.rp_app = FastAPI(
             title="RunPod | Test Worker | API",
             description=DESCRIPTION,
-            version=runpod.__version__,
+            version=runpod_Version
         )
 
         # Create an APIRouter and add the route for processing jobs.
