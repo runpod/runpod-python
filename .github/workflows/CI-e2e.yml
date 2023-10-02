@@ -64,7 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Tests
-        uses: direlines/runpod-test-runner@v1.6
+        uses: direlines/runpod-test-runner@v1.7
         with:
           image-tag: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ needs.e2e-build.outputs.docker_tag }}
           runpod-api-key: ${{ secrets.RUNPOD_API_KEY }}

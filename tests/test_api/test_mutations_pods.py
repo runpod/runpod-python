@@ -27,7 +27,8 @@ class TestPodMutations(unittest.TestCase):
             ports="8080",
             volume_mount_path="/path",
             env={"ENV": "test"},
-            support_public_ip=True)
+            support_public_ip=True,
+            template_id="abcde")
 
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
