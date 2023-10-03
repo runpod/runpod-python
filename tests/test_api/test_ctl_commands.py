@@ -129,7 +129,8 @@ class TestCTL(unittest.TestCase):
             pod = ctl_commands.create_pod(
                 name="POD_NAME",
                 image_name="IMAGE_NAME",
-                gpu_type_id="NVIDIA A100 80GB PCIe")
+                gpu_type_id="NVIDIA A100 80GB PCIe",
+                network_volume_id="NETWORK_VOLUME_ID")
 
             self.assertEqual(pod["id"], "POD_ID")
 
