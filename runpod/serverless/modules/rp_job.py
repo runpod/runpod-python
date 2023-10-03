@@ -129,6 +129,9 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         elif isinstance(job_output, bool):
             run_result = {"output": job_output}
 
+        elif isinstance(job_output, str):
+            run_result = {"output": job_output}
+
         if run_result.get("output") == {}:
             run_result.pop("output")
 
