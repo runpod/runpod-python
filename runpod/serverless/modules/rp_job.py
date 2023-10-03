@@ -14,6 +14,7 @@ from aiohttp import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import WORKER_ID, Jobs
 from .rp_tips import check_return_size
+from ...version import __version__ as runpod_version
 
 JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
 
@@ -108,51 +109,52 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     Returns the job output or error.
     """
     log.info(f'{job["id"]} | Started')
+    run_result = {"error": "No output from handler."}
 
     try:
-        result = handler(job)
-        job_output = await result if inspect.isawaitable(result) else result
-
+        job_output = await handler(job) if inspect.isawaitable(handler(job)) else handler(job)
         log.debug(f'{job["id"]} | Handler output: {job_output}')
 
-        run_result = {"output": job_output}
-
         if isinstance(job_output, dict):
+            error_msg = job_output.pop("error", None)
+            refresh_worker = job_output.pop("refresh_worker", None)
 
-            if job_output.get("error", False):
-                run_result["error"] = str(run_result["output"].pop("error"))
+            run_result = {"output": job_output}
 
-            if job_output.get("refresh_worker", False):
+            if error_msg:
+                run_result["error"] = error_msg
+            if refresh_worker:
                 run_result["stopPod"] = True
-                run_result["output"].pop("refresh_worker")
-
-            if run_result["output"] == {}:
-                run_result.pop("output")
 
         elif isinstance(job_output, bool):
             run_result = {"output": job_output}
 
+        elif isinstance(job_output, str):
+            run_result = {"output": job_output}
+
+        if run_result.get("output") == {}:
+            run_result.pop("output")
+
         check_return_size(run_result)  # Checks the size of the return body.
+
     except Exception as err:    # pylint: disable=broad-except
-        from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
-        error_content = json.dumps(
-            {
-                "error_type": str(type(err)),
-                "error_message": str(err),
-                "error_traceback": traceback.format_exc(),
-                "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
-                "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
-                "runpod_version": runpod_version
-            }, indent=4)
+        error_info = {
+            "error_type": str(type(err)),
+            "error_message": str(err),
+            "error_traceback": traceback.format_exc(),
+            "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
+            "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
+            "runpod_version": runpod_version
+        }
 
         log.error(f'{job["id"]} | Captured Handler Exception')
-        log.error(error_content)
+        log.error(json.dumps(error_info, indent=4))
+        run_result = {"error": error_info}
 
-        run_result = {"error": error_content}
     finally:
         log.debug(f'{job["id"]} | run_job return: {run_result}')
 
-        return run_result  # pylint: disable=lost-exception
+    return run_result
 
 
 async def run_job_generator(
