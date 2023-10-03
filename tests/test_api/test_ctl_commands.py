@@ -136,6 +136,7 @@ class TestCTL(unittest.TestCase):
             with self.assertRaises(ValueError) as context:
                 pod = ctl_commands.create_pod(
                     name="POD_NAME",
+                    cloud_type="NOT_A_CLOUD_TYPE",
                     image_name="IMAGE_NAME",
                     gpu_type_id="NVIDIA A100 80GB PCIe",
                     network_volume_id="NETWORK_VOLUME_ID")
