@@ -68,4 +68,4 @@ jobs:
         with:
           image-tag: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ needs.e2e-build.outputs.docker_tag }}
           runpod-api-key: ${{ secrets.RUNPOD_API_KEY }}
-          request-timeout: 600
+          request-timeout: 1200
