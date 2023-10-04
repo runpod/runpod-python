@@ -1,5 +1,11 @@
 # Change Log
 
+## Release (Patch) 1.2.3 (10/4/23)
+
+### Bug Fix
+
+- Job outputs that were not dictionaries, bool, or str were swallowed by the serverless worker. This has been fixed.
+
 ## Release 1.2.2 (10/4/23)
 
 ### Added
