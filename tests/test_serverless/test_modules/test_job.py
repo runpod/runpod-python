@@ -177,11 +177,18 @@ class TestRunJob(IsolatedAsyncioTestCase):
         Tests the run_job function
         '''
         mock_handler = Mock()
+
         mock_handler.return_value = "test"
-
         job_result = await rp_job.run_job(mock_handler, self.sample_job)
-
         assert job_result == {"output": "test"}
+
+        mock_handler.return_value = ['test1', 'test2']
+        job_result_list = await rp_job.run_job(mock_handler, self.sample_job)
+        assert job_result_list == [{"output":["test1", "test2"]}]
+
+        mock_handler.return_value = 123
+        job_result_int = await rp_job.run_job(mock_handler, self.sample_job)
+        assert job_result_int == {"output": 123}
 
     async def test_job_with_errors(self):
         '''
