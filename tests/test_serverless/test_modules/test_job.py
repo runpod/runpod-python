@@ -184,7 +184,7 @@ class TestRunJob(IsolatedAsyncioTestCase):
 
         mock_handler.return_value = ['test1', 'test2']
         job_result_list = await rp_job.run_job(mock_handler, self.sample_job)
-        assert job_result_list == [{"output":["test1", "test2"]}]
+        assert job_result_list == {"output":["test1", "test2"]}
 
         mock_handler.return_value = 123
         job_result_int = await rp_job.run_job(mock_handler, self.sample_job)
