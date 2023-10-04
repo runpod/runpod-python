@@ -1,6 +1,26 @@
 # Change Log
 
-## Release 1.2.1 (89/22/23)
+## Release 1.2.2 (10/4/23)
+
+### Added
+
+- User queries and mutations are now available in the python API wrapper.
+- `start_ssh` added with default `True` when creating new pods.
+- `network_volume_id` can now be passed in when creating new pods, correct data center is automatically selected.
+- `template_id` can now be passed in when creating new pods.
+
+### Changes
+
+- Dependencies updated to latest versions.
+- Reduced circular imports for version reference.
+- `support_public_ip` is not default to `True` when creating new pods.
+
+### Fixed
+
+- Reduce pool_connections for ping requests to 10.
+- Double timeout for ping requests.
+
+## Release 1.2.1 (9/22/23)
 
 ### Added
 
