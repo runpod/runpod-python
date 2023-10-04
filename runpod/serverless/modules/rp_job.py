@@ -151,7 +151,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
         log.error(f'{job["id"]} | Captured Handler Exception')
         log.error(json.dumps(error_info, indent=4))
-        run_result = {"error": error_info}
+        run_result = {"error": json.dumps(error_info)}
 
     finally:
         log.debug(f'{job["id"]} | run_job return: {run_result}')
