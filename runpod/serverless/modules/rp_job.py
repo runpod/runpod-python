@@ -112,7 +112,9 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     run_result = {"error": "No output from handler."}
 
     try:
-        job_output = await handler(job) if inspect.isawaitable(handler(job)) else handler(job)
+        handler_return = handler(job)
+        job_output = await handler_return if inspect.isawaitable(handler_return) else handler_return
+
         log.debug(f'{job["id"]} | Handler output: {job_output}')
 
         if isinstance(job_output, dict):
