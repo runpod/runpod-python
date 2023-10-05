@@ -62,6 +62,36 @@ class TestBotoConfig(unittest.TestCase):
                 region_name=None
             )
 
+            creds_s3 = bucket_creds.copy()
+            creds_s3['endpointUrl'] = "https://bucket-name.s3.region-code.amazonaws.com/key-name"
+
+            boto_client, transfer_config = get_boto_client(creds_s3)
+
+            mock_session.return_value.client.assert_called_with(
+                's3',
+                endpoint_url=creds_s3['endpointUrl'],
+                aws_access_key_id=bucket_creds['accessId'],
+                aws_secret_access_key=bucket_creds['accessSecret'],
+                config=unittest.mock.ANY,
+                region_name="region-code"
+            )
+
+            creds_do = bucket_creds.copy()
+            creds_do['endpointUrl'] = "https://name.region-code.digitaloceanspaces.com/key-name"
+
+            boto_client, transfer_config = get_boto_client(creds_do)
+
+            mock_session.return_value.client.assert_called_with(
+                's3',
+                endpoint_url=creds_do['endpointUrl'],
+                aws_access_key_id=bucket_creds['accessId'],
+                aws_secret_access_key=bucket_creds['accessSecret'],
+                config=unittest.mock.ANY,
+                region_name="region-code"
+            )
+
+
+
     def test_get_boto_client_environ(self):
         '''
         Tests get_boto_client with environment variables

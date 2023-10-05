@@ -8,12 +8,15 @@ import os
 import sys
 import json
 import time
+import signal
 import argparse
 from typing import Dict, Any
 
 from . import worker
 from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
+from .modules.rp_progress import progress_update
+from ..version import __version__ as runpod_version
 
 log = RunPodLogger()
 
@@ -82,6 +85,13 @@ def _get_realtime_concurrency() -> int:
     """
     return int(os.environ.get("RUNPOD_REALTIME_CONCURRENCY", "1"))
 
+def _signal_handler(sig, frame):
+    """
+    Handles the SIGINT signal.
+    """
+    del sig, frame
+    log.info("SIGINT received. Shutting down.")
+    sys.exit(0)
 
 # ---------------------------------------------------------------------------- #
 #                            Start Serverless Worker                           #
@@ -97,8 +107,9 @@ def start(config: Dict[str, Any]):
 
     config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
     """
-    from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
     print(f"--- Starting Serverless Worker |  Version {runpod_version} ---")
+
+    signal.signal(signal.SIGINT, _signal_handler)
 
     config["reference_counter_start"] = time.perf_counter()
     config = _set_config_args(config)

@@ -55,7 +55,7 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         log.error(f"Error while returning job result {job['id']}: {err}")
 
     finally:
-        if url_template == JOB_DONE_URL:
+        if url_template == JOB_DONE_URL and job_data.get('status', None) != 'IN_PROGRESS':
             job_list.remove_job(job["id"])
             log.info(f'{job["id"]} | Finished')
 

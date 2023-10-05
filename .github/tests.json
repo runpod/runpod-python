@@ -2,7 +2,7 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "AMPERE_16",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
                 "name": "runpod-python E2E Test - Basic"
             }
         },
@@ -13,7 +13,7 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "AMPERE_16",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
                 "name": "runpod-python E2E Test - Long Job"
             }
         },
@@ -25,7 +25,7 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "AMPERE_16",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
                 "name": "runpod-python E2E Test - Generator Handler"
             },
             "templateConfig": {
@@ -43,7 +43,7 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "AMPERE_16",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
                 "name": "runpod-python E2E Test - Async Generator Handler"
             },
             "templateConfig": {

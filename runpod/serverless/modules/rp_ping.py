@@ -11,6 +11,7 @@ from urllib3.util.retry import Retry
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import Jobs, WORKER_ID
+from ...version import __version__ as runpod_version
 
 log = RunPodLogger()
 jobs = Jobs() # Contains the list of jobs that are currently running.
@@ -25,7 +26,7 @@ class Heartbeat:
 
     _thread_started = False
 
-    def __init__(self, pool_connections=100, retries=3) -> None:
+    def __init__(self, pool_connections=10, retries=3) -> None:
         '''
         Initializes the Heartbeat class.
         '''
@@ -47,9 +48,6 @@ class Heartbeat:
         self._session.mount('http://', adapter)
         self._session.mount('https://', adapter)
 
-
-        self.runpod_version = None
-
     def start_ping(self, test=False):
         '''
         Sends heartbeat pings to the Runpod server.
@@ -59,9 +57,6 @@ class Heartbeat:
             return
 
         if not Heartbeat._thread_started:
-            from runpod import __version__ as runpod_version # pylint: disable=import-outside-toplevel,cyclic-import
-            self.runpod_version = runpod_version
-
             threading.Thread(target=self.ping_loop, daemon=True, args=(test,)).start()
             Heartbeat._thread_started = True
 
@@ -83,13 +78,13 @@ class Heartbeat:
         job_ids = jobs.get_job_list()
         ping_params = {
             'job_id': job_ids,
-            'runpod_version': self.runpod_version
+            'runpod_version': runpod_version
         }
 
         try:
             result = self._session.get(
                 self.PING_URL, params=ping_params,
-                timeout=self.PING_INTERVAL
+                timeout=self.PING_INTERVAL*2
             )
 
             log.debug(f"Heartbeat Sent | URL: {self.PING_URL} | Status: {result.status_code}")
