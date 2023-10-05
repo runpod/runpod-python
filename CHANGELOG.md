@@ -1,12 +1,19 @@
 # Change Log
 
-## Release (Patch) 1.2.3 (10/4/23)
+## Release 1.2.5 (10/5/23)
+
+### Fixed
+
+- Handler called twice.
+- Default container disk size removed if template is provided when creating a new pod.
+
+## ~~Release (Patch) 1.2.3 (10/4/23)~~ Replaced by 1.2.5
 
 ### Bug Fix
 
 - Job outputs that were not dictionaries, bool, or str were swallowed by the serverless worker. This has been fixed.
 
-## Release 1.2.2 (10/4/23)
+## ~~Release 1.2.2 (10/4/23)~~ Replaced by 1.2.5
 
 ### Added
 
