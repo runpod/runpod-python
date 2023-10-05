@@ -201,6 +201,17 @@ class TestRunJob(IsolatedAsyncioTestCase):
 
         assert job_result == {"error": "test"}
 
+    async def test_job_with_raised_exception(self):
+        '''
+        Tests the run_job function with a raised exception
+        '''
+        mock_handler = Mock()
+        mock_handler.side_effect = Exception
+
+        job_result = await rp_job.run_job(mock_handler, self.sample_job)
+
+        assert "error" in job_result
+
     async def test_job_with_refresh_worker(self):
         '''
         Tests the run_job function with refresh_worker
