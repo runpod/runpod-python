@@ -19,8 +19,7 @@
         },
         "input": {
             "mock_return": "Delay test successful returned after waiting 5 minutes.",
-            "mock_delay": 1,
-            "mock_error": true
+            "mock_delay": 300
         }
     },
     {
