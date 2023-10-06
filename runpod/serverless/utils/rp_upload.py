@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 import boto3
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from boto3 import session
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
@@ -96,10 +96,11 @@ def get_boto_client(
 # ---------------------------------------------------------------------------- #
 def upload_image(job_id, image_location, result_index=0, results_list=None): # pragma: no cover
     '''
-    Upload image to bucket storage.
+    Upload a single file to bucket storage.
     '''
     image_name = str(uuid.uuid4())[:8]
     boto_client, _ = get_boto_client()
+    file_extension = os.path.splitext(image_location)[1]
 
     if boto_client is None:
         # Save the output to a file
@@ -108,39 +109,53 @@ def upload_image(job_id, image_location, result_index=0, results_list=None): # p
         print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker-utils.md")
 
         os.makedirs("simulated_uploaded", exist_ok=True)
-        sim_upload_location = f"simulated_uploaded/{image_name}.png"
-        with Image.open(image_location) as img, open(sim_upload_location, "wb") as file_output:
-            img.save(file_output, format=img.format)
+        sim_upload_location = f"simulated_uploaded/{image_name}{file_extension}"
+        try:
+            with Image.open(image_location) as img, open(sim_upload_location, "wb") as file_output:
+                img.save(file_output, format=img.format)
+
+        except UnidentifiedImageError:
+            # If the file is not an image, save it directly
+            shutil.copy(image_location, sim_upload_location)
 
         if results_list is not None:
             results_list[result_index] = sim_upload_location
 
         return sim_upload_location
 
-    with Image.open(image_location) as img:
-        output = BytesIO()
-        img.save(output, format=img.format)
-        output.seek(0)
+    try:
+        with Image.open(image_location) as img:
+            output = BytesIO()
+            img.save(output, format=img.format)
+            output.seek(0)
+            content_type = "image/" + file_extension.lstrip(".")
 
-        bucket = time.strftime('%m-%y')
-        boto_client.put_object(
-            Bucket=f'{bucket}',
-            Key=f'{job_id}/{image_name}.png',
-            Body=output.getvalue(),
-            ContentType="image/png"
-        )
+    except UnidentifiedImageError:
+        # If the file is not an image, read it directly
+        with open(image_location, "rb") as f:
+            output = f.read()
+        content_type = "application/octet-stream"
 
-        presigned_url = boto_client.generate_presigned_url(
-            'get_object',
-            Params={
-                'Bucket': f'{bucket}',
-                'Key': f'{job_id}/{image_name}.png'
-            }, ExpiresIn=604800)
 
-        if results_list is not None:
-            results_list[result_index] = presigned_url
+    bucket = time.strftime('%m-%y')
+    boto_client.put_object(
+        Bucket=f'{bucket}',
+        Key=f'{job_id}/{image_name}{file_extension}',
+        Body=output,
+        ContentType=content_type
+    )
 
-        return presigned_url
+    presigned_url = boto_client.generate_presigned_url(
+        'get_object',
+        Params={
+            'Bucket': f'{bucket}',
+            'Key': f'{job_id}/{image_name}{file_extension}'
+        }, ExpiresIn=604800)
+
+    if results_list is not None:
+        results_list[result_index] = presigned_url
+
+    return presigned_url
 
 
 # ---------------------------------------------------------------------------- #
