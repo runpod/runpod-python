@@ -12,7 +12,7 @@ tomli >= 2.0.1
 tqdm-loggable == 0.1.4
 setuptools_scm == 8.0.3
 
-fastapi[all] == 0.103.2
+fastapi[all] >= 0.103.2
 
 # Minimum versions for dependencies
 urllib3 >= 1.26.6
