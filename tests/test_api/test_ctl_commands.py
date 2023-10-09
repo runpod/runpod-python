@@ -104,7 +104,7 @@ class TestCTL(unittest.TestCase):
         Tests create_pod
         '''
         with patch("runpod.api.graphql.requests.post") as patch_request, \
-             patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu,\
+             patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu, \
              patch("runpod.api.ctl_commands.get_user") as patch_get_user:
 
             patch_request.return_value.json.return_value = {
@@ -116,6 +116,7 @@ class TestCTL(unittest.TestCase):
             }
 
             patch_get_gpu.return_value = None
+
             patch_get_user.return_value = {
                 "networkVolumes": [
                     {
@@ -128,6 +129,8 @@ class TestCTL(unittest.TestCase):
             pod = ctl_commands.create_pod(
                 name="POD_NAME",
                 image_name="IMAGE_NAME",
+                support_public_ip=False,
+
                 gpu_type_id="NVIDIA A100 80GB PCIe",
                 network_volume_id="NETWORK_VOLUME_ID")
 
@@ -136,9 +139,10 @@ class TestCTL(unittest.TestCase):
             with self.assertRaises(ValueError) as context:
                 pod = ctl_commands.create_pod(
                     name="POD_NAME",
+                    cloud_type="NOT_A_CLOUD_TYPE",
                     image_name="IMAGE_NAME",
                     gpu_type_id="NVIDIA A100 80GB PCIe",
-                    cloud_type="NOT A CLOUD TYPE")
+                    network_volume_id="NETWORK_VOLUME_ID")
 
             self.assertEqual(str(context.exception),
                                 "cloud_type must be one of ALL, COMMUNITY or SECURE")

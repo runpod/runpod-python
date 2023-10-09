@@ -63,9 +63,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Run Tests
+        id: run-tests
         uses: direlines/runpod-test-runner@v1.7
         with:
           image-tag: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ needs.e2e-build.outputs.docker_tag }}
           runpod-api-key: ${{ secrets.RUNPOD_API_KEY }}
-          request-timeout: 600
+          request-timeout: 1200
+
+      - name: Verify Tests
+        env:
+          TOTAL_TESTS: ${{ steps.run-tests.outputs.total-tests }}
+          SUCCESSFUL_TESTS: ${{ steps.run-tests.outputs.succeeded }}
+        run: |
+          echo "Total tests: $TOTAL_TESTS"
+          echo "Successful tests: $SUCCESSFUL_TESTS"
+          if [ "$TOTAL_TESTS" != "$SUCCESSFUL_TESTS" ]; then
+              exit 1
+          fi

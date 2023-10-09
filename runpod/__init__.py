@@ -1,11 +1,12 @@
 """ Allows runpod to be imported as a module. """
 
 import os
+import logging
 
-from .version import __version__
 from . import serverless
 from .endpoint import Endpoint
 from .endpoint import AsyncioEndpoint, AsyncioJob
+from .version import __version__
 from .api.ctl_commands import(
     get_user, update_user_settings,
     get_gpus, get_gpu,
@@ -30,3 +31,8 @@ else:
 api_url_base = "https://api.runpod.io"  # pylint: disable=invalid-name
 
 endpoint_url_base = "https://api.runpod.ai/v2"  # pylint: disable=invalid-name
+
+
+# --------------------------- Force Logging Levels --------------------------- #
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+

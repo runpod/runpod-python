@@ -1,6 +1,53 @@
 # Change Log
 
-## Release 1.2.1 (89/22/23)
+## Release 1.2.6 (10/6/23)
+
+### Changes
+
+- Force `urllib3` logging to `WARNING` level to avoid spamming the console if global logging level is set to `DEBUG`.
+
+---
+
+## Release 1.2.5 (10/5/23)
+
+### Fixed
+
+- Handler called twice.
+- Default container disk size removed if template is provided when creating a new pod.
+
+---
+
+## ~~Release (Patch) 1.2.3 (10/4/23)~~ Replaced by 1.2.5
+
+### Bug Fix
+
+- Job outputs that were not dictionaries, bool, or str were swallowed by the serverless worker. This has been fixed.
+
+---
+
+## ~~Release 1.2.2 (10/4/23)~~ Replaced by 1.2.5
+
+### Added
+
+- User queries and mutations are now available in the python API wrapper.
+- `start_ssh` added with default `True` when creating new pods.
+- `network_volume_id` can now be passed in when creating new pods, correct data center is automatically selected.
+- `template_id` can now be passed in when creating new pods.
+
+### Changes
+
+- Dependencies updated to latest versions.
+- Reduced circular imports for version reference.
+- `support_public_ip` is not default to `True` when creating new pods.
+
+### Fixed
+
+- Reduce pool_connections for ping requests to 10.
+- Double timeout for ping requests.
+
+---
+
+## Release 1.2.1 (9/22/23)
 
 ### Added
 
@@ -12,6 +59,8 @@
 ### Fixed
 
 - Region is included when using S3 storage via rp_upload, automatically filled in for Amazon S3 buckets and Digital Ocean Spaces.
+
+---
 
 ## Release 1.2.0 (8/29/23)
 
