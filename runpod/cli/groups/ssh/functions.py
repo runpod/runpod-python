@@ -80,11 +80,16 @@ def generate_ssh_key_pair(filename):
 
 
 def add_ssh_key(public_key):
-    '''
-    Add an SSH key to the current user's account
-    '''
+    """Add an SSH public key to the current user's RunPod account.
+    Checks if the key already exists before adding it.
+    """
     user = get_user()
     current_keys = user['pubKey']
+
+    # Check if the key already exists
+    if public_key in current_keys:
+        print("Key already exists")
+        return
 
     updated_keys = current_keys + ('\n\n' if current_keys else '') + public_key
 

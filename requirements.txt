@@ -16,7 +16,6 @@ tqdm-loggable == 0.1.4
 setuptools_scm == 8.0.4
 watchdog >= 3.0.0
 
-
 fastapi[all] == 0.103.2
 
 # Minimum versions for dependencies
