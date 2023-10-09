@@ -3,7 +3,6 @@
 import os
 import logging
 
-from .version import __version__
 from . import serverless
 from .endpoint import Endpoint
 from .endpoint import AsyncioEndpoint, AsyncioJob
