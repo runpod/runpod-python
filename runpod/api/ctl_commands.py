@@ -23,6 +23,7 @@ def get_user() -> dict:
 def update_user_settings(pubkey : str) -> dict:
     '''
     Update the current user
+
     :param pubkey: the public key of the user
     '''
     raw_response = run_graphql_query(user_mutations.generate_user_mutation(pubkey))
