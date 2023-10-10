@@ -5,10 +5,13 @@ RunPod | CLI | Project | Functions
 import os
 import shutil
 import uuid
+import timllib
+import tomli_w
 from configparser import ConfigParser
 
 from runpod import create_pod, get_pod, get_pods
 from runpod.cli.utils.ssh_cmd import SSHConnection
+from .helpers import get_project_pod
 from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
@@ -49,32 +52,30 @@ def create_new_project(project_name, runpod_volume_id, python_version,
             with open(handler_path, 'w', encoding='utf-8') as file:
                 file.write(handler_content)
 
-    config = ConfigParser()
-
-    config['PROJECT'] = {
-        'UUID': str(uuid.uuid4())[:8],  # Short UUID
-        'Name': project_name,
-        'BaseImage': 'runpod/base:0.0.0',
-        'GPU': 'NVIDIA RTX A4500',
-        'GPUCount': 1,
-        'StorageID': runpod_volume_id,
-        'VolumeMountPath': '/runpod-volume',
-        'Ports': '8080/http, 22/tcp',
-        'ContainerDiskSizeGB': 10
-    }
-
-    config['TEMPLATE'] = {
-        'ModelType': str(model_type),
-        'ModelName': str(model_name)
-    }
-
-    config['ENVIRONMENT'] = {
-        'PythonVersion': python_version,
-        'RequirementsPath': os.path.join(project_folder, 'requirements.txt')
+    toml_config = {
+        'project': {
+            'uuid': str(uuid.uuid4())[:8],  # Short UUID
+            'name': project_name,
+            'base_image': 'runpod/base:0.0.0',
+            'gpu': 'NVIDIA RTX A4500',
+            'gpu_count': 1,
+            'storage_id': runpod_volume_id,
+            'volume_mount_path': '/runpod-volume',
+            'ports': '8080/http, 22/tcp',
+            'container_disk_size_gb': 10
+        },
+        'template': {
+            'model_type': str(model_type),
+            'model_name': str(model_name)
+        },
+        'runtime': {
+            'python_version': python_version,
+            'requirements_path': os.path.join(project_folder, 'requirements.txt')
+        }
     }
 
     with open(os.path.join(project_folder, "runpod.toml"), 'w', encoding="UTF-8") as config_file:
-        config.write(config_file)
+        tomli_w.dump(toml_config, config_file)
 
 
 # ------------------------------ Launch Project ------------------------------ #
@@ -93,13 +94,20 @@ def launch_project():
         raise FileNotFoundError("runpod.toml not found in the current directory.")
 
     with open(project_file, 'r', encoding="UTF-8") as config_file:
-        config = ConfigParser()
-        config.read_file(config_file)
+        config = timllib.load(config_file)
 
     for config_item in config['PROJECT']:
         print(f'{config_item}: {config["PROJECT"][config_item]}')
 
+    # Check if the project pod already exists.
+    if get_project_pod(config['PROJECT']['UUID']):
+        raise ValueError('Project pod already launched. Run "runpod project start" to start.')
+
     print("Launching pod on RunPod...")
+
+    environment_variables = {"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
+    for variable in config['project']['env_vars']:
+        environment_variables[variable] = config['project']['env_vars'][variable]
 
     new_pod = create_pod(
         f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
@@ -111,7 +119,7 @@ def launch_project():
         network_volume_id=f'{config["PROJECT"]["StorageID"]}',
         volume_mount_path=f'{config["PROJECT"]["VolumeMountPath"]}',
         container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"]),
-        env={"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
+        env=environment_variables
     )
 
     while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
@@ -158,15 +166,10 @@ def start_project_api():
         raise FileNotFoundError("runpod.toml not found in the current directory.")
 
     with open(project_file, 'r', encoding="UTF-8") as config_file:
-        config = ConfigParser()
-        config.read_file(config_file)
+        config = timllib.load(config_file)
 
-    # Get the project pod.
-    for pod in get_pods():
-        if config['PROJECT']['UUID'] in pod['name']:
-            project_pod = pod
-            break
-    else:
+    project_pod = get_project_pod(config['PROJECT']['UUID'])
+    if project_pod is None:
         raise ValueError(f'Project pod not found for UUID: {config["PROJECT"]["UUID"]}')
 
     ssh_conn = SSHConnection(project_pod['id'])
