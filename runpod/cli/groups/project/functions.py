@@ -5,11 +5,10 @@ RunPod | CLI | Project | Functions
 import os
 import shutil
 import uuid
-import timllib
+import tomllib
 import tomli_w
-from configparser import ConfigParser
 
-from runpod import create_pod, get_pod, get_pods
+from runpod import create_pod, get_pod
 from runpod.cli.utils.ssh_cmd import SSHConnection
 from .helpers import get_project_pod
 from ...utils.rp_sync import sync_directory
@@ -94,7 +93,7 @@ def launch_project():
         raise FileNotFoundError("runpod.toml not found in the current directory.")
 
     with open(project_file, 'r', encoding="UTF-8") as config_file:
-        config = timllib.load(config_file)
+        config = tomllib.load(config_file)
 
     for config_item in config['PROJECT']:
         print(f'{config_item}: {config["PROJECT"][config_item]}')
@@ -166,7 +165,7 @@ def start_project_api():
         raise FileNotFoundError("runpod.toml not found in the current directory.")
 
     with open(project_file, 'r', encoding="UTF-8") as config_file:
-        config = timllib.load(config_file)
+        config = tomllib.load(config_file)
 
     project_pod = get_project_pod(config['PROJECT']['UUID'])
     if project_pod is None:
