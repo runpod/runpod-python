@@ -175,6 +175,7 @@ def start_project_api():
     project_uuid = config["PROJECT"]["UUID"]
     project_name = config["PROJECT"]["Name"]
     remote_project_path = f'{volume_mount_path}/{project_uuid}/{project_name}'
+    requirements_path = f"{remote_project_path}/{config['ENVIRONMENT']['RequirementsPath']}"
 
     # ssh_conn.rsync(os.path.join(os.getcwd(), ''), remote_project_path)
     sync_directory(ssh_conn, os.getcwd(), remote_project_path)
@@ -220,6 +221,10 @@ def start_project_api():
             else
                 echo "Failed to kill server."
                 exit 1
+            fi
+
+            if [[ $changed_file == {requirements_path} ]]; then
+                pip install --upgrade pip && pip install -r {requirements_path}
             fi
 
             sleep 1 #Debounce
