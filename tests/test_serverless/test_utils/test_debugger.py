@@ -104,6 +104,11 @@ class TestDebugger(unittest.TestCase):
         '''
         self.checkpoints.add('checkpoint1')
         self.checkpoints.start('checkpoint1')
+
+        # Check that non-stopped checkpoints are not returned
+        checkpoint_list = self.checkpoints.get_checkpoints()
+        self.assertEqual(len(checkpoint_list), 0)
+
         self.checkpoints.stop('checkpoint1')
 
         checkpoint_list = self.checkpoints.get_checkpoints()

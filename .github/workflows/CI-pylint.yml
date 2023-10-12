@@ -5,23 +5,27 @@ on:
     branches-ignore:
       - "main-ci"
       - "release"
-  #   pull_request:
-  #     branches:
-  #       - main
+
+  pull_request:
+    branches:
+      - main
 
   workflow_dispatch:
 
 jobs:
   lint:
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10.12, 3.11.0]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
-          python-version: 3.11.0
+          python-version: ${{ matrix.python-version }}
 
       - name: Install Dependencies
         run: |
