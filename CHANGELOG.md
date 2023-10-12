@@ -4,7 +4,7 @@
 
 ### Changes
 
-- Backwards compatibility with Python >= 3.9
+- Backwards compatibility with Python >= 3.8
 
 ### Fixed
 
