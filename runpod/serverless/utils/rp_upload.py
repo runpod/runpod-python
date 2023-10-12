@@ -106,7 +106,7 @@ def upload_image(job_id, image_location, result_index=0, results_list=None): # p
         # Save the output to a file
         print("No bucket endpoint set, saving to disk folder 'simulated_uploaded'")
         print("If this is a live endpoint, please reference the following:")
-        print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker-utils.md")
+        print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md") # pylint: disable=line-too-long
 
         os.makedirs("simulated_uploaded", exist_ok=True)
         sim_upload_location = f"simulated_uploaded/{image_name}{file_extension}"
