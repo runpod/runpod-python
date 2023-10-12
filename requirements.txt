@@ -13,6 +13,3 @@ tomli >= 2.0.1
 tqdm-loggable == 0.1.4
 urllib3 >= 1.26.6
 setuptools_scm == 8.0.4
-
-# Testing Requirements
-nest_asyncio == 1.5.8
