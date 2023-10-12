@@ -35,7 +35,6 @@ class TestJob(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
              patch("aiohttp.ClientSession") as mock_session:
-
             mock_resp = MagicMock()
 
             async def json_side_effect():
@@ -68,10 +67,8 @@ class TestJob(IsolatedAsyncioTestCase):
 
     async def test_output_in_progress_then_completed(self):
         '''Tests Job.output when status is initially IN_PROGRESS and then changes to COMPLETED'''
-        with (
-            patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep,
-            patch("aiohttp.ClientSession") as mock_session
-        ):
+        with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
+             patch("aiohttp.ClientSession") as mock_session:
             mock_resp = MagicMock()
             responses = [
                 {"status": "IN_PROGRESS"},
