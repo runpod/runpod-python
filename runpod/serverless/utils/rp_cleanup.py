@@ -6,9 +6,10 @@ Called to clean up the worker pod after a job is completed.
 
 import os
 import shutil
+from typing import List
 
 
-def clean(folder_list: list[str] = None):
+def clean(folder_list: List[str] = None):
     '''
     Removes the downloads folder.
     '''
