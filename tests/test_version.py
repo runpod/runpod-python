@@ -1,9 +1,9 @@
 """ Test the version module """
-
+import importlib
 from unittest.mock import MagicMock, patch
 from pkg_resources import DistributionNotFound
-# Assume the code above is in a file named version.py in the runpod package
-from runpod.version import __version__
+
+from runpod import __version__
 
 def test_version_found():
     """Test that the version is found"""
@@ -13,11 +13,10 @@ def test_version_found():
         mock_get_distribution.return_value = mock_distribution
 
         # Re-import to execute the code again with the mock in place
-        import runpod.version
-        import importlib
-        importlib.reload(runpod.version)
+        import runpod.version # pylint: disable=import-outside-toplevel
+        importlib.reload(runpod)
 
-        assert runpod.version.__version__ == '1.0.0'
+        assert runpod.__version__ == '1.0.0'
 
 def test_version_not_found():
     """Test that the version is unknown"""
@@ -25,8 +24,7 @@ def test_version_not_found():
         mock_get_distribution.side_effect = DistributionNotFound
 
         # Re-import to execute the code again with the mock in place
-        import runpod.version
-        import importlib
-        importlib.reload(runpod.version)
+        import runpod.version # pylint: disable=import-outside-toplevel
+        importlib.reload(runpod)
 
-        assert runpod.version.__version__ == 'unknown'
+        assert runpod.__version__ == 'unknown'
