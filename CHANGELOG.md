@@ -5,6 +5,7 @@
 ### Changes
 
 - Backwards compatibility with Python >= 3.8
+- Consolidated install dependencies to `requirements.txt`
 
 ### Fixed
 
