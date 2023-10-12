@@ -6,6 +6,10 @@
 
 - Backwards compatibility with Python >= 3.9
 
+### Fixed
+
+- Corrected helper link for rp_uploads, closes issue #169
+
 ---
 
 ## Release 1.2.6 (10/6/23)
