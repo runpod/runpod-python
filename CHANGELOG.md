@@ -1,5 +1,13 @@
 # Change Log
 
+## Release 1.3.0 (TBD)
+
+### Changes
+
+- Backwards compatibility with Python >= 3.9
+
+---
+
 ## Release 1.2.6 (10/6/23)
 
 ### Changes
