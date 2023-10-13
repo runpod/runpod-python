@@ -9,7 +9,7 @@ from configparser import ConfigParser
 
 from runpod import create_pod, get_pod, get_pods
 from runpod.cli.utils.ssh_cmd import SSHConnection
-from runpod import error as rperror
+from runpod import error as rp_error
 from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
@@ -121,7 +121,7 @@ def launch_project():
             )
             successful_gpu_type = gpu_type
             break
-        except rperror.QueryError:
+        except rp_error.QueryError:
             print(f"Couldn't obtain a {gpu_type}")
     if new_pod is None:
         print("Couldn't obtain any of the selected gpu types, try again later or use a different type")
