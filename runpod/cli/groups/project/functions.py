@@ -9,6 +9,7 @@ from configparser import ConfigParser
 
 from runpod import create_pod, get_pod, get_pods
 from runpod.cli.utils.ssh_cmd import SSHConnection
+from runpod import error as rperror
 from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
@@ -100,20 +101,34 @@ def launch_project():
         print(f'{config_item}: {config["PROJECT"][config_item]}')
 
     print("Launching pod on RunPod...")
+    selected_gpu_types = map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))
+    new_pod = None
+    successful_gpu_type = None
+    for gpu_type in selected_gpu_types:
+        print(f"Trying to get a pod with {gpu_type}...")
+        try:
+            new_pod = create_pod(
+                f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
+                config['PROJECT']['BaseImage'],
+                gpu_type,
+                gpu_count=int(config['PROJECT']['GPUCount']),
+                support_public_ip=True,
+                ports=f'{config["PROJECT"]["Ports"]}',
+                network_volume_id=f'{config["PROJECT"]["StorageID"]}',
+                volume_mount_path=f'{config["PROJECT"]["VolumeMountPath"]}',
+                container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"]),
+                env={"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
+            )
+            successful_gpu_type = gpu_type
+            break
+        except rperror.QueryError:
+            print(f"Couldn't obtain a {gpu_type}")
+    if new_pod is None:
+        print("Couldn't obtain any of the selected gpu types, try again later or use a different type")
+        return
+    print(f"Got a pod with {successful_gpu_type} ({new_pod['id']})")
 
-    new_pod = create_pod(
-        f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
-        config['PROJECT']['BaseImage'],
-        config['PROJECT']['GPU'],
-        gpu_count=int(config['PROJECT']['GPUCount']),
-        support_public_ip=True,
-        ports=f'{config["PROJECT"]["Ports"]}',
-        network_volume_id=f'{config["PROJECT"]["StorageID"]}',
-        volume_mount_path=f'{config["PROJECT"]["VolumeMountPath"]}',
-        container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"]),
-        env={"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
-    )
-
+    print("Waiting for pod to come online...")
     while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
         new_pod = get_pod(new_pod['id'])
 
