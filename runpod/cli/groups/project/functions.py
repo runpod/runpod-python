@@ -57,7 +57,7 @@ def create_new_project(project_name, runpod_volume_id, python_version,
             'uuid': str(uuid.uuid4())[:8],  # Short UUID
             'name': project_name,
             'base_image': 'runpod/base:0.0.0',
-            'gpu': 'NVIDIA RTX A4500',
+            'gpu_types': ['NVIDIA RTX A4500'],
             'gpu_count': 1,
             'storage_id': runpod_volume_id,
             'volume_mount_path': '/runpod-volume',
@@ -108,7 +108,8 @@ def launch_project():
     for variable in config['project']['env_vars']:
         environment_variables[variable] = config['project']['env_vars'][variable]
     
-    selected_gpu_types = map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))
+    selected_gpu_types = list(map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))) #supply as comma-separated list of gpu types (deprecated)
+    selected_gpu_types.extend(config['PROJECT']['GPU_TYPES']) #supply as toml list of gpu types
     new_pod = None
     successful_gpu_type = None
     for gpu_type in selected_gpu_types:
