@@ -108,8 +108,10 @@ def launch_project():
     for variable in config['project']['env_vars']:
         environment_variables[variable] = config['project']['env_vars'][variable]
     
-    selected_gpu_types = list(map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))) #supply as comma-separated list of gpu types (deprecated)
-    selected_gpu_types.extend(config['PROJECT']['GPU_TYPES']) #supply as toml list of gpu types
+    #supply as comma-separated list of gpu types (deprecated)
+    selected_gpu_types = list(map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))) if 'GPU' in config['PROJECT'] else []
+    #supply as toml list of gpu types
+    selected_gpu_types.extend(config['PROJECT'].get('GPU_TYPES',[]))
     new_pod = None
     successful_gpu_type = None
     for gpu_type in selected_gpu_types:
