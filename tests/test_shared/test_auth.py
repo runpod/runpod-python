@@ -1,6 +1,7 @@
 '''
 Test shared functions related to authentication
 '''
+
 import unittest
 import importlib
 

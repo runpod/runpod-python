@@ -1,10 +1,11 @@
 # Change Log
 
-## Release 1.3.0 (TBD)
+## Release 1.3.0 (10/12/23)
 
 ### Changes
 
 - Backwards compatibility with Python >= 3.8
+- Consolidated install dependencies to `requirements.txt`
 
 ### Fixed
 

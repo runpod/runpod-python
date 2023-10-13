@@ -30,10 +30,8 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pylint
-          pip install pytest
+          pip install .[test]
 
       - name: Pylint Source
         run: |
-          find . -type f -name '*.py' | xargs pylint --extension-pkg-whitelist='pydantic'
+          find . -type f -name '*.py' | grep -v './build/' | xargs pylint --extension-pkg-whitelist='pydantic'
