@@ -12,6 +12,7 @@ py-cpuinfo == 9.0.0
 python-dotenv >= 1.0.0
 requests >= 2.31.0
 tomli >= 2.0.1
+tomli-w >= 1.0.0
 tqdm-loggable == 0.1.4
 setuptools_scm == 8.0.4
 watchdog >= 3.0.0
