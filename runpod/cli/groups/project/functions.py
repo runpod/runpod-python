@@ -10,6 +10,7 @@ import tomli_w
 
 from runpod import create_pod, get_pod
 from runpod.cli.utils.ssh_cmd import SSHConnection
+from runpod import error as rp_error
 from .helpers import get_project_pod
 from ...utils.rp_sync import sync_directory
 
@@ -56,7 +57,7 @@ def create_new_project(project_name, runpod_volume_id, python_version,
             'uuid': str(uuid.uuid4())[:8],  # Short UUID
             'name': project_name,
             'base_image': 'runpod/base:0.0.0',
-            'gpu': 'NVIDIA RTX A4500',
+            'gpu_types': ['NVIDIA RTX A4500'],
             'gpu_count': 1,
             'storage_id': runpod_volume_id,
             'volume_mount_path': '/runpod-volume',
@@ -103,24 +104,42 @@ def launch_project():
         raise ValueError('Project pod already launched. Run "runpod project start" to start.')
 
     print("Launching pod on RunPod...")
-
     environment_variables = {"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
     for variable in config['project']['env_vars']:
         environment_variables[variable] = config['project']['env_vars'][variable]
+    
 
-    new_pod = create_pod(
-        f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
-        config['PROJECT']['BaseImage'],
-        config['PROJECT']['GPU'],
-        gpu_count=int(config['PROJECT']['GPUCount']),
-        support_public_ip=True,
-        ports=f'{config["PROJECT"]["Ports"]}',
-        network_volume_id=f'{config["PROJECT"]["StorageID"]}',
-        volume_mount_path=f'{config["PROJECT"]["VolumeMountPath"]}',
-        container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"]),
-        env=environment_variables
-    )
+    #supply as toml list of gpu types
+    selected_gpu_types = config['PROJECT'].get('GPU_TYPES',[])
+    #supply as comma-separated list of gpu types (deprecated)
+    selected_gpu_types.extend(list(map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))) if 'GPU' in config['PROJECT'] else [])  
+    new_pod = None
+    successful_gpu_type = None
+    for gpu_type in selected_gpu_types:
+        print(f"Trying to get a pod with {gpu_type}...")
+        try:
+            new_pod = create_pod(
+                f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
+                config['PROJECT']['BaseImage'],
+                gpu_type,
+                gpu_count=int(config['PROJECT']['GPUCount']),
+                support_public_ip=True,
+                ports=f'{config["PROJECT"]["Ports"]}',
+                network_volume_id=f'{config["PROJECT"]["StorageID"]}',
+                volume_mount_path=f'{config["PROJECT"]["VolumeMountPath"]}',
+                container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"]),
+                env={"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
+            )
+            successful_gpu_type = gpu_type
+            break
+        except rp_error.QueryError:
+            print(f"Couldn't obtain a {gpu_type}")
+    if new_pod is None:
+        print("Couldn't obtain any of the selected gpu types, try again later or use a different type")
+        return
+    print(f"Got a pod with {successful_gpu_type} ({new_pod['id']})")
 
+    print("Waiting for pod to come online...")
     while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
         new_pod = get_pod(new_pod['id'])
 
