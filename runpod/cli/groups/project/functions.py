@@ -215,14 +215,14 @@ def start_project_api():
         trap cleanup EXIT
 
         if source {volume_mount_path}/{project_uuid}/venv/bin/activate; then
-            echo "Activated virtual environment."
+            echo -e "- Activated virtual environment."
         else
             echo "Failed to activate virtual environment."
             exit 1
         fi
 
         if cd {volume_mount_path}/{project_uuid}/{project_name}; then
-            echo "Changed to project directory."
+            echo -e "- Changed to project directory."
         else
             echo "Failed to change directory."
             exit 1
@@ -230,7 +230,9 @@ def start_project_api():
 
         python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
         last_pid=$!
-        echo "Started API server with PID: $last_pid"
+        echo -e "- Started API server with PID: $last_pid" && echo ""
+        echo "> Connect to the API server at:"
+        echo "https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
 
         while true; do
             if changed_file=$(inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path} --format '%w%f'); then
@@ -247,8 +249,9 @@ def start_project_api():
                 exit 1
             fi
 
-            if [[ $changed_file == {requirements_path} ]]; then
-                pip install --upgrade pip && pip install -r {requirements_path}
+            if [[ $changed_file == *"requirements"* ]]; then
+                echo "Installing new requirements..."
+                python -m pip install --upgrade pip && python -m pip install -r {requirements_path}
             fi
 
             sleep 1 #Debounce
