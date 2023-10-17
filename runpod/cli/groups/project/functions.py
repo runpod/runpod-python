@@ -59,7 +59,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
     project_table.add("uuid", str(uuid.uuid4())[:8])
     project_table.add("name", project_name)
     project_table.add("base_image", "runpod/base:0.0.1")
-    project_table.add("gpu_types", ["NVIDIA RTX A4500"])
+    project_table.add("gpu_types", ["NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000", "NVIDIA RTX 3090"])
     project_table.add("gpu_count", 1)
     project_table.add("storage_id", runpod_volume_id)
     project_table.add("volume_mount_path", "/runpod-volume")
@@ -101,7 +101,8 @@ def launch_project(): # pylint: disable=too-many-locals
         config = tomlkit.load(config_file)
 
     for config_item in config['project']:
-        print(f'{config_item}: {config["project"][config_item]}')
+        print(f'    - {config_item}: {config["project"][config_item]}')
+    print("")
 
     # Check if the project pod already exists.
     if get_project_pod(config['project']['uuid']):
@@ -113,35 +114,34 @@ def launch_project(): # pylint: disable=too-many-locals
         environment_variables[variable] = config['project']['env_vars'][variable]
 
     selected_gpu_types = config['project'].get('gpu_types',[])
-    selected_gpu_types.append(config['project'].get('gpu_types', None))
+    if config['project'].get('gpu', None):
+        selected_gpu_types.append(config['project']['gpu'])
 
     new_pod = None
-    successful_gpu_type = None
     for gpu_type in selected_gpu_types:
-        print(f"Trying to get a pod with {gpu_type}...")
+        print(f"Trying to get a pod with {gpu_type}... ", end="")
         try:
             new_pod = create_pod(
-                f'{config["project"]["Name"]}-dev ({config["project"]["uuid"]})',
-                config['project']['BaseImage'],
+                f'{config["project"]["name"]}-dev ({config["project"]["uuid"]})',
+                config['project']['base_image'],
                 gpu_type,
-                gpu_count=int(config['project']['GPUCount']),
+                gpu_count=int(config['project']['gpu_count']),
                 support_public_ip=True,
-                ports=f'{config["project"]["Ports"]}',
-                network_volume_id=f'{config["project"]["StorageID"]}',
-                volume_mount_path=f'{config["project"]["VolumeMountPath"]}',
-                container_disk_in_gb=int(config["project"]["ContainerDiskSizeGB"]),
+                ports=f'{config["project"]["ports"]}',
+                network_volume_id=f'{config["project"]["storage_id"]}',
+                volume_mount_path=f'{config["project"]["volume_mount_path"]}',
+                container_disk_in_gb=int(config["project"]["container_disk_size_gb"]),
                 env={"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
             )
-            successful_gpu_type = gpu_type
             break
         except rp_error.QueryError:
-            print(f"Couldn't obtain a {gpu_type}")
+            print("Unavailable.")
     if new_pod is None:
         print("Selected GPU types unavailable, try again later or use a different type.")
         return
-    print(f"Got a pod with {successful_gpu_type} ({new_pod['id']})")
+    print("Success!")
 
-    print("Waiting for pod to come online...")
+    print("Waiting for pod to come online... ", end="")
     while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
         new_pod = get_pod(new_pod['id'])
 
@@ -169,8 +169,8 @@ def launch_project(): # pylint: disable=too-many-locals
         f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
         f'source {venv_path}/bin/activate &&' \
         f'cd {project_path} &&' \
-        'pip install --upgrade pip &&'
-        'pip install -r requirements.txt'
+        'python -m pip install --upgrade pip &&'
+        'python -m pip install -r requirements.txt'
     ]
 
     ssh_conn.run_commands(commands)
@@ -192,13 +192,13 @@ def start_project_api():
     if project_pod is None:
         raise ValueError(f'Project pod not found for uuid: {config["project"]["uuid"]}')
 
-    ssh_conn = SSHConnection(project_pod['id'])
+    ssh_conn = SSHConnection(project_pod)
 
-    volume_mount_path = config["project"]["VolumeMountPath"]
+    volume_mount_path = config["project"]["volume_mount_path"]
     project_uuid = config["project"]["uuid"]
-    project_name = config["project"]["Name"]
+    project_name = config["project"]["name"]
     remote_project_path = f'{volume_mount_path}/{project_uuid}/{project_name}'
-    requirements_path = f"{remote_project_path}/{config['ENVIRONMENT']['RequirementsPath']}"
+    requirements_path = f"{remote_project_path}/{config['runtime']['requirements_path']}"
 
     # ssh_conn.rsync(os.path.join(os.getcwd(), ''), remote_project_path)
     sync_directory(ssh_conn, os.getcwd(), remote_project_path)

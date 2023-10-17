@@ -41,7 +41,7 @@ def new_project_wizard(project_name, model_type, model_name):
 
     python_version = click.prompt(
         "   > Select a Python version, or press enter to use the default",
-        type=click.Choice(['3.10', '3.11'], case_sensitive=False),
+        type=click.Choice(['3.8', '3.9', '3.10', '3.11'], case_sensitive=False),
         default='3.10'
     )
 
@@ -68,14 +68,15 @@ def new_project_wizard(project_name, model_type, model_name):
 @project_cli.command('launch')
 def launch_project_pod():
     '''
-    Launch the project development environment from runpod.toml
+    Launch the project development pod from runpod.toml
     '''
     click.echo("Launching the project will create a new pod on RunPod.")
-    click.echo("You will be charged based on the GPU type specified in runpod.toml.")
-    click.echo("When you are finished with the pod you will need to delete it manually.")
+    click.echo("    - You will be charged based on the GPU type specified in runpod.toml.")
+    click.echo("    - When you are finished with the pod you will need to delete it manually.")
+    click.echo("")
     click.confirm("Do you want to continue?", abort=True)
 
-    click.echo("Launching project development environment...")
+    click.echo("Launching project development pod...")
     launch_project()
 
 
