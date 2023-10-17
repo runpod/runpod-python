@@ -17,7 +17,7 @@ from ...utils.rp_sync import sync_directory
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
 # -------------------------------- New Project ------------------------------- #
-def create_new_project(project_name, runpod_volume_id, python_version,
+def create_new_project(project_name, runpod_volume_id, python_version, # pylint: disable=too-many-locals
                        model_type=None, model_name=None):
     """ Create a new project with the given name. """
     project_folder = os.path.join(os.getcwd(), project_name)
@@ -83,7 +83,7 @@ def create_new_project(project_name, runpod_volume_id, python_version,
 
 
 # ------------------------------ Launch Project ------------------------------ #
-def launch_project():
+def launch_project(): # pylint: disable=too-many-locals
     '''
     Launch the project development environment from runpod.toml
     # SSH into the pod and create a project folder within the volume
@@ -137,7 +137,7 @@ def launch_project():
         except rp_error.QueryError:
             print(f"Couldn't obtain a {gpu_type}")
     if new_pod is None:
-        print("Couldn't obtain any of the selected gpu types, try again later or use a different type")
+        print("Selected GPU types unavailable, try again later or use a different type.")
         return
     print(f"Got a pod with {successful_gpu_type} ({new_pod['id']})")
 
