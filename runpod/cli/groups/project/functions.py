@@ -3,6 +3,7 @@ RunPod | CLI | Project | Functions
 '''
 
 import os
+import sys
 import shutil
 import uuid
 import tomlkit
@@ -144,6 +145,7 @@ def launch_project(): # pylint: disable=too-many-locals
     print("Success!")
 
     print("Waiting for pod to come online... ", end="")
+    sys.stdout.flush()
     while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
         new_pod = get_pod(new_pod['id'])
 
