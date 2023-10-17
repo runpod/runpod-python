@@ -107,7 +107,8 @@ def launch_project(): # pylint: disable=too-many-locals
 
     # Check if the project pod already exists.
     if get_project_pod(config['project']['uuid']):
-        raise ValueError('Project pod already launched. Run "runpod project start" to start.')
+        print('Project pod already launched. Run "runpod project start" to start.')
+        return
 
     print("Launching pod on RunPod...")
     environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
@@ -170,7 +171,7 @@ def launch_project(): # pylint: disable=too-many-locals
         f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
         f'source {venv_path}/bin/activate &&' \
         f'cd {project_path} &&' \
-        'python -m pip install --upgrade pip &&'
+        'python -m pip install --upgrade pip &&' \
         'python -m pip install -r requirements.txt'
     ]
 
