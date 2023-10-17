@@ -254,7 +254,7 @@ def start_project_api():
 
             if [[ $changed_file == *"requirements"* ]]; then
                 echo "Installing new requirements..."
-                python -m pip install --upgrade pip && python -m pip install -r {requirements_path}
+                python -m pip install --upgrade pip && python -m pip install -r requirements.txt
             fi
 
             sleep 1 #Debounce
