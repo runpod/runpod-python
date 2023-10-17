@@ -87,7 +87,7 @@ def launch_project():
     '''
     Launch the project development environment from runpod.toml
     # SSH into the pod and create a project folder within the volume
-    # Create a folder in the volume for the project that matches the project UUID
+    # Create a folder in the volume for the project that matches the project uuid
     # Create a folder in the project folder that matches the project name
     # Copy the project files into the project folder
     # crate a virtual environment using the python version specified in the project config
@@ -100,39 +100,37 @@ def launch_project():
     with open(project_file, 'r', encoding="UTF-8") as config_file:
         config = tomlkit.load(config_file)
 
-    for config_item in config['PROJECT']:
-        print(f'{config_item}: {config["PROJECT"][config_item]}')
+    for config_item in config['project']:
+        print(f'{config_item}: {config["project"][config_item]}')
 
     # Check if the project pod already exists.
-    if get_project_pod(config['PROJECT']['UUID']):
+    if get_project_pod(config['project']['uuid']):
         raise ValueError('Project pod already launched. Run "runpod project start" to start.')
 
     print("Launching pod on RunPod...")
-    environment_variables = {"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
+    environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
     for variable in config['project']['env_vars']:
         environment_variables[variable] = config['project']['env_vars'][variable]
 
+    selected_gpu_types = config['project'].get('gpu_types',[])
+    selected_gpu_types.append(config['project'].get('gpu_types', None))
 
-    #supply as toml list of gpu types
-    selected_gpu_types = config['PROJECT'].get('GPU_TYPES',[])
-    #supply as comma-separated list of gpu types (deprecated)
-    selected_gpu_types.extend(list(map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))) if 'GPU' in config['PROJECT'] else [])
     new_pod = None
     successful_gpu_type = None
     for gpu_type in selected_gpu_types:
         print(f"Trying to get a pod with {gpu_type}...")
         try:
             new_pod = create_pod(
-                f'{config["PROJECT"]["Name"]}-dev ({config["PROJECT"]["UUID"]})',
-                config['PROJECT']['BaseImage'],
+                f'{config["project"]["Name"]}-dev ({config["project"]["uuid"]})',
+                config['project']['BaseImage'],
                 gpu_type,
-                gpu_count=int(config['PROJECT']['GPUCount']),
+                gpu_count=int(config['project']['GPUCount']),
                 support_public_ip=True,
-                ports=f'{config["PROJECT"]["Ports"]}',
-                network_volume_id=f'{config["PROJECT"]["StorageID"]}',
-                volume_mount_path=f'{config["PROJECT"]["VolumeMountPath"]}',
-                container_disk_in_gb=int(config["PROJECT"]["ContainerDiskSizeGB"]),
-                env={"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
+                ports=f'{config["project"]["Ports"]}',
+                network_volume_id=f'{config["project"]["StorageID"]}',
+                volume_mount_path=f'{config["project"]["VolumeMountPath"]}',
+                container_disk_in_gb=int(config["project"]["ContainerDiskSizeGB"]),
+                env={"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
             )
             successful_gpu_type = gpu_type
             break
@@ -147,13 +145,13 @@ def launch_project():
     while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
         new_pod = get_pod(new_pod['id'])
 
-    print(f"Project {config['PROJECT']['Name']} pod ({new_pod['id']}) created.")
+    print(f"Project {config['project']['name']} pod ({new_pod['id']}) created.")
 
     ssh_conn = SSHConnection(new_pod['id'])
     project_files = os.listdir(os.getcwd())
 
-    project_path_uuid = f'{config["PROJECT"]["VolumeMountPath"]}/{config["PROJECT"]["UUID"]}'
-    project_path = f'{project_path_uuid}/{config["PROJECT"]["Name"]}'
+    project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
+    project_path = f'{project_path_uuid}/{config["project"]["name"]}'
 
     print(f'Creating project folder: {project_path} on pod {new_pod["id"]}')
     ssh_conn.run_commands([f'mkdir -p {project_path}'])
@@ -168,7 +166,7 @@ def launch_project():
 
     print(f'Creating virtual environment: {venv_path} on pod {new_pod["id"]}')
     commands = [
-        f'python{config["ENVIRONMENT"]["PythonVersion"]} -m venv {venv_path}',
+        f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
         f'source {venv_path}/bin/activate &&' \
         f'cd {project_path} &&' \
         'pip install --upgrade pip &&'
@@ -190,15 +188,15 @@ def start_project_api():
     with open(project_file, 'r', encoding="UTF-8") as config_file:
         config = tomlkit.load(config_file)
 
-    project_pod = get_project_pod(config['PROJECT']['UUID'])
+    project_pod = get_project_pod(config['project']['uuid'])
     if project_pod is None:
-        raise ValueError(f'Project pod not found for UUID: {config["PROJECT"]["UUID"]}')
+        raise ValueError(f'Project pod not found for uuid: {config["project"]["uuid"]}')
 
     ssh_conn = SSHConnection(project_pod['id'])
 
-    volume_mount_path = config["PROJECT"]["VolumeMountPath"]
-    project_uuid = config["PROJECT"]["UUID"]
-    project_name = config["PROJECT"]["Name"]
+    volume_mount_path = config["project"]["VolumeMountPath"]
+    project_uuid = config["project"]["uuid"]
+    project_name = config["project"]["Name"]
     remote_project_path = f'{volume_mount_path}/{project_uuid}/{project_name}'
     requirements_path = f"{remote_project_path}/{config['ENVIRONMENT']['RequirementsPath']}"
 
