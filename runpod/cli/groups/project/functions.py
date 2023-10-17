@@ -5,8 +5,8 @@ RunPod | CLI | Project | Functions
 import os
 import shutil
 import uuid
-import tomllib
-import tomli_w
+import tomlkit
+from tomlkit import document, comment, table, nl
 
 from runpod import create_pod, get_pod
 from runpod.cli.utils.ssh_cmd import SSHConnection
@@ -19,9 +19,7 @@ STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 # -------------------------------- New Project ------------------------------- #
 def create_new_project(project_name, runpod_volume_id, python_version,
                        model_type=None, model_name=None):
-    '''
-    Create a new project with the given name.
-    '''
+    """ Create a new project with the given name. """
     project_folder = os.path.join(os.getcwd(), project_name)
     if not os.path.exists(project_folder):
         os.makedirs(project_folder)
@@ -52,30 +50,36 @@ def create_new_project(project_name, runpod_volume_id, python_version,
             with open(handler_path, 'w', encoding='utf-8') as file:
                 file.write(handler_content)
 
-    toml_config = {
-        'project': {
-            'uuid': str(uuid.uuid4())[:8],  # Short UUID
-            'name': project_name,
-            'base_image': 'runpod/base:0.0.0',
-            'gpu_types': ['NVIDIA RTX A4500'],
-            'gpu_count': 1,
-            'storage_id': runpod_volume_id,
-            'volume_mount_path': '/runpod-volume',
-            'ports': '8080/http, 22/tcp',
-            'container_disk_size_gb': 10
-        },
-        'template': {
-            'model_type': str(model_type),
-            'model_name': str(model_name)
-        },
-        'runtime': {
-            'python_version': python_version,
-            'requirements_path': os.path.join(project_folder, 'requirements.txt')
-        }
-    }
+    toml_config = document()
+    toml_config.add(comment('RunPod Project Configuration'))
+    toml_config.add(nl())
+    toml_config.add("tittle", project_name)
+
+    project_table = table()
+    project_table.add("uuid", str(uuid.uuid4())[:8])
+    project_table.add("name", project_name)
+    project_table.add("base_image", "runpod/base:0.0.1")
+    project_table.add("gpu_types", ["NVIDIA RTX A4500"])
+    project_table.add("gpu_count", 1)
+    project_table.add("storage_id", runpod_volume_id)
+    project_table.add("volume_mount_path", "/runpod-volume")
+    project_table.add("ports", "8080/http, 22/tcp")
+    project_table.add("container_disk_size_gb", 10)
+    project_table.add("env_vars", {"RUNPOD_PROJECT_ID": "project_uuid"})
+    toml_config.add("project", project_table)
+
+    template_table = table()
+    template_table.add("model_type", str(model_type))
+    template_table.add("model_name", str(model_name))
+    toml_config.add("template", template_table)
+
+    runtime_table = table()
+    runtime_table.add("python_version", python_version)
+    runtime_table.add("requirements_path", os.path.join(project_folder, "requirements.txt"))
+    toml_config.add("runtime", runtime_table)
 
     with open(os.path.join(project_folder, "runpod.toml"), 'w', encoding="UTF-8") as config_file:
-        tomli_w.dump(toml_config, config_file)
+        tomlkit.dump(toml_config, config_file)
 
 
 # ------------------------------ Launch Project ------------------------------ #
@@ -94,7 +98,7 @@ def launch_project():
         raise FileNotFoundError("runpod.toml not found in the current directory.")
 
     with open(project_file, 'r', encoding="UTF-8") as config_file:
-        config = tomllib.load(config_file)
+        config = tomlkit.load(config_file)
 
     for config_item in config['PROJECT']:
         print(f'{config_item}: {config["PROJECT"][config_item]}')
@@ -107,12 +111,12 @@ def launch_project():
     environment_variables = {"RUNPOD_PROJECT_ID": config["PROJECT"]["UUID"]}
     for variable in config['project']['env_vars']:
         environment_variables[variable] = config['project']['env_vars'][variable]
-    
+
 
     #supply as toml list of gpu types
     selected_gpu_types = config['PROJECT'].get('GPU_TYPES',[])
     #supply as comma-separated list of gpu types (deprecated)
-    selected_gpu_types.extend(list(map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))) if 'GPU' in config['PROJECT'] else [])  
+    selected_gpu_types.extend(list(map(lambda s: s.strip(),config['PROJECT']['GPU'].split(','))) if 'GPU' in config['PROJECT'] else [])
     new_pod = None
     successful_gpu_type = None
     for gpu_type in selected_gpu_types:
@@ -184,7 +188,7 @@ def start_project_api():
         raise FileNotFoundError("runpod.toml not found in the current directory.")
 
     with open(project_file, 'r', encoding="UTF-8") as config_file:
-        config = tomllib.load(config_file)
+        config = tomlkit.load(config_file)
 
     project_pod = get_project_pod(config['PROJECT']['UUID'])
     if project_pod is None:

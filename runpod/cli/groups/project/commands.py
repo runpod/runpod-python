@@ -28,34 +28,40 @@ def validate_project_name(name):
 @click.option('--model', '-m', 'model_name', type=str, default=None,
               help="The name of the Hugging Face model. (e.g. meta-llama/Llama-2-7b)")
 def new_project_wizard(project_name, model_type, model_name):
-    '''
-    Create a new project.
-    '''
+    """ Create a new project. """
+    click.echo("Creating a new project...")
+
     if project_name is None:
-        project_name = click.prompt("Enter the project name", type=str)
+        project_name = click.prompt("   > Enter the project name", type=str)
+
     validate_project_name(project_name)
 
-    click.echo("Projects require RunPod network storage. https://runpod.io/console/user/storage")
-    runpod_volume_id = click.prompt("Enter the ID of the volume to use", type=str)
+    runpod_volume_id = click.prompt(
+        "   > Enter a network storage ID (https://runpod.io/console/user/storage)", type=str)
 
     python_version = click.prompt(
-        "Select a Python version",
+        "   > Select a Python version, or press enter to use the default",
         type=click.Choice(['3.10', '3.11'], case_sensitive=False),
         default='3.10'
     )
 
-    click.echo(f"Project Name: {project_name}")
-    click.echo(f"RunPod Volume ID: {runpod_volume_id}")
-    click.echo(f"Python Version: {python_version}")
+    click.echo("")
+    click.echo("Project Summary:")
 
+    click.echo(f"   - Project Name: {project_name}")
+    click.echo(f"   - RunPod Network Storage ID: {runpod_volume_id}")
+    click.echo(f"   - Python Version: {python_version}")
+
+    click.echo("")
     click.echo("The project will be created in the current directory.")
     click.confirm("Do you want to continue?", abort=True)
 
     create_new_project(project_name, runpod_volume_id, python_version, model_type, model_name)
 
     click.echo(f"Project {project_name} created successfully!")
-    click.echo(f"Navigate to the project folder with `cd {project_name}`.")
-    click.echo("Run `runpod project launch` to launch the project development environment.")
+    click.echo("")
+    click.echo(f"Next, navigate to the project folder with `cd {project_name}`.")
+    click.echo("Then, run `runpod project launch` to launch a project development pod.")
 
 
 # ------------------------------ Launch Project ------------------------------ #
