@@ -59,7 +59,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
     project_table = table()
     project_table.add("uuid", str(uuid.uuid4())[:8])
     project_table.add("name", project_name)
-    project_table.add("base_image", "runpod/base:0.0.1")
+    project_table.add("base_image", "runpod/base:0.0.2")
     project_table.add("gpu_types", [
         "NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000", "NVIDIA RTX 3090"])
     project_table.add("gpu_count", 1)
