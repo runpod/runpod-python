@@ -77,7 +77,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
 
     runtime_table = table()
     runtime_table.add("python_version", python_version)
-    runtime_table.add("requirements_path", os.path.join(project_folder, "requirements.txt"))
+    runtime_table.add("requirements_path", "requirements.txt")
     toml_config.add("runtime", runtime_table)
 
     with open(os.path.join(project_folder, "runpod.toml"), 'w', encoding="UTF-8") as config_file:
@@ -174,7 +174,7 @@ def launch_project(): # pylint: disable=too-many-locals
         f'source {venv_path}/bin/activate &&' \
         f'cd {project_path} &&' \
         'python -m pip install --upgrade pip &&' \
-        'python -m pip install -r requirements.txt'
+        f'python -m pip install -r {config["runtime"]["requirements_path"]}'
     ]
 
     ssh_conn.run_commands(commands)
@@ -254,7 +254,7 @@ def start_project_api():
 
             if [[ $changed_file == *"requirements"* ]]; then
                 echo "Installing new requirements..."
-                python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+                python -m pip install --upgrade pip && python -m pip install -r {requirements_path}
             fi
 
             sleep 1 #Debounce
