@@ -97,6 +97,7 @@ class SSHConnection:
         rsync_cmd = [
             "rsync", "-avz", "--no-owner", "--no-group",
             "--exclude", "__pycache__/", "--exclude", "*.pyc", "--exclude", ".*.swp",
+            "--exclude", ".git/",
             "-e", f"ssh {' '.join(ssh_options)}",
             local_path,
             f"root@{self.pod_ip}:{remote_path}"
