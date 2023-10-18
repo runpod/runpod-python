@@ -130,6 +130,7 @@ class TestCTL(unittest.TestCase):
                 name="POD_NAME",
                 image_name="IMAGE_NAME",
                 support_public_ip=False,
+
                 gpu_type_id="NVIDIA A100 80GB PCIe",
                 network_volume_id="NETWORK_VOLUME_ID")
 

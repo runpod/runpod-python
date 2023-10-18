@@ -14,6 +14,7 @@ from .worker_state import Jobs
 from .rp_ping import Heartbeat
 from ...version import __version__ as runpod_version
 
+
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
 DESCRIPTION = """

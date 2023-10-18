@@ -1,15 +1,20 @@
 aiohttp >= 3.8.6
 aiohttp-retry >= 2.8.3
 
-backoff == 2.2.1
+backoff >= 2.2.1
 boto3 >= 1.26.165
 click >= 8.1.7
-fastapi[all] >= 0.94.0
+colorama >= 0.4.6
+fastapi[all] == 0.94.0
+paramiko >= 3.3.1
 pillow >= 9.5.0
-py-cpuinfo == 9.0.0
+prettytable >= 3.8.0
+py-cpuinfo >= 9.0.0
 python-dotenv >= 1.0.0
 requests >= 2.31.0
 tomli >= 2.0.1
-tqdm-loggable == 0.1.4
+tomlkit >= 0.12.1
+tqdm-loggable >= 0.1.4
 urllib3 >= 1.26.6
-setuptools_scm == 8.0.4
+setuptools_scm >= 8.0.4
+watchdog >= 3.0.0
