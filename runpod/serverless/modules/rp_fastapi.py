@@ -2,6 +2,7 @@
 # pylint: disable=too-few-public-methods
 
 import os
+from typing import Union
 
 import uvicorn
 from fastapi import FastAPI, APIRouter
@@ -38,7 +39,7 @@ heartbeat = Heartbeat()
 class Job(BaseModel):
     ''' Represents a job. '''
     id: str
-    input: dict | list | str | int | float | bool
+    input: Union[dict, list, str, int, float, bool]
 
 
 class TestJob(BaseModel):
@@ -46,7 +47,7 @@ class TestJob(BaseModel):
     input can be any type of data.
     '''
     id: str = "test_job"
-    input: dict | list | str | int | float | bool
+    input: Union[dict, list, str, int, float, bool]
 
 
 class WorkerAPI:

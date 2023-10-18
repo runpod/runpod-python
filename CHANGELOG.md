@@ -1,5 +1,18 @@
 # Change Log
 
+## Release 1.3.0 (10/12/23)
+
+### Changes
+
+- Backwards compatibility with Python >= 3.8
+- Consolidated install dependencies to `requirements.txt`
+
+### Fixed
+
+- Corrected helper link for rp_uploads, closes issue #169
+
+---
+
 ## Release 1.2.6 (10/6/23)
 
 ### Changes
