@@ -2,23 +2,15 @@
 RunPod | CLI | Project | Commands
 '''
 
-import re
+import os
 import click
 
 from .functions import create_new_project, launch_project, start_project_api
+from .helpers import validate_project_name
 
 @click.group('project')
 def project_cli():
     ''' Launch new project on RunPod. '''
-
-def validate_project_name(name):
-    '''
-    Validate the project name.
-    '''
-    match = re.search(r"[<>:\"/\\|?*\s]", name)
-    if match:
-        raise click.BadParameter(f"Project name contains an invalid character: '{match.group()}'.")
-    return name
 
 # -------------------------------- New Project ------------------------------- #
 @project_cli.command('new')
@@ -27,9 +19,13 @@ def validate_project_name(name):
               default=None, help="The type of Hugging Face model.")
 @click.option('--model', '-m', 'model_name', type=str, default=None,
               help="The name of the Hugging Face model. (e.g. meta-llama/Llama-2-7b)")
-def new_project_wizard(project_name, model_type, model_name):
+@click.option('--init', '-i', 'init_current_dir', is_flag=True, default=False)
+def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     """ Create a new project. """
     click.echo("Creating a new project...")
+
+    if init_current_dir:
+        project_name = os.path.basename(os.getcwd())
 
     if project_name is None:
         project_name = click.prompt("   > Enter the project name", type=str)
@@ -56,12 +52,12 @@ def new_project_wizard(project_name, model_type, model_name):
     click.echo("The project will be created in the current directory.")
     click.confirm("Do you want to continue?", abort=True)
 
-    create_new_project(project_name, runpod_volume_id, python_version, model_type, model_name)
+    create_new_project(project_name, runpod_volume_id,
+                       python_version, model_type, model_name, init_current_dir)
 
     click.echo(f"Project {project_name} created successfully!")
     click.echo("")
-    click.echo(f"Next, navigate to the project folder with `cd {project_name}`.")
-    click.echo("Then, run `runpod project launch` to launch a project development pod.")
+    click.echo("From your project root run `runpod project launch` to launch a development pod.")
 
 
 # ------------------------------ Launch Project ------------------------------ #

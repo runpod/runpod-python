@@ -6,6 +6,8 @@ import os
 import sys
 import shutil
 import uuid
+
+import click
 import tomlkit
 from tomlkit import document, comment, table, nl
 
@@ -19,37 +21,42 @@ STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
 # -------------------------------- New Project ------------------------------- #
 def create_new_project(project_name, runpod_volume_id, python_version, # pylint: disable=too-many-locals
-                       model_type=None, model_name=None):
-    """ Create a new project with the given name. """
-    project_folder = os.path.join(os.getcwd(), project_name)
-    if not os.path.exists(project_folder):
-        os.makedirs(project_folder)
+                       model_type=None, model_name=None, init_current_dir=False):
+    """ Create a new project. """
+    if not init_current_dir:
+        project_folder = os.path.join(os.getcwd(), project_name)
+        if not os.path.exists(project_folder):
+            os.makedirs(project_folder)
 
-    if model_type is None:
-        model_type = "default"
+        if model_type is None:
+            model_type = "default"
 
-    template_dir = os.path.join(STARTER_TEMPLATES, model_type)
+        template_dir = os.path.join(STARTER_TEMPLATES, model_type)
 
-    for item in os.listdir(template_dir):
-        source_item = os.path.join(template_dir, item)
-        destination_item = os.path.join(project_folder, item)
+        for item in os.listdir(template_dir):
+            source_item = os.path.join(template_dir, item)
+            destination_item = os.path.join(project_folder, item)
 
-        if os.path.isdir(source_item):
-            shutil.copytree(source_item, destination_item)
-        else:
-            shutil.copy2(source_item, destination_item)
+            if os.path.isdir(source_item):
+                shutil.copytree(source_item, destination_item)
+            else:
+                shutil.copy2(source_item, destination_item)
 
-    # If there's a model_name, replace placeholders in handler.py
-    if model_name:
-        handler_path = os.path.join(project_folder, "handler.py")
-        if os.path.exists(handler_path):
-            with open(handler_path, 'r', encoding='utf-8') as file:
-                handler_content = file.read()
+        # If there's a model_name, replace placeholders in handler.py
+        if model_name:
+            handler_path = os.path.join(project_name, "handler.py")
+            if os.path.exists(handler_path):
+                with open(handler_path, 'r', encoding='utf-8') as file:
+                    handler_content = file.read()
 
-            handler_content = handler_content.replace('<<MODEL_NAME>>', model_name)
+                handler_content = handler_content.replace('<<MODEL_NAME>>', model_name)
 
-            with open(handler_path, 'w', encoding='utf-8') as file:
-                file.write(handler_content)
+                with open(handler_path, 'w', encoding='utf-8') as file:
+                    file.write(handler_content)
+    else:
+        project_folder = os.getcwd()
+
+    project_uuid = str(uuid.uuid4())[:8]
 
     toml_config = document()
     toml_config.add(comment('RunPod Project Configuration'))
@@ -57,17 +64,18 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
     toml_config.add("tittle", project_name)
 
     project_table = table()
-    project_table.add("uuid", str(uuid.uuid4())[:8])
+    project_table.add("uuid", project_uuid)
     project_table.add("name", project_name)
     project_table.add("base_image", "runpod/base:0.0.2")
     project_table.add("gpu_types", [
-        "NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000", "NVIDIA RTX 3090"])
+        "NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000",
+        "NVIDIA GeForce RTX 3090", "NVIDIA RTX A6000"])
     project_table.add("gpu_count", 1)
     project_table.add("storage_id", runpod_volume_id)
     project_table.add("volume_mount_path", "/runpod-volume")
     project_table.add("ports", "8080/http, 22/tcp")
     project_table.add("container_disk_size_gb", 10)
-    project_table.add("env_vars", {"RUNPOD_PROJECT_ID": "project_uuid"})
+    project_table.add("env_vars", {"RUNPOD_PROJECT_ID": project_uuid})
     toml_config.add("project", project_table)
 
     template_table = table()
@@ -77,6 +85,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
 
     runtime_table = table()
     runtime_table.add("python_version", python_version)
+    runtime_table.add("handler_path", "handler.py")
     runtime_table.add("requirements_path", "requirements.txt")
     toml_config.add("runtime", runtime_table)
 
@@ -97,7 +106,7 @@ def launch_project(): # pylint: disable=too-many-locals
     '''
     project_file = os.path.join(os.getcwd(), 'runpod.toml')
     if not os.path.exists(project_file):
-        raise FileNotFoundError("runpod.toml not found in the current directory.")
+        raise click.FileError("runpod.toml not found in the current directory.")
 
     with open(project_file, 'r', encoding="UTF-8") as config_file:
         config = tomlkit.load(config_file)
@@ -114,7 +123,8 @@ def launch_project(): # pylint: disable=too-many-locals
     print("Launching pod on RunPod...")
     environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
     for variable in config['project']['env_vars']:
-        environment_variables[variable] = config['project']['env_vars'][variable]
+        if variable != "RUNPOD_PROJECT_ID":
+            environment_variables[variable] = config['project']['env_vars'][variable]
 
     selected_gpu_types = config['project'].get('gpu_types',[])
     if config['project'].get('gpu', None):
@@ -134,7 +144,7 @@ def launch_project(): # pylint: disable=too-many-locals
                 network_volume_id=f'{config["project"]["storage_id"]}',
                 volume_mount_path=f'{config["project"]["volume_mount_path"]}',
                 container_disk_in_gb=int(config["project"]["container_disk_size_gb"]),
-                env={"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
+                env=environment_variables
             )
             break
         except rp_error.QueryError:
@@ -194,8 +204,7 @@ def start_project_api():
 
     project_pod = get_project_pod(config['project']['uuid'])
     if project_pod is None:
-        raise ValueError(f'Project pod not found for uuid: {config["project"]["uuid"]}')
-
+        raise click.ClickException(f'Project pod not found for uuid: {config["project"]["uuid"]}. Try running "runpod project launch" first.') # pylint: disable=line-too-long
     ssh_conn = SSHConnection(project_pod)
 
     volume_mount_path = config["project"]["volume_mount_path"]
@@ -203,6 +212,7 @@ def start_project_api():
     project_name = config["project"]["name"]
     remote_project_path = f'{volume_mount_path}/{project_uuid}/{project_name}'
     requirements_path = f"{remote_project_path}/{config['runtime']['requirements_path']}"
+    handler_path = f"{remote_project_path}/{config['runtime']['handler_path']}"
 
     # ssh_conn.rsync(os.path.join(os.getcwd(), ''), remote_project_path)
     sync_directory(ssh_conn, os.getcwd(), remote_project_path)
@@ -231,7 +241,7 @@ def start_project_api():
             exit 1
         fi
 
-        python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
+        python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
         last_pid=$!
         echo -e "- Started API server with PID: $last_pid" && echo ""
         echo "> Connect to the API server at:"
@@ -259,7 +269,7 @@ def start_project_api():
 
             sleep 1 #Debounce
 
-            python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
+            python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
             last_pid=$!
             echo "Restarted API server with PID: $last_pid"
         done

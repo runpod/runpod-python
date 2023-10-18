@@ -31,5 +31,6 @@ model_name = "None"
 
 [runtime]
 python_version = "3.10"
-requirements_path = "/requirements.txt"
+handler_path = "handler.py"
+requirements_path = "requirements.txt"
 ```
