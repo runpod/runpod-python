@@ -170,7 +170,8 @@ def launch_project(): # pylint: disable=too-many-locals, too-many-branches
     print(f'Creating project folder: {project_path} on pod {new_pod["id"]}')
     ssh_conn.run_commands([f'mkdir -p {project_path}'])
 
-    for file in project_files:
+    for idx, file in enumerate(project_files, start=1):
+        print(f'Copying folder {idx}/{len(project_files)}: {file}')
         if os.path.isdir(file):
             ssh_conn.put_directory(file, f'{project_path}/{file}')
         else:
