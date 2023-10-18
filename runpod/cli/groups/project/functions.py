@@ -20,7 +20,7 @@ from ...utils.rp_sync import sync_directory
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
 # -------------------------------- New Project ------------------------------- #
-def create_new_project(project_name, runpod_volume_id, python_version, # pylint: disable=too-many-locals
+def create_new_project(project_name, runpod_volume_id, python_version, # pylint: disable=too-many-locals, too-many-arguments, too-many-statements
                        model_type=None, model_name=None, init_current_dir=False):
     """ Create a new project. """
     if not init_current_dir:
@@ -94,7 +94,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
 
 
 # ------------------------------ Launch Project ------------------------------ #
-def launch_project(): # pylint: disable=too-many-locals
+def launch_project(): # pylint: disable=too-many-locals, too-many-branches
     '''
     Launch the project development environment from runpod.toml
     # SSH into the pod and create a project folder within the volume
