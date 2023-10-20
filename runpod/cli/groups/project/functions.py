@@ -242,6 +242,16 @@ def start_project_api():
             exit 1
         fi
 
+        exclude_pattern='(__pycache__|\\.pyc$)'
+        if [[ -f .runpodignore ]]; then
+            while IFS= read -r line; do
+                line=$(echo "$line" | tr -d '[:space:]')
+                [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue # Skip comments and empty lines
+                exclude_pattern="${{exclude_pattern}}|(${{line}})"
+            done < .runpodignore
+            echo -e "- Ignoring files matching pattern: $exclude_pattern"
+        fi
+
         python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
         last_pid=$!
         echo -e "- Started API server with PID: $last_pid" && echo ""
@@ -249,7 +259,7 @@ def start_project_api():
         echo "https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
 
         while true; do
-            if changed_file=$(inotifywait -r -e modify,create,delete --exclude '(__pycache__|\\.pyc$)' {remote_project_path} --format '%w%f'); then
+            if changed_file=$(inotifywait -r -e modify,create,delete --exclude "$exclude_pattern" {remote_project_path} --format '%w%f'); then
                 echo "Detected changes in: $changed_file"
             else
                 echo "Failed to detect changes."
