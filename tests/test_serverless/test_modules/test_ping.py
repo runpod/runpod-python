@@ -60,6 +60,8 @@ class TestPing(unittest.TestCase):
 
         os.environ["RUNPOD_WEBHOOK_PING"] = "https://test.com/ping"
 
+        importlib.reload(rp_ping)
+
         # Success case
         with patch("threading.Thread.start") as mock_thread_start:
             rp_ping.Heartbeat().start_ping(test=True)
