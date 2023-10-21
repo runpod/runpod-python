@@ -46,13 +46,17 @@ class TestPing(unittest.TestCase):
         '''
         Tests that the start_ping function works correctly
         '''
-        os.environ["RUNPOD_WEBHOOK_PING"] = "https://test.com/ping"
-
-        importlib.reload(rp_ping)
         new_ping = rp_ping.Heartbeat()
 
-        mock_session = Mock()
-        mock_session.headers.update = Mock()
+        # Non RunPod environment case
+        with patch("threading.Thread.start") as mock_thread_start:
+            new_ping.start_ping(test=True)
+            assert mock_thread_start.call_count == 0
+
+        os.environ["RUNPOD_WEBHOOK_PING"] = "https://test.com/ping"
+        os.environ["RUNPOD_POD_ID"] = "test_pod_id"
+
+        importlib.reload(rp_ping)
 
         # Success case
         with patch("threading.Thread.start") as mock_thread_start:
