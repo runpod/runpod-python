@@ -4,7 +4,7 @@ import os
 import importlib
 
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 import requests
 from runpod.serverless.modules import rp_ping
@@ -60,7 +60,7 @@ class TestPing(unittest.TestCase):
 
         # Success case
         with patch("threading.Thread.start") as mock_thread_start:
-            new_ping.start_ping(test=True)
+            rp_ping.Heartbeat().start_ping(test=True)
             assert mock_thread_start.call_count == 1
 
         rp_ping.Heartbeat.PING_URL = "https://test.com/ping"
