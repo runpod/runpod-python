@@ -51,13 +51,15 @@ class TestCommands(unittest.TestCase):
     def test_store_api_key(self):
         ''' Tests the store_api_key command. '''
         with patch('click.echo') as mock_echo, \
-             patch('runpod.cli.groups.config.functions.set_credentials') as mock_set_credentials:
+             patch('runpod.cli.groups.config.commands.set_credentials') as mock_set_credentials:
+            mock_set_credentials.return_value = None
 
             # Successful Call
             result = self.runner.invoke(runpod_cli, ['store_api_key', '--profile', 'test', 'KEY'])
-            assert result.exit_code == 0
-            assert mock_set_credentials.called_with('API_KEY_1234', 'test')
+            assert mock_set_credentials.called_with('KEY', 'test')
             assert mock_echo.call_count == 1
+            assert mock_set_credentials.return_value is None
+            assert result.exit_code == 0
 
             # Unsuccessful Call
             mock_set_credentials.side_effect = ValueError()

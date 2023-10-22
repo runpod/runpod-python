@@ -25,14 +25,14 @@ def config_wizard(api_key, profile):
     click.echo(f'Credentials set for profile: {profile} in ~/.runpod/config.toml')
 
 
+# ------------------------------- Store API Key ------------------------------ #
 @click.command('store_api_key')
-@click.argument('api_key')
 @click.option('--profile', default='default', help='The profile to set the credentials for.')
-def store_api_key(api_key, profile):
-    '''
-    Sets the credentials for a profile.
+@click.argument('api_key')
+def store_api_key(profile, api_key):
+    """Sets the credentials for a profile.
     Kept for backwards compatibility.
-    '''
+    """
     try:
         set_credentials(api_key, profile)
     except ValueError as err:
@@ -41,6 +41,8 @@ def store_api_key(api_key, profile):
 
     click.echo('Credentials set for profile: ' + profile + ' in ~/.runpod/config.toml')
 
+
+# ------------------------- Validate Credentials File ------------------------ #
 @click.command('check_creds')
 @click.option('--profile', default='default', help='The profile to check the credentials for.')
 def validate_credentials_file(profile='default'):

@@ -166,7 +166,7 @@ runpod.terminate_pod(pod.id)
 
 ## 🤝 | Community and Contributing
 
-We welcome both pull requests and issues on [GitHub](https://github.com/runpod/runpod-python). Bug fixes and new features are encouraged.
+We welcome both pull requests and issues on [GitHub](https://github.com/runpod/runpod-python). Bug fixes and new features are encouraged, but please read our [contributing guide](CONTRIBUTING.md) first.
 
 <div align="center">
 

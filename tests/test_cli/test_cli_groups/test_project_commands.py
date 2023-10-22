@@ -29,7 +29,9 @@ class TestProjectCLI(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         mock_confirm.assert_called_with("Do you want to continue?", abort=True)
-        mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '3.10', 'llama2', 'meta-llama/Llama-2-7b') # pylint: disable=line-too-long
+        mock_create.assert_called()
+        mock_prompt.assert_called()
+        mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '3.10', 'llama2', 'meta-llama/Llama-2-7b', False) # pylint: disable=line-too-long
         self.assertIn("Project TestProject created successfully!", result.output)
 
 
@@ -52,7 +54,7 @@ class TestProjectCLI(unittest.TestCase):
             result = self.runner.invoke(launch_project_pod)
         mock_confirm.assert_called_with("Do you want to continue?", abort=True)
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Launching project development environment...", result.output)
+        self.assertIn("Launching project development pod...", result.output)
         mock_launch.assert_called_once()
 
 
