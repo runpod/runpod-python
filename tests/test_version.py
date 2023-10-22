@@ -1,6 +1,6 @@
 """ Test the version module """
 
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 from importlib.metadata import PackageNotFoundError
 from runpod.version import get_version
 
