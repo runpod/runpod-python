@@ -4,7 +4,7 @@ RunPod | CLI | Utils | Userspace
 import os
 import click
 import paramiko
-from runpod import SSH_KEY_FOLDER, get_pod
+from runpod import SSH_KEY_PATH, get_pod
 
 POD_ID_FILE = os.path.join(os.path.expanduser('~'), '.runpod', 'pod_id')
 
@@ -33,8 +33,8 @@ def find_ssh_key_file(pod_ip, pod_port):
     Finds the SSH key to use for the SSH connection.
     '''
     key_files = []
-    for file in os.listdir(SSH_KEY_FOLDER):
-        if os.path.isfile(os.path.join(SSH_KEY_FOLDER, file)) and not file.endswith('.pub'):
+    for file in os.listdir(SSH_KEY_PATH):
+        if os.path.isfile(os.path.join(SSH_KEY_PATH, file)) and not file.endswith('.pub'):
             key_files.append(file)
 
     # Connect to the pod
@@ -44,7 +44,7 @@ def find_ssh_key_file(pod_ip, pod_port):
     for key_file in key_files:
         try:
             ssh.connect(pod_ip, port=pod_port, username='root',
-                        key_filename=os.path.join(SSH_KEY_FOLDER, key_file))
+                        key_filename=os.path.join(SSH_KEY_PATH, key_file))
             ssh.close()
             return key_file
         except paramiko.ssh_exception.SSHException:
