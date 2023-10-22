@@ -1,12 +1,13 @@
 """ runpod-python version """
 
-from pkg_resources import get_distribution, DistributionNotFound
+
+from importlib.metadata import version, PackageNotFoundError
 
 def get_version():
     """ Get the version of runpod-python """""
     try:
-        return get_distribution("runpod").version
-    except DistributionNotFound:
+        return version("runpod")
+    except PackageNotFoundError:
         return "unknown"
 
 __version__ = get_version()
