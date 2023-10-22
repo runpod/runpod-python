@@ -9,7 +9,7 @@ import subprocess
 import colorama
 import paramiko
 
-from runpod import SSH_KEY_FOLDER
+from runpod import SSH_KEY_PATH
 from .pod_info import get_ssh_ip_port
 from .userspace import find_ssh_key_file
 
@@ -28,7 +28,7 @@ class SSHConnection:
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.ssh.connect(self.pod_ip, port=self.pod_port, username='root',
-                         key_filename=os.path.join(SSH_KEY_FOLDER, self.key_file))
+                         key_filename=os.path.join(SSH_KEY_PATH, self.key_file))
 
         colorama.init(autoreset=True) # Initialize colorama
 
@@ -78,7 +78,7 @@ class SSHConnection:
         cmd = [
             "ssh" , "-p", str(self.pod_port),
             "-o", "StrictHostKeyChecking=no",
-            "-i", os.path.join(SSH_KEY_FOLDER, self.key_file),
+            "-i", os.path.join(SSH_KEY_PATH, self.key_file),
             f"root@{self.pod_ip}"
         ]
 
@@ -91,7 +91,7 @@ class SSHConnection:
         ssh_options = [
             "-o", "StrictHostKeyChecking=no",
             "-p", str(self.pod_port),
-            "-i", os.path.join(SSH_KEY_FOLDER, self.key_file)
+            "-i", os.path.join(SSH_KEY_PATH, self.key_file)
         ]
 
         rsync_cmd = [

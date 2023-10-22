@@ -17,7 +17,7 @@ from .cli.groups.config.functions import set_credentials, check_credentials, get
 
 
 # ------------------------------- Config Paths ------------------------------- #
-SSH_KEY_FOLDER = os.path.expanduser('~/.runpod/ssh')
+SSH_KEY_PATH = os.path.expanduser('~/.runpod/ssh')
 
 
 profile = "default"  # pylint: disable=invalid-name
