@@ -42,7 +42,7 @@ pip install runpod
 pip install git+https://github.com/runpod/runpod-python.git
 ```
 
-*Python 3.10 or higher is required to use the latest version of this package.*
+*Python 3.8 or higher is required to use the latest version of this package.*
 
 ## ⚡ | Serverless Worker (SDK)
 

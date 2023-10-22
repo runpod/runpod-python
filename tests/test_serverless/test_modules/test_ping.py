@@ -4,7 +4,7 @@ import os
 import importlib
 
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 import requests
 from runpod.serverless.modules import rp_ping
@@ -46,21 +46,29 @@ class TestPing(unittest.TestCase):
         '''
         Tests that the start_ping function works correctly
         '''
+        # No RUNPOD_POD_ID case
+        with patch("threading.Thread.start") as mock_thread_start:
+            rp_ping.Heartbeat().start_ping(test=True)
+            assert mock_thread_start.call_count == 0
+
+        os.environ["RUNPOD_POD_ID"] = "test_pod_id"
+
+        # No RUNPOD_WEBHOOK_PING case
+        with patch("threading.Thread.start") as mock_thread_start:
+            rp_ping.Heartbeat().start_ping(test=True)
+            assert mock_thread_start.call_count == 0
+
         os.environ["RUNPOD_WEBHOOK_PING"] = "https://test.com/ping"
 
         importlib.reload(rp_ping)
-        new_ping = rp_ping.Heartbeat()
-
-        mock_session = Mock()
-        mock_session.headers.update = Mock()
 
         # Success case
         with patch("threading.Thread.start") as mock_thread_start:
-            new_ping.start_ping(test=True)
+            rp_ping.Heartbeat().start_ping(test=True)
             assert mock_thread_start.call_count == 1
 
         rp_ping.Heartbeat.PING_URL = "https://test.com/ping"
-        new_ping.ping_loop(test=True)
+        rp_ping.Heartbeat().ping_loop(test=True)
 
         self.assertEqual(rp_ping.Heartbeat.PING_URL, "https://test.com/ping")
 
@@ -68,5 +76,5 @@ class TestPing(unittest.TestCase):
         mock_get_return.side_effect = requests.RequestException("Test Error")
 
         with patch("runpod.serverless.modules.rp_ping.log.error") as mock_log_error:
-            new_ping.ping_loop(test=True)
+            rp_ping.Heartbeat().ping_loop(test=True)
             assert mock_log_error.call_count == 1
