@@ -7,7 +7,7 @@ from runpod.version import get_version
 def test_version_found():
     """ Test that the version is found """
     with patch('runpod.version.version') as mock_get_version:
-        mock_get_version.return_value = Mock(version='1.0.0')
+        mock_get_version.return_value = '1.0.0'
         assert get_version() == '1.0.0'
         assert mock_get_version.called
 
