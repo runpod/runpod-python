@@ -2,7 +2,7 @@
 RunPod | CLI | Utils | SSH Command
 '''
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 from runpod.cli.utils.ssh_cmd import SSHConnection
 
