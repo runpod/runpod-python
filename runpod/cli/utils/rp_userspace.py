@@ -2,36 +2,18 @@
 RunPod | CLI | Utils | Userspace
 '''
 import os
-import click
 import paramiko
-from runpod import SSH_KEY_PATH, get_pod
-
-POD_ID_FILE = os.path.join(os.path.expanduser('~'), '.runpod', 'pod_id')
-
-
-def get_or_prompt_for_pod_id():
-    '''Retrieves the stored pod_id or prompts the user to provide one.'''
-    if os.path.exists(POD_ID_FILE):
-        with open(POD_ID_FILE, 'r', encoding="UTF-8") as pod_file:
-            pod_id = pod_file.read().strip()
-
-    # Confirm that the pod_id is valid
-    if get_pod(pod_id) is not None:
-        return pod_id
-
-    # If file doesn't exist or is empty, prompt user for the pod_id
-    pod_id = click.prompt('Please provide the pod ID')
-    os.makedirs(os.path.dirname(POD_ID_FILE), exist_ok=True)
-    with open(POD_ID_FILE, 'w', encoding="UTF-8") as pod_file:
-        pod_file.write(pod_id)
-
-    return pod_id
+from runpod import SSH_KEY_PATH
 
 
 def find_ssh_key_file(pod_ip, pod_port):
-    '''
-    Finds the SSH key to use for the SSH connection.
-    '''
+    """Find the SSH key file that can be used to connect to the pod.
+
+    - Try all the keys in the SSH_KEY_PATH directory
+    - If none of the keys work, return None
+    - If multiple keys work, return the first one that works
+    - Returns the name of the key file that can be used to connect to the pod
+    """
     key_files = []
     for file in os.listdir(SSH_KEY_PATH):
         if os.path.isfile(os.path.join(SSH_KEY_PATH, file)) and not file.endswith('.pub'):

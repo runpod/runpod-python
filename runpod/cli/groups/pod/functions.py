@@ -6,7 +6,7 @@ import subprocess
 import configparser
 
 from runpod import get_pod, create_pod, SSH_KEY_PATH
-from runpod.cli.utils import get_ssh_ip_port
+from runpod.cli.utils import get_pod_ssh_ip_port
 
 def pod_from_template(template_file):
     '''
@@ -26,7 +26,7 @@ def open_ssh_connection(pod_id):
     Opens an SSH connection to a pod.
     '''
     pod = get_pod(pod_id)
-    pod_ip, pod_port = get_ssh_ip_port(pod)
+    pod_ip, pod_port = get_pod_ssh_ip_port(pod)
 
 
     key_files = []

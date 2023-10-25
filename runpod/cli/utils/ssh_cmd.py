@@ -10,8 +10,8 @@ import colorama
 import paramiko
 
 from runpod import SSH_KEY_PATH
-from .pod_info import get_ssh_ip_port
-from .userspace import find_ssh_key_file
+from .rp_info import get_pod_ssh_ip_port
+from .rp_userspace import find_ssh_key_file
 
 logging.basicConfig()
 logging.getLogger("paramiko").setLevel(logging.WARNING)
@@ -22,7 +22,8 @@ class SSHConnection:
 
     def __init__(self, pod_id):
         self.pod_id = pod_id
-        self.pod_ip, self.pod_port = get_ssh_ip_port(pod_id)
+
+        self.pod_ip, self.pod_port = get_pod_ssh_ip_port(pod_id)
         self.key_file = find_ssh_key_file(self.pod_ip, self.pod_port)
 
         self.ssh = paramiko.SSHClient()

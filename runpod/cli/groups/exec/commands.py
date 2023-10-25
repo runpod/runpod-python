@@ -5,7 +5,7 @@ RunPod | CLI | Exec | Commands
 import click
 
 from .functions import python_over_ssh
-from ...utils.userspace import get_or_prompt_for_pod_id
+from .helpers import get_session_pod
 
 @click.group('exec')
 def exec_cli():
@@ -19,7 +19,7 @@ def remote_python(pod_id, file):
     Runs a remote Python shell.
     '''
     if pod_id is None:
-        pod_id = get_or_prompt_for_pod_id()
+        pod_id = get_session_pod()
 
     click.echo('Running remote Python shell...')
     python_over_ssh(pod_id, file)
