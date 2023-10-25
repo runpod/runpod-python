@@ -34,6 +34,21 @@ class TestProjectCLI(unittest.TestCase):
         mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '3.10', 'llama2', 'meta-llama/Llama-2-7b', False) # pylint: disable=line-too-long
         self.assertIn("Project TestProject created successfully!", result.output)
 
+    def test_new_project_wizard_success_init_current_dir(self):
+        '''
+        Tests the new_project_wizard command with the --init flag.
+        '''
+        with patch('click.prompt') as mock_prompt, \
+             patch('click.confirm', return_value=True) as mock_confirm, \
+             patch('runpod.cli.groups.project.commands.create_new_project') as mock_create, \
+             patch('os.getcwd') as mock_getcwd:
+
+            mock_prompt.side_effect = ['XYZ_VOLUME', '3.10']
+
+            self.runner.invoke(new_project_wizard, ['--init'])
+            assert mock_confirm.called
+            assert mock_create.called
+            assert mock_getcwd.called
 
     def test_new_project_wizard_invalid_name(self):
         '''

@@ -30,5 +30,3 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
 
     if runtime is None:
         raise TimeoutError(f"Pod {pod_id} did not report runtime data within {timeout} seconds.")
-
-    return None, None

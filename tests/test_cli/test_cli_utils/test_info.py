@@ -49,5 +49,3 @@ class TestGetPodSSHIpPort:
 
             with pytest.raises(TimeoutError):
                 ip, port = get_pod_ssh_ip_port('pod_id', timeout=0.1)
-                assert ip is None
-                assert port is None
