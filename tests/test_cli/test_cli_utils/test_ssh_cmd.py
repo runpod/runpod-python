@@ -11,9 +11,9 @@ class TestSSHConnection(unittest.TestCase):
 
     def setUp(self):
 
-        patch_get_ssh_ip_port = patch('runpod.cli.utils.ssh_cmd.get_ssh_ip_port',
+        patch_get_pod_ssh_ip_port = patch('runpod.cli.utils.ssh_cmd.get_pod_ssh_ip_port',
                                     return_value=('127.0.0.1', 22)).start()
-        self.addCleanup(patch_get_ssh_ip_port.stop)
+        self.addCleanup(patch_get_pod_ssh_ip_port.stop)
 
         patch_find_ssh_key_file = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file',
                                     return_value='key_file').start()

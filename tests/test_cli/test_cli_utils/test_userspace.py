@@ -50,6 +50,8 @@ class TestFindSSHKeyFile(unittest.TestCase):
         mock_listdir.return_value = ["key1", "key2"]
         mock_isfile.return_value = True
         mock_ssh_instance = mock_ssh_client.return_value
-        mock_ssh_instance.connect.side_effect = [Exception("Error with key1"), Exception("Error with key2")]
+        mock_ssh_instance.connect.side_effect = [
+            Exception("Error with key1"), Exception("Error with key2")
+        ]
         result = find_ssh_key_file(self.pod_ip, self.pod_port)
         self.assertIsNone(result)
