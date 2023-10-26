@@ -156,6 +156,8 @@ def launch_project(): # pylint: disable=too-many-locals, too-many-branches
 
     print("Waiting for pod to come online... ", end="")
     sys.stdout.flush()
+
+    # Wait for the pod to come online
     while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime', None) is None:
         new_pod = get_pod(new_pod['id'])
 
