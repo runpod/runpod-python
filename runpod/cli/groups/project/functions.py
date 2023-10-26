@@ -172,7 +172,7 @@ def launch_project(): # pylint: disable=too-many-locals, too-many-branches
     ssh_conn.run_commands([f'mkdir -p {project_path}'])
 
     print(f'Copying files to pod {new_pod["id"]}')
-    ssh_conn.rsync(os.getcwd(), project_path)
+    ssh_conn.rsync(os.getcwd(), project_path_uuid)
 
     venv_path = os.path.join(project_path_uuid, "venv")
 
@@ -205,15 +205,16 @@ def start_project_api():
         raise click.ClickException(f'Project pod not found for uuid: {config["project"]["uuid"]}. Try running "runpod project launch" first.') # pylint: disable=line-too-long
     ssh_conn = SSHConnection(project_pod)
 
-    volume_mount_path = config["project"]["volume_mount_path"]
     project_uuid = config["project"]["uuid"]
     project_name = config["project"]["name"]
-    remote_project_path = f'{volume_mount_path}/{project_uuid}/{project_name}'
-    requirements_path = f"{remote_project_path}/{config['runtime']['requirements_path']}"
-    handler_path = f"{remote_project_path}/{config['runtime']['handler_path']}"
+    volume_mount_path = config["project"]["volume_mount_path"]
 
-    # ssh_conn.rsync(os.path.join(os.getcwd(), ''), remote_project_path)
-    sync_directory(ssh_conn, os.getcwd(), remote_project_path)
+    remote_project_path = os.path.join(volume_mount_path, project_uuid, project_name)
+
+    requirements_path = os.path.join(remote_project_path, config['runtime']['requirements_path'])
+    handler_path = os.path.join(remote_project_path, config['runtime']['handler_path'])
+
+    sync_directory(ssh_conn, os.getcwd(), os.path.join(volume_mount_path, project_uuid))
 
     launch_api_server = [f'''
         pkill inotify
