@@ -41,7 +41,7 @@ class TestFindSSHKeyFile(unittest.TestCase):
         mock_ssh_instance = mock_ssh_client.return_value
         mock_ssh_instance.connect.side_effect = [None, Exception("Error with key2")]
         result = find_ssh_key_file(self.pod_ip, self.pod_port)
-        self.assertEqual(result, os.path.expanduser("~/.runpod/key1"))
+        self.assertEqual(result, os.path.expanduser("~/.runpod/ssh/key1"))
 
     @patch('paramiko.SSHClient')
     @patch('os.path.isfile')
