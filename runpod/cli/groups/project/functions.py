@@ -162,7 +162,6 @@ def launch_project(): # pylint: disable=too-many-locals, too-many-branches
     print(f"Project {config['project']['name']} pod ({new_pod['id']}) created.")
 
     ssh_conn = SSHConnection(new_pod['id'])
-    project_files = os.listdir(os.getcwd())
 
     project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
     project_path = f'{project_path_uuid}/{config["project"]["name"]}'
@@ -170,12 +169,8 @@ def launch_project(): # pylint: disable=too-many-locals, too-many-branches
     print(f'Creating project folder: {project_path} on pod {new_pod["id"]}')
     ssh_conn.run_commands([f'mkdir -p {project_path}'])
 
-    for idx, file in enumerate(project_files, start=1):
-        print(f'Copying folder {idx}/{len(project_files)}: {file}')
-        if os.path.isdir(file):
-            ssh_conn.put_directory(file, f'{project_path}/{file}')
-        else:
-            ssh_conn.put_file(file, f'{project_path}/{file}')
+    print(f'Copying files to pod {new_pod["id"]}')
+    ssh_conn.rsync(os.getcwd(), project_path)
 
     venv_path = os.path.join(project_path_uuid, "venv")
 

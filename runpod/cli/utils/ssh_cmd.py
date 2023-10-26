@@ -12,6 +12,7 @@ import paramiko
 from runpod import SSH_KEY_PATH
 from .rp_info import get_pod_ssh_ip_port
 from .rp_userspace import find_ssh_key_file
+from .rp_runpodignore import get_ignore_list
 
 logging.basicConfig()
 logging.getLogger("paramiko").setLevel(logging.WARNING)
@@ -86,23 +87,31 @@ class SSHConnection:
         subprocess.run(cmd, check=True)
 
     def rsync(self, local_path, remote_path):
-        '''
-        Sync a local directory to a remote directory over SSH.
-        '''
+        """ Sync a local directory to a remote directory over SSH.
+
+        A .runpodignore file can be used to ignore files and directories.
+        This file should be placed in the root of the local directory to sync.
+
+        Args:
+            local_path (str): The local directory to sync.
+            remote_path (str): The remote directory to sync.
+        """
         ssh_options = [
             "-o", "StrictHostKeyChecking=no",
             "-p", str(self.pod_port),
             "-i", os.path.join(SSH_KEY_PATH, self.key_file)
         ]
 
-        rsync_cmd = [
-            "rsync", "-avz", "--no-owner", "--no-group",
-            "--exclude", "__pycache__/", "--exclude", "*.pyc", "--exclude", ".*.swp",
-            "--exclude", ".git/",
+        rsync_cmd = ["rsync", "-avz", "--no-owner", "--no-group"]
+
+        for pattern in get_ignore_list():
+            rsync_cmd.extend(["--exclude", pattern])
+
+        rsync_cmd.extend([
             "-e", f"ssh {' '.join(ssh_options)}",
             local_path,
             f"root@{self.pod_ip}:{remote_path}"
-        ]
+        ])
 
         return subprocess.run(rsync_cmd, check=True)
 
