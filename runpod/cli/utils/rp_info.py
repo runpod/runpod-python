@@ -12,6 +12,8 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
     Returns the IP and port for SSH access to a pod.
     '''
     start_time = time.time()
+    pod_ip = None
+    pod_port = None
 
     while time.time() - start_time < timeout:
         pod = get_pod(pod_id)
@@ -21,7 +23,8 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
         if desired_status == 'RUNNING' and runtime:
             for port in pod['runtime']['ports']:
                 if port['privatePort'] == 22:
-                    return port['ip'], port['publicPort']
+                    pod_ip = port['ip']
+                    pod_port = port['publicPort']
 
         time.sleep(1)
 
@@ -30,3 +33,5 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
 
     if runtime is None:
         raise TimeoutError(f"Pod {pod_id} did not report runtime data within {timeout} seconds.")
+
+    return pod_port, pod_ip

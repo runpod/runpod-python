@@ -48,4 +48,4 @@ class TestGetPodSSHIpPort:
             mock_get_pod.return_value = {}
 
             with pytest.raises(TimeoutError):
-                ip, port = get_pod_ssh_ip_port('pod_id', timeout=0.1)
+                get_pod_ssh_ip_port('pod_id', timeout=0.1)
