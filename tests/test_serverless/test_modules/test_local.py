@@ -21,6 +21,10 @@ class TestRunLocal(IsolatedAsyncioTestCase):
                 "test_input": {
                     "input": "test",
                     "id": "test_id"
+                },
+                "test_output": {
+                    "output": "test",
+                    "id": "test_id"
                 }
             }
         }
