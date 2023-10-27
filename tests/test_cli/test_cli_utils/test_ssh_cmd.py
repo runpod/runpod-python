@@ -27,6 +27,25 @@ class TestSSHConnection(unittest.TestCase):
 
         self.ssh_connection = SSHConnection('pod_id_mock')
 
+    def test_enter(self):
+        ''' Test entering the context manager. '''
+        self.assertEqual(self.ssh_connection, self.ssh_connection.__enter__())
+
+    def test_exit(self):
+        ''' Test exiting the context manager. '''
+        self.ssh_connection.__exit__(None, None, None)
+
+        self.mock_ssh_client.close.assert_called_once()
+
+    def test_run_commands(self):
+        ''' Test that run_commands() calls exec_command() on the SSH object. '''
+        commands = ['command1', 'command2']
+
+        mock_exec_command = self.mock_ssh_client.exec_command
+        self.ssh_connection.run_commands(commands)
+
+        mock_exec_command.assert_called_once()
+
     def test_put_file(self):
         ''' Test that put_file() calls put() on the SFTP object. '''
         local_path = '/local/file.txt'
