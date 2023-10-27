@@ -206,5 +206,5 @@ class TestStartProjectAPI(unittest.TestCase):
             str(context.exception),
             'Project pod not found for uuid: test-uuid. Try running "runpod project launch" first.'
         )
-        assert mock_ssh_connection.called
+        assert mock_ssh_connection.called is False
         assert mock_get_project_pod.called

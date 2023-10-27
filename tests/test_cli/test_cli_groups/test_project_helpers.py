@@ -5,6 +5,7 @@ from unittest.mock import patch, mock_open
 
 import click
 
+from runpod import error as rp_error
 from runpod.cli.groups.project.helpers import (
     validate_project_name,
     get_project_pod,
@@ -85,8 +86,9 @@ class TestHelpers(unittest.TestCase):
         result = attempt_pod_launch(config, environment_variables)
         self.assertEqual(result, "pod_id")
 
-        with self.assertRaises(KeyError):
-            attempt_pod_launch(config, {})
+        mock_create_pod.side_effect = rp_error.QueryError("error")
+        with self.assertRaises(rp_error.QueryError):
+            attempt_pod_launch(config, environment_variables)
 
     @patch("os.path.exists", return_value=True)
     @patch("builtins.open", new_callable=mock_open, read_data="[project]\nname='test'")
@@ -96,3 +98,9 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(config["project"]["name"], "test")
         assert mock_exists.called
         assert mock_file.called
+
+
+        with patch("os.path.exists", return_value=False), \
+             self.assertRaises(click.UsageError):
+
+            load_project_config()
