@@ -75,7 +75,9 @@ class TestShouldIgnoreFunction(unittest.TestCase):
         self.assertTrue(should_ignore(file_path, patterns))
 
     def test_should_not_ignore(self):
-        """ Test that the should_ignore """
+        """ Test that the should_ignore
+        Function returns False when the file should not be ignored
+        """
         patterns = ["*.md"]
         file_path = os.path.join(os.getcwd(), "test", "example.txt")
         self.assertFalse(should_ignore(file_path, patterns))
@@ -89,7 +91,9 @@ class TestShouldIgnoreFunction(unittest.TestCase):
 
     @patch("runpod.cli.utils.rp_runpodignore.get_ignore_list")
     def test_should_not_ignore_with_mocked_ignore_list(self, mock_get_ignore_list):
-        """ Test that the should_ignore """
+        """ Test that the should_ignore
+        Function returns False when the file should not be ignored
+        """
         mock_get_ignore_list.return_value = ["*.md"]
         file_path = "example.txt"
         self.assertFalse(should_ignore(file_path))

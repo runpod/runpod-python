@@ -39,9 +39,12 @@ def should_ignore(file_path, ignore_list=None):
 
     for pattern in ignore_list:
         if pattern.startswith('/'):
-            if fnmatch.fnmatch(relative_path, pattern[1:]):
-                return True
-        elif fnmatch.fnmatch(file_path, pattern):
+            pattern = pattern[1:]
+
+        if pattern.endswith('/'):
+            pattern += '*'
+
+        if fnmatch.fnmatch(relative_path, pattern):
             return True
 
     return False
