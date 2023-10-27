@@ -93,7 +93,7 @@ class TestFastAPI(unittest.TestCase):
                 yield {"result": "success"}
 
             generator_worker_api = rp_fastapi.WorkerAPI(handler=generator_handler)
-            generator_run_return = asyncio.run(generator_worker_api._run(job_object)) # pylint: disable=protected-access
+            generator_run_return = asyncio.run(generator_worker_api._debug_run(job_object)) # pylint: disable=protected-access
             assert generator_run_return == {"output": {"result": "success"}}
 
         loop.close()
