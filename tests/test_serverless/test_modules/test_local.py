@@ -22,10 +22,7 @@ class TestRunLocal(IsolatedAsyncioTestCase):
                     "input": "test",
                     "id": "test_id"
                 },
-                "test_output": {
-                    "input": "test",
-                    "id": "test_id"
-                }
+                "test_output": {}
             }
         }
         with self.assertRaises(SystemExit) as sys_exit:
