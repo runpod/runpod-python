@@ -5,6 +5,7 @@
 ### Added
 
 - BETA: CLI DevEx functionality to create development projects.
+- `test_output` can be passed in as an arg to compare the results of `test_input`
 
 ## Release 1.3.0 (10/12/23)
 

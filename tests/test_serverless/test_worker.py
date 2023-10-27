@@ -44,7 +44,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
             assert runpod.serverless.worker._is_local({"rp_args": {}}) is True  # pylint: disable=protected-access
-            assert runpod.serverless.worker._is_local({"rp_args": {"test_input": "something"}}) is True  # pylint: disable=protected-access, line-too-long
+            assert runpod.serverless.worker._is_local({"rp_args": {"test_input": "something", "test_output": "something"}}) is True  # pylint: disable=protected-access, line-too-long
 
             mock_os.environ.get.return_value = "something"
             assert runpod.serverless.worker._is_local(self.mock_config) is False  # pylint: disable=protected-access
@@ -75,7 +75,6 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         Test local FastAPI setup.
         '''
-
         known_args = argparse.Namespace()
         known_args.rp_log_level = None
         known_args.rp_debugger = None
