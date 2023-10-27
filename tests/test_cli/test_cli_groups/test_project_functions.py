@@ -4,6 +4,8 @@ import os
 import unittest
 from unittest.mock import patch, mock_open
 
+import click
+
 from runpod.cli.groups.project.functions import(
     STARTER_TEMPLATES, create_new_project,
     launch_project, start_project_api
@@ -187,3 +189,22 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_ssh_instance.run_commands.assert_called()
         mock_ssh_instance.close.assert_called()
         assert mock_getcwd.called
+
+    @patch('runpod.cli.project.functions.load_project_config')
+    @patch('runpod.cli.project.functions.get_project_pod')
+    @patch('runpod.cli.utils.ssh_cmd.SSHConnection')
+    def test_start_project_api_pod_not_found(self, mock_ssh_connection, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long, too-many-arguments
+        """ Test that a project API is not started if the pod is not found. """
+        config = {'project': {'uuid': 'test-uuid'}}
+        mock_load_project_config.return_value = config
+        mock_get_project_pod.return_value = None
+
+        with self.assertRaises(click.ClickException) as context:
+            start_project_api()
+
+        self.assertEqual(
+            str(context.exception),
+            'Project pod not found for uuid: test-uuid. Try running "runpod project launch" first.'
+        )
+        assert mock_ssh_connection.called
+        assert mock_get_project_pod.called

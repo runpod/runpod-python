@@ -52,6 +52,16 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(mock_copy.call_count, 2)
         assert mock_isdir.called
 
+    @patch("os.listdir")
+    @patch("os.path.isdir", return_value=True)
+    @patch("shutil.copytree")
+    def test_copy_template_files_dir(self, mock_copy, mock_isdir, mock_listdir):
+        """Test the copy_template_files function."""
+        mock_listdir.return_value = ["file1.txt", "file2.txt"]
+        copy_template_files("/template", "/destination")
+        self.assertEqual(mock_copy.call_count, 2)
+        assert mock_isdir.called
+
     @patch("os.path.exists", return_value=True)
     @patch("builtins.open", new_callable=mock_open, read_data="[project]\nname='test'")
     def test_load_project_config(self, mock_file, mock_exists):
