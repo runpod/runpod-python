@@ -88,7 +88,8 @@ class TestFastAPI(unittest.TestCase):
             self.assertTrue(mock_ping.called)
 
             # Test with generator handler
-            def generator_handler():
+            def generator_handler(job):
+                del job
                 yield {"result": "success"}
 
             generator_worker_api = rp_fastapi.WorkerAPI(handler=generator_handler)
