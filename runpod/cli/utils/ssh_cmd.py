@@ -40,6 +40,7 @@ class SSHConnection:
         """ Get the SSH options for connecting to the pod. """
         return [
             "-o", "StrictHostKeyChecking=no",
+            "-o", "LogLevel=ERROR",
             "-p", str(self.pod_port),
             "-i", self.key_file
         ]

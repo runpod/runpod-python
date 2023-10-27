@@ -129,6 +129,7 @@ def launch_project(): # pylint: disable=too-many-locals, too-many-branches
         new_pod = get_pod(new_pod['id'])
 
     print(f"Project {config['project']['name']} pod ({new_pod['id']}) created.")
+    print("")
 
     ssh_conn = SSHConnection(new_pod['id'])
 
