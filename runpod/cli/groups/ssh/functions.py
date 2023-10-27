@@ -21,7 +21,6 @@ def get_ssh_key_fingerprint(public_key):
         raise ValueError("Invalid SSH public key")
 
     key_data = base64.b64decode(parts[1])
-
     fingerprint = hashlib.sha256(key_data).digest()
     return "SHA256:" + base64.b64encode(fingerprint).decode('utf-8').strip('=')
 
