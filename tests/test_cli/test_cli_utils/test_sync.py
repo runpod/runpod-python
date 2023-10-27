@@ -1,7 +1,8 @@
 """Tests for runpod.cli.utils.rp_sync module."""
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, ANY
+
 from runpod.cli.utils.rp_sync import WatcherHandler, start_watcher, sync_directory
 
 class TestWatcherHandler(unittest.TestCase):
@@ -79,10 +80,10 @@ class TestSyncDirectory(unittest.TestCase):
 
         mock_ssh_client.rsync.assert_called_once_with(local_path, remote_path, quiet=True)
 
-        mock_thread_args = mock_thread_class.call_args[1]
-        assert mock_thread_args.get('target') == start_watcher
+        # Just assert that the Thread was called and start_watcher was its target
+        mock_thread_class.assert_called_once()
+        mock_thread_class.assert_called_with(target=mock_start_watcher, args=(ANY, local_path))
 
-        assert mock_thread_class.called
         assert mock_start_watcher.called
 
 class TestStartWatcher(unittest.TestCase):
