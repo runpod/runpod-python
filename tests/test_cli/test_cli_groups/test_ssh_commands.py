@@ -2,36 +2,39 @@
 
 import unittest
 from unittest.mock import patch
+
+from click.testing import CliRunner
+
 from runpod.cli.groups.ssh.commands import list_keys, add_key
 
 class TestSSHCommands(unittest.TestCase):
     """Tests for the SSH commands of the CLI."""
 
-    @patch('runpod.cli.groups.ssh.commands.get_user_pub_keys')
-    @patch('runpod.cli.groups.ssh.commands.click.echo')
-    def test_list_keys(self, mock_echo, mock_get_keys):
+    def test_list_keys(self):
         """Test the list_keys command."""
-        mock_get_keys.return_value = [
+        runner = CliRunner()
+        with patch('runpod.cli.groups.ssh.commands.get_user_pub_keys', return_value=[
             {'name': 'key1', 'type': 'RSA', 'fingerprint': 'fp1'},
             {'name': 'key2', 'type': 'DSA', 'fingerprint': 'fp2'}
-        ]
+        ]) as mock_get_keys:
 
-        list_keys()
+            result = runner.invoke(list_keys)
 
-        table_str = str(mock_echo.call_args[0][0])
-        self.assertIn('key1', table_str)
-        self.assertIn('key2', table_str)
+            self.assertIn('key1', result.output)
+            self.assertIn('key2', result.output)
 
-    @patch('runpod.cli.groups.ssh.commands.click.echo')
-    @patch('runpod.cli.groups.ssh.commands.click.confirm')
-    @patch('runpod.cli.groups.ssh.commands.click.prompt')
-    @patch('runpod.cli.groups.ssh.commands.generate_ssh_key_pair')
-    def test_add_key_without_params(self, mock_gen_key, mock_prompt, mock_confirm, mock_echo):
+            assert mock_get_keys.called
+
+    def test_add_key_without_params(self):
         """Test the add_key command without parameters."""
-        mock_confirm.return_value = True
-        mock_prompt.return_value = 'TestKey'
+        runner = CliRunner()
+        with patch('runpod.cli.groups.ssh.commands.generate_ssh_key_pair') as mock_gen_key, \
+             patch('runpod.cli.groups.ssh.commands.click.prompt', return_value='TestKey') as mock_prompt, \
+             patch('runpod.cli.groups.ssh.commands.click.confirm', return_value=True) as mock_confirm:
 
-        add_key(None, None)
+            result = runner.invoke(add_key, [])
 
-        mock_gen_key.assert_called_once_with('TestKey')
-        mock_echo.assert_called_once_with('The key has been added to your account.')
+            self.assertIn('The key has been added to your account.', result.output)
+            mock_gen_key.assert_called_once_with('TestKey')
+            assert mock_prompt.called
+            assert mock_confirm.called
