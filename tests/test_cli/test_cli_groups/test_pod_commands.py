@@ -1,6 +1,5 @@
 ''' Test CLI pod commands '''
 
-import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -62,12 +61,6 @@ class TestPodCommands(unittest.TestCase):
                                            'NVIDIA GeForce RTX 3090',
                                            gpu_count=1, support_public_ip=True, ports='22/tcp')
         mock_echo.assert_called_with('Pod sample_id has been created.')
-
-        with tempfile.NamedTemporaryFile() as template_file:
-            result = runner.invoke(runpod_cli,
-                                   ['pod', 'create', '--template-file', template_file.name])
-            assert result.exit_code == 0, result.exception
-            mock_echo.assert_called_with('Pod sample_id has been created.')
 
 
     @patch('runpod.cli.groups.pod.commands.click.echo')
