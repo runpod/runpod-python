@@ -27,7 +27,7 @@ class TestGetIgnoreList(unittest.TestCase):
         assert mock_isfile.called
 
     @patch('os.path.isfile', return_value=True)
-    @patch('builtins.open', new_callable=mock_open, read_data="*.log\n# This is a comment\n\n.tmp\n") # pylint: disable=line-too-long
+    @patch('builtins.open', new_callable=mock_open, read_data="*.hello\n# This is a comment\n\n.world\n") # pylint: disable=line-too-long
     def test_with_ignore_file(self, mock_file, mock_isfile):
         """ Test that the default ignore list is returned when no ignore file is present. """
         result = get_ignore_list()
@@ -37,7 +37,9 @@ class TestGetIgnoreList(unittest.TestCase):
             ".*.swp",
             ".git/",
             "*.tmp",
-            "*.log"
+            "*.log",
+            "*.hello",
+            ".world"
         ]
         self.assertEqual(result, expected_patterns)
         assert mock_file.called
