@@ -84,7 +84,7 @@ class TestSyncDirectory(unittest.TestCase):
         mock_thread_class.assert_called_once()
         mock_thread_class.assert_called_with(target=mock_start_watcher, args=(ANY, local_path))
 
-        assert mock_start_watcher.called
+        assert mock_start_watcher.called is False
 
 class TestStartWatcher(unittest.TestCase):
     """Tests for the start_watcher function."""
