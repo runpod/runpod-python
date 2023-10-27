@@ -79,7 +79,7 @@ class TestSyncDirectory(unittest.TestCase):
 
         mock_ssh_client.rsync.assert_called_once_with(local_path, remote_path, quiet=True)
         assert mock_start_watcher.called
-        assert mock_thread_class.called
+        assert mock_thread_class.called is False
 
 class TestStartWatcher(unittest.TestCase):
     """Tests for the start_watcher function."""

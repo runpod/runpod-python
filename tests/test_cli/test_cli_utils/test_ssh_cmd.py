@@ -29,7 +29,7 @@ class TestSSHConnection(unittest.TestCase):
 
     def test_enter(self):
         ''' Test entering the context manager. '''
-        self.assertEqual(self.ssh_connection, self.ssh_connection.__enter__())
+        self.assertEqual(self.ssh_connection, self.ssh_connection.__enter__()) # pylint: disable=unnecessary-dunder-call
 
     def test_exit(self):
         ''' Test exiting the context manager. '''
@@ -42,6 +42,7 @@ class TestSSHConnection(unittest.TestCase):
         commands = ['command1', 'command2']
 
         mock_exec_command = self.mock_ssh_client.exec_command
+        mock_exec_command.return_value = (None, ['stdout1', 'stdout2'], ['stderr1', 'stderr2'])
         self.ssh_connection.run_commands(commands)
 
         mock_exec_command.assert_called_once()
