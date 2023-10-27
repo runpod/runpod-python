@@ -44,7 +44,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
             assert runpod.serverless.worker._is_local({"rp_args": {}}) is True  # pylint: disable=protected-access
-            assert runpod.serverless.worker._is_local({"rp_args": {"test_input": "something", "test_output": "something"}}) is True  # pylint: disable=protected-access, line-too-long
+            assert runpod.serverless.worker._is_local({"rp_args": {"test_input": "something"}}) is True  # pylint: disable=protected-access, line-too-long
 
             mock_os.environ.get.return_value = "something"
             assert runpod.serverless.worker._is_local(self.mock_config) is False  # pylint: disable=protected-access
@@ -125,6 +125,7 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
         known_args.rp_api_concurrency = 1
         known_args.rp_api_host = "localhost"
         known_args.test_input = '{"test": "test"}'
+        known_args.test_output = '{"test": "test"}'
 
         with patch("argparse.ArgumentParser.parse_known_args") as mock_parse_known_args, \
                 self.assertRaises(SystemExit):

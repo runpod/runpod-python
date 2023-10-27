@@ -87,4 +87,11 @@ class TestFastAPI(unittest.TestCase):
 
             self.assertTrue(mock_ping.called)
 
+            # Test with generator handler
+            generator_handler = Mock()
+            generator_handler.return_value = [{"result": "success"}]
+            generator_run_return = asyncio.run(worker_api._run(job_object)) # pylint: disable=protected-access
+
+            assert generator_run_return == {"output": {"result": "success"}}
+
         loop.close()

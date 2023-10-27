@@ -130,9 +130,6 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job)
             job_results = {"output": []}
             async for stream_output in generator_output:
-                if "error" in stream_output:
-                    job_results = stream_output
-                    break
                 job_results["output"].append(stream_output["output"])
         else:
             job_results = await run_job(self.config["handler"], job.__dict__)
