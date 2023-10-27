@@ -127,7 +127,7 @@ class WorkerAPI:
         job_list.add_job(job.id)
 
         if is_generator(self.config["handler"]):
-            generator_output = run_job_generator(self.config["handler"], job)
+            generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_results = {"output": []}
             async for stream_output in generator_output:
                 job_results["output"].append(stream_output["output"])
