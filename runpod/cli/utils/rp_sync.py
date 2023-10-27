@@ -59,3 +59,5 @@ def sync_directory(ssh_client, local_path, remote_path):
         ssh_client.rsync(local_path, remote_path, quiet=True)
 
     threading.Thread(target=start_watcher, args=(sync, local_path)).start()
+
+    return sync # For testing purposes

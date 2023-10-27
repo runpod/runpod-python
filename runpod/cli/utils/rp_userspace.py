@@ -28,8 +28,6 @@ def find_ssh_key_file(pod_ip, pod_port):
             ssh.close()
             print(f"Connected to pod {pod_ip}:{pod_port} using key {file}")
             return file_path
-        except paramiko.ssh_exception.SSHException:
-            pass
         except Exception as err: # pylint: disable=broad-except
             print(f"An error occurred with key {file}: {err}")
 
