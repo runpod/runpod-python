@@ -2,7 +2,7 @@
 RunPod | CLI | Utils | SSH Command
 '''
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, Mock
 
 from runpod.cli.utils.ssh_cmd import SSHConnection
 
@@ -32,8 +32,13 @@ class TestSSHConnection(unittest.TestCase):
         ''' Test that run_commands() calls exec_command on the SSHClient object. '''
         commands = ['ls', 'pwd']
 
+        mock_stdout = Mock()
+        mock_stdout.__iter__.return_value = iter([])
+        mock_stderr = Mock()
+        mock_stderr.__iter__.return_value = iter([])
+
         mock_ssh_client = mock_ssh_client_class.return_value
-        mock_ssh_client.exec_command.return_value = (None, [], [])
+        mock_ssh_client.exec_command.return_value = (None, mock_stdout, mock_stderr)
 
         self.ssh_connection.run_commands(commands)
 
