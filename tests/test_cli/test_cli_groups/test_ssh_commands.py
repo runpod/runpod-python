@@ -30,7 +30,7 @@ class TestSSHCommands(unittest.TestCase):
         runner = CliRunner()
         with patch('runpod.cli.groups.ssh.commands.generate_ssh_key_pair') as mock_gen_key, \
              patch('runpod.cli.groups.ssh.commands.click.prompt', return_value='TestKey') as mock_prompt, \
-             patch('runpod.cli.groups.ssh.commands.click.confirm', return_value=True) as mock_confirm:
+             patch('runpod.cli.groups.ssh.commands.click.confirm', return_value=True) as mock_confirm: # pylint: disable=line-too-long
 
             result = runner.invoke(add_key, [])
 
