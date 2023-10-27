@@ -1,5 +1,7 @@
 """ Unit tests for the runpodignore module in the cli.utils package. """
 
+# pylint: disable=duplicate-code
+
 import os
 import unittest
 from unittest.mock import patch, mock_open
@@ -19,8 +21,8 @@ class TestGetIgnoreList(unittest.TestCase):
             "*.pyc",
             ".*.swp",
             ".git/",
-            "*.log",
-            ".tmp"
+            ".tmp",
+            "*.log"
         ])
         assert mock_isfile.called
 
@@ -34,8 +36,8 @@ class TestGetIgnoreList(unittest.TestCase):
             "*.pyc",
             ".*.swp",
             ".git/",
-            "*.log",
-            ".tmp"
+            ".tmp",
+            "*.log"
         ]
         self.assertEqual(result, expected_patterns)
         assert mock_file.called
