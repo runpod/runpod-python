@@ -45,7 +45,7 @@ class TestSSHConnection(unittest.TestCase):
         mock_exec_command.return_value = (None, ['stdout1', 'stdout2'], ['stderr1', 'stderr2'])
         self.ssh_connection.run_commands(commands)
 
-        mock_exec_command.assert_called_once()
+        assert mock_exec_command.call_count == 2
 
     def test_put_file(self):
         ''' Test that put_file() calls put() on the SFTP object. '''
