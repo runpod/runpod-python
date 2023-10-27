@@ -76,6 +76,16 @@ class TestCreateNewProject(unittest.TestCase):
         mock_open_file.assert_called_once_with(toml_file_location, 'w', encoding="UTF-8") # pylint: disable=line-too-long
         assert mock_exists.called
 
+    @patch('runpod.cli.groups.project.functions.get_project_pod')
+    def test_existing_project_pod(self, mock_get_pod):
+        """ Test that a project pod is not launched if one already exists. """
+        mock_pod = {"id": "some_pod_id"}
+        mock_get_pod.return_value = mock_pod
+
+        with patch('builtins.print') as mock_print:
+            launch_project()
+            mock_print.assert_called_with('Project pod already launched. Run "runpod project start" to start.') # pylint: disable=line-too-long
+
 class TestLaunchProject(unittest.TestCase):
     """ Test the launch_project function. """
 
@@ -125,6 +135,18 @@ class TestLaunchProject(unittest.TestCase):
         mock_ssh_connection.assert_called_with('new_pod_id')
         mock_ssh_instance.run_commands.assert_called()
         assert mock_getcwd.called
+
+    @patch('runpod.cli.groups.project.functions.get_project_pod')
+    @patch('runpod.cli.groups.project.functions.attempt_pod_launch')
+    def test_failed_pod_launch(self, mock_attempt_pod, mock_get_pod):
+        """ Test that a project is not launched if pod launch fails. """
+        mock_attempt_pod.return_value = None
+        mock_get_pod.return_value = None
+
+        with patch('builtins.print') as mock_print:
+            launch_project()
+            mock_print.assert_called_with("Selected GPU types unavailable, try again later or use a different type.") # pylint: disable=line-too-long
+
 
 
 class TestStartProjectAPI(unittest.TestCase):
