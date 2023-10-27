@@ -87,8 +87,8 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(result, "pod_id")
 
         mock_create_pod.side_effect = rp_error.QueryError("error")
-        with self.assertRaises(rp_error.QueryError):
-            attempt_pod_launch(config, environment_variables)
+        assert attempt_pod_launch(config, environment_variables) is None
+
 
     @patch("os.path.exists", return_value=True)
     @patch("builtins.open", new_callable=mock_open, read_data="[project]\nname='test'")
@@ -101,6 +101,5 @@ class TestHelpers(unittest.TestCase):
 
 
         with patch("os.path.exists", return_value=False), \
-             self.assertRaises(click.UsageError):
-
+             self.assertRaises(FileNotFoundError):
             load_project_config()
