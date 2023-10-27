@@ -182,9 +182,30 @@ def start_project_api():
     launch_api_server = [f'''
         pkill inotify
 
+        function force_kill {{
+            kill $1 2>/dev/null
+            sleep 1
+
+            if ps -p $1 > /dev/null; then
+                echo "Graceful kill failed, attempting SIGKILL..."
+                kill -9 $1 2>/dev/null
+                sleep 1
+
+                if ps -p $1 > /dev/null; then
+                    echo "Failed to kill process with PID: $1"
+                    exit 1
+                else
+                    echo "Killed process with PID: $1 using SIGKILL"
+                fi
+
+            else
+                echo "Killed process with PID: $1"
+            fi
+        }}
+
         function cleanup {{
             echo "Cleaning up..."
-            kill $last_pid 2>/dev/null
+            force_kill $last_pid
         }}
 
         trap cleanup EXIT
@@ -227,12 +248,7 @@ def start_project_api():
                 exit 1
             fi
 
-            if kill $last_pid; then
-                echo "Killed API server with PID: $last_pid"
-            else
-                echo "Failed to kill server."
-                exit 1
-            fi
+            force_kill $last_pid
 
             if [[ $changed_file == *"requirements"* ]]; then
                 echo "Installing new requirements..."

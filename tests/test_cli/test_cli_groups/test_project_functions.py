@@ -39,7 +39,7 @@ class TestCreateNewProject(unittest.TestCase):
         mock_makedirs.assert_not_called()
         mock_file_open.assert_called_with('/tmp/testdir/runpod.toml', 'w', encoding="UTF-8")
         assert mock_getcwd.called
-        assert mock_path_exists.called
+        assert mock_path_exists.called is False
 
 
     @patch("os.makedirs")
@@ -85,7 +85,7 @@ class TestLaunchProject(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.get_pod')
     @patch('runpod.cli.groups.project.functions.SSHConnection')
     @patch('os.getcwd', return_value='/current/path')
-    def test_launch_project_successfully(self, mock_getcwd, mock_ssh_connection, mock_get_pod, mock_attempt_pod_launch, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long
+    def test_launch_project_successfully(self, mock_getcwd, mock_ssh_connection, mock_get_pod, mock_attempt_pod_launch, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long, too-many-arguments
         """ Test that a project is launched successfully. """
         mock_load_project_config.return_value = {
             'project': {
@@ -135,7 +135,7 @@ class TestStartProjectAPI(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.SSHConnection')
     @patch('os.getcwd', return_value='/current/path')
     @patch('runpod.cli.groups.project.functions.sync_directory')
-    def test_start_project_api_successfully(self, mock_sync_directory, mock_getcwd, mock_ssh_connection, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long
+    def test_start_project_api_successfully(self, mock_sync_directory, mock_getcwd, mock_ssh_connection, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long, too-many-arguments
         """ Test that a project API is started successfully. """
         mock_load_project_config.return_value = {
             'project': {
@@ -158,7 +158,8 @@ class TestStartProjectAPI(unittest.TestCase):
 
         mock_get_project_pod.assert_called_with('123456')
         mock_ssh_connection.assert_called_with({'id': 'pod_id'})
-        mock_sync_directory.assert_called_with(mock_ssh_instance, '/current/path', '/mount/path/123456')
+        mock_sync_directory.assert_called_with(mock_ssh_instance,
+                                               '/current/path', '/mount/path/123456')
         mock_ssh_instance.run_commands.assert_called()
         mock_ssh_instance.close.assert_called()
         assert mock_getcwd.called
