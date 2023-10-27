@@ -42,6 +42,7 @@ class TestCreateNewProject(unittest.TestCase):
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project("test_project", "volume_id", "3.8", model_name="my_model")
         # mock_open_file().write.assert_called_with("data with my_model placeholder")
+        assert mock_open_file.called
         assert mock_exists.called
 
 
