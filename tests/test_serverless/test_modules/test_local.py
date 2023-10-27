@@ -23,7 +23,7 @@ class TestRunLocal(IsolatedAsyncioTestCase):
                     "id": "test_id"
                 },
                 "test_output": {
-                    "output": "test",
+                    "input": "test",
                     "id": "test_id"
                 }
             }
