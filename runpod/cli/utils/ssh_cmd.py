@@ -3,7 +3,6 @@ RunPod | CLI | Utils | SSH Command
 
 Connect and run commands over SSH.
 '''
-import os
 import logging
 import subprocess
 import colorama
