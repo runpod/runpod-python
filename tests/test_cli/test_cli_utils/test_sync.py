@@ -49,7 +49,7 @@ class TestWatcherHandler(unittest.TestCase):
 class TestSyncDirectory(unittest.TestCase):
     """Tests for the sync_directory function."""
 
-    @patch("runpod.cli.utils.rp_sync.threading.Thread")
+    @patch("runpod.cli.utils.rp_sync.threading.Thread.start", lambda x: None) # pylint: disable=unnecessary-lambda
     @patch("runpod.cli.utils.rp_sync.start_watcher")
     def test_sync_directory(self, mock_start_watcher, mock_threading_thread):
         """Test that the sync_directory function calls the start_watcher function."""

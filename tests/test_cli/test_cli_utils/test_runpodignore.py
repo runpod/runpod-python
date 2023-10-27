@@ -21,7 +21,7 @@ class TestGetIgnoreList(unittest.TestCase):
             "*.pyc",
             ".*.swp",
             ".git/",
-            ".tmp",
+            "*.tmp",
             "*.log"
         ])
         assert mock_isfile.called
@@ -36,7 +36,7 @@ class TestGetIgnoreList(unittest.TestCase):
             "*.pyc",
             ".*.swp",
             ".git/",
-            ".tmp",
+            "*.tmp",
             "*.log"
         ]
         self.assertEqual(result, expected_patterns)
