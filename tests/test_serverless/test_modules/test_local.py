@@ -29,7 +29,12 @@ class TestRunLocal(IsolatedAsyncioTestCase):
         }
         with self.assertRaises(SystemExit) as sys_exit:
             await rp_local.run_local(config)
-        self.assertEqual(sys_exit.exception.code, 0)
+            self.assertEqual(sys_exit.exception.code, 0)
+
+        config["rp_args"]["test_output"] = {"result": "fail"}
+        with self.assertRaises(SystemExit) as sys_exit:
+            await rp_local.run_local(config)
+            self.assertEqual(sys_exit.exception.code, 1)
 
         assert mock_file.called is False
         assert mock_run.called
