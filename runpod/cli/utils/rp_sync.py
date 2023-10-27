@@ -32,7 +32,7 @@ class WatcherHandler(FileSystemEventHandler):
 
 
 
-def start_watcher(action_function, local_path):
+def start_watcher(action_function, local_path, testing=False):
     """
     Starts the watcher.
     """
@@ -44,6 +44,9 @@ def start_watcher(action_function, local_path):
     try:
         while True:
             time.sleep(1)
+
+            if testing:
+                break
     except KeyboardInterrupt:
         observer.stop()
 

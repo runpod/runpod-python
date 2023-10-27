@@ -79,7 +79,7 @@ class TestStartWatcher(unittest.TestCase):
         mock_observer_instance = mock_observer_class.return_value
 
         with self.assertRaises(KeyboardInterrupt):
-            start_watcher(fake_action, local_path)
+            start_watcher(fake_action, local_path, testing=True)
 
         mock_watch_handler.assert_called_once_with(fake_action, local_path)
 
