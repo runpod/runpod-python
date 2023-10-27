@@ -5,7 +5,6 @@ import click
 from prettytable import PrettyTable
 
 from runpod import get_pods, create_pod
-from .functions import pod_from_template
 
 from ...utils import ssh_cmd
 
@@ -30,17 +29,10 @@ def list_pods():
 @click.option('--gpu-type', default=None, help='The GPU type to use for the pod.')
 @click.option('--gpu-count', default=1, help='The number of GPUs to use for the pod.')
 @click.option('--support-public-ip', default=True, help='Whether or not to support a public IP.')
-@click.option('--template-file', default=None, help='A template file to use for the pod.',
-              type=click.Path(exists=True))
-def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip, template_file): # pylint: disable=too-many-arguments
+def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip): # pylint: disable=too-many-arguments
     '''
     Creates a pod.
     '''
-    if template_file:
-        new_pod = pod_from_template(template_file)
-        click.echo(f'Pod {new_pod["id"]} has been created.')
-        return
-
     if not name:
         name = click.prompt('Enter pod name', default='RunPod-CLI-Pod')
 
