@@ -1,50 +1,37 @@
-""" Tests for the SSH commands in the CLI. """
+"""Tests for the SSH commands of the CLI."""
 
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
+from runpod.cli.groups.ssh.commands import list_keys, add_key
 
-import click
+class TestSSHCommands(unittest.TestCase):
+    """Tests for the SSH commands of the CLI."""
 
-from runpod.cli.groups.project.functions import start_project_api
+    @patch('runpod.cli.groups.ssh.get_user_pub_keys')
+    @patch('runpod.cli.groups.ssh.click.echo')
+    def test_list_keys(self, mock_echo, mock_get_keys):
+        """Test the list_keys command."""
+        mock_get_keys.return_value = [
+            {'name': 'key1', 'type': 'RSA', 'fingerprint': 'fp1'},
+            {'name': 'key2', 'type': 'DSA', 'fingerprint': 'fp2'}
+        ]
 
+        list_keys()
 
-class TestStartProjectApi(unittest.TestCase):
-    """ Tests for the start_project_api function. """
+        table_str = str(mock_echo.call_args[0][0])
+        self.assertIn('key1', table_str)
+        self.assertIn('key2', table_str)
 
-    @patch('runpod.cli.project.functions.load_project_config')
-    @patch('runpod.cli.project.functions.get_project_pod')
-    @patch('runpod.cli.utils.ssh_cmd.SSHConnection')
-    def test_start_project_api_pod_not_found(self, mock_ssh_connection, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long
-        """ Test that an exception is raised if the project pod isn't found. """
-        config = {'project': {'uuid': 'test-uuid'}}
-        mock_load_project_config.return_value = config
-        mock_get_project_pod.return_value = None
+    @patch('runpod.cli.groups.ssh.click.echo')
+    @patch('runpod.cli.groups.ssh.click.confirm')
+    @patch('runpod.cli.groups.ssh.click.prompt')
+    @patch('runpod.cli.groups.ssh.generate_ssh_key_pair')
+    def test_add_key_without_params(self, mock_gen_key, mock_prompt, mock_confirm, mock_echo):
+        """Test the add_key command without parameters."""
+        mock_confirm.return_value = True
+        mock_prompt.return_value = 'TestKey'
 
-        # Expect a ClickException to be raised if the pod isn't found
-        with self.assertRaises(click.ClickException) as context:
-            start_project_api()
+        add_key(None, None)
 
-        self.assertEqual(
-            str(context.exception),
-            'Project pod not found for uuid: test-uuid. Try running "runpod project launch" first.'
-        )
-
-        assert mock_ssh_connection.call_count == 0
-
-    @patch('runpod.cli.groups.project.functions.load_project_config')
-    @patch('runpod.cli.groups.project.functions.get_project_pod')
-    @patch('runpod.cli.utils.ssh_cmd.SSHConnection')
-    def test_start_project_api_pod_found(self, mock_ssh_connection, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long
-        """ Test that the SSHConnection is called with the project pod if it is found. """
-        config = {'project': {'uuid': 'test-uuid'}}
-        mock_load_project_config.return_value = config
-        mock_project_pod = Mock()
-        mock_get_project_pod.return_value = mock_project_pod
-
-        # Execute function (assuming it doesn't throw any exceptions for this test case)
-        start_project_api()
-
-        # Ensure the SSHConnection was called with the mock project pod
-        mock_ssh_connection.assert_called_once_with(mock_project_pod)
-
-        assert mock_ssh_connection.call_count == 1
+        mock_gen_key.assert_called_once_with('TestKey')
+        mock_echo.assert_called_once_with('The key has been added to your account.')
