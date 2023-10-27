@@ -83,7 +83,7 @@ class TestCreateNewProject(unittest.TestCase):
         mock_get_pod.return_value = mock_pod
 
         with patch('builtins.print') as mock_print, \
-             patch('builtins.open', new_callable=mock_open):
+             patch('runpod.cli.groups.project.functions.load_project_config'):
             launch_project()
             mock_print.assert_called_with('Project pod already launched. Run "runpod project start" to start.') # pylint: disable=line-too-long
 
@@ -145,7 +145,7 @@ class TestLaunchProject(unittest.TestCase):
         mock_get_pod.return_value = None
 
         with patch('builtins.print') as mock_print,\
-             patch('builtins.open', new_callable=mock_open):
+             patch('runpod.cli.groups.project.functions.load_project_config'):
             launch_project()
             mock_print.assert_called_with("Selected GPU types unavailable, try again later or use a different type.") # pylint: disable=line-too-long
 
