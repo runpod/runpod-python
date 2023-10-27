@@ -235,7 +235,7 @@ def start_project_api():
         fi
 
         # Start the API server in the background, and save the PID
-        python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
+        python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
         last_pid=$!
         echo -e "- Started API server with PID: $last_pid" && echo ""
         echo "> Connect to the API server at:"
@@ -258,7 +258,7 @@ def start_project_api():
 
             sleep 1 #Debounce
 
-            python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 &
+            python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
             last_pid=$!
             echo "Restarted API server with PID: $last_pid"
         done
