@@ -1,5 +1,6 @@
 """ Tests for the SSH functions """
 
+import base64
 import unittest
 from unittest.mock import patch, mock_open
 from runpod.cli.groups.ssh.functions import (
@@ -25,10 +26,17 @@ class TestSSHFunctions(unittest.TestCase):
     @patch("runpod.cli.groups.ssh.functions.get_user")
     def test_get_user_pub_keys(self, mock_get_user):
         """ Test the get_user_pub_keys function """
+
+        # Create dummy base64 data for our mock SSH keys
+        dummy_data1 = base64.b64encode("test data 1".encode('utf-8')).decode('utf-8')
+        dummy_data2 = base64.b64encode("test data 2".encode('utf-8')).decode('utf-8')
+
         mock_get_user.return_value = {
-            'pubKey': 'ssh-rsa ABCDE12345 key1\nssh-rsa FGHIJK67890 key2\n'
+            'pubKey': f'ssh-rsa {dummy_data1} key1\nssh-rsa {dummy_data2} key2\n'
         }
+
         keys = get_user_pub_keys()
+
         self.assertEqual(len(keys), 2)
         self.assertEqual(keys[0]['fingerprint'].startswith("SHA256:"), True)
 
@@ -51,6 +59,7 @@ class TestSSHFunctions(unittest.TestCase):
         mock_path_join.return_value = "/path/to/private_key"
 
         with patch("builtins.open", mock_open()) as mock_file, \
+             patch("runpod.cli.groups.ssh.functions.os.chmod") as mock_chmod, \
              patch("runpod.cli.groups.ssh.functions.add_ssh_key") as mock_add_key:
             mock_file.return_value.write.return_value = None
             private_key, public_key = generate_ssh_key_pair("test_key")
@@ -58,6 +67,7 @@ class TestSSHFunctions(unittest.TestCase):
             assert private_key is not None
             assert mock_file.called
             assert mock_add_key.called
+            assert mock_chmod.called
 
     @patch("runpod.cli.groups.ssh.functions.get_user")
     @patch("runpod.cli.groups.ssh.functions.update_user_settings")
