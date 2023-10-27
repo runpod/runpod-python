@@ -33,6 +33,7 @@ class TestSSHConnection(unittest.TestCase):
         commands = ['ls', 'pwd']
         self.ssh_connection.run_commands(commands)
         self.assertEqual(self.mock_ssh_client.exec_command.call_count, 2)
+        assert mock_run_commands.called
 
     def test_put_file(self):
         ''' Test that put_file() calls put() on the SFTP object. '''
