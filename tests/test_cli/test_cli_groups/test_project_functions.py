@@ -24,7 +24,8 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("runpod.cli.groups.project.functions.copy_template_files")
     def test_copy_template_files(self, mock_copy_template_files, mock_getcwd, mock_exists, mock_makedirs): # pylint: disable=line-too-long
         """ Test that template files are copied to the new project folder. """
-        create_new_project("test_project", "volume_id", "3.8")
+        with patch("builtins.open", new_callable=mock_open):
+            create_new_project("test_project", "volume_id", "3.8")
         mock_copy_template_files.assert_called_once_with(STARTER_TEMPLATES + "/default", "/current/path/test_project") # pylint: disable=line-too-long
         assert mock_getcwd.called
         assert mock_exists.called
@@ -34,7 +35,8 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open, read_data="data with <<MODEL_NAME>> placeholder") # pylint: disable=line-too-long
     def test_replace_placeholders_in_handler(self, mock_open_file, mock_exists):
         """ Test that placeholders in handler.py are replaced if model_name is given. """
-        create_new_project("test_project", "volume_id", "3.8", model_name="my_model")
+        with patch("builtins.open", new_callable=mock_open):
+            create_new_project("test_project", "volume_id", "3.8", model_name="my_model")
         mock_open_file().write.assert_called_once_with("data with my_model placeholder")
         assert mock_exists.called
 
@@ -42,6 +44,7 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open)
     def test_create_runpod_toml(self, mock_open_file, mock_exists):
         """ Test that runpod.toml configuration file is created. """
-        create_new_project("test_project", "volume_id", "3.8")
-        mock_open_file.assert_called_once_with("/current/path/test_project/runpod.toml", 'w', encoding="UTF-8")
+        with patch("builtins.open", new_callable=mock_open):
+            create_new_project("test_project", "volume_id", "3.8")
+        mock_open_file.assert_called_once_with("/current/path/test_project/runpod.toml", 'w', encoding="UTF-8") # pylint: disable=line-too-long
         assert mock_exists.called
