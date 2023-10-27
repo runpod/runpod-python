@@ -41,8 +41,7 @@ class TestPodCommands(unittest.TestCase):
     @patch('runpod.cli.groups.pod.commands.click.confirm')
     @patch('runpod.cli.groups.pod.commands.click.echo')
     @patch('runpod.cli.groups.pod.commands.create_pod')
-    @patch('runpod.cli.groups.pod.commands.pod_from_template')
-    def test_create_new_pod(self, mock_pod_from_template, mock_create_pod, mock_echo, mock_confirm, mock_prompt): # pylint: disable=too-many-arguments,line-too-long
+    def test_create_new_pod(self, mock_create_pod, mock_echo, mock_confirm, mock_prompt): # pylint: disable=too-many-arguments,line-too-long
         '''
         Test create_new_pod
         '''
@@ -65,11 +64,9 @@ class TestPodCommands(unittest.TestCase):
         mock_echo.assert_called_with('Pod sample_id has been created.')
 
         with tempfile.NamedTemporaryFile() as template_file:
-            mock_pod_from_template.return_value = {'id': 'sample_id'}
             result = runner.invoke(runpod_cli,
                                    ['pod', 'create', '--template-file', template_file.name])
             assert result.exit_code == 0, result.exception
-            assert mock_pod_from_template.called
             mock_echo.assert_called_with('Pod sample_id has been created.')
 
 
