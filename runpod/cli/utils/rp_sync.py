@@ -31,7 +31,6 @@ class WatcherHandler(FileSystemEventHandler):
         self.action_function()
 
 
-
 def start_watcher(action_function, local_path, testing=False):
     """
     Starts the watcher.
