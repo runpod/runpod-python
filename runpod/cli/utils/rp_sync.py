@@ -46,7 +46,7 @@ def start_watcher(action_function, local_path, testing=False):
             time.sleep(1)
 
             if testing:
-                break
+                raise KeyboardInterrupt
     except KeyboardInterrupt:
         observer.stop()
 
