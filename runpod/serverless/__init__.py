@@ -66,6 +66,10 @@ def _set_config_args(config) -> dict:
     if config["rp_args"]["test_input"]:
         config["rp_args"]["test_input"] = json.loads(config["rp_args"]["test_input"])
 
+    # Parse the test output from JSON
+    if config["rp_args"].get("test_output", None):
+        config["rp_args"]["test_output"] = json.loads(config["rp_args"]["test_output"])
+
     # Set the log level
     if config["rp_args"]["rp_log_level"]:
         log.set_level(config["rp_args"]["rp_log_level"])

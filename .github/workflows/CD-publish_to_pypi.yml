@@ -69,6 +69,7 @@ jobs:
             "runpod-workers/worker-controlnet",
             "runpod-workers/worker-blip",
             "runpod-workers/worker-deforum",
+            runpod-workers/mock-worker,
           ]
 
     runs-on: ubuntu-latest

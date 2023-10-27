@@ -12,6 +12,7 @@ import aiohttp
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless.modules.rp_scale import JobScaler
 from .modules import rp_local
+from .modules.rp_handler import is_generator
 from .modules.rp_ping import Heartbeat
 from .modules.rp_job import run_job, run_job_generator
 from .modules.rp_http import send_result, stream_result
@@ -46,11 +47,10 @@ def _is_local(config) -> bool:
 
 
 async def _process_job(job, session, job_scaler, config):
-    if inspect.isgeneratorfunction(config["handler"]) \
-        or inspect.isasyncgenfunction(config["handler"]):
+    if is_generator(config["handler"]):
         generator_output = run_job_generator(config["handler"], job)
-
         log.debug("Handler is a generator, streaming results.")
+
         job_result = {'output': []}
         async for stream_output in generator_output:
             if 'error' in stream_output:
