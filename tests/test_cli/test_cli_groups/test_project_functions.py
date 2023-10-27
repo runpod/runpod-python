@@ -190,8 +190,8 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_ssh_instance.close.assert_called()
         assert mock_getcwd.called
 
-    @patch('runpod.cli.project.functions.load_project_config')
-    @patch('runpod.cli.project.functions.get_project_pod')
+    @patch('runpod.cli.groups.project.functions.load_project_config')
+    @patch('runpod.cli.groups.project.functions.get_project_pod')
     @patch('runpod.cli.utils.ssh_cmd.SSHConnection')
     def test_start_project_api_pod_not_found(self, mock_ssh_connection, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long, too-many-arguments
         """ Test that a project API is not started if the pod is not found. """

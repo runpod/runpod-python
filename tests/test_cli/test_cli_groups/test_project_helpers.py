@@ -9,6 +9,7 @@ from runpod.cli.groups.project.helpers import (
     validate_project_name,
     get_project_pod,
     copy_template_files,
+    attempt_pod_launch,
     load_project_config
 )
 
@@ -61,6 +62,31 @@ class TestHelpers(unittest.TestCase):
         copy_template_files("/template", "/destination")
         self.assertEqual(mock_copy.call_count, 2)
         assert mock_isdir.called
+
+
+    @patch("runpod.cli.groups.project.helpers.create_pod")
+    def test_attempt_pod_launch_success(self, mock_create_pod):
+        """Test the attempt_pod_launch function when it succeeds."""
+        mock_create_pod.return_value = "pod_id"
+        config = {
+            "project": {
+                "name": "test",
+                "uuid": "1234",
+                "base_image": "base_image",
+                "gpu_types": ["gpu_type"],
+                "gpu_count": "1",
+                "ports": "ports",
+                "storage_id": "storage_id",
+                "volume_mount_path": "volume_mount_path",
+                "container_disk_size_gb": "1"
+            }
+        }
+        environment_variables = {"key": "value"}
+        result = attempt_pod_launch(config, environment_variables)
+        self.assertEqual(result, "pod_id")
+
+        with self.assertRaises(KeyError):
+            attempt_pod_launch(config, {})
 
     @patch("os.path.exists", return_value=True)
     @patch("builtins.open", new_callable=mock_open, read_data="[project]\nname='test'")
