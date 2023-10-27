@@ -49,9 +49,9 @@ class TestWatcherHandler(unittest.TestCase):
 class TestSyncDirectory(unittest.TestCase):
     """Tests for the sync_directory function."""
 
-    @patch("runpod.cli.utils.rp_sync.threading.Thread.start", lambda x: None) # pylint: disable=unnecessary-lambda
+    @patch("runpod.cli.utils.rp_sync.threading.Thread")
     @patch("runpod.cli.utils.rp_sync.start_watcher")
-    def test_sync_directory(self, mock_start_watcher):
+    def test_sync_directory(self, mock_start_watcher, mock_thread_class):
         """Test that the sync_directory function calls the start_watcher function."""
         mock_ssh_client = MagicMock()
 
@@ -59,5 +59,8 @@ class TestSyncDirectory(unittest.TestCase):
         remote_path = "remote_path"
 
         sync_directory(mock_ssh_client, local_path, remote_path)
+
+        target_function = mock_thread_class.call_args[1]['target']
+        target_function()
 
         mock_start_watcher.assert_called_once()
