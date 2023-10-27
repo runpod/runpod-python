@@ -18,6 +18,7 @@ from .modules.rp_logger import RunPodLogger
 from .modules.rp_progress import progress_update
 from ..version import __version__ as runpod_version
 
+
 log = RunPodLogger()
 
 # ---------------------------------------------------------------------------- #
@@ -118,6 +119,7 @@ def start(config: Dict[str, Any]):
     realtime_concurrency = _get_realtime_concurrency()
 
     if config["rp_args"]["rp_serve_api"]:
+        print("Starting API server.")
         api_server = rp_fastapi.WorkerAPI()
         api_server.config = config
 
@@ -128,6 +130,7 @@ def start(config: Dict[str, Any]):
         )
 
     elif realtime_port:
+        print("Starting API server for realtime.")
         api_server = rp_fastapi.WorkerAPI()
         api_server.config = config
 

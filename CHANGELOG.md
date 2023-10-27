@@ -1,5 +1,11 @@
 # Change Log
 
+## Release 1.3.1 (TBD)
+
+### Added
+
+- BETA: CLI DevEx functionality to create development projects.
+
 ## Release 1.3.0 (10/12/23)
 
 ### Changes

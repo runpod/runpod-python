@@ -7,6 +7,7 @@ test_logging.py
 /ignore
 /example_project
 IGNORE.py
+/quick-test
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
