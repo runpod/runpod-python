@@ -32,7 +32,7 @@ class TestSSHFunctions(unittest.TestCase):
         dummy_data2 = base64.b64encode("test data 2".encode('utf-8')).decode('utf-8')
 
         mock_get_user.return_value = {
-            'pubKey': f'ssh-rsa {dummy_data1} key1\nssh-rsa {dummy_data2} key2\n'
+            'pubKey': f'ssh-rsa {dummy_data1} key1\nssh-rsa {dummy_data2} key2\n1'
         }
 
         keys = get_user_pub_keys()
@@ -77,3 +77,6 @@ class TestSSHFunctions(unittest.TestCase):
         key = "ssh-rsa ABCDE12345 somecomment"
         add_ssh_key(key)
         mock_update_settings.assert_called_once_with(key)
+
+        mock_get_user.return_value = {'pubKey': 'ssh-rsa ABCDE12345 key1'}
+        assert add_ssh_key('ssh-rsa ABCDE12345 key1') is None
