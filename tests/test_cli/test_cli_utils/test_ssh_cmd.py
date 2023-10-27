@@ -33,7 +33,7 @@ class TestSSHConnection(unittest.TestCase):
         commands = ['ls', 'pwd']
 
         mock_ssh_client = mock_ssh_client_class.return_value
-        mock_ssh_client.exec_command.return_value = (None, [], [])  # Mocking exec_command return value
+        mock_ssh_client.exec_command.return_value = (None, [], [])
 
         self.ssh_connection.run_commands(commands)
 
