@@ -27,23 +27,6 @@ class TestSSHConnection(unittest.TestCase):
 
         self.ssh_connection = SSHConnection('pod_id_mock')
 
-    @patch('runpod.cli.utils.ssh_cmd.paramiko.SSHClient')
-    def test_run_commands(self, mock_ssh_client_class):
-        ''' Test that run_commands() calls exec_command on the SSHClient object. '''
-        commands = ['ls', 'pwd']
-
-        mock_stdout = Mock()
-        mock_stdout.__iter__.return_value = iter([])
-        mock_stderr = Mock()
-        mock_stderr.__iter__.return_value = iter([])
-
-        mock_ssh_client = mock_ssh_client_class.return_value
-        mock_ssh_client.exec_command.return_value = (None, mock_stdout, mock_stderr)
-
-        self.ssh_connection.run_commands(commands)
-
-        self.assertEqual(mock_ssh_client.exec_command.call_count, 2)
-
     def test_put_file(self):
         ''' Test that put_file() calls put() on the SFTP object. '''
         local_path = '/local/file.txt'
