@@ -11,11 +11,13 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("os.makedirs")
     @patch("os.path.exists", return_value=False)
     @patch("os.getcwd", return_value="/current/path")
-    def test_create_project_folder(self, mock_getcwd, mock_exists, mock_makedirs):
+    @patch("runpod.cli.groups.project.functions.copy_template_files")
+    def test_create_project_folder(self, mock_copy_template_files, mock_getcwd, mock_exists, mock_makedirs): # pylint: disable=line-too-long
         """ Test that a new project folder is created if init_current_dir is False. """
         with patch("builtins.open", new_callable=mock_open):
             create_new_project("test_project", "volume_id", "3.8")
         mock_makedirs.assert_called_once_with("/current/path/test_project")
+        assert mock_copy_template_files.called
         assert mock_getcwd.called
         assert mock_exists.called
 

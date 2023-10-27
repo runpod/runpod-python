@@ -3,7 +3,9 @@
 import re
 import os
 import shutil
+
 import click
+import tomlkit
 
 from runpod import get_pods, create_pod
 from runpod import error as rp_error
@@ -59,3 +61,11 @@ def attempt_pod_launch(config, environment_variables):
         except rp_error.QueryError:
             print("Unavailable.")
     return None
+
+def load_project_config():
+    """Load the project config file."""
+    project_config_file = os.path.join(os.getcwd(), 'runpod.toml')
+    if not os.path.exists(project_config_file):
+        raise FileNotFoundError("runpod.toml not found in the current directory.")
+    with open(project_config_file, 'r', encoding="UTF-8") as config_file:
+        return tomlkit.load(config_file)

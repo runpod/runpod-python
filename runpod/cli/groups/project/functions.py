@@ -12,7 +12,7 @@ from tomlkit import document, comment, table, nl
 
 from runpod import get_pod
 from runpod.cli.utils.ssh_cmd import SSHConnection
-from .helpers import get_project_pod, copy_template_files, attempt_pod_launch
+from .helpers import get_project_pod, copy_template_files, attempt_pod_launch, load_project_config
 from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
@@ -95,12 +95,7 @@ def launch_project(): # pylint: disable=too-many-locals, too-many-branches
     # crate a virtual environment using the python version specified in the project config
     # install the requirements.txt file
     '''
-    project_file = os.path.join(os.getcwd(), 'runpod.toml')
-    if not os.path.exists(project_file):
-        raise click.FileError("runpod.toml not found in the current directory.")
-
-    with open(project_file, 'r', encoding="UTF-8") as config_file:
-        config = tomlkit.load(config_file)
+    config = load_project_config()
 
     for config_item in config['project']:
         print(f'    - {config_item}: {config["project"][config_item]}')
@@ -165,12 +160,7 @@ def start_project_api():
     '''
     python handler.py --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080
     '''
-    project_file = os.path.join(os.getcwd(), 'runpod.toml')
-    if not os.path.exists(project_file):
-        raise FileNotFoundError("runpod.toml not found in the current directory.")
-
-    with open(project_file, 'r', encoding="UTF-8") as config_file:
-        config = tomlkit.load(config_file)
+    config = load_project_config()
 
     project_pod = get_project_pod(config['project']['uuid'])
     if project_pod is None:
