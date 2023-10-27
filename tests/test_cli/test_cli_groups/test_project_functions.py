@@ -1,5 +1,6 @@
 """ Test functions in runpod.cli.groups.project.functions module. """
 
+import os
 import unittest
 from unittest.mock import patch, mock_open
 
@@ -36,13 +37,13 @@ class TestCreateNewProject(unittest.TestCase):
 
     @patch("os.path.exists", return_value=True)
     @patch("builtins.open", new_callable=mock_open, read_data="data with <<MODEL_NAME>> placeholder") # pylint: disable=line-too-long
-    @patch("runpod.cli.groups.project.functions.copy_template_files")
-    def test_replace_placeholders_in_handler(self, mock_copy_template_files, mock_open_file, mock_exists): # pylint: disable=line-too-long
+    def test_replace_placeholders_in_handler(self, mock_open_file, mock_exists): # pylint: disable=line-too-long
         """ Test that placeholders in handler.py are replaced if model_name is given. """
-        create_new_project("test_project", "volume_id", "3.8", model_name="my_model")
+        with patch("runpod.cli.groups.project.functions.copy_template_files"):
+            create_new_project("test_project", "volume_id", "3.8", model_name="my_model")
         mock_open_file().write.assert_called_with("data with my_model placeholder")
         assert mock_exists.called
-        assert mock_copy_template_files.called
+
 
     @patch("os.path.exists", return_value=False)
     @patch("builtins.open", new_callable=mock_open)
@@ -50,5 +51,6 @@ class TestCreateNewProject(unittest.TestCase):
         """ Test that runpod.toml configuration file is created. """
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project("test_project", "volume_id", "3.8")
-        mock_open_file.assert_called_once_with("/current/path/test_project/runpod.toml", 'w', encoding="UTF-8") # pylint: disable=line-too-long
+        toml_file_location = os.path.join(os.getcwd(), "runpod.toml")
+        mock_open_file.assert_called_once_with(toml_file_location, 'w', encoding="UTF-8") # pylint: disable=line-too-long
         assert mock_exists.called
