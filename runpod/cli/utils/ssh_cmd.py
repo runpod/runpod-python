@@ -88,7 +88,7 @@ class SSHConnection:
 
         subprocess.run(cmd, check=True)
 
-    def rsync(self, local_path, remote_path):
+    def rsync(self, local_path, remote_path, quiet=False):
         """ Sync a local directory to a remote directory over SSH.
 
         A .runpodignore file can be used to ignore files and directories.
@@ -108,6 +108,9 @@ class SSHConnection:
 
         for pattern in get_ignore_list():
             rsync_cmd.extend(["--exclude", pattern])
+
+        if quiet:
+            rsync_cmd.append("--quiet")
 
         rsync_cmd.extend([
             "-e", f"ssh {' '.join(ssh_options)}",

@@ -285,7 +285,6 @@ def start_project_api():
     ''']
 
 
-
     try:
         ssh_conn.run_commands(launch_api_server)
     finally:

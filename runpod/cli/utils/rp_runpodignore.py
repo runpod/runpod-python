@@ -1,13 +1,17 @@
 """ Reads the .runpodignore file and returns a list of files to ignore. """
 
 import os
+import fnmatch
 
 EXCLUDE_PATTERNS = [
         "__pycache__/",
         "*.pyc",
         ".*.swp",
-        ".git/"
+        ".git/",
+        "*.tmp",
+        "*.log",
     ]
+
 
 def get_ignore_list():
     """ Reads the .runpodignore file and returns a list of files to ignore. """
@@ -24,3 +28,20 @@ def get_ignore_list():
                 ignore_list.append(stripped_line)
 
     return ignore_list
+
+
+def should_ignore(file_path, ignore_list=None):
+    """ Returns True if the file should be ignored, False otherwise. """
+    if ignore_list is None:
+        ignore_list = get_ignore_list()
+
+    relative_path = os.path.relpath(file_path, os.getcwd())
+
+    for pattern in ignore_list:
+        if pattern.startswith('/'):
+            if fnmatch.fnmatch(relative_path, pattern[1:]):
+                return True
+        elif fnmatch.fnmatch(file_path, pattern):
+            return True
+
+    return False
