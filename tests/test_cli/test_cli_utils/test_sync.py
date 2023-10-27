@@ -2,7 +2,7 @@
 
 import unittest
 from unittest.mock import patch, MagicMock
-from runpod.cli.utils.rp_sync import WatcherHandler, sync_directory
+from runpod.cli.utils.rp_sync import WatcherHandler, start_watcher, sync_directory
 
 class TestWatcherHandler(unittest.TestCase):
     """Tests for the WatcherHandler class."""
@@ -64,3 +64,31 @@ class TestSyncDirectory(unittest.TestCase):
         target_function()
 
         mock_start_watcher.assert_called_once()
+
+
+class TestStartWatcher(unittest.TestCase):
+    """Tests for the start_watcher function."""
+
+    @patch('runpod.cli.utils.rp_sync.Observer')
+    @patch('runpod.cli.utils.rp_sync.WatcherHandler')
+    def test_start_watcher(self, mock_watch_handler, mock_observer_class):
+        """Test that the start_watcher function starts the watcher correctly."""
+        fake_action = MagicMock()
+        local_path = '/path/to/watch'
+
+        mock_observer_instance = mock_observer_class.return_value
+
+        with self.assertRaises(KeyboardInterrupt):
+            start_watcher(fake_action, local_path)
+
+        mock_watch_handler.assert_called_once_with(fake_action, local_path)
+
+        mock_observer_instance.schedule.assert_called_once_with(
+            mock_watch_handler.return_value,
+            local_path,
+            recursive=True
+        )
+
+        mock_observer_instance.start.assert_called_once()
+        mock_observer_instance.stop.assert_called_once()
+        mock_observer_instance.join.assert_called_once()
