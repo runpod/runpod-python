@@ -76,5 +76,5 @@ class TestSSHConnection(unittest.TestCase):
     @patch('subprocess.run')
     def test_rsync(self, mock_subprocess):
         ''' Test that rsync() calls subprocess.run(). '''
-        self.ssh_connection.rsync('local_path', 'remote_path')
+        self.ssh_connection.rsync('local_path', 'remote_path', quiet=True)
         mock_subprocess.assert_called_once()

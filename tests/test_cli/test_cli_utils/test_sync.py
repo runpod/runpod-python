@@ -80,7 +80,6 @@ class TestSyncDirectory(unittest.TestCase):
 
         mock_ssh_client.rsync.assert_called_once_with(local_path, remote_path, quiet=True)
 
-        # Just assert that the Thread was called and start_watcher was its target
         mock_thread_class.assert_called_once()
         mock_thread_class.assert_called_with(target=mock_start_watcher, args=(ANY, local_path))
 
