@@ -15,8 +15,7 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
     pod_ip = None
     pod_port = None
 
-    found = False
-    while time.time() - start_time < timeout and not found:
+    while time.time() - start_time < timeout and (pod_ip is None or pod_port is None):
         pod = get_pod(pod_id)
         desired_status = pod.get('desiredStatus', None)
         runtime = pod.get('runtime', None)
@@ -26,7 +25,6 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
                 if port['privatePort'] == 22:
                     pod_ip = port['ip']
                     pod_port = int(port['publicPort'])
-                    found = True
                     break
 
         time.sleep(1)

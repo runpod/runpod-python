@@ -4,17 +4,15 @@ RunPod | CLI | Project | Functions
 
 import os
 import sys
-import shutil
 import uuid
 
 import click
 import tomlkit
 from tomlkit import document, comment, table, nl
 
-from runpod import create_pod, get_pod
+from runpod import get_pod
 from runpod.cli.utils.ssh_cmd import SSHConnection
-from runpod import error as rp_error
-from .helpers import get_project_pod
+from .helpers import get_project_pod, copy_template_files, attempt_pod_launch
 from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
@@ -33,14 +31,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
 
         template_dir = os.path.join(STARTER_TEMPLATES, model_type)
 
-        for item in os.listdir(template_dir):
-            source_item = os.path.join(template_dir, item)
-            destination_item = os.path.join(project_folder, item)
-
-            if os.path.isdir(source_item):
-                shutil.copytree(source_item, destination_item)
-            else:
-                shutil.copy2(source_item, destination_item)
+        copy_template_files(template_dir, project_folder)
 
         # If there's a model_name, replace placeholders in handler.py
         if model_name:
@@ -130,29 +121,10 @@ def launch_project(): # pylint: disable=too-many-locals, too-many-branches
     if config['project'].get('gpu', None):
         selected_gpu_types.append(config['project']['gpu'])
 
-    new_pod = None
-    for gpu_type in selected_gpu_types:
-        print(f"Trying to get a pod with {gpu_type}... ", end="")
-        try:
-            new_pod = create_pod(
-                f'{config["project"]["name"]}-dev ({config["project"]["uuid"]})',
-                config['project']['base_image'],
-                gpu_type,
-                gpu_count=int(config['project']['gpu_count']),
-                support_public_ip=True,
-                ports=f'{config["project"]["ports"]}',
-                network_volume_id=f'{config["project"]["storage_id"]}',
-                volume_mount_path=f'{config["project"]["volume_mount_path"]}',
-                container_disk_in_gb=int(config["project"]["container_disk_size_gb"]),
-                env=environment_variables
-            )
-            break
-        except rp_error.QueryError:
-            print("Unavailable.")
+    new_pod = attempt_pod_launch(config, environment_variables)
     if new_pod is None:
         print("Selected GPU types unavailable, try again later or use a different type.")
         return
-    print("Success!")
 
     print("Waiting for pod to come online... ", end="")
     sys.stdout.flush()
