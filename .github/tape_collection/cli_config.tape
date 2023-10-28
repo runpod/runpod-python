@@ -8,6 +8,6 @@ Set Padding 20
 Type "runpod config"
 Enter
 
-Sleep 5s
+Sleep 4s
 
 Type "<Paste your RunPod API Key here>"
