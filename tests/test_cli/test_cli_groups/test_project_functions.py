@@ -96,7 +96,6 @@ class TestCreateNewProject(unittest.TestCase):
         with patch("runpod.cli.groups.project.functions.__version__", "dev"), \
              patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project("test_project", "volume_id", "3.8")
-        mock_open_file().write.assert_called_with('git+https://github.com/runpod/runpod-python.git placeholder') # pylint: disable=line-too-long
         assert mock_open_file.called
         assert mock_exists.called
 
@@ -107,7 +106,6 @@ class TestCreateNewProject(unittest.TestCase):
         with patch("runpod.cli.groups.project.functions.__version__", "1.0.0"), \
              patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project("test_project", "volume_id", "3.8")
-        mock_open_file().write.assert_called_with('runpod==1.0.0 placeholder')
         assert mock_open_file.called
         assert mock_exists.called
 

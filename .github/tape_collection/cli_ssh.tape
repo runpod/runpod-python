@@ -9,3 +9,8 @@ Type "runpod ssh add-key"
 Enter
 
 Sleep 4s
+
+Type "y"
+Enter
+
+Sleep 4s
