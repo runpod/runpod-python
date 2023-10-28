@@ -1,10 +1,9 @@
 Output docs/images/cli_demo.gif
 
-# Set up a 1200x600 terminal with 46px font.
-Set FontSize 12
-Set Width 2400
-Set Height 1200
-Set Padding 24
+Set FontSize 6
+Set Width 4800
+Set Height 2400
+Set Padding 12
 
 Type runpod
 
