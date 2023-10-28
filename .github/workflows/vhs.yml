@@ -30,3 +30,4 @@ jobs:
           commit_author: vhs-action 📼 <actions@github.com>
           file_pattern: "*.gif"
           push_options: "--force"
+          create_branch: true
