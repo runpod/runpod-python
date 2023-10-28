@@ -57,7 +57,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
     project_table = table()
     project_table.add("uuid", project_uuid)
     project_table.add("name", project_name)
-    project_table.add("base_image", "runpod/base:0.0.4")
+    project_table.add("base_image", "runpod/base:0.1.0")
     project_table.add("gpu_types", [
         "NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000",
         "NVIDIA GeForce RTX 3090", "NVIDIA RTX A6000"])
@@ -76,8 +76,8 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
 
     runtime_table = table()
     runtime_table.add("python_version", python_version)
-    runtime_table.add("handler_path", "handler.py")
-    runtime_table.add("requirements_path", "requirements.txt")
+    runtime_table.add("handler_path", "src/handler.py")
+    runtime_table.add("requirements_path", "builder/requirements.txt")
     toml_config.add("runtime", runtime_table)
 
     with open(os.path.join(project_folder, "runpod.toml"), 'w', encoding="UTF-8") as config_file:
