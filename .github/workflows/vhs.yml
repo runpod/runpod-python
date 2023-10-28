@@ -16,14 +16,17 @@ jobs:
         run: |
           pip install .
 
+      # runpod --help
       - uses: charmbracelet/vhs-action@v1
         with:
           path: ".github/tape_collection/cli_help.tape"
 
+      # runpod config
       - uses: charmbracelet/vhs-action@v1
         with:
           path: ".github/tape_collection/cli_config.tape"
 
+      # Add gifs to commit
       - uses: stefanzweifel/git-auto-commit-action@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
