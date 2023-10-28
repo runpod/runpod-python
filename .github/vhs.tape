@@ -1,11 +1,11 @@
 Output docs/images/cli_demo.gif
 
 Set FontSize 20
-Set Width 1200
-Set Height 2400
+Set Width 600
+Set Height 1200
 Set Padding 20
 
-Type runpod
+Type runpod --help
 
 Sleep 500ms
 
