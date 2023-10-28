@@ -26,6 +26,11 @@ jobs:
         with:
           path: ".github/tape_collection/cli_config.tape"
 
+      # runpod ssh
+      - uses: charmbracelet/vhs-action@v1
+        with:
+          path: ".github/tape_collection/cli_ssh.tape"
+
       # Add gifs to commit
       - uses: stefanzweifel/git-auto-commit-action@v5
         env:
