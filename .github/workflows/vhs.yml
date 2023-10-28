@@ -1,8 +1,8 @@
 name: vhs
 on:
   push:
-    paths:
-      - vhs.tape
+    # paths:
+    #   - vhs.tape
 
   workflow_dispatch:
 
