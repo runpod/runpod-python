@@ -11,4 +11,4 @@ Sleep 500ms
 
 Enter
 
-Sleep 1d
+Sleep 1s
