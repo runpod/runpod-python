@@ -17,7 +17,12 @@ jobs:
           pip install .
 
       - uses: charmbracelet/vhs-action@v1
-      - run: vhs .github/tape_collection/**.tape
+        with:
+          path: ".github/tape_collection/cli_help.tape"
+
+      - uses: charmbracelet/vhs-action@v1
+        with:
+          path: ".github/tape_collection/cli_config.tape"
 
       - uses: stefanzweifel/git-auto-commit-action@v5
         env:
