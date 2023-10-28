@@ -29,3 +29,4 @@ jobs:
           commit_user_email: actions@github.com
           commit_author: vhs-action 📼 <actions@github.com>
           file_pattern: "*.gif"
+          push_options: "--force"
