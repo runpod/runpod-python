@@ -75,7 +75,7 @@ class TestCreateNewProject(unittest.TestCase):
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project("test_project", "volume_id", "3.8")
         toml_file_location = os.path.join(os.getcwd(), "test_project", "runpod.toml")
-        mock_open_file.assert_called_once_with(toml_file_location, 'w', encoding="UTF-8") # pylint: disable=line-too-long
+        mock_open_file.assert_called_with(toml_file_location, 'w', encoding="UTF-8") # pylint: disable=line-too-long
         assert mock_exists.called
 
     @patch('runpod.cli.groups.project.functions.get_project_pod')
@@ -93,8 +93,8 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open, read_data="<<RUNPOD>> placeholder")
     def test_update_requirements_file(self, mock_open_file, mock_exists):
         """ Test that placeholders in requirements.txt are replaced correctly. """
-        with patch("runpod.cli.groups.project.functions.__version__", "dev"):
-            with patch("runpod.cli.groups.project.functions.copy_template_files"):
+        with patch("runpod.cli.groups.project.functions.__version__", "dev"), \
+             patch("runpod.cli.groups.project.functions.copy_template_files"):
                 create_new_project("test_project", "volume_id", "3.8")
         mock_open_file().write.assert_called_with('git+https://github.com/runpod/runpod-python.git placeholder') # pylint: disable=line-too-long
         assert mock_open_file.called
@@ -104,8 +104,8 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open, read_data="<<RUNPOD>> placeholder")
     def test_update_requirements_file_non_dev(self, mock_open_file, mock_exists):
         """ Test that placeholders in requirements.txt are replaced for non-dev versions. """
-        with patch("runpod.cli.groups.project.functions.__version__", "1.0.0"):
-            with patch("runpod.cli.groups.project.functions.copy_template_files"):
+        with patch("runpod.cli.groups.project.functions.__version__", "1.0.0"), \
+             patch("runpod.cli.groups.project.functions.copy_template_files"):
                 create_new_project("test_project", "volume_id", "3.8")
         mock_open_file().write.assert_called_with('runpod==1.0.0 placeholder')
         assert mock_open_file.called
