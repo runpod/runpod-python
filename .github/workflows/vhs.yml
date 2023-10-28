@@ -1,0 +1,43 @@
+name: vhs
+on:
+  push:
+    # paths:
+    #   - vhs.tape
+
+  workflow_dispatch:
+
+jobs:
+  vhs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install runpod
+        run: |
+          pip install .
+
+      # runpod --help
+      - uses: charmbracelet/vhs-action@v1
+        with:
+          path: ".github/tape_collection/cli_help.tape"
+
+      # runpod config
+      - uses: charmbracelet/vhs-action@v1
+        with:
+          path: ".github/tape_collection/cli_config.tape"
+
+      # runpod ssh
+      - uses: charmbracelet/vhs-action@v1
+        with:
+          path: ".github/tape_collection/cli_ssh.tape"
+
+      # Add gifs to commit
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          commit_message: Update generated VHS GIF
+          commit_user_name: vhs-action 📼
+          commit_user_email: actions@github.com
+          commit_author: vhs-action 📼 <actions@github.com>
+          file_pattern: "*.gif"
