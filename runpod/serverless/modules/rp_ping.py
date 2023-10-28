@@ -52,6 +52,10 @@ class Heartbeat:
         '''
         Sends heartbeat pings to the Runpod server.
         '''
+        if os.environ.get('RUNPOD_AI_API_KEY') is None:
+            log.debug("Not deployed on RunPod serverless, pings will not be sent.")
+            return
+
         if os.environ.get('RUNPOD_POD_ID') is None:
             log.info("Not running on RunPod, pings will not be sent.")
             return

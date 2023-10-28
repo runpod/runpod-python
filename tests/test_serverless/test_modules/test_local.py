@@ -9,7 +9,7 @@ from runpod.serverless.modules import rp_local
 class TestRunLocal(IsolatedAsyncioTestCase):
     ''' Tests for run_local function '''
 
-    @patch("runpod.serverless.modules.rp_local.run_job", return_value={})
+    @patch("runpod.serverless.modules.rp_local.run_job", return_value={"result": "success"})
     @patch("builtins.open", new_callable=mock_open, read_data='{"input": "test"}')
     async def test_run_local_with_test_input(self, mock_file, mock_run):
         '''
@@ -21,12 +21,20 @@ class TestRunLocal(IsolatedAsyncioTestCase):
                 "test_input": {
                     "input": "test",
                     "id": "test_id"
+                },
+                "test_output": {
+                    "result": "success"
                 }
             }
         }
         with self.assertRaises(SystemExit) as sys_exit:
             await rp_local.run_local(config)
-        self.assertEqual(sys_exit.exception.code, 0)
+            self.assertEqual(sys_exit.exception.code, 0)
+
+        config["rp_args"]["test_output"] = {"result": "fail"}
+        with self.assertRaises(SystemExit) as sys_exit:
+            await rp_local.run_local(config)
+            self.assertEqual(sys_exit.exception.code, 1)
 
         assert mock_file.called is False
         assert mock_run.called

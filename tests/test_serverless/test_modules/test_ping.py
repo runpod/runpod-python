@@ -46,6 +46,13 @@ class TestPing(unittest.TestCase):
         '''
         Tests that the start_ping function works correctly
         '''
+        # No RUNPOD_AI_API_KEY case
+        with patch("threading.Thread.start") as mock_thread_start:
+            rp_ping.Heartbeat().start_ping(test=True)
+            assert mock_thread_start.call_count == 0
+
+        os.environ["RUNPOD_AI_API_KEY"] = "test_key"
+
         # No RUNPOD_POD_ID case
         with patch("threading.Thread.start") as mock_thread_start:
             rp_ping.Heartbeat().start_ping(test=True)

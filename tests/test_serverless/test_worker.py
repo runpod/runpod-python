@@ -75,7 +75,6 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         Test local FastAPI setup.
         '''
-
         known_args = argparse.Namespace()
         known_args.rp_log_level = None
         known_args.rp_debugger = None
@@ -126,6 +125,7 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
         known_args.rp_api_concurrency = 1
         known_args.rp_api_host = "localhost"
         known_args.test_input = '{"test": "test"}'
+        known_args.test_output = '{"test": "test"}'
 
         with patch("argparse.ArgumentParser.parse_known_args") as mock_parse_known_args, \
                 self.assertRaises(SystemExit):

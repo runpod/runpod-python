@@ -47,5 +47,13 @@ async def run_local(config: Dict[str, Any]) -> None:
     log.info(f"Job {local_job['id']} completed successfully.")
     log.info(f"Job result: {job_result}")
 
+    # Compare to sample output, if provided
+    if config['rp_args'].get('test_output', None):
+        log.info("test_output set, comparing output to test_output.")
+        if job_result != config['rp_args']['test_output']:
+            log.error("Job output does not match test_output.")
+            sys.exit(1)
+        log.info("Job output matches test_output.")
+
     log.info("Local testing complete, exiting.")
     sys.exit(0)

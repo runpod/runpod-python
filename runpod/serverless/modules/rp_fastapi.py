@@ -9,7 +9,8 @@ from fastapi import FastAPI, APIRouter
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
-from .rp_job import run_job
+from .rp_handler import is_generator
+from .rp_job import run_job, run_job_generator
 from .worker_state import Jobs
 from .rp_ping import Heartbeat
 from ...version import __version__ as runpod_version
@@ -125,7 +126,13 @@ class WorkerAPI:
         # Set the current job ID.
         job_list.add_job(job.id)
 
-        job_results = await run_job(self.config["handler"], job.__dict__)
+        if is_generator(self.config["handler"]):
+            generator_output = run_job_generator(self.config["handler"], job.__dict__)
+            job_results = {"output": []}
+            async for stream_output in generator_output:
+                job_results["output"].append(stream_output["output"])
+        else:
+            job_results = await run_job(self.config["handler"], job.__dict__)
 
         job_results["id"] = job.id
 
