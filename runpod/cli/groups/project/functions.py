@@ -10,7 +10,7 @@ import click
 import tomlkit
 from tomlkit import document, comment, table, nl
 
-from runpod import get_pod
+from runpod import get_pod, __version__
 from runpod.cli.utils.ssh_cmd import SSHConnection
 from .helpers import get_project_pod, copy_template_files, attempt_pod_launch, load_project_config
 from ...utils.rp_sync import sync_directory
@@ -33,17 +33,30 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
 
         copy_template_files(template_dir, project_folder)
 
+        # Replace placeholders in requirements.txt
+        requirements_path = os.path.join(project_folder, "builder/requirements.txt")
+        with open(requirements_path, 'r', encoding='utf-8') as requirements_file:
+            requirements_content = requirements_file.read()
+
+        if "dev" in __version__:
+            requirements_content = requirements_content.replace(
+                '<<RUNPOD>>', 'git+https://github.com/runpod/runpod-python.git')
+        else:
+            requirements_content = requirements_content.replace(
+                '<<RUNPOD>>', f'runpod=={__version__}')
+
+        with open(requirements_path, 'w', encoding='utf-8') as requirements_file:
+            requirements_file.write(requirements_content)
+
         # If there's a model_name, replace placeholders in handler.py
         if model_name:
-            handler_path = os.path.join(project_name, "handler.py")
-            if os.path.exists(handler_path):
-                with open(handler_path, 'r', encoding='utf-8') as file:
-                    handler_content = file.read()
-
+            handler_path = os.path.join(project_name, "src/handler.py")
+            with open(handler_path, 'r', encoding='utf-8') as file:
+                handler_content = file.read()
                 handler_content = handler_content.replace('<<MODEL_NAME>>', model_name)
 
-                with open(handler_path, 'w', encoding='utf-8') as file:
-                    file.write(handler_content)
+            with open(handler_path, 'w', encoding='utf-8') as file:
+                file.write(handler_content)
     else:
         project_folder = os.getcwd()
 

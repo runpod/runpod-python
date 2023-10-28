@@ -5,7 +5,7 @@ Set Width 1000
 Set Height 300
 Set Padding 20
 
-Type "runpod ssh"
+Type "runpod ssh ad-key"
 Enter
 
 Sleep 4s

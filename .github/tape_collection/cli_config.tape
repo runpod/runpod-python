@@ -2,7 +2,7 @@ Output docs/cli/demos/config.gif
 
 Set FontSize 20
 Set Width 1000
-Set Height 100
+Set Height 200
 Set Padding 20
 
 Type "runpod config"
