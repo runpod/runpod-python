@@ -1,8 +1,8 @@
 Output docs/images/cli_demo.gif
 
-Set FontSize 6
-Set Width 4800
-Set Height 2400
+Set FontSize 10
+Set Width 2400
+Set Height 1200
 Set Padding 12
 
 Type runpod
