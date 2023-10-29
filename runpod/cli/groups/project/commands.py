@@ -5,7 +5,9 @@ RunPod | CLI | Project | Commands
 import os
 import click
 
-from .functions import create_new_project, launch_project, start_project_api
+from .functions import (
+    create_new_project, launch_project, start_project_api, create_project_endpoint
+)
 from .helpers import validate_project_name
 
 @click.group('project')
@@ -84,3 +86,18 @@ def start_project_pod():
     '''
     click.echo("Starting project API server...")
     start_project_api()
+
+
+# ------------------------------ Deploy Project ------------------------------ #
+@project_cli.command('deploy')
+def deploy_project():
+    """ Deploy the project to RunPod. """
+    click.echo("Deploying project...")
+
+    endpoint_id = create_project_endpoint()
+
+    click.echo(f"Project deployed successfully! Endpoint ID: {endpoint_id}")
+    click.echo("The following urls are available:")
+    click.echo(f"    - https://api.runpod.ai/v2/{endpoint_id}/runsync")
+    click.echo(f"    - https://api.runpod.ai/v2/{endpoint_id}/run")
+    click.echo(f"    - https://api.runpod.ai/v2/{endpoint_id}/health")

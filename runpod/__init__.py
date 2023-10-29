@@ -9,9 +9,10 @@ from .endpoint import AsyncioEndpoint, AsyncioJob
 from .version import __version__
 from .api.ctl_commands import(
     get_user, update_user_settings,
-    get_gpus, get_gpu,
-    get_pods, get_pod,
-    create_pod, stop_pod, resume_pod, terminate_pod
+    get_gpu, get_gpus,
+    get_pod, get_pods, create_pod, stop_pod, resume_pod, terminate_pod,
+    create_template,
+    create_endpoint
 )
 from .cli.groups.config.functions import set_credentials, check_credentials, get_credentials
 

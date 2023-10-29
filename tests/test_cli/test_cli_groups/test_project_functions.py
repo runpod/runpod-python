@@ -8,7 +8,8 @@ import click
 
 from runpod.cli.groups.project.functions import(
     STARTER_TEMPLATES, create_new_project,
-    launch_project, start_project_api
+    launch_project, start_project_api,
+    create_project_endpoint
 )
 
 class TestCreateNewProject(unittest.TestCase):
@@ -229,3 +230,45 @@ class TestStartProjectAPI(unittest.TestCase):
         )
         assert mock_ssh_connection.called is False
         assert mock_get_project_pod.called
+
+class TestCreateProjectEndpoint(unittest.TestCase):
+    """ Test the create_project_endpoint function. """
+
+    @patch('runpod.cli.groups.project.functions.load_project_config')
+    @patch('runpod.cli.groups.project.functions.create_template')
+    @patch('runpod.cli.groups.project.functions.create_endpoint')
+    def test_create_project_endpoint(self, mock_create_endpoint,
+                                     mock_create_template, mock_load_project_config):
+        """ Test that a project endpoint is created successfully. """
+        mock_load_project_config.return_value = {
+            'project': {
+                'name': 'test_project',
+                'uuid': '123456',
+                'env_vars': {'TEST_VAR': 'value'},
+                'base_image': 'test_image',
+                'container_disk_size_gb': 10,
+                'storage_id': 'test_storage_id',
+            },
+            'runtime': {
+                'handler_path': 'handler.py'
+            }
+        }
+        mock_create_template.return_value = {'id': 'test_template_id'}
+        mock_create_endpoint.return_value = {'id': 'test_endpoint_id'}
+
+        result = create_project_endpoint()
+
+        self.assertEqual(result, 'test_endpoint_id')
+        mock_create_template.assert_called_once_with(
+            name='test_project-endpoint | 123456',
+            image_name='test_image',
+            container_disk_in_gb=10,
+            docker_start_cmd='bash -c ". /runpod-volume/123456/venv/bin/activate && python -u /runpod-volume/123456/test_project/handler.py"', # pylint: disable=line-too-long
+            env={'TEST_VAR': 'value'},
+            is_serverless=True
+        )
+        mock_create_endpoint.assert_called_once_with(
+            name='test_project-endpoint | 123456',
+            template_id='test_template_id',
+            network_volume_id='test_storage_id'
+        )

@@ -13,9 +13,12 @@ class RunPodError(Exception):
     '''
     def __init__(self, message: Optional[str] = None):
         super().__init__(message)
-
         self.message = message
 
+    def __str__(self):
+        if self.message:
+            return self.message
+        return super().__str__()
 
 
 class AuthenticationError(RunPodError):
@@ -28,3 +31,6 @@ class QueryError(RunPodError):
     '''
     Raised when a GraphQL query fails
     '''
+    def __init__(self, message: Optional[str] = None, query: Optional[str] = None):
+        super().__init__(message)
+        self.query = query

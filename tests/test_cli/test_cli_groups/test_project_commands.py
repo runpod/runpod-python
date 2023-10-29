@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 from runpod.cli.groups.project.commands import (
-    new_project_wizard, launch_project_pod, start_project_pod)
+    new_project_wizard, launch_project_pod, start_project_pod,
+    deploy_project
+)
 
 class TestProjectCLI(unittest.TestCase):
     ''' A collection of tests for the Project CLI commands. '''
@@ -83,3 +85,22 @@ class TestProjectCLI(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starting project API server...", result.output)
+
+
+    @patch('runpod.cli.groups.project.commands.click.echo')
+    @patch('runpod.cli.groups.project.commands.create_project_endpoint')
+    def test_deploy_project(self, mock_create_project_endpoint, mock_click_echo):
+        """ Test the deploy_project function. """
+        mock_create_project_endpoint.return_value = 'test_endpoint_id'
+
+        result = self.runner.invoke(deploy_project)
+
+        mock_create_project_endpoint.assert_called_once()
+
+        mock_click_echo.assert_any_call("Deploying project...")
+        mock_click_echo.assert_any_call("The following urls are available:")
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/runsync")
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/run")
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/health")
+
+        self.assertEqual(result.exit_code, 0)

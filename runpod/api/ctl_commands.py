@@ -11,6 +11,10 @@ from .queries import gpus
 from .queries import pods as pod_queries
 from .graphql import run_graphql_query
 from .mutations import pods as pod_mutations
+from .mutations import endpoints as endpoint_mutations
+
+# Templates
+from .mutations import templates as template_mutations
 
 def get_user() -> dict:
     '''
@@ -188,3 +192,73 @@ def terminate_pod(pod_id: str):
     run_graphql_query(
         pod_mutations.generate_pod_terminate_mutation(pod_id)
     )
+
+
+def create_template(
+        name:str, image_name:str, docker_start_cmd:str=None,
+        container_disk_in_gb:int=10, volume_in_gb:int=None, volume_mount_path:str=None,
+        ports:str=None, env:dict=None, is_serverless:bool=False
+):
+    '''
+    Create a template
+
+    :param name: the name of the template
+    :param image_name: the name of the docker image to be used by the template
+    :param docker_start_cmd: the command to start the docker container with
+    :param container_disk_in_gb: how big should the container disk be
+    :param volume_in_gb: how big should the volume be
+    :param ports: the ports to open in the pod, example format - "8888/http,666/tcp"
+    :param volume_mount_path: where to mount the volume?
+    :param env: the environment variables to inject into the pod,
+                for example {EXAMPLE_VAR:"example_value", EXAMPLE_VAR2:"example_value 2"}, will
+                inject EXAMPLE_VAR and EXAMPLE_VAR2 into the pod with the mentioned values
+    :param is_serverless: is the template serverless?
+
+    :example:
+
+    >>> template_id = runpod.create_template("test", "runpod/stack", "python3 main.py")
+    '''
+    raw_response = run_graphql_query(
+        template_mutations.generate_pod_template(
+            name, image_name, docker_start_cmd,
+            container_disk_in_gb, volume_in_gb, volume_mount_path,
+            ports, env, is_serverless
+        )
+    )
+
+    return raw_response["data"]["saveTemplate"]
+
+def create_endpoint(
+        name:str, template_id:str, gpu_ids:str="AMPERE_16",
+        network_volume_id:str=None, locations:str=None,
+        idle_timeout:int=5, scaler_type:str="QUEUE_DELAY", scaler_value:int=4,
+        workers_min:int=0, workers_max:int=3
+):
+    '''
+    Create an endpoint
+
+    :param name: the name of the endpoint
+    :param template_id: the id of the template to use for the endpoint
+    :param gpu_ids: the ids of the GPUs to use for the endpoint
+    :param network_volume_id: the id of the network volume to use for the endpoint
+    :param locations: the locations to use for the endpoint
+    :param idle_timeout: the idle timeout for the endpoint
+    :param scaler_type: the scaler type for the endpoint
+    :param scaler_value: the scaler value for the endpoint
+    :param workers_min: the minimum number of workers for the endpoint
+    :param workers_max: the maximum number of workers for the endpoint
+
+    :example:
+
+    >>> endpoint_id = runpod.create_endpoint("test", "template_id")
+    '''
+    raw_response = run_graphql_query(
+        endpoint_mutations.generate_endpoint_mutation(
+            name, template_id, gpu_ids,
+            network_volume_id, locations,
+            idle_timeout, scaler_type, scaler_value,
+            workers_min, workers_max
+        )
+    )
+
+    return raw_response["data"]["saveEndpoint"]
