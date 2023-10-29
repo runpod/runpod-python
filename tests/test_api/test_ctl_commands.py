@@ -328,3 +328,27 @@ class TestCTL(unittest.TestCase):
             )
 
             self.assertEqual(template["id"], "TEMPLATE_ID")
+
+    def test_create_endpoint(self):
+        '''
+        Tests create_endpoint
+        '''
+        with patch("runpod.api.graphql.requests.post") as patch_request, \
+             patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
+
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "saveEndpoint": {
+                        "id": "ENDPOINT_ID"
+                    }
+                }
+            }
+
+            patch_get_gpu.return_value = None
+
+            endpoint = ctl_commands.create_endpoint(
+                name="ENDPOINT_NAME",
+                template_id="TEMPLATE_ID"
+            )
+
+            self.assertEqual(endpoint["id"], "ENDPOINT_ID")

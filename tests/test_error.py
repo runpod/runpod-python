@@ -17,7 +17,7 @@ class TestErrorClasses(unittest.TestCase):
     def test_run_pod_error_without_message(self):
         """Test the RunPodError class without a message."""
         err = RunPodError()
-        self.assertEqual(str(err), "")
+        self.assertEqual(str(err), None)
 
     def test_authentication_error(self):
         """Test the AuthenticationError class."""

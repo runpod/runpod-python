@@ -11,6 +11,7 @@ from .queries import gpus
 from .queries import pods as pod_queries
 from .graphql import run_graphql_query
 from .mutations import pods as pod_mutations
+from .mutations import endpoints as endpoint_mutations
 
 # Templates
 from .mutations import templates as template_mutations
@@ -226,3 +227,38 @@ def create_template(
     )
 
     return raw_response["data"]["saveTemplate"]
+
+def create_endpoint(
+        name:str, template_id:str, gpu_ids:str="AMPERE_16",
+        network_volume_id:str=None, locations:str=None,
+        idle_timeout:int=5, scaler_type:str="QUEUE_DELAY", scaler_value:int=4,
+        workers_min:int=0, workers_max:int=3
+):
+    '''
+    Create an endpoint
+
+    :param name: the name of the endpoint
+    :param template_id: the id of the template to use for the endpoint
+    :param gpu_ids: the ids of the GPUs to use for the endpoint
+    :param network_volume_id: the id of the network volume to use for the endpoint
+    :param locations: the locations to use for the endpoint
+    :param idle_timeout: the idle timeout for the endpoint
+    :param scaler_type: the scaler type for the endpoint
+    :param scaler_value: the scaler value for the endpoint
+    :param workers_min: the minimum number of workers for the endpoint
+    :param workers_max: the maximum number of workers for the endpoint
+
+    :example:
+
+    >>> endpoint_id = runpod.create_endpoint("test", "template_id")
+    '''
+    raw_response = run_graphql_query(
+        endpoint_mutations.generate_endpoint_mutation(
+            name, template_id, gpu_ids,
+            network_volume_id, locations,
+            idle_timeout, scaler_type, scaler_value,
+            workers_min, workers_max
+        )
+    )
+
+    return raw_response["data"]["saveEndpoint"]

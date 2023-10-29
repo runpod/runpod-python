@@ -57,7 +57,6 @@ def generate_pod_template(
     # Format the input fields into a string
     input_fields_string = ", ".join(input_fields)
 
-    # Format the mutation string
     return f"""
     mutation {{
         saveTemplate(
