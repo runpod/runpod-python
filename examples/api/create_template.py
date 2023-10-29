@@ -1,3 +1,5 @@
+""" Example of creating a template with the Runpod API. """
+
 import runpod
 
 # Set your global API key with `runpod config` or uncomment the line below:

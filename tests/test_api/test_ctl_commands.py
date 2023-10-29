@@ -304,3 +304,27 @@ class TestCTL(unittest.TestCase):
             pods = ctl_commands.get_pod("POD_ID")
 
             self.assertEqual(pods["id"], "POD_ID")
+
+    def test_create_template(self):
+        '''
+        Tests create_template
+        '''
+        with patch("runpod.api.graphql.requests.post") as patch_request, \
+             patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
+
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "saveTemplate": {
+                        "id": "TEMPLATE_ID"
+                    }
+                }
+            }
+
+            patch_get_gpu.return_value = None
+
+            template = ctl_commands.create_template(
+                name="TEMPLATE_NAME",
+                image_name="IMAGE_NAME"
+            )
+
+            self.assertEqual(template["id"], "TEMPLATE_ID")
