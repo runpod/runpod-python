@@ -3,10 +3,10 @@ RunPod | CLI | Utils | SSH Command
 
 Connect and run commands over SSH.
 '''
+import threading
 import subprocess
 import colorama
 import paramiko
-import threading
 
 from .rp_info import get_pod_ssh_ip_port
 from .rp_userspace import find_ssh_key_file
@@ -56,12 +56,13 @@ class SSHConnection:
         for command in commands:
             command = f'source /root/.bashrc && {command}'
             command = f'source /etc/rp_environment && {command}'
+            command = f'while IFS= read -r -d \'\' line; do export "$line"; done < /proc/1/environ && {command}'
             _, stdout, stderr = self.ssh.exec_command(command)
 
             stdout_thread = threading.Thread(
                 target=handle_stream, args=(stdout, colorama.Fore.GREEN, self.pod_id))
             stderr_thread = threading.Thread(
-                target=handle_stream, args=(stderr, colorama.Fore.RED, f"{self.pod_id} ERROR"))
+                target=handle_stream, args=(stderr, colorama.Fore.RED, self.pod_id))
 
             stdout_thread.start()
             stderr_thread.start()
