@@ -16,6 +16,7 @@ def generate_pod_template(
 
     # ------------------------------ Optional Fields ----------------------------- #
     if docker_start_cmd is not None:
+        docker_start_cmd = docker_start_cmd.replace('"', '\\"')
         input_fields.append(f'dockerArgs: "{docker_start_cmd}"')
     else:
         input_fields.append('dockerArgs: ""')

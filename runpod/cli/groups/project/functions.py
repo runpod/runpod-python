@@ -295,11 +295,18 @@ def create_project_endpoint():
     for variable in config['project']['env_vars']:
         environment_variables[variable] = config['project']['env_vars'][variable]
 
+    # Construct the docker start command
+    docker_start_cmd_prefix = 'bash -c "'
+    activate_cmd = f'. /runpod-volume/{config["project"]["uuid"]}/venv/bin/activate'
+    python_cmd = f'python -u /runpod-volume/{config["project"]["uuid"]}/{config["project"]["name"]}/{config["runtime"]["handler_path"]}' # pylint: disable=line-too-long
+    docker_start_cmd_suffix = '"'
+    docker_start_cmd = docker_start_cmd_prefix + activate_cmd + ' && ' + python_cmd + docker_start_cmd_suffix # pylint: disable=line-too-long
+
     project_endpoint_template = create_template(
         name =  f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
         image_name = config['project']['base_image'],
         container_disk_in_gb = config['project']['container_disk_size_gb'],
-        docker_start_cmd = f'bash -c ". /runpod-volume/{config["project"]["uuid"]}/venv/bin/activate && python -u /runpod-volume/{config["project"]["uuid"]}/{config["project"]["name"]}/{config["runtime"]["handler_path"]}"', # pylint: disable=line-too-long
+        docker_start_cmd = docker_start_cmd,
         env = environment_variables, is_serverless = True
     )
 

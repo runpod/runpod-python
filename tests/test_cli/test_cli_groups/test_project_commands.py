@@ -86,14 +86,25 @@ class TestProjectCLI(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starting project API server...", result.output)
 
-    def test_deploy_project(self):
-        '''
-        Tests the deploy_project command.
-        '''
-        with patch('runpod.cli.groups.project.commands.deploy_project') as mock_deploy:
-            mock_deploy.return_value = None
-            result = self.runner.invoke(deploy_project)
+class TestDeployProject(unittest.TestCase):
 
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn("Deploying project...", result.output)
-        mock_deploy.assert_called_once()
+    @patch('runpod.cli.groups.project.commands.click.echo')
+    @patch('runpod.cli.groups.project.commands.create_project_endpoint')
+    def test_deploy_project(self, mock_create_project_endpoint, mock_click_echo):
+
+        # Set up mock returns
+        mock_create_project_endpoint.return_value = 'test_endpoint_id'
+
+        # Call the function
+        deploy_project()
+
+        # Check if the create_project_endpoint function was called
+        mock_create_project_endpoint.assert_called_once()
+
+        # Check if the messages were echoed correctly
+        mock_click_echo.assert_any_call("Deploying project...")
+        mock_click_echo.assert_any_call("Project deployed successfully! Endpoint ID: test_endpoint_id")
+        mock_click_echo.assert_any_call("The following urls are available:")
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/runsync")
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/run")
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/health")

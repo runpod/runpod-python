@@ -3,7 +3,7 @@
 tittle = "quick-test"
 
 [project]
-uuid = "da6340b7"
+uuid = "55f61027"
 name = "quick-test"
 base_image = "runpod/base:0.1.0"
 gpu_types = ["NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000", "NVIDIA GeForce RTX 3090", "NVIDIA RTX A6000"]
@@ -14,7 +14,7 @@ ports = "8080/http, 22/tcp"
 container_disk_size_gb = 10
 
 [project.env_vars]
-RUNPOD_PROJECT_ID = "da6340b7"
+RUNPOD_PROJECT_ID = "55f61027"
 
 [template]
 model_type = "default"
