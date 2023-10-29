@@ -10,7 +10,7 @@ import click
 import tomlkit
 from tomlkit import document, comment, table, nl
 
-from runpod import get_pod, __version__
+from runpod import __version__, get_pod, create_template, create_endpoint
 from runpod.cli.utils.ssh_cmd import SSHConnection
 from .helpers import get_project_pod, copy_template_files, attempt_pod_launch, load_project_config
 from ...utils.rp_sync import sync_directory
@@ -281,3 +281,34 @@ def start_project_api():
         ssh_conn.run_commands(launch_api_server)
     finally:
         ssh_conn.close()
+
+
+# ------------------------------ Deploy Project ------------------------------ #
+def create_project_endpoint():
+    """ Create a project endpoint.
+    - Create a serverless template for the project
+    - Create a new endpoint using the template
+    """
+    config = load_project_config()
+
+    environment_variables = {}
+    for variable in config['project']['env_vars']:
+        environment_variables[variable] = config['project']['env_vars'][variable]
+
+    project_endpoint_template = create_template(
+        name =  f'{config["project"]["name"]}-endpoint ({config["project"]["uuid"]})',
+        image_name = config['project']['base_image'],
+        container_disk_in_gb = config['project']['container_disk_size_gb'],
+        docker_start_cmd = f'source /runpod-volume/{config["project"]["uuid"]}/venv/bin/activate && python -u /runpod-volume/{config["project"]["uuid"]}/{config["project"]["name"]}/{config["runtime"]["handler_path"]}', # pylint: disable=line-too-long
+        env = environment_variables, is_serverless = True
+    )
+
+    print(project_endpoint_template)
+
+    deployed_endpoint = create_endpoint(
+        name = f'{config["project"]["name"]}-endpoint ({config["project"]["uuid"]})',
+        template_id = project_endpoint_template['id'],
+        network_volume_id=config['project']['storage_id'],
+    )
+
+    print(deployed_endpoint)

@@ -1,0 +1,26 @@
+# RunPod Project Configuration
+
+tittle = "quick-test"
+
+[project]
+uuid = "da6340b7"
+name = "quick-test"
+base_image = "runpod/base:0.1.0"
+gpu_types = ["NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000", "NVIDIA GeForce RTX 3090", "NVIDIA RTX A6000"]
+gpu_count = 1
+storage_id = "v4siqtf0lr"
+volume_mount_path = "/runpod-volume"
+ports = "8080/http, 22/tcp"
+container_disk_size_gb = 10
+
+[project.env_vars]
+RUNPOD_PROJECT_ID = "da6340b7"
+
+[template]
+model_type = "default"
+model_name = "None"
+
+[runtime]
+python_version = "3.10"
+handler_path = "src/handler.py"
+requirements_path = "builder/requirements.txt"
