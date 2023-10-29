@@ -56,7 +56,7 @@ class SSHConnection:
         for command in commands:
             command = f'source /root/.bashrc && {command}'
             command = f'source /etc/rp_environment && {command}'
-            command = f'while IFS= read -r -d \'\' line; do export "$line"; done < /proc/1/environ && {command}'
+            command = f'while IFS= read -r -d \'\' line; do export "$line"; done < /proc/1/environ && {command}' # pylint: disable=line-too-long
             _, stdout, stderr = self.ssh.exec_command(command)
 
             stdout_thread = threading.Thread(
