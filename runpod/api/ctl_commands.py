@@ -12,6 +12,9 @@ from .queries import pods as pod_queries
 from .graphql import run_graphql_query
 from .mutations import pods as pod_mutations
 
+# Templates
+from .mutations import templates as template_mutations
+
 def get_user() -> dict:
     '''
     Get the current user
@@ -188,3 +191,38 @@ def terminate_pod(pod_id: str):
     run_graphql_query(
         pod_mutations.generate_pod_terminate_mutation(pod_id)
     )
+
+
+def create_template(
+        name:str, image_name:str, docker_start_cmd:str=None,
+        container_disk_in_gb:int=10, volume_in_gb:int=None, volume_mount_path:str=None,
+        ports:str=None, env:dict=None, is_serverless:bool=False
+):
+    '''
+    Create a template
+
+    :param name: the name of the template
+    :param image_name: the name of the docker image to be used by the template
+    :param docker_start_cmd: the command to start the docker container with
+    :param container_disk_in_gb: how big should the container disk be
+    :param volume_in_gb: how big should the volume be
+    :param ports: the ports to open in the pod, example format - "8888/http,666/tcp"
+    :param volume_mount_path: where to mount the volume?
+    :param env: the environment variables to inject into the pod,
+                for example {EXAMPLE_VAR:"example_value", EXAMPLE_VAR2:"example_value 2"}, will
+                inject EXAMPLE_VAR and EXAMPLE_VAR2 into the pod with the mentioned values
+    :param is_serverless: is the template serverless?
+
+    :example:
+
+    >>> template_id = runpod.create_template("test", "runpod/stack", "python3 main.py")
+    '''
+    raw_response = run_graphql_query(
+        template_mutations.generate_pod_template(
+            name, image_name, docker_start_cmd,
+            container_disk_in_gb, volume_in_gb, volume_mount_path,
+            ports, env, is_serverless
+        )
+    )
+
+    return raw_response["data"]["saveTemplate"]

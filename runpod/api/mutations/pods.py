@@ -62,13 +62,7 @@ def generate_pod_deployment_mutation(
         input_fields.append(f'templateId: "{template_id}"')
 
     if network_volume_id is not None:
-        # network_volume_fragment = f'''
-        # networkVolume: {{
-        #     id: "{network_volume_id}"
-        # }}
-        # '''
-        network_volume_fragment = f'networkVolumeId: "{network_volume_id}"'
-        input_fields.append(network_volume_fragment)
+        input_fields.append(f'networkVolumeId: "{network_volume_id}"')
 
     # Format input fields
     input_string = ", ".join(input_fields)

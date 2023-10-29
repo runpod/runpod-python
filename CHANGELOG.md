@@ -1,6 +1,6 @@
 # Change Log
 
-## Release 1.3.1 (TBD)
+## Release 1.3.1 (10/29/23)
 
 ### Added
 
@@ -8,9 +8,11 @@
 - Generator/Streaming handlers supported with local testing
 - [BETA] CLI DevEx functionality to create development projects.
 
+---
+
 ## Release 1.3.0 (10/12/23)
 
-### Changes
+### Changed
 
 - Backwards compatibility with Python >= 3.8
 - Consolidated install dependencies to `requirements.txt`
@@ -23,7 +25,7 @@
 
 ## Release 1.2.6 (10/6/23)
 
-### Changes
+### Changed
 
 - Force `urllib3` logging to `WARNING` level to avoid spamming the console if global logging level is set to `DEBUG`.
 
@@ -40,7 +42,7 @@
 
 ## ~~Release (Patch) 1.2.3 (10/4/23)~~ Replaced by 1.2.5
 
-### Bug Fix
+### Fixed
 
 - Job outputs that were not dictionaries, bool, or str were swallowed by the serverless worker. This has been fixed.
 
@@ -55,7 +57,7 @@
 - `network_volume_id` can now be passed in when creating new pods, correct data center is automatically selected.
 - `template_id` can now be passed in when creating new pods.
 
-### Changes
+### Changed
 
 - Dependencies updated to latest versions.
 - Reduced circular imports for version reference.
@@ -91,7 +93,7 @@
 - Can generate a credentials file from the CLI to store your API key.
 - `get_gpu` now supports `gpu_quantity` as a parameter.
 
-### Changes
+### Changed
 
 - Minimized the use of pytests in favor of unittests.
 - Re-named `api_wrapper` to `api` for consistency.
