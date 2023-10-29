@@ -8,6 +8,7 @@ def generate_endpoint_mutation(
     idle_timeout:int=5, scaler_type:str="QUEUE_DELAY", scaler_value:int=4,
     workers_min:int=0, workers_max:int=3
 ):
+    """ Generate a string for a GraphQL mutation to create a new endpoint. """
     input_fields = []
 
     # ------------------------------ Required Fields ----------------------------- #
