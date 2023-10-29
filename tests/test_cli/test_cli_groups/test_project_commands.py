@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 from runpod.cli.groups.project.commands import (
-    new_project_wizard, launch_project_pod, start_project_pod)
+    new_project_wizard, launch_project_pod, start_project_pod,
+    deploy_project
+)
 
 class TestProjectCLI(unittest.TestCase):
     ''' A collection of tests for the Project CLI commands. '''
@@ -83,3 +85,15 @@ class TestProjectCLI(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starting project API server...", result.output)
+
+    def test_deploy_project(self):
+        '''
+        Tests the deploy_project command.
+        '''
+        with patch('runpod.cli.groups.project.commands.deploy_project') as mock_deploy:
+            mock_deploy.return_value = None
+            result = self.runner.invoke(deploy_project)
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Deploying project...", result.output)
+        mock_deploy.assert_called_once()

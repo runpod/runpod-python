@@ -94,6 +94,10 @@ def deploy_project():
     """ Deploy the project to RunPod. """
     click.echo("Deploying project...")
 
-    create_project_endpoint()
+    endpoint_id = create_project_endpoint()
 
-    click.echo("Project deployed successfully!")
+    click.echo(f"Project deployed successfully! Endpoint ID: {endpoint_id}")
+    click.echo("The following urls are available:")
+    click.echo(f"    - https://api.runpod.ai/v2/{endpoint_id}/runsync")
+    click.echo(f"    - https://api.runpod.ai/v2/{endpoint_id}/run")
+    click.echo(f"    - https://api.runpod.ai/v2/{endpoint_id}/health")

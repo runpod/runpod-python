@@ -296,19 +296,17 @@ def create_project_endpoint():
         environment_variables[variable] = config['project']['env_vars'][variable]
 
     project_endpoint_template = create_template(
-        name =  f'{config["project"]["name"]}-endpoint ({config["project"]["uuid"]})',
+        name =  f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
         image_name = config['project']['base_image'],
         container_disk_in_gb = config['project']['container_disk_size_gb'],
-        docker_start_cmd = f'source /runpod-volume/{config["project"]["uuid"]}/venv/bin/activate && python -u /runpod-volume/{config["project"]["uuid"]}/{config["project"]["name"]}/{config["runtime"]["handler_path"]}', # pylint: disable=line-too-long
+        docker_start_cmd = f'bash -c ". /runpod-volume/{config["project"]["uuid"]}/venv/bin/activate && python -u /runpod-volume/{config["project"]["uuid"]}/{config["project"]["name"]}/{config["runtime"]["handler_path"]}"', # pylint: disable=line-too-long
         env = environment_variables, is_serverless = True
     )
 
-    print(project_endpoint_template)
-
     deployed_endpoint = create_endpoint(
-        name = f'{config["project"]["name"]}-endpoint ({config["project"]["uuid"]})',
+        name = f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
         template_id = project_endpoint_template['id'],
         network_volume_id=config['project']['storage_id'],
     )
 
-    print(deployed_endpoint)
+    return deployed_endpoint['id']
