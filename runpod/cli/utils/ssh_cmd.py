@@ -6,6 +6,7 @@ Connect and run commands over SSH.
 import subprocess
 import colorama
 import paramiko
+import threading
 
 from .rp_info import get_pod_ssh_ip_port
 from .rp_userspace import find_ssh_key_file
@@ -47,14 +48,26 @@ class SSHConnection:
 
     def run_commands(self, commands):
         ''' Runs a list of bash commands over SSH. '''
+        def handle_stream(stream, color, prefix):
+            for line in stream:
+                if line:
+                    print(color + f"[{prefix}]", line.strip())
+
         for command in commands:
             command = f'source /root/.bashrc && {command}'
             command = f'source /etc/rp_environment && {command}'
             _, stdout, stderr = self.ssh.exec_command(command)
-            for line in stdout:
-                print(colorama.Fore.GREEN + f"[{self.pod_id}]", line.strip())
-            for line in stderr:
-                print(colorama.Fore.RED + f"[{self.pod_id} ERROR]", line.strip())
+
+            stdout_thread = threading.Thread(
+                target=handle_stream, args=(stdout, colorama.Fore.GREEN, self.pod_id))
+            stderr_thread = threading.Thread(
+                target=handle_stream, args=(stderr, colorama.Fore.RED, f"{self.pod_id} ERROR"))
+
+            stdout_thread.start()
+            stderr_thread.start()
+
+            stdout_thread.join()
+            stderr_thread.join()
 
     def put_file(self, local_path, remote_path):
         ''' Copy local file to remote machine over SSH. '''
