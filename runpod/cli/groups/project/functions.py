@@ -250,12 +250,13 @@ def start_project_api():
         # Start the API server in the background, and save the PID
         python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
         last_pid=$!
+
         echo -e "- Started API server with PID: $last_pid" && echo ""
         echo "> Connect to the API server at:"
         echo "https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
 
         while true; do
-            if changed_file=$(inotifywait -r -e modify,create,delete --exclude "$exclude_pattern" {remote_project_path} --format '%w%f'); then
+            if changed_file=$(inotifywait -q -r -e modify,create,delete --exclude "$exclude_pattern" {remote_project_path} --format '%w%f'); then
                 echo "Detected changes in: $changed_file"
             else
                 echo "Failed to detect changes."
@@ -269,10 +270,9 @@ def start_project_api():
                 python -m pip install --upgrade pip && python -m pip install -r {requirements_path}
             fi
 
-            sleep 1 #Debounce
-
             python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
             last_pid=$!
+
             echo "Restarted API server with PID: $last_pid"
         done
     ''']
