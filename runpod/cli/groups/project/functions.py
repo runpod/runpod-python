@@ -270,8 +270,6 @@ def start_project_api():
                 python -m pip install --upgrade pip && python -m pip install -r {requirements_path}
             fi
 
-            sleep 1 #Debounce
-
             python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
             last_pid=$!
 
