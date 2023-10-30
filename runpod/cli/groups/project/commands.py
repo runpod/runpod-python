@@ -37,20 +37,26 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     validate_project_name(project_name)
 
     network_volumes = get_user()['networkVolumes']
-    def print_net_vol(vol): 
-        return {'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
-                'value':vol['id']}
-    network_volumes = list(map(print_net_vol,network_volumes))
-    questions = [
-        {
-            'type': 'rawlist',
-            'name': 'volume-id',
-            'qmark': '',
-            'message': '   > Select a Network Volume:',
-            'choices': network_volumes
-        }
-    ]
-    runpod_volume_id = prompt(questions)['volume-id']
+    runpod_volume_id = ''
+    if len(network_volumes) == 0:
+        runpod_volume_id = click.prompt(
+        "   > Create a network volume (https://runpod.io/console/user/storage), then paste its id here", type=str)
+    else:
+        def print_net_vol(vol): 
+            return {'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
+                    'value':vol['id']}
+        network_volumes = list(map(print_net_vol,network_volumes))
+        questions = [
+            {
+                'type': 'rawlist',
+                'name': 'volume-id',
+                'qmark': '',
+                'amark': '',
+                'message': '   > Select a Network Volume:',
+                'choices': network_volumes
+            }
+        ]
+        runpod_volume_id = prompt(questions)['volume-id']
 
     python_version = click.prompt(
         "   > Select a Python version, or press enter to use the default",
