@@ -11,6 +11,7 @@ pillow >= 9.5.0
 prettytable >= 3.8.0
 py-cpuinfo >= 9.0.0
 python-dotenv >= 1.0.0
+inquirerpy == 0.3.4
 requests >= 2.31.0
 tomli >= 2.0.1
 tomlkit >= 0.12.1

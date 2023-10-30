@@ -4,7 +4,9 @@ RunPod | CLI | Project | Commands
 
 import os
 import click
+from InquirerPy import prompt
 
+from runpod import get_user
 from .functions import (
     create_new_project, launch_project, start_project_api, create_project_endpoint
 )
@@ -34,8 +36,21 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
 
     validate_project_name(project_name)
 
-    runpod_volume_id = click.prompt(
-        "   > Enter a network storage ID (https://runpod.io/console/user/storage)", type=str)
+    network_volumes = get_user()['networkVolumes']
+    def print_net_vol(vol): 
+        return {'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
+                'value':vol['id']}
+    network_volumes = list(map(print_net_vol,network_volumes))
+    questions = [
+        {
+            'type': 'rawlist',
+            'name': 'volume-id',
+            'qmark': '',
+            'message': '   > Select a Network Volume:',
+            'choices': network_volumes
+        }
+    ]
+    runpod_volume_id = prompt(questions)['volume-id']
 
     python_version = click.prompt(
         "   > Select a Python version, or press enter to use the default",
