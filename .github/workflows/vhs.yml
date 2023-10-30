@@ -17,17 +17,17 @@ jobs:
           pip install .
 
       # runpod --help
-      - uses: charmbracelet/vhs-action@v1
+      - uses: charmbracelet/vhs-action@v2
         with:
           path: ".github/tape_collection/cli_help.tape"
 
       # runpod config
-      - uses: charmbracelet/vhs-action@v1
+      - uses: charmbracelet/vhs-action@v2
         with:
           path: ".github/tape_collection/cli_config.tape"
 
       # runpod ssh
-      - uses: charmbracelet/vhs-action@v1
+      - uses: charmbracelet/vhs-action@v2
         with:
           path: ".github/tape_collection/cli_ssh.tape"
 
