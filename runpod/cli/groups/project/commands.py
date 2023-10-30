@@ -45,7 +45,8 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
         {
             'type': 'rawlist',
             'name': 'volume-id',
-            'message': ' > Select a Network Volume:',
+            'qmark': '',
+            'message': '   > Select a Network Volume:',
             'choices': network_volumes
         }
     ]
