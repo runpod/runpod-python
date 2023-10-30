@@ -37,7 +37,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     validate_project_name(project_name)
 
     network_volumes = get_user()['networkVolumes']
-    def print_net_vol(vol): 
+    def print_net_vol(vol):
         return {'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
                 'value':vol['id']}
     network_volumes = list(map(print_net_vol,network_volumes))
@@ -46,6 +46,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
             'type': 'rawlist',
             'name': 'volume-id',
             'qmark': '',
+            'amark': '',
             'message': '   > Select a Network Volume:',
             'choices': network_volumes
         }
