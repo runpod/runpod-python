@@ -37,7 +37,9 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     validate_project_name(project_name)
 
     network_volumes = get_user()['networkVolumes']
-    print_net_vol = lambda vol: {'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",'value':vol['id']}
+    def print_net_vol(vol): 
+        return {'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
+                'value':vol['id']}
     network_volumes = list(map(print_net_vol,network_volumes))
     questions = [
         {
