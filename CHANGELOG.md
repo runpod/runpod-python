@@ -1,6 +1,6 @@
 # Change Log
 
-## Release 1.3.1 (10/29/23)
+## Release 1.3.1 (10/30/23)
 
 ### Added
 
