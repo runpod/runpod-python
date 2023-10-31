@@ -16,6 +16,17 @@ class TestProjectCLI(unittest.TestCase):
     def setUp(self):
         self.runner = CliRunner()
 
+    def test_new_project_wizard_no_network_volumes(self):
+        '''
+        Tests the new_project_wizard command with no network volumes.
+        '''
+        with patch('runpod.cli.groups.project.commands.get_user') as mock_get_user:
+            mock_get_user.return_value = {'networkVolumes':[]}
+
+            result = self.runner.invoke(new_project_wizard)
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("You do not have any network volumes.", result.output)
 
     def test_new_project_wizard_success(self):
         '''
@@ -23,9 +34,12 @@ class TestProjectCLI(unittest.TestCase):
         '''
         with patch('click.prompt') as mock_prompt, \
              patch('click.confirm', return_value=True) as mock_confirm, \
-             patch('runpod.cli.groups.project.commands.create_new_project') as mock_create:
-
-            mock_prompt.side_effect = ['TestProject', 'XYZ_VOLUME', '3.10']
+             patch('runpod.cli.groups.project.commands.create_new_project') as mock_create, \
+             patch('runpod.cli.groups.project.commands.get_user') as mock_get_user, \
+             patch('runpod.cli.groups.project.commands.cli_select') as mock_select:
+            mock_get_user.return_value = {'networkVolumes':[{ 'id': 'XYZ_VOLUME', 'name': 'XYZ_VOLUME', 'size': 100, 'dataCenterId': 'XYZ' }]} # pylint: disable=line-too-long
+            mock_prompt.side_effect = ['TestProject', '3.10']
+            mock_select.return_value = {'volume-id': 'XYZ_VOLUME'}
 
             result = self.runner.invoke(new_project_wizard, ['--type', 'llama2', '--model', 'meta-llama/Llama-2-7b']) # pylint: disable=line-too-long
 
@@ -43,8 +57,11 @@ class TestProjectCLI(unittest.TestCase):
         with patch('click.prompt') as mock_prompt, \
              patch('click.confirm', return_value=True) as mock_confirm, \
              patch('runpod.cli.groups.project.commands.create_new_project') as mock_create, \
+             patch('runpod.cli.groups.project.commands.get_user') as mock_get_user, \
+             patch('runpod.cli.groups.project.commands.cli_select') as mock_select, \
              patch('os.getcwd') as mock_getcwd:
-
+            mock_get_user.return_value = {'networkVolumes':[{ 'id': 'XYZ_VOLUME', 'name': 'XYZ_VOLUME', 'size': 100, 'dataCenterId': 'XYZ' }]} # pylint: disable=line-too-long
+            mock_select.return_value = {'volume-id': 'XYZ_VOLUME'}
             mock_prompt.side_effect = ['XYZ_VOLUME', '3.10']
 
             self.runner.invoke(new_project_wizard, ['--init'])
@@ -56,7 +73,10 @@ class TestProjectCLI(unittest.TestCase):
         '''
         Tests the new_project_wizard command with an invalid project name.
         '''
-        result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
+        with patch('runpod.cli.groups.project.commands.get_user') as mock_get_user:
+            mock_get_user.return_value = {'networkVolumes':["XYZ_VOLUME"]}
+
+            result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
 
         self.assertEqual(result.exit_code, 2)
         self.assertIn("Project name contains an invalid character", result.output)
