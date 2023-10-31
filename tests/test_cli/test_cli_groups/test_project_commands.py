@@ -57,13 +57,13 @@ class TestProjectCLI(unittest.TestCase):
         '''
         Tests the new_project_wizard command with an invalid project name.
         '''
-        with patch('runpod.get_user') as mock_get_user:
+        with patch('runpod.cli.groups.project.commands.get_user') as mock_get_user:
             mock_get_user.return_value = {'networkVolumes':["XYZ_VOLUME"]}
 
-        result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
+            result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
 
-        self.assertEqual(result.exit_code, 2)
-        self.assertIn("Project name contains an invalid character", result.output)
+            self.assertEqual(result.exit_code, 2)
+            self.assertIn("Project name contains an invalid character", result.output)
 
 
     def test_launch_project_pod(self):
