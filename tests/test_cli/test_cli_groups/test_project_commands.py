@@ -27,7 +27,7 @@ class TestProjectCLI(unittest.TestCase):
              patch('runpod.cli.groups.project.commands.get_user') as mock_get_user, \
              patch('runpod.cli.groups.project.commands.cli_select') as mock_select:
             mock_get_user.return_value = {'networkVolumes':[{ 'id': 'XYZ_VOLUME', 'name': 'XYZ_VOLUME', 'size': 100, 'dataCenterId': 'XYZ' }]} # pylint: disable=line-too-long
-            mock_prompt.side_effect = ['TestProject', 'XYZ_VOLUME', '3.10']
+            mock_prompt.side_effect = ['TestProject', '3.10']
             mock_select.return_value = {'volume-id': 'XYZ_VOLUME'}
 
             result = self.runner.invoke(new_project_wizard, ['--type', 'llama2', '--model', 'meta-llama/Llama-2-7b']) # pylint: disable=line-too-long
@@ -36,7 +36,7 @@ class TestProjectCLI(unittest.TestCase):
         mock_confirm.assert_called_with("Do you want to continue?", abort=True)
         mock_create.assert_called()
         mock_prompt.assert_called()
-        mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', 'XYZ_VOLUME', '3.10', 'llama2', 'meta-llama/Llama-2-7b', False) # pylint: disable=line-too-long
+        mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '3.10', 'llama2', 'meta-llama/Llama-2-7b', False) # pylint: disable=line-too-long
         self.assertIn("Project TestProject created successfully!", result.output)
 
     def test_new_project_wizard_success_init_current_dir(self):
