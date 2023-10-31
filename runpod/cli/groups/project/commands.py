@@ -4,7 +4,7 @@ RunPod | CLI | Project | Commands
 
 import os
 import click
-from InquirerPy import prompt
+from InquirerPy import prompt as cli_select
 
 from runpod import get_user
 from .functions import (
@@ -58,7 +58,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
             'choices': network_volumes
         }
     ]
-    runpod_volume_id = prompt(questions)['volume-id']
+    runpod_volume_id = cli_select(questions)['volume-id']
 
     python_version = click.prompt(
         "   > Select a Python version, or press enter to use the default",

@@ -24,9 +24,11 @@ class TestProjectCLI(unittest.TestCase):
         with patch('click.prompt') as mock_prompt, \
              patch('click.confirm', return_value=True) as mock_confirm, \
              patch('runpod.cli.groups.project.commands.create_new_project') as mock_create, \
-             patch('runpod.get_user') as mock_get_user:
+             patch('runpod.cli.groups.project.commands.get_user') as mock_get_user, \
+             patch('runpod.cli.groups.project.commands.cli_select') as mock_select:
             mock_get_user.return_value = {'networkVolumes':[{ 'id': 'XYZ_VOLUME', 'name': 'XYZ_VOLUME', 'size': 100, 'dataCenterId': 'XYZ' }]} # pylint: disable=line-too-long
             mock_prompt.side_effect = ['TestProject', 'XYZ_VOLUME', '3.10']
+            mock_select.return_value = "XYZ_VOLUME"
 
             result = self.runner.invoke(new_project_wizard, ['--type', 'llama2', '--model', 'meta-llama/Llama-2-7b']) # pylint: disable=line-too-long
 
@@ -62,8 +64,8 @@ class TestProjectCLI(unittest.TestCase):
 
             result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
 
-            self.assertEqual(result.exit_code, 2)
-            self.assertIn("Project name contains an invalid character", result.output)
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn("Project name contains an invalid character", result.output)
 
 
     def test_launch_project_pod(self):
