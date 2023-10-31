@@ -26,6 +26,11 @@ def project_cli():
 @click.option('--init', '-i', 'init_current_dir', is_flag=True, default=False)
 def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     """ Create a new project. """
+    network_volumes = get_user()['networkVolumes']
+    if len(network_volumes) == 0:
+        click.echo("You do not have any network volumes.")
+        click.echo("Please create a network volume (https://runpod.io/console/user/storage) and try again.") # pylint: disable=line-too-long
+
     click.echo("Creating a new project...")
 
     if init_current_dir:
@@ -36,27 +41,24 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
 
     validate_project_name(project_name)
 
-    network_volumes = get_user()['networkVolumes']
-    runpod_volume_id = ''
-    if len(network_volumes) == 0:
-        runpod_volume_id = click.prompt(
-        "   > Create a network volume (https://runpod.io/console/user/storage), then paste its id here", type=str)
-    else:
-        def print_net_vol(vol): 
-            return {'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
-                    'value':vol['id']}
-        network_volumes = list(map(print_net_vol,network_volumes))
-        questions = [
-            {
-                'type': 'rawlist',
-                'name': 'volume-id',
-                'qmark': '',
-                'amark': '',
-                'message': '   > Select a Network Volume:',
-                'choices': network_volumes
-            }
-        ]
-        runpod_volume_id = prompt(questions)['volume-id']
+    def print_net_vol(vol):
+        return {
+            'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
+            'value':vol['id']
+        }
+
+    network_volumes = list(map(print_net_vol,network_volumes))
+    questions = [
+        {
+            'type': 'rawlist',
+            'name': 'volume-id',
+            'qmark': '',
+            'amark': '',
+            'message': '   > Select a Network Volume:',
+            'choices': network_volumes
+        }
+    ]
+    runpod_volume_id = prompt(questions)['volume-id']
 
     python_version = click.prompt(
         "   > Select a Python version, or press enter to use the default",
