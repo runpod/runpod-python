@@ -24,7 +24,7 @@ class TestProjectCLI(unittest.TestCase):
         with patch('click.prompt') as mock_prompt, \
              patch('click.confirm', return_value=True) as mock_confirm, \
              patch('runpod.cli.groups.project.commands.create_new_project') as mock_create, \
-             patch('runpod.cli.groups.project.commands.get_user') as mock_get_user:
+             patch('runpod.get_user') as mock_get_user:
             mock_get_user.return_value = {'networkVolumes':[{ 'id': 'XYZ_VOLUME', 'name': 'XYZ_VOLUME', 'size': 100, 'dataCenterId': 'XYZ' }]} # pylint: disable=line-too-long
             mock_prompt.side_effect = ['TestProject', 'XYZ_VOLUME', '3.10']
 
@@ -57,7 +57,7 @@ class TestProjectCLI(unittest.TestCase):
         '''
         Tests the new_project_wizard command with an invalid project name.
         '''
-        with patch('runpod.cli.groups.project.commands.get_user') as mock_get_user:
+        with patch('runpod.get_user') as mock_get_user:
             mock_get_user.return_value = {'networkVolumes':["XYZ_VOLUME"]}
 
         result = self.runner.invoke(new_project_wizard, ['--name', 'Invalid/Name'])
