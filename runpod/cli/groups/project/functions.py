@@ -241,14 +241,18 @@ def start_project_api():
         fi
 
         exclude_pattern='(__pycache__|\\.pyc$)'
-        if [[ -f .runpodignore ]]; then
-            while IFS= read -r line; do
-                line=$(echo "$line" | tr -d '[:space:]')
-                [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue # Skip comments and empty lines
-                exclude_pattern="${{exclude_pattern}}|(${{line}})"
-            done < .runpodignore
-            echo -e "- Ignoring files matching pattern: $exclude_pattern"
-        fi
+        function update_exclude_pattern {{
+            exclude_pattern='(__pycache__|\\.pyc$)'
+            if [[ -f .runpodignore ]]; then
+                while IFS= read -r line; do
+                    line=$(echo "$line" | tr -d '[:space:]')
+                    [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue # Skip comments and empty lines
+                    exclude_pattern="${{exclude_pattern}}|(${{line}})"
+                done < .runpodignore
+                echo -e "- Ignoring files matching pattern: $exclude_pattern"
+            fi
+        }}
+        update_exclude_pattern
 
         # Start the API server in the background, and save the PID
         python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
@@ -271,6 +275,10 @@ def start_project_api():
             if [[ $changed_file == *"requirements"* ]]; then
                 echo "Installing new requirements..."
                 python -m pip install --upgrade pip && python -m pip install -r {requirements_path}
+            fi
+
+            if [[ $changed_file == *".runpodignore"* ]]; then
+                update_exclude_pattern
             fi
 
             python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
