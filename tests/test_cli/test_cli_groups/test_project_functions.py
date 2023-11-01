@@ -4,8 +4,6 @@ import os
 import unittest
 from unittest.mock import patch, mock_open
 
-import click
-
 from runpod.cli.groups.project.functions import(
     STARTER_TEMPLATES, create_new_project,
     start_project, create_project_endpoint
@@ -179,10 +177,10 @@ class TestStartProjectAPI(unittest.TestCase):
             'project': {
                 'uuid': '123456',
                 'name': 'test_project',
-                'volume_mount_path': '/mount/path',
-                'python_version': '3.8'
+                'volume_mount_path': '/mount/path'
             },
             'runtime': {
+                'python_version': '3.8',
                 'handler_path': 'handler.py',
                 'requirements_path': 'requirements.txt'
             }
