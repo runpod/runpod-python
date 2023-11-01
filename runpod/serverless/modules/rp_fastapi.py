@@ -92,7 +92,7 @@ class WorkerAPI:
         uvicorn.run(
             self.rp_app, host=api_host,
             port=int(api_port), workers=int(api_concurrency),
-            log_level="info",
+            log_level=os.environ.get("UVICORN_LOG_LEVEL", "info"),
             access_log=False
         )
 
