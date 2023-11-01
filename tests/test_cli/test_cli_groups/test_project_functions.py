@@ -121,6 +121,7 @@ class StartProject(unittest.TestCase):
             },
             'runtime': {
                 'python_version': '3.8',
+                'handler_path': 'handler.py',
                 'requirements_path': 'requirements.txt'
             }
         }

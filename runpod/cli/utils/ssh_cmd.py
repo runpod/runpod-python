@@ -4,11 +4,11 @@ RunPod | CLI | Utils | SSH Command
 Connect and run commands over SSH.
 '''
 import sys
+import signal
 import threading
 import subprocess
 import colorama
 import paramiko
-import signal
 
 from .rp_info import get_pod_ssh_ip_port
 from .rp_userspace import find_ssh_key_file
