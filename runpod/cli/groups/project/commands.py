@@ -92,7 +92,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     click.echo("From your project root run `runpod project launch` to launch a development pod.")
 
 
-# ------------------------------ Launch Project ------------------------------ #
+# ------------------------------- Start Project ------------------------------ #
 @project_cli.command('start')
 def start_project_pod():
     '''
