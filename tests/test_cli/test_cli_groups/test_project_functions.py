@@ -8,8 +8,7 @@ import click
 
 from runpod.cli.groups.project.functions import(
     STARTER_TEMPLATES, create_new_project,
-    launch_project, start_project_api,
-    create_project_endpoint
+    start_project, create_project_endpoint
 )
 
 class TestCreateNewProject(unittest.TestCase):
