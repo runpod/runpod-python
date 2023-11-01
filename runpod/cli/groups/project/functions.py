@@ -65,7 +65,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
     toml_config = document()
     toml_config.add(comment('RunPod Project Configuration'))
     toml_config.add(nl())
-    toml_config.add("tittle", project_name)
+    toml_config.add("title", project_name)
 
     project_table = table()
     project_table.add("uuid", project_uuid)
