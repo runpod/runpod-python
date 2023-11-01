@@ -65,7 +65,7 @@ class TestCreateNewProject(unittest.TestCase):
     def test_replace_placeholders_in_handler(self, mock_open_file, mock_exists): # pylint: disable=line-too-long
         """ Test that placeholders in handler.py are replaced if model_name is given. """
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
-            create_new_project("test_project", "volume_id", "11.8.1", "3.8", model_name="my_model")
+            create_new_project("test_project", "volume_id", "11.8.0", "3.8", model_name="my_model")
         # mock_open_file().write.assert_called_with("data with my_model placeholder")
         assert mock_open_file.called
         assert mock_exists.called
@@ -76,7 +76,7 @@ class TestCreateNewProject(unittest.TestCase):
     def test_create_runpod_toml(self, mock_open_file, mock_exists):
         """ Test that runpod.toml configuration file is created. """
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
-            create_new_project("test_project", "volume_id", "11.8.1", "3.8")
+            create_new_project("test_project", "volume_id", "11.8.0", "3.8")
         toml_file_location = os.path.join(os.getcwd(), "test_project", "runpod.toml")
         mock_open_file.assert_called_with(toml_file_location, 'w', encoding="UTF-8") # pylint: disable=line-too-long
         assert mock_exists.called
@@ -98,7 +98,7 @@ class TestCreateNewProject(unittest.TestCase):
         """ Test that placeholders in requirements.txt are replaced correctly. """
         with patch("runpod.cli.groups.project.functions.__version__", "dev"), \
              patch("runpod.cli.groups.project.functions.copy_template_files"):
-            create_new_project("test_project", "volume_id", "11.8.1", "3.8")
+            create_new_project("test_project", "volume_id", "11.8.0", "3.8")
         assert mock_open_file.called
         assert mock_exists.called
 
@@ -108,7 +108,7 @@ class TestCreateNewProject(unittest.TestCase):
         """ Test that placeholders in requirements.txt are replaced for non-dev versions. """
         with patch("runpod.cli.groups.project.functions.__version__", "1.0.0"), \
              patch("runpod.cli.groups.project.functions.copy_template_files"):
-            create_new_project("test_project", "volume_id", "11.8.1", "3.8")
+            create_new_project("test_project", "volume_id", "11.8.0", "3.8")
         assert mock_open_file.called
         assert mock_exists.called
 
