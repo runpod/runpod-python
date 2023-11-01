@@ -35,6 +35,7 @@ class TestWatcherHandler(unittest.TestCase):
         event_mock.src_path = "some_path/not_ignored_file.txt"
 
         handler.on_any_event(event_mock)
+        handler.on_any_event(event_mock) # Call it twice to test the debouncer
         time.sleep(2)
         mock_action_function.assert_called_once()
 

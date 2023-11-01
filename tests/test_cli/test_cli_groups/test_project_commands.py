@@ -47,7 +47,7 @@ class TestProjectCLI(unittest.TestCase):
         mock_confirm.assert_called_with("Do you want to continue?", abort=True)
         mock_create.assert_called()
         mock_prompt.assert_called()
-        mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '11.1.1', '3.10', 'llama2', 'meta-llama/Llama-2-7b', False) # pylint: disable=line-too-long
+        mock_create.assert_called_with('TestProject', 'XYZ_VOLUME', '11.8.1', '3.10', 'llama2', 'meta-llama/Llama-2-7b', False) # pylint: disable=line-too-long
         self.assertIn("Project TestProject created successfully!", result.output)
 
     def test_new_project_wizard_success_init_current_dir(self):

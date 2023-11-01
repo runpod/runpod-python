@@ -39,7 +39,8 @@ class TestCreateNewProject(unittest.TestCase):
         cuda_version = "11.1.1"
         python_version = "3.9"
 
-        create_new_project(project_name, runpod_volume_id, cuda_version, python_version, init_current_dir=True)
+        create_new_project(
+            project_name, runpod_volume_id, cuda_version, python_version, init_current_dir=True)
         mock_makedirs.assert_not_called()
         mock_file_open.assert_called_with('/tmp/testdir/runpod.toml', 'w', encoding="UTF-8")
         assert mock_getcwd.called
