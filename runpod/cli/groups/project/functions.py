@@ -70,7 +70,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
     project_table = table()
     project_table.add("uuid", project_uuid)
     project_table.add("name", project_name)
-    project_table.add("base_image", "runpod/base:0.2.1")
+    project_table.add("base_image", "runpod/base:0.3.0-cuda11.1.1")
     project_table.add("gpu_types", [
         "NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000",
         "NVIDIA GeForce RTX 3090", "NVIDIA RTX A6000"])
@@ -79,7 +79,10 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
     project_table.add("volume_mount_path", "/runpod-volume")
     project_table.add("ports", "8080/http, 22/tcp")
     project_table.add("container_disk_size_gb", 10)
-    project_table.add("env_vars", {"RUNPOD_PROJECT_ID": project_uuid})
+    project_table.add("env_vars", {
+        "RUNPOD_PROJECT_ID": project_uuid,
+        "UVICORN_LOG_LEVEL": "warning"
+    })
     toml_config.add("project", project_table)
 
     template_table = table()
