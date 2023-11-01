@@ -141,13 +141,15 @@ class TestStartProject(unittest.TestCase):
         mock_ssh_instance = mock_ssh_connection.return_value
         mock_ssh_instance.run_commands.return_value = None
 
-        start_project()
+        with patch('runpod.cli.groups.project.functions.sync_directory') as mock_sync_directory:
+            start_project()
 
         mock_attempt_pod_launch.assert_called()
         mock_get_pod.assert_called_with('new_pod_id')
         mock_ssh_connection.assert_called_with('new_pod_id')
         mock_ssh_instance.run_commands.assert_called()
         assert mock_getcwd.called
+        assert mock_sync_directory.called
 
     @patch('runpod.cli.groups.project.functions.get_project_pod')
     @patch('runpod.cli.groups.project.functions.attempt_pod_launch')
