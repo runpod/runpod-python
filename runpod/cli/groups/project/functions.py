@@ -248,8 +248,8 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
         last_pid=$!
 
         echo -e "- Started API server with PID: $last_pid" && echo ""
-        echo "> Connect to the API server at:"
-        echo "  https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
+        echo "Connect to the API server at:"
+        echo ">  https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
 
         while true; do
             if changed_file=$(inotifywait -q -r -e modify,create,delete --exclude "$exclude_pattern" {remote_project_path} --format '%w%f'); then
