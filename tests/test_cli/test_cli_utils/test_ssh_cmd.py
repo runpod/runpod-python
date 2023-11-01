@@ -78,3 +78,10 @@ class TestSSHConnection(unittest.TestCase):
         ''' Test that rsync() calls subprocess.run(). '''
         self.ssh_connection.rsync('local_path', 'remote_path', quiet=True)
         mock_subprocess.assert_called_once()
+
+    # Test that the signal handler closes the connection.
+    @patch('runpod.cli.utils.ssh_cmd.SSHConnection.close')
+    def test_signal_handler(self, mock_close):
+        ''' Test that the signal handler closes the connection. '''
+        self.ssh_connection._signal_handler(None, None) # pylint: disable=protected-access
+        mock_close.assert_called_once()
