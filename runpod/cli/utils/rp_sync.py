@@ -2,7 +2,6 @@
 Watches a directory for changes and syncs them to a remote directory.
 """
 
-import os
 import time
 import threading
 
