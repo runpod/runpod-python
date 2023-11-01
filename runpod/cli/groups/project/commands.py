@@ -64,7 +64,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
 
     cuda_version = click.prompt(
         "   > Select a CUDA version, or press enter to use the default",
-        type=click.Choice(['11.1.1', '11.8.1', '12.1.0'], case_sensitive=False),
+        type=click.Choice(['11.1.1', '11.8.0', '12.1.0'], case_sensitive=False),
         default='11.8.1'
     )
 
