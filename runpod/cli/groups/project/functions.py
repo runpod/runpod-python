@@ -167,12 +167,12 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
     ssh_conn.run_commands([f'mkdir -p {remote_project_path}'])
 
     # Copy local files to the pod project folder
-    print(f'Syncing files to pod {new_pod["id"]}')
+    print(f'Syncing files to pod {project_pod_id}')
     ssh_conn.rsync(os.getcwd(), project_path_uuid)
 
     # Create the virtual environment
     venv_path = os.path.join(project_path_uuid, "venv")
-    print(f'Activating Python virtual environment: {venv_path} on pod {new_pod["id"]}')
+    print(f'Activating Python virtual environment: {venv_path} on pod {project_pod_id}')
     commands = [
         f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
         f'source {venv_path}/bin/activate &&' \
