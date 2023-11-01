@@ -83,5 +83,7 @@ class TestSSHConnection(unittest.TestCase):
     @patch('runpod.cli.utils.ssh_cmd.SSHConnection.close')
     def test_signal_handler(self, mock_close):
         ''' Test that the signal handler closes the connection. '''
-        self.ssh_connection._signal_handler(None, None) # pylint: disable=protected-access
+        with patch('sys.exit') as mock_exit:
+            self.ssh_connection._signal_handler(None, None) # pylint: disable=protected-access
         mock_close.assert_called_once()
+        assert mock_exit.called
