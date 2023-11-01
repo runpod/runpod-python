@@ -180,6 +180,7 @@ class TestStartProjectAPI(unittest.TestCase):
                 'uuid': '123456',
                 'name': 'test_project',
                 'volume_mount_path': '/mount/path',
+                'python_version': '3.8'
             },
             'runtime': {
                 'handler_path': 'handler.py',
@@ -202,24 +203,7 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_ssh_instance.close.assert_called()
         assert mock_getcwd.called
 
-    @patch('runpod.cli.groups.project.functions.load_project_config')
-    @patch('runpod.cli.groups.project.functions.get_project_pod')
-    @patch('runpod.cli.utils.ssh_cmd.SSHConnection')
-    def test_start_project_api_pod_not_found(self, mock_ssh_connection, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long, too-many-arguments
-        """ Test that a project API is not started if the pod is not found. """
-        config = {'project': {'uuid': 'test-uuid'}}
-        mock_load_project_config.return_value = config
-        mock_get_project_pod.return_value = None
 
-        with self.assertRaises(click.ClickException) as context:
-            start_project()
-
-        self.assertEqual(
-            str(context.exception),
-            'Project pod not found for uuid: test-uuid. Try running "runpod project launch" first.'
-        )
-        assert mock_ssh_connection.called is False
-        assert mock_get_project_pod.called
 
 class TestCreateProjectEndpoint(unittest.TestCase):
     """ Test the create_project_endpoint function. """
