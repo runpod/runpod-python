@@ -79,7 +79,7 @@ def create_new_project(project_name, runpod_volume_id, cuda_version, python_vers
     project_table.add("ports", "8080/http, 22/tcp")
     project_table.add("container_disk_size_gb", 10)
     project_table.add("env_vars", {
-        "RUNPOD_DEBUG_LEVEL": "info",
+        "RUNPOD_DEBUG_LEVEL": "debug",
         "UVICORN_LOG_LEVEL": "warning"
     })
     toml_config.add("project", project_table)
@@ -249,7 +249,7 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
 
         echo -e "- Started API server with PID: $last_pid" && echo ""
         echo "> Connect to the API server at:"
-        echo "https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
+        echo "  https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
 
         while true; do
             if changed_file=$(inotifywait -q -r -e modify,create,delete --exclude "$exclude_pattern" {remote_project_path} --format '%w%f'); then
@@ -274,7 +274,8 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
     ''']
 
     try:
-        print("Starting project API server...")
+        print("")
+        print("Starting project development endpoint...")
         ssh_conn.run_commands(launch_api_server)
     finally:
         ssh_conn.close()
