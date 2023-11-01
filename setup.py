@@ -30,9 +30,7 @@ if __name__ == "__main__":
     setup(
         name = 'runpod',
 
-        use_scm_version = {
-            'write_to': 'runpod/_version.py'
-        },
+        use_scm_version = True,
 
         setup_requires = [
             'setuptools>=45',
