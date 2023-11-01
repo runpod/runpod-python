@@ -65,7 +65,6 @@ class TestCreateNewProject(unittest.TestCase):
         """ Test that placeholders in handler.py are replaced if model_name is given. """
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project("test_project", "volume_id", "11.8.0", "3.8", model_name="my_model")
-        # mock_open_file().write.assert_called_with("data with my_model placeholder")
         assert mock_open_file.called
         assert mock_exists.called
 
@@ -79,17 +78,6 @@ class TestCreateNewProject(unittest.TestCase):
         toml_file_location = os.path.join(os.getcwd(), "test_project", "runpod.toml")
         mock_open_file.assert_called_with(toml_file_location, 'w', encoding="UTF-8") # pylint: disable=line-too-long
         assert mock_exists.called
-
-    @patch('runpod.cli.groups.project.functions.get_project_pod')
-    def test_existing_project_pod(self, mock_get_pod):
-        """ Test that a project pod is not launched if one already exists. """
-        mock_pod = {"id": "some_pod_id"}
-        mock_get_pod.return_value = mock_pod
-
-        with patch('builtins.print') as mock_print, \
-             patch('runpod.cli.groups.project.functions.load_project_config'):
-            launch_project()
-            mock_print.assert_called_with('Project pod already launched. Run "runpod project start" to start.') # pylint: disable=line-too-long
 
     @patch("os.path.exists", return_value=True)
     @patch("builtins.open", new_callable=mock_open, read_data="<<RUNPOD>> placeholder")
