@@ -18,7 +18,7 @@ from ...utils.rp_sync import sync_directory
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
 # -------------------------------- New Project ------------------------------- #
-def create_new_project(project_name, runpod_volume_id, python_version, # pylint: disable=too-many-locals, too-many-arguments, too-many-statements
+def create_new_project(project_name, runpod_volume_id, cuda_version, python_version,  # pylint: disable=too-many-locals, too-many-arguments, too-many-statements
                        model_type=None, model_name=None, init_current_dir=False):
     """ Create a new project. """
     if not init_current_dir:
@@ -70,7 +70,7 @@ def create_new_project(project_name, runpod_volume_id, python_version, # pylint:
     project_table = table()
     project_table.add("uuid", project_uuid)
     project_table.add("name", project_name)
-    project_table.add("base_image", "runpod/base:0.3.0-cuda11.1.1")
+    project_table.add("base_image", f"runpod/base:0.3.0-cuda{cuda_version}")
     project_table.add("gpu_types", [
         "NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000",
         "NVIDIA GeForce RTX 3090", "NVIDIA RTX A6000"])

@@ -62,6 +62,12 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     ]
     runpod_volume_id = cli_select(questions)['volume-id']
 
+    cuda_version = click.prompt(
+        "   > Select a CUDA version, or press enter to use the default",
+        type=click.Choice(['11.1.1', '11.8.1', '12.1.0'], case_sensitive=False),
+        default='11.8.1'
+    )
+
     python_version = click.prompt(
         "   > Select a Python version, or press enter to use the default",
         type=click.Choice(['3.8', '3.9', '3.10', '3.11'], case_sensitive=False),
@@ -73,14 +79,15 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
 
     click.echo(f"   - Project Name: {project_name}")
     click.echo(f"   - RunPod Network Storage ID: {runpod_volume_id}")
+    click.echo(f"   - CUDA Version: {cuda_version}")
     click.echo(f"   - Python Version: {python_version}")
 
     click.echo("")
     click.echo("The project will be created in the current directory.")
     click.confirm("Do you want to continue?", abort=True)
 
-    create_new_project(project_name, runpod_volume_id,
-                       python_version, model_type, model_name, init_current_dir)
+    create_new_project(project_name, runpod_volume_id, cuda_version,
+                       python_version, model_type, model_name, init_current_dir) # pylint: disable=too-many-arguments
 
     click.echo(f"Project {project_name} created successfully!")
     click.echo("")
