@@ -125,7 +125,7 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
     project_pod_id = get_project_pod(config['project']['uuid'])
 
     # Check if the project pod already exists, if not create it.
-    if project_pod_id is None:
+    if not project_pod_id:
 
         print("Deploying development pod on RunPod...")
 

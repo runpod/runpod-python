@@ -100,7 +100,7 @@ class TestCreateNewProject(unittest.TestCase):
         assert mock_exists.called
 
 
-class StartProject(unittest.TestCase):
+class TestStartProject(unittest.TestCase):
     """ Test the start_project function. """
 
     @patch('runpod.cli.groups.project.functions.load_project_config')
@@ -109,7 +109,7 @@ class StartProject(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.get_pod')
     @patch('runpod.cli.groups.project.functions.SSHConnection')
     @patch('os.getcwd', return_value='/current/path')
-    def test_launch_project_successfully(self, mock_getcwd, mock_ssh_connection, mock_get_pod, mock_attempt_pod_launch, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long, too-many-arguments
+    def test_start_nonexistent_successfully(self, mock_getcwd, mock_ssh_connection, mock_get_pod, mock_attempt_pod_launch, mock_get_project_pod, mock_load_project_config): # pylint: disable=line-too-long, too-many-arguments
         """ Test that a project is launched successfully. """
         mock_load_project_config.return_value = {
             'project': {
