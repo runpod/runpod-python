@@ -43,7 +43,7 @@ Changelog = "https://github.com/runpod/runpod-python/blob/main/CHANGELOG.md"
 
 
 [tool.setuptools_scm]
-write_to = "runpod/_version.py"
+version_file = "runpod/_version.py"
 
 
 [project.scripts]
