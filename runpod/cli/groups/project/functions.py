@@ -6,7 +6,6 @@ import os
 import sys
 import uuid
 
-import click
 import tomlkit
 from tomlkit import document, comment, table, nl
 

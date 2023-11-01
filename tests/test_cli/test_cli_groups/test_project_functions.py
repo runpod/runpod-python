@@ -112,8 +112,8 @@ class TestCreateNewProject(unittest.TestCase):
         assert mock_exists.called
 
 
-class TestLaunchProject(unittest.TestCase):
-    """ Test the launch_project function. """
+class StartProject(unittest.TestCase):
+    """ Test the start_project function. """
 
     @patch('runpod.cli.groups.project.functions.load_project_config')
     @patch('runpod.cli.groups.project.functions.get_project_pod')
@@ -154,7 +154,7 @@ class TestLaunchProject(unittest.TestCase):
         mock_ssh_instance = mock_ssh_connection.return_value
         mock_ssh_instance.run_commands.return_value = None
 
-        launch_project()
+        start_project()
 
         mock_attempt_pod_launch.assert_called()
         mock_get_pod.assert_called_with('new_pod_id')
@@ -171,7 +171,7 @@ class TestLaunchProject(unittest.TestCase):
 
         with patch('builtins.print') as mock_print,\
              patch('runpod.cli.groups.project.functions.load_project_config'):
-            launch_project()
+            start_project()
             mock_print.assert_called_with("Selected GPU types unavailable, try again later or use a different type.") # pylint: disable=line-too-long
 
 
@@ -203,7 +203,7 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_ssh_instance = mock_ssh_connection.return_value
         mock_ssh_instance.run_commands.return_value = None
 
-        start_project_api()
+        start_project()
 
         mock_get_project_pod.assert_called_with('123456')
         mock_ssh_connection.assert_called_with({'id': 'pod_id'})
@@ -223,7 +223,7 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_get_project_pod.return_value = None
 
         with self.assertRaises(click.ClickException) as context:
-            start_project_api()
+            start_project()
 
         self.assertEqual(
             str(context.exception),
