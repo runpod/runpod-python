@@ -3,6 +3,8 @@ RunPod | CLI | Utils | SSH Command
 
 Connect and run commands over SSH.
 '''
+import sys
+import signal
 import threading
 import subprocess
 import colorama
@@ -30,6 +32,9 @@ class SSHConnection:
         self.ssh.connect(self.pod_ip, port=self.pod_port,
                          username='root', key_filename=self.key_file)
 
+        signal.signal(signal.SIGINT, self._signal_handler)
+
+
     def __enter__(self):
         return self
 
@@ -45,6 +50,13 @@ class SSHConnection:
             "-p", str(self.pod_port),
             "-i", self.key_file
         ]
+
+    def _signal_handler(self, signum, frame):
+        ''' Handle signals. '''
+        del signum, frame
+        self.close()
+        print(colorama.Fore.BLUE + f"[{self.pod_id}] SSH connection closed.")
+        sys.exit(0)
 
     def run_commands(self, commands):
         ''' Runs a list of bash commands over SSH. '''

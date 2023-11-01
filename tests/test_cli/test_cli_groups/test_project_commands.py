@@ -5,10 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from click.testing import CliRunner
-from runpod.cli.groups.project.commands import (
-    new_project_wizard, launch_project_pod, start_project_pod,
-    deploy_project
-)
+from runpod.cli.groups.project.commands import new_project_wizard, start_project_pod, deploy_project
+
 
 class TestProjectCLI(unittest.TestCase):
     ''' A collection of tests for the Project CLI commands. '''
@@ -82,29 +80,18 @@ class TestProjectCLI(unittest.TestCase):
         self.assertIn("Project name contains an invalid character", result.output)
 
 
-    def test_launch_project_pod(self):
-        '''
-        Tests the launch_project_pod command.
-        '''
-        with patch('click.confirm', return_value=True) as mock_confirm, \
-            patch('runpod.cli.groups.project.commands.launch_project') as mock_launch:
-            result = self.runner.invoke(launch_project_pod)
-        mock_confirm.assert_called_with("Do you want to continue?", abort=True)
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn("Launching project development pod...", result.output)
-        mock_launch.assert_called_once()
-
-
     def test_start_project_pod(self):
         '''
         Tests the start_project_pod command.
         '''
-        with patch('runpod.cli.groups.project.commands.start_project_api') as mock_start:
+        with patch('click.confirm', return_value=True) as mock_confirm, \
+             patch('runpod.cli.groups.project.commands.start_project') as mock_start:
             mock_start.return_value = None
             result = self.runner.invoke(start_project_pod)
 
+        mock_confirm.assert_called_with("Do you want to continue?", abort=True)
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Starting project API server...", result.output)
+        self.assertIn("Starting project development pod...", result.output)
 
 
     @patch('runpod.cli.groups.project.commands.click.echo')
