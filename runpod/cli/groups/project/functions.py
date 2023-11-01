@@ -131,7 +131,7 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
 
         # Prepare the environment variables
         environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
-        for variable in config['project']['env_vars']:
+        for variable in config['project'].get('env_vars', {}):
             environment_variables[variable] = config['project']['env_vars'][variable]
 
         # Prepare the GPU types
