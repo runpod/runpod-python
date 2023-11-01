@@ -1,5 +1,6 @@
 """Tests for runpod.cli.utils.rp_sync module."""
 
+import time
 import unittest
 from unittest.mock import patch, MagicMock, ANY
 
@@ -45,6 +46,7 @@ class TestWatcherHandler(unittest.TestCase):
         event_mock.is_directory = True
 
         handler.on_any_event(event_mock)
+        time.sleep(2)
         mock_action_function.assert_not_called()
 
 class TestSyncDirectory(unittest.TestCase):

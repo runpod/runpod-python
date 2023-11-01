@@ -21,14 +21,14 @@ class WatcherHandler(FileSystemEventHandler):
         self.debouncer = None
 
     def on_any_event(self, event):
+        """ Called on any event. """
         if event.is_directory or should_ignore(event.src_path, self.ignore_list):
             return
 
         if self.debouncer is not None:
             self.debouncer.cancel()  # Cancel any existing timer
 
-        # Set up a new timer that will call the action function after 2 seconds,
-        # or whatever delay you find appropriate.
+        # Start a new timer that will call the action function after 1 second
         self.debouncer = threading.Timer(1.0, self.action_function)
         self.debouncer.start()
 
