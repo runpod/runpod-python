@@ -8,9 +8,7 @@ import click
 from InquirerPy import prompt as cli_select
 
 from runpod import get_user
-from .functions import (
-    create_new_project, launch_project, start_project_api, create_project_endpoint
-)
+from .functions import create_new_project, start_project, create_project_endpoint
 from .helpers import validate_project_name
 
 @click.group('project')
@@ -95,29 +93,19 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
 
 
 # ------------------------------ Launch Project ------------------------------ #
-@project_cli.command('launch')
-def launch_project_pod():
-    '''
-    Launch the project development pod from runpod.toml
-    '''
-    click.echo("Launching the project will create a new pod on RunPod.")
-    click.echo("    - You will be charged based on the GPU type specified in runpod.toml.")
-    click.echo("    - When you are finished with the pod you will need to delete it manually.")
-    click.echo("")
-    click.confirm("Do you want to continue?", abort=True)
-
-    click.echo("Launching project development pod...")
-    launch_project()
-
-
-# ------------------------------- Start Project ------------------------------ #
 @project_cli.command('start')
 def start_project_pod():
     '''
-    Starts the API server from the handler file.
+    Start the project development pod from runpod.toml
     '''
-    click.echo("Starting project API server...")
-    start_project_api()
+    click.echo("Starting the project will create a development pod on RunPod, if one does not already exist.") # pylint: disable=line-too-long
+    click.echo("    - You will be charged based on the GPU type specified in runpod.toml.")
+    click.echo("    - When you are finished close the connection with CTRL+C.")
+    click.echo("")
+    click.confirm("Do you want to continue?", abort=True)
+
+    click.echo("Starting project development pod...")
+    start_project()
 
 
 # ------------------------------ Deploy Project ------------------------------ #
