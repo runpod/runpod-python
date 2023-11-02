@@ -181,7 +181,7 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
         sync_directory(ssh_conn, os.getcwd(), project_path_uuid)
 
         project_name = config["project"]["name"]
-        requirements_path = os.path.join(remote_project_path, config['runtime']['requirements_path'])
+        pip_req_path = os.path.join(remote_project_path, config['runtime']['requirements_path'])
         handler_path = os.path.join(remote_project_path, config['runtime']['handler_path'])
 
         launch_api_server = [f'''
@@ -263,7 +263,7 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
 
                 if [[ $changed_file == *"requirements"* ]]; then
                     echo "Installing new requirements..."
-                    python -m pip install --upgrade pip && python -m pip install -r {requirements_path}
+                    python -m pip install --upgrade pip && python -m pip install -r {pip_req_path}
                 fi
 
                 if [[ $changed_file == *".runpodignore"* ]]; then

@@ -101,7 +101,7 @@ class TestStartWatcher(unittest.TestCase):
 
         mock_observer_instance = mock_observer_class.return_value
 
-        start_watcher(fake_action, local_path, testing=True)
+        start_watcher(fake_action, local_path)
 
         mock_watch_handler.assert_called_once_with(fake_action, local_path)
 
