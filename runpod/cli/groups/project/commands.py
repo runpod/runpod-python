@@ -13,7 +13,7 @@ from .helpers import validate_project_name
 
 @click.group('project')
 def project_cli():
-    ''' Launch new project on RunPod. '''
+    ''' Create and deploy projects on RunPod. '''
 
 # -------------------------------- New Project ------------------------------- #
 @project_cli.command('new')
@@ -89,7 +89,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
 
     click.echo(f"Project {project_name} created successfully!")
     click.echo("")
-    click.echo("From your project root run `runpod project launch` to launch a development pod.")
+    click.echo("From your project root run `runpod project start` to start a development pod.")
 
 
 # ------------------------------- Start Project ------------------------------ #

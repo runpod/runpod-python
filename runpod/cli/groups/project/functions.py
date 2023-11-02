@@ -10,6 +10,7 @@ import tomlkit
 from tomlkit import document, comment, table, nl
 
 from runpod import __version__, get_pod, create_template, create_endpoint
+from runpod.cli import BASE_DOCKER_IMAGE, GPU_TYPES, ENV_VARS
 from runpod.cli.utils.ssh_cmd import SSHConnection
 from .helpers import get_project_pod, copy_template_files, attempt_pod_launch, load_project_config
 from ...utils.rp_sync import sync_directory
@@ -69,19 +70,14 @@ def create_new_project(project_name, runpod_volume_id, cuda_version, python_vers
     project_table = table()
     project_table.add("uuid", project_uuid)
     project_table.add("name", project_name)
-    project_table.add("base_image", f"runpod/base:0.3.0-cuda{cuda_version}")
-    project_table.add("gpu_types", [
-        "NVIDIA RTX A4000", "NVIDIA RTX A4500", "NVIDIA RTX A5000",
-        "NVIDIA GeForce RTX 3090", "NVIDIA RTX A6000"])
+    project_table.add("base_image", BASE_DOCKER_IMAGE.format(cuda_version=cuda_version))
+    project_table.add("gpu_types", GPU_TYPES)
     project_table.add("gpu_count", 1)
     project_table.add("storage_id", runpod_volume_id)
     project_table.add("volume_mount_path", "/runpod-volume")
     project_table.add("ports", "8080/http, 22/tcp")
     project_table.add("container_disk_size_gb", 10)
-    project_table.add("env_vars", {
-        "RUNPOD_DEBUG_LEVEL": "debug",
-        "UVICORN_LOG_LEVEL": "warning"
-    })
+    project_table.add("env_vars", ENV_VARS)
     toml_config.add("project", project_table)
 
     template_table = table()

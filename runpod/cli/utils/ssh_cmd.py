@@ -55,7 +55,7 @@ class SSHConnection:
         ''' Handle signals. '''
         del signum, frame
         self.close()
-        print(colorama.Fore.BLUE + f"[{self.pod_id}] SSH connection closed.")
+        print(colorama.Fore.BLUE + f"[{self.pod_id}]", "SSH Connection Closed")
         sys.exit(0)
 
     def run_commands(self, commands):

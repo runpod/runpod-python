@@ -1,7 +1,70 @@
-[build-system]
-requires = [
-    "setuptools>=45",
-    "setuptools_scm[toml]>=6.2",
-    "wheel"
+[project]
+name = "runpod"
+version = "0.0.0" # setuptools_scm will automatically update this
+description = "🐍 | Python library for RunPod API and serverless worker SDK."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.8"
+license = { text = "MIT License" }
+authors = [
+    { name = "RunPod", email = "engineer@runpod.io" },
+    { name = "Justin Merrell", email = "justin.merrell@runpod.io" },
 ]
+keywords = [
+    "runpod",
+    "ai",
+    "gpu",
+    "serverless",
+    "SDK",
+    "API",
+    "python",
+    "library",
+]
+classifiers = [
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+
+[project.urls]
+Homepage = "https://runpod.io"
+Documentation = "https://docs.runpod.io"
+Repository = "https://github.com/runpod/runpod-python"
+Changelog = "https://github.com/runpod/runpod-python/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/runpod/runpod-python/issues"
+
+
+[tool.setuptools_scm]
+version_file = "runpod/_version.py"
+
+
+[project.scripts]
+runpod = "runpod.cli.entry:runpod_cli"
+
+
+[project.optional-dependencies]
+test = [
+    "asynctest",
+    "nest_asyncio",
+    "pylint",
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+    "pytest-asyncio",
+]
+
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
+
+# Used by pytest coverage
+[tool.coverage.run]
+omit = ["runpod/_version.py"]
