@@ -3,6 +3,10 @@
 name: CI | End-to-End RunPod Python Tests
 
 on:
+  push:
+    branches:
+      - main
+
   pull_request:
     branches:
       - main
