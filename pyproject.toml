@@ -65,5 +65,6 @@ test = [
 requires = ["setuptools>=45", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
+# Used by pytest coverage
 [tool.coverage.run]
 omit = ["runpod/_version.py"]
