@@ -15,6 +15,7 @@ on:
 jobs:
   lint:
     strategy:
+      fail-fast: false
       matrix:
         python-version: [3.8, 3.9, 3.10.12, 3.11.0]
     runs-on: ubuntu-latest
@@ -33,5 +34,4 @@ jobs:
           pip install .[test]
 
       - name: Pylint Source
-        run: |
-          find . -type f -name '*.py' | grep -v './build/' | xargs pylint --extension-pkg-whitelist='pydantic'
+        run: pylint --ignore-paths='build/*' $(find . -type f -name '*.py')
