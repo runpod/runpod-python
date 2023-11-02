@@ -1,5 +1,13 @@
 # Change Log
 
+## Release 1.3.2 (TBD)
+
+### Changed
+
+- Removed `setup.cfg` and moved all configuration to `setup.py`
+
+---
+
 ## Release 1.3.1 (10/30/23)
 
 ### Added
