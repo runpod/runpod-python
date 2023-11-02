@@ -10,6 +10,7 @@ import subprocess
 import colorama
 import paramiko
 
+from runpod.cli import STOP_EVENT
 from .rp_info import get_pod_ssh_ip_port
 from .rp_userspace import find_ssh_key_file
 from .rp_runpodignore import get_ignore_list
@@ -56,6 +57,7 @@ class SSHConnection:
         del signum, frame
         self.close()
         print(colorama.Fore.BLUE + f"[{self.pod_id}]", "SSH Connection Closed")
+        STOP_EVENT.set()
         sys.exit(0)
 
     def run_commands(self, commands):
@@ -75,6 +77,9 @@ class SSHConnection:
                 target=handle_stream, args=(stdout, colorama.Fore.GREEN, self.pod_id))
             stderr_thread = threading.Thread(
                 target=handle_stream, args=(stderr, colorama.Fore.RED, self.pod_id))
+
+            stdout_thread.daemon = True
+            stderr_thread.daemon = True
 
             stdout_thread.start()
             stderr_thread.start()
