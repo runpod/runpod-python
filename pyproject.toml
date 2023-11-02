@@ -64,3 +64,6 @@ test = [
 [build-system]
 requires = ["setuptools>=45", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
+
+[tool.coverage.run]
+omit = ["runpod/_version.py"]
