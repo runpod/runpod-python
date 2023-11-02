@@ -1,6 +1,6 @@
 [project]
 name = "runpod"
-version = "0.0.0" # setuptools_scm will automatically update this
+dynamic = ["version"]
 description = "🐍 | Python library for RunPod API and serverless worker SDK."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.8"
