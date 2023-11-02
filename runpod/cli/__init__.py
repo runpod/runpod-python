@@ -9,6 +9,7 @@ GPU_TYPES = [
     "NVIDIA GeForce RTX 3090", "NVIDIA RTX A6000"
 ]
 ENV_VARS = {
+    "POD_INACTIVITY_TIMEOUT": "60",
     "RUNPOD_DEBUG_LEVEL": "debug",
     "UVICORN_LOG_LEVEL": "warning"
 }
