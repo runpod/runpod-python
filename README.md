@@ -9,7 +9,7 @@
 
 [![CI | Code Quality](https://github.com/runpod/runpod-python/actions/workflows/CI-pylint.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-pylint.yml)
 &nbsp;
-[![CI | Unit Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-tests.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-tests.yml)
+[![CI | Unit Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-pytests.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-pytests.yml)
 &nbsp;
 [![CI | CodeQL](https://github.com/runpod/runpod-python/actions/workflows/CI-codeql.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-codeql.yml)
 
