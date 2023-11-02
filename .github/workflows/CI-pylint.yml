@@ -35,4 +35,4 @@ jobs:
 
       - name: Pylint Source
         run: pylint --ignore-paths='build/*' $(find . -type f -name '*.py') \
-          --ignore-files='_version.py'
+          --ignore-files='runpod/_version.py'
