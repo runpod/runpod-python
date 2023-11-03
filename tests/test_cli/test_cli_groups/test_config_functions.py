@@ -5,7 +5,6 @@ Unit tests for the config command.
 import unittest
 from unittest.mock import patch, mock_open
 
-from runpod.cli.groups.config import commands
 from runpod.cli.groups.config import functions
 
 

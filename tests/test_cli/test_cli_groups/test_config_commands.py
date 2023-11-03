@@ -35,7 +35,7 @@ class TestCommands(unittest.TestCase):
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
             assert result.exit_code == 0
             mock_set_credentials.assert_called_with('KEY', 'test', overwrite=True)
-            mock_prompt.assert_called_with('API Key', hide_input=False, confirmation_prompt=False)
+            mock_prompt.assert_called_with('    > RunPod API Key', hide_input=False, confirmation_prompt=False)
 
             # Simulating existing credentials, prompting for overwrite
             mock_check_creds.return_value = (True, None)
