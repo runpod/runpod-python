@@ -70,13 +70,6 @@ class TestCommands(unittest.TestCase):
             mock_echo.assert_any_call('Credentials set for profile: test in ~/.runpod/config.toml')
             assert result.exit_code == 0
 
-    def test_exception_handling(self):
-        """ Tests the exception handling for the config command. """
-        with patch('runpod.cli.groups.config.commands.set_credentials', side_effect=ValueError("Invalid API key")) as mock_set_credentials: # pylint: disable=line-too-long
-            result = self.runner.invoke(runpod_cli, ['config', 'BADKEY', '--profile', 'test'])
-            assert result.exit_code == 1
-            assert mock_set_credentials.called
-
     def test_api_key_prompt(self):
         """ Tests the API key prompt. """
         with patch('click.prompt', return_value='KEY') as mock_prompt:

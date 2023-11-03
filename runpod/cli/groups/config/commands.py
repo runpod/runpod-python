@@ -33,4 +33,5 @@ def config_wizard(api_key, profile, check):
 
 
     set_credentials(api_key, profile, overwrite=True)
+
     click.echo(f'Credentials set for profile: {profile} in ~/.runpod/config.toml')
