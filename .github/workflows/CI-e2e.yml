@@ -73,7 +73,7 @@ jobs:
 
       - name: Run Tests
         id: run-tests
-        uses: direlines/runpod-test-runner@v1.7
+        uses: runpod/runpod-test-runner@v2.1.0
         with:
           image-tag: ${{ vars.DOCKERHUB_REPO }}/${{ vars.DOCKERHUB_IMG }}:${{ needs.e2e-build.outputs.docker_tag }}
           runpod-api-key: ${{ secrets.RUNPOD_API_KEY }}
