@@ -1,6 +1,6 @@
 # Change Log
 
-## Release 1.3.2 (TBD)
+## Release 1.3.2 (11/3/23)
 
 ### Changed
 
