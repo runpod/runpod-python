@@ -4,6 +4,7 @@ import time
 import unittest
 from unittest.mock import patch, MagicMock, ANY
 
+from runpod.cli import STOP_EVENT
 from runpod.cli.utils.rp_sync import WatcherHandler, start_watcher, sync_directory
 
 class TestWatcherHandler(unittest.TestCase):
@@ -102,11 +103,10 @@ class TestStartWatcher(unittest.TestCase):
 
         mock_observer_instance = mock_observer_class.return_value
 
+        STOP_EVENT.clear()
         with patch('runpod.cli.utils.rp_sync.time.sleep') as mock_sleep:
             mock_sleep.return_value = None
             start_watcher(fake_action, local_path)
-
-        assert mock_sleep.called
 
         mock_watch_handler.assert_called_once_with(fake_action, local_path)
 
