@@ -105,7 +105,8 @@ class TestStartWatcher(unittest.TestCase):
 
         STOP_EVENT.clear()
         with patch('runpod.cli.utils.rp_sync.time.sleep') as mock_sleep:
-            def side_effect():
+            def side_effect(*args, **kwargs):
+                del args, kwargs
                 STOP_EVENT.set()
 
             mock_sleep.side_effect = side_effect
