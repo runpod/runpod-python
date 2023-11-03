@@ -35,7 +35,7 @@ class TestCommands(unittest.TestCase):
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
             assert result.exit_code == 0
             mock_set_credentials.assert_called_with('KEY', 'test', overwrite=True)
-            mock_prompt.assert_called_with('    > RunPod API Key', hide_input=False, confirmation_prompt=False)
+            mock_prompt.assert_called_with('    > RunPod API Key', hide_input=False, confirmation_prompt=False) # pylint: disable=line-too-long
 
             # Simulating existing credentials, prompting for overwrite
             mock_check_creds.return_value = (True, None)
@@ -63,8 +63,10 @@ class TestCommands(unittest.TestCase):
 
     def test_output_messages(self):
         """ Tests the output messages for the config command. """
-        with patch('click.echo') as mock_echo:
+        with patch('click.echo') as mock_echo, \
+            patch('runpod.cli.groups.config.commands.set_credentials') as mock_set_credentials:
             result = self.runner.invoke(runpod_cli, ['config', 'KEY', '--profile', 'test'])
+            mock_set_credentials.assert_called_with('KEY', 'test', overwrite=True)
             mock_echo.assert_any_call('Credentials set for profile: test in ~/.runpod/config.toml')
             assert result.exit_code == 0
 
