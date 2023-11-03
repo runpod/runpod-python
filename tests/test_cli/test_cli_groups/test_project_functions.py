@@ -139,6 +139,7 @@ class TestStartProject(unittest.TestCase):
         }
 
         mock_ssh_instance = mock_ssh_connection.return_value
+        mock_ssh_instance.__enter__.return_value = mock_ssh_instance
         mock_ssh_instance.run_commands.return_value = None
 
         with patch('runpod.cli.groups.project.functions.sync_directory') as mock_sync_directory:
