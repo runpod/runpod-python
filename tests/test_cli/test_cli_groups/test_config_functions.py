@@ -5,7 +5,6 @@ Unit tests for the config command.
 import unittest
 from unittest.mock import patch, mock_open
 
-from runpod.cli.groups.config import commands
 from runpod.cli.groups.config import functions
 
 
@@ -25,14 +24,14 @@ class TestConfig(unittest.TestCase):
         Tests the set_credentials function.
         '''
         mock_toml_load.return_value = ""
-        commands.set_credentials('RUNPOD_API_KEY')
+        functions.set_credentials('RUNPOD_API_KEY')
 
 
         mock_file.assert_called_with(functions.CREDENTIAL_FILE, 'w', encoding="UTF-8")
 
         with self.assertRaises(ValueError) as context:
             mock_toml_load.return_value = {'default': True}
-            commands.set_credentials('RUNPOD_API_KEY')
+            functions.set_credentials('RUNPOD_API_KEY')
 
         self.assertEqual(str(context.exception),
                          'Profile already exists. Use `update_credentials` instead.')
@@ -45,26 +44,26 @@ class TestConfig(unittest.TestCase):
         Tests the check_credentials function.
         '''
         mock_exists.return_value = False
-        passed, _ = commands.check_credentials()
+        passed, _ = functions.check_credentials()
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = ""
-        passed, _ = commands.check_credentials()
+        passed, _ = functions.check_credentials()
         assert mock_file.called
         assert passed is False
 
         mock_exists.return_value = True
         mock_toml_load.return_value = dict({'default': 'something'})
-        passed, _ = commands.check_credentials()
+        passed, _ = functions.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = ValueError
-        passed, _ = commands.check_credentials()
+        passed, _ = functions.check_credentials()
         assert passed is False
 
         mock_toml_load.return_value = dict({'default': 'api_key'})
-        passed, _ = commands.check_credentials()
+        passed, _ = functions.check_credentials()
         assert passed is True
 
 

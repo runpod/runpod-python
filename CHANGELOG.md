@@ -5,6 +5,7 @@
 ### Changed
 
 - Removed `setup.cfg` and moved all configuration to `setup.py`
+- [BETA] Clean exit CLI when ctl+c is pressed.
 
 ---
 

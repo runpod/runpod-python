@@ -8,6 +8,7 @@ import threading
 from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import FileSystemEventHandler
 
+from runpod.cli import STOP_EVENT
 from .rp_runpodignore import get_ignore_list, should_ignore
 
 class WatcherHandler(FileSystemEventHandler):
@@ -29,10 +30,10 @@ class WatcherHandler(FileSystemEventHandler):
             self.debouncer.cancel()  # Cancel any existing timer
 
         # Start a new timer that will call the action function after 1 second
-        self.debouncer = threading.Timer(1.0, self.action_function)
+        self.debouncer = threading.Timer(0.5, self.action_function)
         self.debouncer.start()
 
-def start_watcher(action_function, local_path, testing=False):
+def start_watcher(action_function, local_path):
     """
     Starts the watcher.
     """
@@ -42,15 +43,11 @@ def start_watcher(action_function, local_path, testing=False):
     observer.start()
 
     try:
-        while True:
-            time.sleep(1)
-
-            if testing:
-                raise KeyboardInterrupt
-    except KeyboardInterrupt:
+        while not STOP_EVENT.is_set():
+            time.sleep(0.5)
+    finally:
         observer.stop()
-
-    observer.join()
+        observer.join()
 
 def sync_directory(ssh_client, local_path, remote_path):
     """
@@ -60,6 +57,6 @@ def sync_directory(ssh_client, local_path, remote_path):
         print("Syncing files...")
         ssh_client.rsync(local_path, remote_path, quiet=True)
 
-    threading.Thread(target=start_watcher, args=(sync, local_path)).start()
+    threading.Thread(target=start_watcher, daemon=True, args=(sync, local_path)).start()
 
     return sync # For testing purposes

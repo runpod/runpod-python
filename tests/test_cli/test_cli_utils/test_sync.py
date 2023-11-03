@@ -4,6 +4,7 @@ import time
 import unittest
 from unittest.mock import patch, MagicMock, ANY
 
+from runpod.cli import STOP_EVENT
 from runpod.cli.utils.rp_sync import WatcherHandler, start_watcher, sync_directory
 
 class TestWatcherHandler(unittest.TestCase):
@@ -85,7 +86,8 @@ class TestSyncDirectory(unittest.TestCase):
         mock_ssh_client.rsync.assert_called_once_with(local_path, remote_path, quiet=True)
 
         mock_thread_class.assert_called_once()
-        mock_thread_class.assert_called_with(target=mock_start_watcher, args=(ANY, local_path))
+        mock_thread_class.assert_called_with(
+            target=mock_start_watcher, daemon=True, args=(ANY, local_path))
 
         assert mock_start_watcher.called is False
 
@@ -101,7 +103,14 @@ class TestStartWatcher(unittest.TestCase):
 
         mock_observer_instance = mock_observer_class.return_value
 
-        start_watcher(fake_action, local_path, testing=True)
+        STOP_EVENT.clear()
+        with patch('runpod.cli.utils.rp_sync.time.sleep') as mock_sleep:
+            def side_effect(*args, **kwargs):
+                del args, kwargs
+                STOP_EVENT.set()
+
+            mock_sleep.side_effect = side_effect
+            start_watcher(fake_action, local_path)
 
         mock_watch_handler.assert_called_once_with(fake_action, local_path)
 

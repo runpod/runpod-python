@@ -35,7 +35,7 @@ class TestCommands(unittest.TestCase):
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
             assert result.exit_code == 0
             mock_set_credentials.assert_called_with('KEY', 'test', overwrite=True)
-            mock_prompt.assert_called_with('API Key', hide_input=False, confirmation_prompt=False)
+            mock_prompt.assert_called_with('    > RunPod API Key', hide_input=False, confirmation_prompt=False) # pylint: disable=line-too-long
 
             # Simulating existing credentials, prompting for overwrite
             mock_check_creds.return_value = (True, None)
@@ -48,39 +48,33 @@ class TestCommands(unittest.TestCase):
             result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test', 'KEY'])
             assert result.exit_code == 1
 
-    def test_store_api_key(self):
-        ''' Tests the store_api_key command. '''
-        with patch('click.echo') as mock_echo, \
-             patch('runpod.cli.groups.config.commands.set_credentials') as mock_set_credentials:
-            mock_set_credentials.return_value = None
-
-            # Successful Call
-            result = self.runner.invoke(runpod_cli, ['store_api_key', '--profile', 'test', 'KEY'])
-            assert mock_set_credentials.called_with('KEY', 'test')
-            assert mock_echo.call_count == 1
-            assert mock_set_credentials.return_value is None
+    def test_check_flag(self):
+        """ Tests the --check flag. """
+        with patch('runpod.cli.groups.config.commands.check_credentials') as mock_check_creds:
+            # Assuming credentials are set
+            mock_check_creds.return_value = (True, None)
+            result = self.runner.invoke(runpod_cli, ['config', '--check', '--profile', 'test'])
             assert result.exit_code == 0
 
-            # Unsuccessful Call
-            mock_set_credentials.side_effect = ValueError()
-            result = self.runner.invoke(runpod_cli, ['store_api_key', '--profile', 'test', 'KEY'])
+            # Assuming credentials aren't set
+            mock_check_creds.return_value = (False, "Credentials not found.")
+            result = self.runner.invoke(runpod_cli, ['config', '--check', '--profile', 'test'])
             assert result.exit_code == 1
 
-    def test_validate_credentials_file(self):
-        ''' Tests the check_creds command. '''
+    def test_output_messages(self):
+        """ Tests the output messages for the config command. """
         with patch('click.echo') as mock_echo, \
-             patch('runpod.cli.groups.config.commands.check_credentials') as mock_check_credentials:
-
-            # Successful Validation
-            mock_check_credentials.return_value = (True, None)
-            result = self.runner.invoke(runpod_cli, ['check_creds', '--profile', 'test_pass'])
-            assert mock_check_credentials.called_with('test_pass')
-            assert mock_check_credentials.return_value == (True, None)
+            patch('runpod.cli.groups.config.commands.set_credentials') as mock_set_credentials, \
+            patch('runpod.cli.groups.config.commands.check_credentials', return_value=(False, None)) as mock_check_creds: # pylint: disable=line-too-long
+            result = self.runner.invoke(runpod_cli, ['config', 'KEY', '--profile', 'test'])
+            mock_set_credentials.assert_called_with('KEY', 'test', overwrite=True)
+            mock_echo.assert_any_call('Credentials set for profile: test in ~/.runpod/config.toml')
             assert result.exit_code == 0
+            assert mock_check_creds.call_count == 1
 
-            # Unsuccessful Validation
-            mock_check_credentials.return_value = (False, 'Error')
-            result = self.runner.invoke(runpod_cli, ['check_creds', '--profile', 'test'])
-            assert result.exit_code == 1
-            assert mock_check_credentials.called_with('test')
-            assert mock_echo.call_count == 4
+    def test_api_key_prompt(self):
+        """ Tests the API key prompt. """
+        with patch('click.prompt', return_value='KEY') as mock_prompt:
+            result = self.runner.invoke(runpod_cli, ['config', '--profile', 'test'])
+            mock_prompt.assert_called_with('    > RunPod API Key', hide_input=False, confirmation_prompt=False) # pylint: disable=line-too-long
+            assert result.exit_code == 0

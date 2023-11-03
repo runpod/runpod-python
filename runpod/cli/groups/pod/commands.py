@@ -8,7 +8,7 @@ from runpod import get_pods, create_pod
 
 from ...utils import ssh_cmd
 
-@click.group('pod')
+@click.group('pod', help='Manage and interact with pods.')
 def pod_cli():
     '''A collection of CLI functions for Pod.'''
 

@@ -152,137 +152,134 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
 
         print(f"Project {config['project']['name']} pod ({project_pod_id}) created.", end="\n\n")
 
-    ssh_conn = SSHConnection(project_pod_id)
+    with SSHConnection(project_pod_id) as ssh_conn:
 
-    project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
-    remote_project_path = os.path.join(project_path_uuid, config["project"]["name"])
+        project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
+        remote_project_path = os.path.join(project_path_uuid, config["project"]["name"])
 
-    # Create the project folder on the pod
-    print(f'Checking pod project folder: {remote_project_path} on pod {project_pod_id}')
-    ssh_conn.run_commands([f'mkdir -p {remote_project_path}'])
+        # Create the project folder on the pod
+        print(f'Checking pod project folder: {remote_project_path} on pod {project_pod_id}')
+        ssh_conn.run_commands([f'mkdir -p {remote_project_path}'])
 
-    # Copy local files to the pod project folder
-    print(f'Syncing files to pod {project_pod_id}')
-    ssh_conn.rsync(os.getcwd(), project_path_uuid)
+        # Copy local files to the pod project folder
+        print(f'Syncing files to pod {project_pod_id}')
+        ssh_conn.rsync(os.getcwd(), project_path_uuid)
 
-    # Create the virtual environment
-    venv_path = os.path.join(project_path_uuid, "venv")
-    print(f'Activating Python virtual environment: {venv_path} on pod {project_pod_id}')
-    commands = [
-        f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
-        f'source {venv_path}/bin/activate &&' \
-        f'cd {remote_project_path} &&' \
-        'python -m pip install --upgrade pip &&' \
-        f'python -m pip install --requirement {config["runtime"]["requirements_path"]}'
-    ]
-    ssh_conn.run_commands(commands)
+        # Create the virtual environment
+        venv_path = os.path.join(project_path_uuid, "venv")
+        print(f'Activating Python virtual environment: {venv_path} on pod {project_pod_id}')
+        commands = [
+            f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
+            f'source {venv_path}/bin/activate &&' \
+            f'cd {remote_project_path} &&' \
+            'python -m pip install --upgrade pip &&' \
+            f'python -m pip install --requirement {config["runtime"]["requirements_path"]}'
+        ]
+        ssh_conn.run_commands(commands)
 
-    # Start the watcher and then start the API development server
-    sync_directory(ssh_conn, os.getcwd(), project_path_uuid)
+        # Start the watcher and then start the API development server
+        sync_directory(ssh_conn, os.getcwd(), project_path_uuid)
 
-    project_name = config["project"]["name"]
-    requirements_path = os.path.join(remote_project_path, config['runtime']['requirements_path'])
-    handler_path = os.path.join(remote_project_path, config['runtime']['handler_path'])
+        project_name = config["project"]["name"]
+        pip_req_path = os.path.join(remote_project_path, config['runtime']['requirements_path'])
+        handler_path = os.path.join(remote_project_path, config['runtime']['handler_path'])
 
-    launch_api_server = [f'''
-        pkill inotify
+        launch_api_server = [f'''
+            pkill inotify
 
-        function force_kill {{
-            kill $1 2>/dev/null
-            sleep 1
-
-            if ps -p $1 > /dev/null; then
-                echo "Graceful kill failed, attempting SIGKILL..."
-                kill -9 $1 2>/dev/null
+            function force_kill {{
+                kill $1 2>/dev/null
                 sleep 1
 
                 if ps -p $1 > /dev/null; then
-                    echo "Failed to kill process with PID: $1"
-                    exit 1
+                    echo "Graceful kill failed, attempting SIGKILL..."
+                    kill -9 $1 2>/dev/null
+                    sleep 1
+
+                    if ps -p $1 > /dev/null; then
+                        echo "Failed to kill process with PID: $1"
+                        exit 1
+                    else
+                        echo "Killed process with PID: $1 using SIGKILL"
+                    fi
+
                 else
-                    echo "Killed process with PID: $1 using SIGKILL"
+                    echo "Killed process with PID: $1"
                 fi
+            }}
 
+            function cleanup {{
+                echo "Cleaning up..."
+                force_kill $last_pid
+            }}
+
+            trap cleanup EXIT SIGINT
+
+            if source {project_path_uuid}/venv/bin/activate; then
+                echo -e "- Activated virtual environment."
             else
-                echo "Killed process with PID: $1"
-            fi
-        }}
-
-        function cleanup {{
-            echo "Cleaning up..."
-            force_kill $last_pid
-        }}
-
-        trap cleanup EXIT
-
-        if source {project_path_uuid}/venv/bin/activate; then
-            echo -e "- Activated virtual environment."
-        else
-            echo "Failed to activate virtual environment."
-            exit 1
-        fi
-
-        if cd {project_path_uuid}/{project_name}; then
-            echo -e "- Changed to project directory."
-        else
-            echo "Failed to change directory."
-            exit 1
-        fi
-
-        exclude_pattern='(__pycache__|\\.pyc$)'
-        function update_exclude_pattern {{
-            exclude_pattern='(__pycache__|\\.pyc$)'
-            if [[ -f .runpodignore ]]; then
-                while IFS= read -r line; do
-                    line=$(echo "$line" | tr -d '[:space:]')
-                    [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue # Skip comments and empty lines
-                    exclude_pattern="${{exclude_pattern}}|(${{line}})"
-                done < .runpodignore
-                echo -e "- Ignoring files matching pattern: $exclude_pattern"
-            fi
-        }}
-        update_exclude_pattern
-
-        # Start the API server in the background, and save the PID
-        python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
-        last_pid=$!
-
-        echo -e "- Started API server with PID: $last_pid" && echo ""
-        echo "Connect to the API server at:"
-        echo ">  https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
-
-        while true; do
-            if changed_file=$(inotifywait -q -r -e modify,create,delete --exclude "$exclude_pattern" {remote_project_path} --format '%w%f'); then
-                echo "Detected changes in: $changed_file"
-            else
-                echo "Failed to detect changes."
+                echo "Failed to activate virtual environment."
                 exit 1
             fi
 
-            force_kill $last_pid
-
-            if [[ $changed_file == *"requirements"* ]]; then
-                echo "Installing new requirements..."
-                python -m pip install --upgrade pip && python -m pip install -r {requirements_path}
+            if cd {project_path_uuid}/{project_name}; then
+                echo -e "- Changed to project directory."
+            else
+                echo "Failed to change directory."
+                exit 1
             fi
 
-            if [[ $changed_file == *".runpodignore"* ]]; then
-                update_exclude_pattern
-            fi
+            exclude_pattern='(__pycache__|\\.pyc$)'
+            function update_exclude_pattern {{
+                exclude_pattern='(__pycache__|\\.pyc$)'
+                if [[ -f .runpodignore ]]; then
+                    while IFS= read -r line; do
+                        line=$(echo "$line" | tr -d '[:space:]')
+                        [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue # Skip comments and empty lines
+                        exclude_pattern="${{exclude_pattern}}|(${{line}})"
+                    done < .runpodignore
+                    echo -e "- Ignoring files matching pattern: $exclude_pattern"
+                fi
+            }}
+            update_exclude_pattern
 
+            # Start the API server in the background, and save the PID
             python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
             last_pid=$!
 
-            echo "Restarted API server with PID: $last_pid"
-        done
-    ''']
+            echo -e "- Started API server with PID: $last_pid" && echo ""
+            echo "Connect to the API server at:"
+            echo ">  https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
 
-    try:
+            while true; do
+                if changed_file=$(inotifywait -q -r -e modify,create,delete --exclude "$exclude_pattern" {remote_project_path} --format '%w%f'); then
+                    echo "Detected changes in: $changed_file"
+                else
+                    echo "Failed to detect changes."
+                    exit 1
+                fi
+
+                force_kill $last_pid
+
+                if [[ $changed_file == *"requirements"* ]]; then
+                    echo "Installing new requirements..."
+                    python -m pip install --upgrade pip && python -m pip install -r {pip_req_path}
+                fi
+
+                if [[ $changed_file == *".runpodignore"* ]]; then
+                    update_exclude_pattern
+                fi
+
+                python {handler_path} --rp_serve_api --rp_api_host="0.0.0.0" --rp_api_port=8080 --rp_api_concurrency=1 &
+                last_pid=$!
+
+                echo "Restarted API server with PID: $last_pid"
+            done
+        ''']
+
         print("")
         print("Starting project development endpoint...")
         ssh_conn.run_commands(launch_api_server)
-    finally:
-        ssh_conn.close()
 
 
 # ------------------------------ Deploy Project ------------------------------ #

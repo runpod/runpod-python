@@ -7,7 +7,7 @@ import click
 from .functions import python_over_ssh
 from .helpers import get_session_pod
 
-@click.group('exec')
+@click.group('exec', help='Execute commands in a pods.')
 def exec_cli():
     '''A collection of CLI functions for Exec.'''
 

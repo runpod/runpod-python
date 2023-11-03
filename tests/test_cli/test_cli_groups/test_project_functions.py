@@ -139,6 +139,7 @@ class TestStartProject(unittest.TestCase):
         }
 
         mock_ssh_instance = mock_ssh_connection.return_value
+        mock_ssh_instance.__enter__.return_value = mock_ssh_instance
         mock_ssh_instance.run_commands.return_value = None
 
         with patch('runpod.cli.groups.project.functions.sync_directory') as mock_sync_directory:
@@ -191,6 +192,7 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_get_project_pod.return_value = {'id': 'pod_id'}
 
         mock_ssh_instance = mock_ssh_connection.return_value
+        mock_ssh_instance.__enter__.return_value = mock_ssh_instance
         mock_ssh_instance.run_commands.return_value = None
 
         start_project()
@@ -200,7 +202,6 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_sync_directory.assert_called_with(mock_ssh_instance,
                                                '/current/path', '/mount/path/123456')
         mock_ssh_instance.run_commands.assert_called()
-        mock_ssh_instance.close.assert_called()
         assert mock_getcwd.called
 
 
