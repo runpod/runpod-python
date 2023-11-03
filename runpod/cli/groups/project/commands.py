@@ -11,7 +11,7 @@ from runpod import get_user
 from .functions import create_new_project, start_project, create_project_endpoint
 from .helpers import validate_project_name
 
-@click.group('project')
+@click.group('project', help='Create, deploy, and manage RunPod projects.')
 def project_cli():
     ''' Create and deploy projects on RunPod. '''
 
