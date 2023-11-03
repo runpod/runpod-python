@@ -29,7 +29,8 @@ jobs:
       - name: Clone and patch mock-worker
         run: |
           git clone https://github.com/runpod-workers/mock-worker
-          echo "git+https://github.com/runpod/runpod-python.git@${{ github.event.pull_request.head.sha }}" > mock-worker/builder/requirements.txt
+          GIT_SHA=${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          echo "git+https://github.com/runpod/runpod-python.git@$GIT_SHA" > mock-worker/builder/requirements.txt
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -45,7 +46,9 @@ jobs:
 
       - name: Define Docker Tag
         id: docker_tag
-        run: echo "DOCKER_TAG=$(echo ${{ github.event.pull_request.head.sha }} | cut -c 1-7)" >> $GITHUB_ENV
+        run: |
+          DOCKER_TAG=${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          echo "DOCKER_TAG=$(echo $DOCKER_TAG | cut -c 1-7)" >> $GITHUB_ENV
 
       - name: Set Docker Tag as Output
         id: output_docker_tag
