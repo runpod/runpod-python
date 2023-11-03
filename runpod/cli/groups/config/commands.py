@@ -31,10 +31,6 @@ def config_wizard(api_key, profile, check):
         click.echo('You can find it at https://www.runpod.io/console/user/settings')
         api_key = click.prompt('    > RunPod API Key', hide_input=False, confirmation_prompt=False)
 
-    try:
-        set_credentials(api_key, profile, overwrite=True)
-    except ValueError as err:
-        click.echo(err)
-        sys.exit(1)
 
+    set_credentials(api_key, profile, overwrite=True)
     click.echo(f'Credentials set for profile: {profile} in ~/.runpod/config.toml')
