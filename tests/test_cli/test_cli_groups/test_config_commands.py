@@ -64,11 +64,13 @@ class TestCommands(unittest.TestCase):
     def test_output_messages(self):
         """ Tests the output messages for the config command. """
         with patch('click.echo') as mock_echo, \
-            patch('runpod.cli.groups.config.commands.set_credentials') as mock_set_credentials:
+            patch('runpod.cli.groups.config.commands.set_credentials') as mock_set_credentials, \
+            patch('runpod.cli.groups.config.commands.check_credentials', return_value=(False, None)) as mock_check_creds: # pylint: disable=line-too-long
             result = self.runner.invoke(runpod_cli, ['config', 'KEY', '--profile', 'test'])
             mock_set_credentials.assert_called_with('KEY', 'test', overwrite=True)
             mock_echo.assert_any_call('Credentials set for profile: test in ~/.runpod/config.toml')
             assert result.exit_code == 0
+            assert mock_check_creds.call_count == 1
 
     def test_api_key_prompt(self):
         """ Tests the API key prompt. """
