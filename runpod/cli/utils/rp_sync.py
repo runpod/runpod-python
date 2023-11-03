@@ -30,7 +30,7 @@ class WatcherHandler(FileSystemEventHandler):
             self.debouncer.cancel()  # Cancel any existing timer
 
         # Start a new timer that will call the action function after 1 second
-        self.debouncer = threading.Timer(1.0, self.action_function)
+        self.debouncer = threading.Timer(0.5, self.action_function)
         self.debouncer.start()
 
 def start_watcher(action_function, local_path):
@@ -44,7 +44,7 @@ def start_watcher(action_function, local_path):
 
     try:
         while not STOP_EVENT.is_set():
-            time.sleep(1)
+            time.sleep(0.5)
     finally:
         observer.stop()
         observer.join()

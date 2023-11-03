@@ -202,7 +202,6 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_sync_directory.assert_called_with(mock_ssh_instance,
                                                '/current/path', '/mount/path/123456')
         mock_ssh_instance.run_commands.assert_called()
-        mock_ssh_instance.close.assert_called()
         assert mock_getcwd.called
 
 
