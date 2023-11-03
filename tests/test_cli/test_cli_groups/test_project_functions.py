@@ -192,6 +192,7 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_get_project_pod.return_value = {'id': 'pod_id'}
 
         mock_ssh_instance = mock_ssh_connection.return_value
+        mock_ssh_instance.__enter__.return_value = mock_ssh_instance
         mock_ssh_instance.run_commands.return_value = None
 
         start_project()
