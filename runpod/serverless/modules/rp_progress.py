@@ -14,6 +14,7 @@ from .rp_http import send_result
 
 log = RunPodLogger()
 
+
 async def _create_session_async():
     """
     Creates an aiohttp session.
@@ -26,6 +27,7 @@ async def _create_session_async():
         headers=auth_header, timeout=timeout
     )
 
+
 async def _async_progress_update(session, job, progress):
     """
     The actual asynchronous function that sends the update.
@@ -37,7 +39,8 @@ async def _async_progress_update(session, job, progress):
 
     await send_result(session, job_data, job)
 
-def _thread_target(job: Dict[str, Any], progress: str):
+
+def _thread_target(job: Dict[str, Any], progress: Any):
     """
     A wrapper around _async_progress_update to handle the event loop.
     """
@@ -57,7 +60,7 @@ def _thread_target(job: Dict[str, Any], progress: str):
         loop.close()
 
 
-def progress_update(job, progress):
+def progress_update(job: Dict[str, Any], progress: Any) -> None:
     """
     Updates the progress of a currently running job in a separate thread.
     """
