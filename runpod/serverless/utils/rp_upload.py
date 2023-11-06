@@ -9,12 +9,10 @@ import shutil
 import logging
 import threading
 import multiprocessing
-from io import BytesIO
 from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 import boto3
-from PIL import Image, UnidentifiedImageError
 from boto3 import session
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
@@ -24,6 +22,7 @@ from tqdm_loggable.auto import tqdm
 logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
 logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHandler()])
+
 
 def extract_region_from_url(endpoint_url):
     """
@@ -43,7 +42,7 @@ def extract_region_from_url(endpoint_url):
 
 # --------------------------- S3 Bucket Connection --------------------------- #
 def get_boto_client(
-    bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]: # pragma: no cover
+        bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]:  # pragma: no cover
     '''
     Returns a boto3 client and transfer config for the bucket.
     '''
@@ -94,48 +93,34 @@ def get_boto_client(
 # ---------------------------------------------------------------------------- #
 #                                 Upload Image                                 #
 # ---------------------------------------------------------------------------- #
-def upload_image(job_id, image_location, result_index=0, results_list=None): # pragma: no cover
+def upload_image(job_id, image_location, result_index=0, results_list=None):  # pragma: no cover
     '''
     Upload a single file to bucket storage.
     '''
     image_name = str(uuid.uuid4())[:8]
     boto_client, _ = get_boto_client()
     file_extension = os.path.splitext(image_location)[1]
+    content_type = "image/" + file_extension.lstrip(".")
+
+    with open(image_location, "rb") as input_file:
+        output = input_file.read()
 
     if boto_client is None:
         # Save the output to a file
         print("No bucket endpoint set, saving to disk folder 'simulated_uploaded'")
         print("If this is a live endpoint, please reference the following:")
-        print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md") # pylint: disable=line-too-long
+        print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md")  # pylint: disable=line-too-long
 
         os.makedirs("simulated_uploaded", exist_ok=True)
         sim_upload_location = f"simulated_uploaded/{image_name}{file_extension}"
-        try:
-            with Image.open(image_location) as img, open(sim_upload_location, "wb") as file_output:
-                img.save(file_output, format=img.format)
 
-        except UnidentifiedImageError:
-            # If the file is not an image, save it directly
-            shutil.copy(image_location, sim_upload_location)
+        with open(sim_upload_location, "wb") as file_output:
+            file_output.write(output)
 
         if results_list is not None:
             results_list[result_index] = sim_upload_location
 
         return sim_upload_location
-
-    try:
-        with Image.open(image_location) as img:
-            output = BytesIO()
-            img.save(output, format=img.format)
-            output.seek(0)
-            content_type = "image/" + file_extension.lstrip(".")
-
-    except UnidentifiedImageError:
-        # If the file is not an image, read it directly
-        with open(image_location, "rb") as f:
-            output = f.read()
-        content_type = "application/octet-stream"
-
 
     bucket = time.strftime('%m-%y')
     boto_client.put_object(
@@ -161,7 +146,7 @@ def upload_image(job_id, image_location, result_index=0, results_list=None): # p
 # ---------------------------------------------------------------------------- #
 #                                Files To Upload                               #
 # ---------------------------------------------------------------------------- #
-def files(job_id, file_list): # pragma: no cover
+def files(job_id, file_list):  # pragma: no cover
     '''
     Uploads a list of files in parallel.
     Once all files are uploaded, the function returns the presigned URLs list.
@@ -186,7 +171,7 @@ def files(job_id, file_list): # pragma: no cover
 
 
 # --------------------------- Custom Bucket Upload --------------------------- #
-def bucket_upload(job_id, file_list, bucket_creds): # pragma: no cover
+def bucket_upload(job_id, file_list, bucket_creds):  # pragma: no cover
     '''
     Uploads files to bucket storage.
     '''
@@ -231,7 +216,7 @@ def upload_file_to_bucket(
         bucket_name: Optional[str] = None,
         prefix: Optional[str] = None,
         extra_args: Optional[dict] = None
-) -> str: # pragma: no cover
+) -> str:  # pragma: no cover
     '''
     Uploads a single file to bucket storage and returns a presigned URL.
     '''
@@ -283,7 +268,7 @@ def upload_in_memory_object(
         file_name: str, file_data: bytes,
         bucket_creds: Optional[dict] = None,
         bucket_name: Optional[str] = None,
-        prefix: Optional[str] = None) -> str: # pragma: no cover
+        prefix: Optional[str] = None) -> str:  # pragma: no cover
     '''
     Uploads an in-memory object (bytes) to bucket storage and returns a presigned URL.
     '''
