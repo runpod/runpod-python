@@ -42,7 +42,7 @@ def extract_region_from_url(endpoint_url):
 
 # --------------------------- S3 Bucket Connection --------------------------- #
 def get_boto_client(
-        bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]:  # pragma: no cover
+        bucket_creds: Optional[dict] = None) -> Tuple[boto3.client, TransferConfig]:  # pragma: no cover # pylint: disable=line-too-long
     '''
     Returns a boto3 client and transfer config for the bucket.
     '''
