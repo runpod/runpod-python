@@ -60,7 +60,7 @@ def _thread_target(job: Dict[str, Any], progress: Any):
         loop.close()
 
 
-def progress_update(job, progress):
+def progress_update(job: Dict[str, Any], progress: Any) -> None:
     """
     Updates the progress of a currently running job in a separate thread.
     """
