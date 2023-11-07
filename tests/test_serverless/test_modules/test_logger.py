@@ -99,7 +99,7 @@ class TestLogger(unittest.TestCase):
         '''
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
             self.logger.secret("test_secret", "test_secret_value")
-            mock_log.assert_called_once_with("test_secret: t***************e", "INFO")
+            mock_log.assert_called_once_with("test_secret: t***************e", "INFO", None)
 
     def test_log_tip(self):
         '''

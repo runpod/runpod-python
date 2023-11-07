@@ -12,10 +12,7 @@ ERROR - 4 - Serious problem, the software has not been able to perform some func
 
 import os
 import json
-from dotenv import load_dotenv
 
-env_path = os.path.join(os.getcwd(), '.env')
-load_dotenv(env_path)  # Load environment variables
 
 LOG_LEVELS = ['NOTSET', 'DEBUG', 'INFO', 'WARN', 'ERROR']
 
