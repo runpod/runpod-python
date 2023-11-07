@@ -38,7 +38,7 @@ class TestBotoConfig(unittest.TestCase):
 
         # Mock boto3.session.Session
         with patch('boto3.session.Session') as mock_session, \
-            patch('runpod.serverless.utils.rp_upload.TransferConfig') as mock_transfer_config:
+                patch('runpod.serverless.utils.rp_upload.TransferConfig') as mock_transfer_config:
             mock_session.return_value.client.return_value = self.mock_boto_client
             mock_transfer_config.return_value = self.mock_transfer_config
 
@@ -90,8 +90,6 @@ class TestBotoConfig(unittest.TestCase):
                 region_name="region-code"
             )
 
-
-
     def test_get_boto_client_environ(self):
         '''
         Tests get_boto_client with environment variables
@@ -105,7 +103,7 @@ class TestBotoConfig(unittest.TestCase):
         importlib.reload(rp_upload)
 
         with patch('boto3.session.Session') as mock_session, \
-            patch('runpod.serverless.utils.rp_upload.TransferConfig') as mock_transfer_config:
+                patch('runpod.serverless.utils.rp_upload.TransferConfig') as mock_transfer_config:
             mock_session.return_value.client.return_value = self.mock_boto_client
             mock_transfer_config.return_value = self.mock_transfer_config
 
@@ -117,13 +115,15 @@ class TestBotoConfig(unittest.TestCase):
 # ---------------------------------------------------------------------------- #
 #                                 Upload Image                                 #
 # ---------------------------------------------------------------------------- #
+
+
 class TestUploadImage(unittest.TestCase):
     ''' Tests for upload_image '''
 
     @patch("runpod.serverless.utils.rp_upload.get_boto_client")
-    @patch("runpod.serverless.utils.rp_upload.Image.open")
+    @patch("builtins.open")
     @patch("runpod.serverless.utils.rp_upload.os.makedirs")
-    def test_upload_image_local(self, mock_makedirs, mock_img_open, mock_get_boto_client):
+    def test_upload_image_local(self, mock_makedirs, mock_open, mock_get_boto_client):
         '''
         Test upload_image function when there is no boto client
         '''
@@ -131,25 +131,19 @@ class TestUploadImage(unittest.TestCase):
         mock_get_boto_client.return_value = (None, None)
 
         # Mocking the context manager of Image.open
-        mock_image = Mock()
-        mock_image.format = "PNG"
-        mock_img_open.return_value.__enter__.return_value = mock_image
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.read.return_value = b"simulated_uploaded"
+        mock_file.__exit__.return_value = False
 
-        with patch("builtins.open") as mock_open:
-            mock_open.return_value = io.BytesIO(b"simulated_uploaded")
-            result = rp_upload.upload_image("job_id", "image_location")
+        result = rp_upload.upload_image("job_id", "image_location")
 
         # Assert that image is saved locally
         assert "simulated_uploaded" in result
         mock_makedirs.assert_called_once()
-        mock_img_open.assert_called_once()
-        mock_open.assert_called_once()
-        mock_image.save.assert_called_once()
 
     @patch("runpod.serverless.utils.rp_upload.get_boto_client")
-    @patch("runpod.serverless.utils.rp_upload.Image.open")
-    @patch("runpod.serverless.utils.rp_upload.BytesIO")
-    def test_upload_image_s3(self, mock_bytes_io, mock_open, mock_get_boto_client):
+    @patch("builtins.open")
+    def test_upload_image_s3(self, mock_open, mock_get_boto_client):
         '''
         Test upload_image function when there is a boto client
         '''
@@ -165,20 +159,13 @@ class TestUploadImage(unittest.TestCase):
         mock_image.format = "PNG"
         mock_open.return_value.__enter__.return_value = mock_image
 
-        # Mocking BytesIO
-        mock_bytes_io_instance = Mock()
-        mock_bytes_io_instance.getvalue = Mock(return_value="image_bytes")
-        mock_bytes_io.return_value = mock_bytes_io_instance
-
         result = rp_upload.upload_image("job_id", "image_location")
 
         # Assert the image is uploaded to S3
         assert result == "presigned_url"
-        mock_open.assert_called_once_with("image_location")
+        mock_open.assert_called_once_with("image_location", "rb")
         mock_boto_client.put_object.assert_called_once()
         mock_boto_client.generate_presigned_url.assert_called_once()
-
-
 
 
 class TestUploadUtility(unittest.TestCase):
