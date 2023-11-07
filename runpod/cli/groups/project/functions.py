@@ -18,6 +18,8 @@ from ...utils.rp_sync import sync_directory
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
 # -------------------------------- New Project ------------------------------- #
+
+
 def create_new_project(project_name, runpod_volume_id, cuda_version, python_version,  # pylint: disable=too-many-locals, too-many-arguments, too-many-statements
                        model_type=None, model_name=None, init_current_dir=False):
     """ Create a new project. """
@@ -96,7 +98,7 @@ def create_new_project(project_name, runpod_volume_id, cuda_version, python_vers
 
 
 # ------------------------------- Start Project ------------------------------ #
-def start_project(): # pylint: disable=too-many-locals, too-many-branches
+def start_project():  # pylint: disable=too-many-locals, too-many-branches
     '''
     Start the project development environment from runpod.toml
     - Check if the project pod already exists.
@@ -112,7 +114,7 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
     - If the project pod does exist:
 
     '''
-    config = load_project_config() # Load runpod.toml
+    config = load_project_config()  # Load runpod.toml
 
     for config_item in config['project']:
         print(f'    - {config_item}: {config["project"][config_item]}')
@@ -131,7 +133,7 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
             environment_variables[variable] = config['project']['env_vars'][variable]
 
         # Prepare the GPU types
-        selected_gpu_types = config['project'].get('gpu_types',[])
+        selected_gpu_types = config['project'].get('gpu_types', [])
         if config['project'].get('gpu', None):
             selected_gpu_types.append(config['project']['gpu'])
 
@@ -170,9 +172,9 @@ def start_project(): # pylint: disable=too-many-locals, too-many-branches
         print(f'Activating Python virtual environment: {venv_path} on pod {project_pod_id}')
         commands = [
             f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
-            f'source {venv_path}/bin/activate &&' \
-            f'cd {remote_project_path} &&' \
-            'python -m pip install --upgrade pip &&' \
+            f'source {venv_path}/bin/activate &&'
+            f'cd {remote_project_path} &&'
+            'python -m pip install --upgrade pip &&'
             f'python -m pip install --requirement {config["runtime"]["requirements_path"]}'
         ]
         ssh_conn.run_commands(commands)
@@ -297,21 +299,22 @@ def create_project_endpoint():
     # Construct the docker start command
     docker_start_cmd_prefix = 'bash -c "'
     activate_cmd = f'. /runpod-volume/{config["project"]["uuid"]}/venv/bin/activate'
-    python_cmd = f'python -u /runpod-volume/{config["project"]["uuid"]}/{config["project"]["name"]}/{config["runtime"]["handler_path"]}' # pylint: disable=line-too-long
+    python_cmd = f'python -u /runpod-volume/{config["project"]["uuid"]}/{config["project"]["name"]}/{config["runtime"]["handler_path"]}'  # pylint: disable=line-too-long
     docker_start_cmd_suffix = '"'
-    docker_start_cmd = docker_start_cmd_prefix + activate_cmd + ' && ' + python_cmd + docker_start_cmd_suffix # pylint: disable=line-too-long
+    docker_start_cmd = docker_start_cmd_prefix + activate_cmd + ' && ' + \
+        python_cmd + docker_start_cmd_suffix  # pylint: disable=line-too-long
 
     project_endpoint_template = create_template(
-        name =  f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
-        image_name = config['project']['base_image'],
-        container_disk_in_gb = config['project']['container_disk_size_gb'],
-        docker_start_cmd = docker_start_cmd,
-        env = environment_variables, is_serverless = True
+        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
+        image_name=config['project']['base_image'],
+        container_disk_in_gb=config['project']['container_disk_size_gb'],
+        docker_start_cmd=docker_start_cmd,
+        env=environment_variables, is_serverless=True
     )
 
     deployed_endpoint = create_endpoint(
-        name = f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
-        template_id = project_endpoint_template['id'],
+        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
+        template_id=project_endpoint_template['id'],
         network_volume_id=config['project']['storage_id'],
     )
 
