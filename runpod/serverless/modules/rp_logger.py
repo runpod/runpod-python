@@ -11,10 +11,8 @@ ERROR - 4 - Serious problem, the software has not been able to perform some func
 '''
 
 import os
-from dotenv import load_dotenv
+import json
 
-env_path = os.path.join(os.getcwd(), '.env')
-load_dotenv(env_path)  # Load environment variables
 
 LOG_LEVELS = ['NOTSET', 'DEBUG', 'INFO', 'WARN', 'ERROR']
 
@@ -46,7 +44,8 @@ class RunPodLogger:
     __instance = None
     level = _validate_log_level(os.environ.get(
         'RUNPOD_LOG_LEVEL',
-        os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG')))
+        os.environ.get('RUNPOD_DEBUG_LEVEL', 'DEBUG'))
+    )
 
     def __new__(cls):
         if RunPodLogger.__instance is None:
@@ -61,7 +60,7 @@ class RunPodLogger:
         self.level = _validate_log_level(new_level)
         self.info(f'Log level set to {self.level}')
 
-    def log(self, message, message_level='INFO'):
+    def log(self, message, message_level='INFO', job_id=None):
         '''
         Log message to stdout if RUNPOD_DEBUG is true.
         '''
@@ -70,6 +69,15 @@ class RunPodLogger:
 
         level_index = LOG_LEVELS.index(self.level)
         if level_index > LOG_LEVELS.index(message_level) and message_level != 'TIP':
+            return
+
+        if job_id:
+            log_json = {
+                'requestId': job_id,
+                'message': message,
+                'level': message_level
+            }
+            print(json.dumps(log_json), flush=True)
             return
 
         print(f'{message_level.ljust(7)}| {message}', flush=True)
@@ -84,29 +92,29 @@ class RunPodLogger:
         redacted_secret = secret[0] + '*' * (len(secret)-2) + secret[-1]
         self.info(f"{secret_name}: {redacted_secret}")
 
-    def debug(self, message):
+    def debug(self, message, job_id=None):
         '''
         debug log
         '''
-        self.log(message, 'DEBUG')
+        self.log(message, 'DEBUG', job_id)
 
-    def info(self, message):
+    def info(self, message, job_id=None):
         '''
         info log
         '''
-        self.log(message, 'INFO')
+        self.log(message, 'INFO', job_id)
 
-    def warn(self, message):
+    def warn(self, message, job_id=None):
         '''
         warn log
         '''
-        self.log(message, 'WARN')
+        self.log(message, 'WARN', job_id)
 
-    def error(self, message):
+    def error(self, message, job_id=None):
         '''
         error log
         '''
-        self.log(message, 'ERROR')
+        self.log(message, 'ERROR', job_id)
 
     def tip(self, message):
         '''

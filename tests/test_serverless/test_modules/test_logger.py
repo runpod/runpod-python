@@ -57,15 +57,15 @@ class TestLogger(unittest.TestCase):
 
             log.warn("Test log message")
 
-            mock_log.assert_called_once_with("Test log message", "WARN")
+            mock_log.assert_called_once_with("Test log message", "WARN", None)
 
         log.set_level(0)
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log, \
-            patch("builtins.print") as mock_print:
+                patch("builtins.print") as mock_print:
 
             log.debug("Test log message")
 
-            mock_log.assert_called_once_with("Test log message", "DEBUG")
+            mock_log.assert_called_once_with("Test log message", "DEBUG", None)
             mock_print.assert_not_called()
 
         # Reset log level
@@ -99,7 +99,7 @@ class TestLogger(unittest.TestCase):
         '''
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
             self.logger.secret("test_secret", "test_secret_value")
-            mock_log.assert_called_once_with("test_secret: t***************e", "INFO")
+            mock_log.assert_called_once_with("test_secret: t***************e", "INFO", None)
 
     def test_log_tip(self):
         '''
@@ -108,3 +108,16 @@ class TestLogger(unittest.TestCase):
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
             self.logger.tip("test_tip")
             mock_log.assert_called_once_with("test_tip", "TIP")
+
+    def test_log_job_id(self):
+        """ Tests that the log method logs a job id """
+        logger = rp_logger.RunPodLogger()
+        job_id = "test_job_id"
+
+        # Patch print to capture stdout
+        with patch("builtins.print") as mock_print:
+            logger.log("test_message", "INFO", job_id)
+            mock_print.assert_called_once_with(
+                '{"requestId": "test_job_id", "message": "test_message", "level": "INFO"}',
+                flush=True
+            )

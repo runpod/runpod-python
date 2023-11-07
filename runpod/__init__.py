@@ -4,10 +4,11 @@ import os
 import logging
 
 from . import serverless
+from .serverless.modules.rp_logger import RunPodLogger
 from .endpoint import Endpoint
 from .endpoint import AsyncioEndpoint, AsyncioJob
 from .version import __version__
-from .api.ctl_commands import(
+from .api.ctl_commands import (
     get_user, update_user_settings,
     get_gpu, get_gpus,
     get_pod, get_pods, create_pod, stop_pod, resume_pod, terminate_pod,
