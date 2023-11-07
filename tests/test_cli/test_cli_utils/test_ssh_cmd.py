@@ -4,7 +4,10 @@ RunPod | CLI | Utils | SSH Command
 import unittest
 from unittest.mock import patch, MagicMock
 
+import paramiko
+
 from runpod.cli.utils.ssh_cmd import SSHConnection
+
 
 class TestSSHConnection(unittest.TestCase):
     """ Test the SSHConnection class. """
@@ -12,10 +15,10 @@ class TestSSHConnection(unittest.TestCase):
     def setUp(self):
 
         self.patch_get_pod_ssh_ip_port = patch('runpod.cli.utils.ssh_cmd.get_pod_ssh_ip_port',
-                                    return_value=('127.0.0.1', 22)).start()
+                                               return_value=('127.0.0.1', 22)).start()
 
         self.patch_find_ssh_key_file = patch('runpod.cli.utils.ssh_cmd.find_ssh_key_file',
-                                    return_value='key_file').start()
+                                             return_value='key_file').start()
 
         self.mock_ssh_client = MagicMock()
         patch_paramiko = patch('runpod.cli.utils.ssh_cmd.paramiko.SSHClient',
@@ -29,7 +32,14 @@ class TestSSHConnection(unittest.TestCase):
 
     def test_enter(self):
         ''' Test entering the context manager. '''
-        self.assertEqual(self.ssh_connection, self.ssh_connection.__enter__()) # pylint: disable=unnecessary-dunder-call
+        self.assertEqual(
+            self.ssh_connection, self.ssh_connection.__enter__())  # pylint: disable=unnecessary-dunder-call
+
+    def test_enter_exception(self):
+        """ Test entering the context manager with an exception. """
+        self.mock_ssh_client.connect.side_effect = paramiko.SSHException
+        with self.assertRaises(SystemExit):
+            SSHConnection('pod_id_mock')
 
     def test_exit(self):
         ''' Test exiting the context manager. '''
@@ -84,6 +94,6 @@ class TestSSHConnection(unittest.TestCase):
     def test_signal_handler(self, mock_close):
         ''' Test that the signal handler closes the connection. '''
         with patch('sys.exit') as mock_exit:
-            self.ssh_connection._signal_handler(None, None) # pylint: disable=protected-access
+            self.ssh_connection._signal_handler(None, None)  # pylint: disable=protected-access
         mock_close.assert_called_once()
         assert mock_exit.called
