@@ -108,3 +108,9 @@ class TestLogger(unittest.TestCase):
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
             self.logger.tip("test_tip")
             mock_log.assert_called_once_with("test_tip", "TIP")
+
+    def test_log_job_id(self):
+        """ Tests that the log method logs a job id """
+        with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
+            self.logger.log("test_message", "INFO", "test_job_id")
+            mock_log.assert_called_once_with("test_message", "INFO", "test_job_id")
