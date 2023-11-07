@@ -11,9 +11,11 @@ from runpod import get_user
 from .functions import create_new_project, start_project, create_project_endpoint
 from .helpers import validate_project_name
 
+
 @click.group('project', help='Create, deploy, and manage RunPod projects.')
 def project_cli():
     ''' Create and deploy projects on RunPod. '''
+
 
 # -------------------------------- New Project ------------------------------- #
 @project_cli.command('new')
@@ -28,7 +30,8 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     network_volumes = get_user()['networkVolumes']
     if len(network_volumes) == 0:
         click.echo("You do not have any network volumes.")
-        click.echo("Please create a network volume (https://runpod.io/console/user/storage) and try again.") # pylint: disable=line-too-long
+        click.echo(
+            "Please create a network volume (https://runpod.io/console/user/storage) and try again.")  # pylint: disable=line-too-long
         sys.exit(1)
 
     click.echo("Creating a new project...")
@@ -43,11 +46,11 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
 
     def print_net_vol(vol):
         return {
-            'name':f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
-            'value':vol['id']
+            'name': f"{vol['id']}: {vol['name']} ({vol['size']} GB, {vol['dataCenterId']})",
+            'value': vol['id']
         }
 
-    network_volumes = list(map(print_net_vol,network_volumes))
+    network_volumes = list(map(print_net_vol, network_volumes))
     questions = [
         {
             'type': 'rawlist',
@@ -85,7 +88,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     click.confirm("Do you want to continue?", abort=True)
 
     create_new_project(project_name, runpod_volume_id, cuda_version,
-                       python_version, model_type, model_name, init_current_dir) # pylint: disable=too-many-arguments
+                       python_version, model_type, model_name, init_current_dir)  # pylint: disable=too-many-arguments
 
     click.echo(f"Project {project_name} created successfully!")
     click.echo("")
@@ -98,13 +101,14 @@ def start_project_pod():
     '''
     Start the project development pod from runpod.toml
     '''
-    click.echo("Starting the project will create a development pod on RunPod, if one does not already exist.") # pylint: disable=line-too-long
+    click.echo("Starting the project will create a development pod on RunPod, if one does not already exist.")  # pylint: disable=line-too-long
     click.echo("    - You will be charged based on the GPU type specified in runpod.toml.")
     click.echo("    - When you are finished close the connection with CTRL+C.")
     click.echo("")
     click.confirm("Do you want to continue?", abort=True)
 
     click.echo("Starting project development pod...")
+
     start_project()
 
 

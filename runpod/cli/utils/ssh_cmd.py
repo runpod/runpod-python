@@ -15,8 +15,7 @@ from .rp_info import get_pod_ssh_ip_port
 from .rp_userspace import find_ssh_key_file
 from .rp_runpodignore import get_ignore_list
 
-
-colorama.init(autoreset=True) # Initialize colorama
+colorama.init(autoreset=True)  # Initialize colorama
 
 
 class SSHConnection:
@@ -25,16 +24,19 @@ class SSHConnection:
     def __init__(self, pod_id):
         self.pod_id = pod_id
 
-        self.pod_ip, self.pod_port = get_pod_ssh_ip_port(pod_id)
-        self.key_file = find_ssh_key_file(self.pod_ip, self.pod_port)
+        try:
+            self.pod_ip, self.pod_port = get_pod_ssh_ip_port(pod_id)
+            self.key_file = find_ssh_key_file(self.pod_ip, self.pod_port)
 
-        self.ssh = paramiko.SSHClient()
-        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect(self.pod_ip, port=self.pod_port,
-                         username='root', key_filename=self.key_file)
+            self.ssh = paramiko.SSHClient()
+            self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh.connect(self.pod_ip, port=self.pod_port,
+                             username='root', key_filename=self.key_file)
+        except paramiko.SSHException as err:
+            print(colorama.Fore.RED + f"[{pod_id}]", err)
+            sys.exit(1)
 
         signal.signal(signal.SIGINT, self._signal_handler)
-
 
     def __enter__(self):
         return self
@@ -68,18 +70,18 @@ class SSHConnection:
                     print(color + f"[{prefix}]", line.strip())
 
         for command in commands:
-            command = f'source /root/.bashrc && {command}'
-            command = f'source /etc/rp_environment && {command}'
-            command = f'while IFS= read -r -d \'\' line; do export "$line"; done < /proc/1/environ && {command}' # pylint: disable=line-too-long
-            _, stdout, stderr = self.ssh.exec_command(command)
+            full_command = ' && '.join([
+                'source /root/.bashrc',
+                'source /etc/rp_environment',
+                'while IFS= read -r -d \'\' line; do export "$line"; done < /proc/1/environ',
+                command
+            ])
+            _, stdout, stderr = self.ssh.exec_command(full_command)
 
             stdout_thread = threading.Thread(
-                target=handle_stream, args=(stdout, colorama.Fore.GREEN, self.pod_id))
+                target=handle_stream, args=(stdout, colorama.Fore.GREEN, self.pod_id), daemon=True)
             stderr_thread = threading.Thread(
-                target=handle_stream, args=(stderr, colorama.Fore.RED, self.pod_id))
-
-            stdout_thread.daemon = True
-            stderr_thread.daemon = True
+                target=handle_stream, args=(stderr, colorama.Fore.RED, self.pod_id), daemon=True)
 
             stdout_thread.start()
             stderr_thread.start()
