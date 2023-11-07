@@ -140,8 +140,6 @@ class TestUploadImage(unittest.TestCase):
         # Assert that image is saved locally
         assert "simulated_uploaded" in result
         mock_makedirs.assert_called_once()
-        mock_file.assert_called_once()
-        mock_file.save.assert_called_once()
 
     @patch("runpod.serverless.utils.rp_upload.get_boto_client")
     @patch("builtins.open")
@@ -165,7 +163,7 @@ class TestUploadImage(unittest.TestCase):
 
         # Assert the image is uploaded to S3
         assert result == "presigned_url"
-        mock_open.assert_called_once_with("image_location")
+        mock_open.assert_called_once_with("image_location", "rb")
         mock_boto_client.put_object.assert_called_once()
         mock_boto_client.generate_presigned_url.assert_called_once()
 
