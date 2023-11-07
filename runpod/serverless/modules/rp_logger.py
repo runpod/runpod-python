@@ -119,8 +119,8 @@ class RunPodLogger:
         '''
         self.log(message, 'ERROR', job_id)
 
-    def tip(self, message, job_id=None):
+    def tip(self, message):
         '''
         tip log
         '''
-        self.log(message, 'TIP', job_id)
+        self.log(message, 'TIP')

@@ -57,15 +57,15 @@ class TestLogger(unittest.TestCase):
 
             log.warn("Test log message")
 
-            mock_log.assert_called_once_with("Test log message", "WARN")
+            mock_log.assert_called_once_with("Test log message", "WARN", None)
 
         log.set_level(0)
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log, \
-            patch("builtins.print") as mock_print:
+                patch("builtins.print") as mock_print:
 
             log.debug("Test log message")
 
-            mock_log.assert_called_once_with("Test log message", "DEBUG")
+            mock_log.assert_called_once_with("Test log message", "DEBUG", None)
             mock_print.assert_not_called()
 
         # Reset log level
