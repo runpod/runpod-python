@@ -123,7 +123,7 @@ class TestUploadImage(unittest.TestCase):
     @patch("runpod.serverless.utils.rp_upload.get_boto_client")
     @patch("builtins.open")
     @patch("runpod.serverless.utils.rp_upload.os.makedirs")
-    def test_upload_image_local(self, mock_makedirs, mock_img_open, mock_get_boto_client):
+    def test_upload_image_local(self, mock_makedirs, mock_open, mock_get_boto_client):
         '''
         Test upload_image function when there is no boto client
         '''
@@ -131,20 +131,18 @@ class TestUploadImage(unittest.TestCase):
         mock_get_boto_client.return_value = (None, None)
 
         # Mocking the context manager of Image.open
-        mock_image = Mock()
-        mock_image.format = "PNG"
-        mock_img_open.return_value.__enter__.return_value = mock_image
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.read.return_value = b"simulated_uploaded"
+        mock_file.__exit__.return_value = False
 
-        with patch("builtins.open") as mock_open:
-            mock_open.return_value = io.BytesIO(b"simulated_uploaded")
-            result = rp_upload.upload_image("job_id", "image_location")
+        result = rp_upload.upload_image("job_id", "image_location")
 
         # Assert that image is saved locally
         assert "simulated_uploaded" in result
         mock_makedirs.assert_called_once()
-        mock_img_open.assert_called_once()
         mock_open.assert_called_once()
-        mock_image.save.assert_called_once()
+        mock_file.assert_called_once()
+        mock_file.save.assert_called_once()
 
     @patch("runpod.serverless.utils.rp_upload.get_boto_client")
     @patch("builtins.open")
