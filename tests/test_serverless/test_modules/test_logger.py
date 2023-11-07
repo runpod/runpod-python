@@ -111,6 +111,13 @@ class TestLogger(unittest.TestCase):
 
     def test_log_job_id(self):
         """ Tests that the log method logs a job id """
-        with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
-            self.logger.log("test_message", "INFO", "test_job_id")
-            mock_log.assert_called_once_with("test_message", "INFO", "test_job_id")
+        logger = rp_logger.RunPodLogger()
+        job_id = "test_job_id"
+
+        # Patch print to capture stdout
+        with patch("builtins.print") as mock_print:
+            logger.log("test_message", "INFO", job_id)
+            mock_print.assert_called_once_with(
+                '{"requestId": "test_job_id", "message": "test_message", "level": "INFO"}',
+                flush=True
+            )
