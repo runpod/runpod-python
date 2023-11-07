@@ -140,14 +140,12 @@ class TestUploadImage(unittest.TestCase):
         # Assert that image is saved locally
         assert "simulated_uploaded" in result
         mock_makedirs.assert_called_once()
-        mock_open.assert_called_once()
         mock_file.assert_called_once()
         mock_file.save.assert_called_once()
 
     @patch("runpod.serverless.utils.rp_upload.get_boto_client")
     @patch("builtins.open")
-    @patch("runpod.serverless.utils.rp_upload.BytesIO")
-    def test_upload_image_s3(self, mock_bytes_io, mock_open, mock_get_boto_client):
+    def test_upload_image_s3(self, mock_open, mock_get_boto_client):
         '''
         Test upload_image function when there is a boto client
         '''
@@ -162,11 +160,6 @@ class TestUploadImage(unittest.TestCase):
         mock_image = Mock()
         mock_image.format = "PNG"
         mock_open.return_value.__enter__.return_value = mock_image
-
-        # Mocking BytesIO
-        mock_bytes_io_instance = Mock()
-        mock_bytes_io_instance.getvalue = Mock(return_value="image_bytes")
-        mock_bytes_io.return_value = mock_bytes_io_instance
 
         result = rp_upload.upload_image("job_id", "image_location")
 
