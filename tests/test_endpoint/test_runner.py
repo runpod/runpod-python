@@ -56,11 +56,17 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "in_progress")
 
+    @patch('runpod.endpoint.RunPodClient')
     @patch.object(requests.Session, 'post')
-    def test_run_sync(self, mock_post):
+    def test_run_sync(self, mock_post, mock_client):
         '''
         Tests Endpoint.run_sync
         '''
+        mock_client_instance = mock_client.return_value
+        mock_client_instance.headers = {
+            "Authorization": "Bearer MOCK_API_KEY"
+        }
+
         mock_response = Mock()
         mock_response.json.return_value = {
             "id": "123",
