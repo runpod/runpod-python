@@ -230,13 +230,18 @@ class TestJob(unittest.TestCase):
         '''
         Tests Job.output with sleep
         '''
-        mock_client.get.return_value = {
-            "status": "COMPLETED",
-            "output": "Job output"
-        }
+        mock_client.get.side_effect = [
+            {
+                "status": "IN_PROGRESS"
+            },
+            {
+                "status": "COMPLETED",
+                "output": "Job output"
+            }
+        ]
 
         job = runner.Job("endpoint_id", "job_id", mock_client)
-        output = job.output()
+        output = job.output(timeout=10)
 
         self.assertEqual(output, "Job output")
 
@@ -245,7 +250,7 @@ class TestJob(unittest.TestCase):
         '''
         Tests Job.status
         '''
-        mock_client.get.return_value.side_effect = [
+        mock_client.get.side_effect = [
             {
                 "status": "IN_PROGRESS"
             },
