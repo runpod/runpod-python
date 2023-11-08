@@ -146,19 +146,18 @@ class TestJob(unittest.TestCase):
         status = job.status()
         self.assertEqual(status, "COMPLETED")
 
-    @patch.object(runner.RunPodClient, 'get')
-    def test_output(self, mock_get):
+    @patch('runpod.endpoint.runner.RunPodClient._request')
+    @patch('runpod.endpoint.runner.RunPodClient')
+    def test_output(self, mock_client, mock_client_request):
         '''
         Tests Job.output
         '''
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
+        mock_client_request.return_value = {
             "status": "COMPLETED",
             "output": "Job output"
         }
-        mock_get.return_value = mock_response
 
-        job = runner.Job("endpoint_id", "job_id", Mock())
+        job = runner.Job("endpoint_id", "job_id", mock_client)
         output = job.output()
         self.assertEqual(output, "Job output")
 
