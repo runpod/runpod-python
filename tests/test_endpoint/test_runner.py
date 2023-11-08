@@ -37,7 +37,7 @@ class TestEndpoint(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             endpoint.run(request_data)
 
-    @patch('runpod.endpoint.RunPodClient')
+    @patch('runpod.endpoint.runner.RunPodClient')
     def test_run(self, mock_client):
         '''
         Tests Endpoint.run
@@ -56,7 +56,7 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "in_progress")
 
-    @patch('runpod.endpoint.RunPodClient')
+    @patch('runpod.endpoint.runner.RunPodClient')
     @patch.object(requests.Session, 'post')
     def test_run_sync(self, mock_post, mock_client):
         '''
