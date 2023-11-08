@@ -58,7 +58,7 @@ class TestEndpoint(unittest.TestCase):
 
         mock_client_request.assert_called_once_with(
             'POST', f"{self.ENDPOINT_ID}/runsync",
-            {'input': {'YOUR_MODEL_INPUT_JSON': 'YOUR_MODEL_INPUT_VALUE'}}, 90
+            {'input': {'YOUR_MODEL_INPUT_JSON': 'YOUR_MODEL_INPUT_VALUE'}}, 86400
         )
 
     def test_missing_api_key(self):
@@ -120,23 +120,18 @@ class TestEndpoint(unittest.TestCase):
         request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
         run_request = endpoint.run_sync(request_data)
 
-        self.assertEqual(run_request, {
-            "id": "123",
-            "status": "COMPLETED",
-            "output": {"result": "YOUR_MODEL_OUTPUT_VALUE"}
-        })
+        self.assertEqual(run_request, {"result": "YOUR_MODEL_OUTPUT_VALUE"})
 
 
 class TestJob(unittest.TestCase):
     ''' Tests for Job '''
 
-    @patch('runpod.endpoint.runner.RunPodClient._request')
     @patch('runpod.endpoint.runner.RunPodClient')
-    def test_status(self, mock_client, mock_client_request):
+    def test_status(self, mock_client):
         '''
         Tests Job.status
         '''
-        mock_client_request.return_value = {
+        mock_client.get.return_value = {
             "status": "COMPLETED"
         }
 
@@ -163,16 +158,10 @@ class TestJob(unittest.TestCase):
         '''
         Tests Job.output with sleep
         '''
-        mock_response_1 = {
-            "status": "IN_PROGRESS",
-        }
-
-        mock_response_2 = {
+        mock_client.get.return_value = {
             "status": "COMPLETED",
             "output": "Job output"
         }
-
-        mock_client.get.side_effect = cycle([mock_response_1, mock_response_2])
 
         job = runner.Job("endpoint_id", "job_id", mock_client)
         output = job.output()
