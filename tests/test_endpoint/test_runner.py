@@ -35,7 +35,9 @@ class TestEndpoint(unittest.TestCase):
 
         # Tests
         mock_client_request.assert_called_once_with(
-            'POST', f"{self.ENDPOINT_ID}/run", self.MODEL_INPUT)
+            'POST', f"{self.ENDPOINT_ID}/run",
+            {'input': {'YOUR_MODEL_INPUT_JSON': 'YOUR_MODEL_INPUT_VALUE'}}, 10
+        )
 
         self.assertIsInstance(run_request, Job)
         self.assertEqual(run_request.job_id, "123")
@@ -51,11 +53,15 @@ class TestEndpoint(unittest.TestCase):
             "id": "123", "status": "COMPLETED", "output": self.MODEL_OUTPUT}
 
         run_request = self.endpoint.run_sync(self.MODEL_INPUT)
+
+        # Tests
         self.assertEqual(
             run_request, {"id": "123", "status": "COMPLETED", "output": self.MODEL_OUTPUT})
 
         mock_client_request.assert_called_once_with(
-            'POST', f"{self.ENDPOINT_ID}/run", self.MODEL_INPUT)
+            'POST', f"{self.ENDPOINT_ID}/run",
+            {'input': {'YOUR_MODEL_INPUT_JSON': 'YOUR_MODEL_INPUT_VALUE'}}, 90
+        )
 
     def test_missing_api_key(self):
         '''
