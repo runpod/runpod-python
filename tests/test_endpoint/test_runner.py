@@ -2,9 +2,8 @@
 Tests for runpod | endpoint | modules | endpoint.py
 '''
 
-import time
 import unittest
-from unittest.mock import patch, Mock, MagicMock
+from unittest.mock import patch, Mock
 from itertools import cycle
 import requests
 
@@ -174,7 +173,7 @@ class TestJob(unittest.TestCase):
             "output": "Job output"
         }
 
-        mock_client.get.return_value.side_effect = cycle([mock_response_1, mock_response_2])
+        mock_client.get.side_effect = cycle([mock_response_1, mock_response_2])
 
         job = runner.Job("endpoint_id", "job_id", mock_client)
         output = job.output()

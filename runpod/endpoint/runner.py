@@ -98,35 +98,46 @@ class Job:
         self.endpoint_id = endpoint_id
         self.job_id = job_id
         self.rp_client = client
+
+        self.job_status = None
         self.job_output = None
 
-    def _status_json(self):
+    def _fetch_job(self):
         """ Returns the raw json of the status, raises an exception if invalid """
         status_url = f"{self.endpoint_id}/status/{self.job_id}"
-        return self.rp_client.get(endpoint=status_url)
+        job_state = self.rp_client.get(endpoint=status_url)
+
+        if job_state["status"] in ["COMPLETED", "FAILED", "TIMEOUT"]:
+            self.job_status = job_state["status"]
+            self.job_output = job_state.get("output", None)
+
+        return job_state
 
     def status(self):
         """ Returns the status of the job request. """
-        return self._status_json()["status"]
+        if self.job_status is not None:
+            return self.job_status
 
-    def output(self, timeout: int = 60) -> Union[None, dict]:
+        return self._fetch_job()["status"]
+
+    def output(self, timeout: int = 0) -> Any:
         """
         Returns the output of the job request.
 
         Args:
             timeout: The number of seconds to wait for the server to send data before giving up.
         """
-        while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
-            time.sleep(1)
-            timeout -= 1
-            if timeout <= 0:
-                raise TimeoutError("Job status check timed out.")
+        if timeout > 0:
+            while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
+                time.sleep(1)
+                timeout -= 1
+                if timeout <= 0:
+                    raise TimeoutError("Job timed out.")
 
-        if self.job_output is None:
-            status_json = self._status_json()
-            self.job_output = status_json.get("output")
+        if self.job_output is not None:
+            return self.job_output
 
-        return self.job_output
+        return self._fetch_job().get("output", None)
 
 
 # ---------------------------------------------------------------------------- #
@@ -167,8 +178,7 @@ class Endpoint:
         job_request = self.rp_client.post(f"{self.endpoint_id}/run", request_input)
         return Job(self.endpoint_id, job_request["id"], self.rp_client)
 
-    def run_sync(self,
-                 request_input: Dict[str, Any], timeout: int = 90) -> Union[Job, Dict[str, Any]]:
+    def run_sync(self, request_input: Dict[str, Any], timeout: int = 86400) -> Dict[str, Any]:
         """
         Run the endpoint with the given input synchronously.
 
@@ -181,7 +191,4 @@ class Endpoint:
         job_request = self.rp_client.post(
             f"{self.endpoint_id}/runsync", request_input, timeout=timeout)
 
-        if job_request.get("output"):
-            return job_request
-
-        return Job(self.endpoint_id, job_request["id"], self.rp_client)
+        return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)

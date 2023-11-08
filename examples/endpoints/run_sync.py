@@ -9,14 +9,17 @@ import runpod
 
 endpoint = runpod.Endpoint("sdxl")  # Where "sdxl" is the endpoint ID
 
-run_request = endpoint.run_sync({
-    "input": {
-        "prompt": "a photo of a horse the size of a Boeing 787"
-    }
-})
+try:
+    # Run the endpoint synchronously, blocking until the endpoint run is complete.
+    run_request = endpoint.run_sync(
+        {
+            "input": {
+                "prompt": "a photo of a horse the size of a Boeing 787"
+            }
+        },
+        timeout=60  # Seconds
+    )
 
-# Check the status of the run request
-print(run_request.status())
-
-# Get the output of the endpoint run request, blocking until the endpoint run is complete.
-print(run_request.output(timeout=60))
+    print(run_request)
+except TimeoutError as err:
+    print("Job timed out.")
