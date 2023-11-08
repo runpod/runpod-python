@@ -191,4 +191,7 @@ class Endpoint:
         job_request = self.rp_client.post(
             f"{self.endpoint_id}/runsync", request_input, timeout=timeout)
 
+        if job_request["status"] in ["COMPLETED", "FAILED", "TIMEOUT"]:
+            return job_request.get("output", None)
+
         return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
