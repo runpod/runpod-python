@@ -4,12 +4,83 @@ Tests for runpod | endpoint | modules | endpoint.py
 
 import unittest
 from unittest.mock import patch, Mock
-from itertools import cycle
 import requests
 
 import runpod
 from runpod.endpoint import runner
-from runpod.endpoint.runner import Endpoint, Job
+from runpod.endpoint.runner import RunPodClient, Job, Endpoint
+
+
+class TestRunPodClient(unittest.TestCase):
+    """ Tests for RunPodClient """
+
+    def test_no_api_key(self):
+        '''
+        Tests RunPodClient with no api_key
+        '''
+        with self.assertRaises(RuntimeError):
+            runpod.api_key = None
+            RunPodClient()
+
+    @patch.object(requests.Session, 'post')
+    def test_post_with_401(self, mock_post):
+        '''
+        Tests RunPodClient.post with 401 status code
+        '''
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_post.return_value = mock_response
+
+        with self.assertRaises(RuntimeError):
+            runpod.api_key = "MOCK_API_KEY"
+            client = RunPodClient()
+            client.post("ENDPOINT_ID/run", {"input": {}})
+
+    @patch.object(requests.Session, 'post')
+    def test_post(self, mock_post):
+        '''
+        Tests RunPodClient.post
+        '''
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": "123"}
+        mock_post.return_value = mock_response
+
+        runpod.api_key = "MOCK_API_KEY"
+        client = RunPodClient()
+        response = client.post("ENDPOINT_ID/run", {"input": {}})
+
+        self.assertEqual(response, {"id": "123"})
+
+    @patch.object(requests.Session, 'get')
+    def test_get_with_401(self, mock_get):
+        '''
+        Tests RunPodClient.get with 401 status code
+        '''
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(RuntimeError):
+            runpod.api_key = "MOCK_API_KEY"
+            client = RunPodClient()
+            client.get("ENDPOINT_ID/status/123")
+
+    @patch.object(requests.Session, 'get')
+    def test_get(self, mock_get):
+        '''
+        Tests RunPodClient.get
+        '''
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "COMPLETED"}
+        mock_get.return_value = mock_response
+
+        runpod.api_key = "MOCK_API_KEY"
+        client = RunPodClient()
+        response = client.get("ENDPOINT_ID/status/123")
+
+        self.assertEqual(response, {"status": "COMPLETED"})
 
 
 class TestEndpoint(unittest.TestCase):
