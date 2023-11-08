@@ -36,7 +36,7 @@ class TestRunPodClient(unittest.TestCase):
             client = RunPodClient()
             client.post("ENDPOINT_ID/run", {"input": {}})
 
-    @patch.object(requests.Session, 'post')
+    @patch.object(requests.Session, 'request')
     def test_post(self, mock_post):
         '''
         Tests RunPodClient.post
@@ -66,7 +66,7 @@ class TestRunPodClient(unittest.TestCase):
             client = RunPodClient()
             client.get("ENDPOINT_ID/status/123")
 
-    @patch.object(requests.Session, 'get')
+    @patch.object(requests.Session, 'request')
     def test_get(self, mock_get):
         '''
         Tests RunPodClient.get
