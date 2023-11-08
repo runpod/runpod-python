@@ -157,7 +157,7 @@ class TestJob(unittest.TestCase):
             "output": "Job output"
         }
 
-        mock_client._request.return_value = {  # pylint: disable=protected-access
+        mock_client.return_value = {
             "status": "COMPLETED",
             "output": "Job output"
         }
