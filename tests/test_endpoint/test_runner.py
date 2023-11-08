@@ -37,19 +37,15 @@ class TestEndpoint(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             endpoint.run(request_data)
 
-    @patch("runpod.endpoint.runner.requests.Session.get")
-    @patch("runpod.endpoint.runner.requests.Session.post")
-    def test_run(self, mock_post, mock_get):
+    @patch('runpod.endpoint.RunPodClient')
+    def test_run(self, mock_client):
         '''
         Tests Endpoint.run
         '''
-        mock_response = Mock()
-        mock_response.json.return_value = {
-            "id": "123",
-            "status": "in_progress"
+        mock_client_instance = mock_client.return_value
+        mock_client_instance.headers = {
+            "Authorization": "Bearer MOCK_API_KEY"
         }
-        mock_post.return_value = mock_response
-        mock_get.return_value = mock_response
 
         runpod.api_key = "MOCK_API_KEY"
         endpoint = runpod.Endpoint("ENDPOINT_ID")
