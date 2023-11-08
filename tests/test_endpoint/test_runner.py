@@ -157,7 +157,7 @@ class TestJob(unittest.TestCase):
             "output": "Job output"
         }
 
-        mock_client.return_value = {
+        mock_client.get.return_value = {
             "status": "COMPLETED",
             "output": "Job output"
         }
