@@ -4,7 +4,6 @@ Tests for runpod | endpoint | modules | endpoint.py
 
 import time
 import unittest
-from unittest import mock
 from unittest.mock import patch, Mock, MagicMock
 from itertools import cycle
 import requests
@@ -115,18 +114,14 @@ class TestJob(unittest.TestCase):
         output = job.output()
         self.assertEqual(output, "Job output")
 
-    @patch.object(runner.RunPodClient, 'get')
-    def test_error_status(self, mock_get):
+    @patch.object(runpod.endpoint.runner.RunPodClient, '_request')
+    def test_error_status(self, mock_client_request):
         '''
         Tests Job.status with error status
         '''
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "error": "Some error"
-        }
-        mock_get.return_value = mock_response
+        mock_client_request.side_effect = RuntimeError("Error")
 
-        job = runner.Job("endpoint_id", "job_id", Mock())
+        job = runner.Job("endpoint_id", "job_id", mock_client_request)
         with self.assertRaises(RuntimeError):
             job.status()
 
