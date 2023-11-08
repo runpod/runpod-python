@@ -54,8 +54,7 @@ class TestEndpoint(unittest.TestCase):
         run_request = self.endpoint.run_sync(self.MODEL_INPUT)
 
         # Tests
-        self.assertEqual(
-            run_request, {"id": "123", "status": "COMPLETED", "output": self.MODEL_OUTPUT})
+        self.assertEqual(run_request, self.MODEL_OUTPUT)
 
         mock_client_request.assert_called_once_with(
             'POST', f"{self.ENDPOINT_ID}/runsync",

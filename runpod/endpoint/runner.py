@@ -1,7 +1,7 @@
 '''
 RunPod | Python | Endpoint Runner
 '''
-from typing import Any, Union, Optional, Dict
+from typing import Any, Optional, Dict
 import time
 import requests
 from requests.adapters import HTTPAdapter, Retry

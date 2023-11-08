@@ -18,5 +18,9 @@ run_request = endpoint.run({
 # Check the status of the run request
 print(run_request.status())
 
-# Get the output of the endpoint run request, blocking until the endpoint run is complete.
+# Get the output of the endpoint run request.
+print(run_request.output())
+
+# Get the output of the endpoint run request.
+# If timeout is greater than 0, this will block until the endpoint run is complete.
 print(run_request.output(timeout=60))
