@@ -32,26 +32,30 @@ class TestEndpoint(unittest.TestCase):
         mock_client_request.return_value = {"id": "123", "status": "IN_PROGRESS"}
 
         run_request = self.endpoint.run(self.MODEL_INPUT)
+
+        # Tests
+        mock_client_request.assert_called_once_with(
+            'POST', f"{self.ENDPOINT_ID}/run", self.MODEL_INPUT)
+
         self.assertIsInstance(run_request, Job)
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "IN_PROGRESS")
 
-        mock_client_request.assert_called_once_with(
-            'POST', f"{self.ENDPOINT_ID}/run", self.MODEL_INPUT)
+        mock_client_request.assert_called_with(
+            'GET', f"{self.ENDPOINT_ID}/status/123", timeout=10)
 
-    @patch('runpod.endpoint.runner.RunPodClient')
-    def test_endpoint_run_sync(self, mock_client_class):
+    @patch('runpod.endpoint.runner.RunPodClient._request')
+    def test_endpoint_run_sync(self, mock_client_request):
         ''' Test the run_sync method of Endpoint with a successful job initiation. '''
-        mock_client_instance = mock_client_class.return_value
-        mock_client_instance.post.return_value = {
+        mock_client_request.return_value = {
             "id": "123", "status": "COMPLETED", "output": self.MODEL_OUTPUT}
 
         run_request = self.endpoint.run_sync(self.MODEL_INPUT)
         self.assertEqual(
             run_request, {"id": "123", "status": "COMPLETED", "output": self.MODEL_OUTPUT})
 
-        mock_client_instance.post.assert_called_with(
-            f"{self.ENDPOINT_ID}/runsync", self.MODEL_INPUT, timeout=90)
+        mock_client_request.assert_called_once_with(
+            'POST', f"{self.ENDPOINT_ID}/run", self.MODEL_INPUT)
 
     def test_missing_api_key(self):
         '''
