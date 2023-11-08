@@ -3,6 +3,7 @@ Tests for runpod | endpoint | modules | endpoint.py
 '''
 
 import unittest
+from unittest import mock
 from unittest.mock import patch, Mock
 import requests
 
@@ -238,3 +239,21 @@ class TestJob(unittest.TestCase):
         output = job.output()
 
         self.assertEqual(output, "Job output")
+
+    @patch('runpod.endpoint.runner.RunPodClient')
+    def test_job_status(self, mock_client):
+        '''
+        Tests Job.status
+        '''
+        mock_client.get.return_value.side_effect = [
+            {
+                "status": "IN_PROGRESS"
+            },
+            {
+                "status": "COMPLETED"
+            }
+        ]
+
+        job = runner.Job("endpoint_id", "job_id", mock_client)
+        self.assertEqual(job.status(), "IN_PROGRESS")
+        self.assertEqual(job.status(), "COMPLETED")
