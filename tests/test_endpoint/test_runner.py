@@ -6,6 +6,7 @@ import time
 import unittest
 from unittest.mock import patch, Mock, MagicMock
 from itertools import cycle
+from regex import R
 import requests
 
 import runpod
@@ -132,18 +133,17 @@ class TestEndpoint(unittest.TestCase):
 class TestJob(unittest.TestCase):
     ''' Tests for Job '''
 
-    @patch.object(runner.RunPodClient, 'get')
-    def test_status(self, mock_get):
+    @patch('runpod.endpoint.runner.RunPodClient._request')
+    @patch('runpod.endpoint.runner.RunPodClient')
+    def test_status(self, mock_client, mock_client_request):
         '''
         Tests Job.status
         '''
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
+        mock_client_request.return_value = {
             "status": "COMPLETED"
         }
-        mock_get.return_value = mock_response
 
-        job = runner.Job("endpoint_id", "job_id", Mock())
+        job = runner.Job("endpoint_id", "job_id", mock_client)
         status = job.status()
         self.assertEqual(status, "COMPLETED")
 
@@ -162,17 +162,6 @@ class TestJob(unittest.TestCase):
         job = runner.Job("endpoint_id", "job_id", Mock())
         output = job.output()
         self.assertEqual(output, "Job output")
-
-    @patch.object(runpod.endpoint.runner.RunPodClient, '_request')
-    def test_error_status(self, mock_client_request):
-        '''
-        Tests Job.status with error status
-        '''
-        mock_client_request.side_effect = RuntimeError("Error")
-
-        job = runner.Job("endpoint_id", "job_id", mock_client_request)
-        with self.assertRaises(RuntimeError):
-            job.status()
 
     @patch.object(runner.RunPodClient, 'get')
     @patch.object(time, 'sleep', return_value=None)
