@@ -100,7 +100,7 @@ class TestJob(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        job = runner.Job("endpoint_id", "job_id", runner.RunPodClient())
+        job = runner.Job("endpoint_id", "job_id", Mock())
         status = job.status()
         self.assertEqual(status, "COMPLETED")
 
@@ -116,7 +116,7 @@ class TestJob(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        job = runner.Job("endpoint_id", "job_id", runner.RunPodClient())
+        job = runner.Job("endpoint_id", "job_id", Mock())
         output = job.output()
         self.assertEqual(output, "Job output")
 
@@ -131,7 +131,7 @@ class TestJob(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        job = runner.Job("endpoint_id", "job_id", runner.RunPodClient())
+        job = runner.Job("endpoint_id", "job_id", Mock())
         with self.assertRaises(RuntimeError):
             job.status()
 
@@ -153,7 +153,7 @@ class TestJob(unittest.TestCase):
         # Set get().json() to return a different response depending on the call count
         mock_get.return_value.json.side_effect = cycle([mock_response_1, mock_response_2])
 
-        job = runner.Job("endpoint_id", "job_id", runner.RunPodClient())
+        job = runner.Job("endpoint_id", "job_id", Mock())
         output = job.output(timeout=0.2)
 
         self.assertEqual(output, None)
@@ -170,6 +170,6 @@ class TestJob(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        job = runner.Job("endpoint_id", "job_id", runner.RunPodClient())
+        job = runner.Job("endpoint_id", "job_id", Mock())
         output = job.output()
         self.assertIsNone(output)  # Check if output is None

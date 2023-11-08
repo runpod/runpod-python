@@ -22,7 +22,7 @@ class RunPodClient:
 
     def __init__(self):
         """
-        Initialize the client by setting up a requests session with retries and authorization headers.
+        Initialize a RunPodClient instance.
 
         Raises:
             RuntimeError: If the API key has not been initialized.
