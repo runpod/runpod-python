@@ -6,7 +6,6 @@ import time
 import unittest
 from unittest.mock import patch, Mock, MagicMock
 from itertools import cycle
-from regex import R
 import requests
 
 import runpod
