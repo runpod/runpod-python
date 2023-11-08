@@ -1,5 +1,25 @@
 # Change Log
 
+## Release 1.3.3 (11/8/23)
+
+### Added
+
+- Method of creating logs with job id.
+
+### Fixed
+
+- Reduced polling when checking for job completion.
+- Removed print statements for endpoint calls.
+- Serverless progress updates no longer restricted to only strings.
+
+## Changed
+
+- Removed `pillow` dependency.
+- Removed `python-dotenv` dependency.
+- Removed `setuptools_scm` from required dependencies.
+
+---
+
 ## Release 1.3.2 (11/3/23)
 
 ### Changed
