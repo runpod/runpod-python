@@ -59,7 +59,7 @@ class TestEndpoint(unittest.TestCase):
             run_request, {"id": "123", "status": "COMPLETED", "output": self.MODEL_OUTPUT})
 
         mock_client_request.assert_called_once_with(
-            'POST', f"{self.ENDPOINT_ID}/run",
+            'POST', f"{self.ENDPOINT_ID}/runsync",
             {'input': {'YOUR_MODEL_INPUT_JSON': 'YOUR_MODEL_INPUT_VALUE'}}, 90
         )
 
@@ -68,7 +68,8 @@ class TestEndpoint(unittest.TestCase):
         Tests Endpoint.run without api_key
         '''
         with self.assertRaises(RuntimeError):
-            runpod.Endpoint("ENDPOINT_ID")
+            runpod.api_key = None
+            self.endpoint.run(self.MODEL_INPUT)
 
     @patch.object(requests.Session, 'post')
     def test_run_with_401(self, mock_post):
