@@ -37,8 +37,8 @@ class TestEndpoint(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             endpoint.run(request_data)
 
-    @patch.object(requests.Session, 'get')
-    @patch.object(requests.Session, 'post')
+    @patch.object(runpod.endpoint.runner.requests.Session, 'get')
+    @patch.object(runpod.endpoint.runner.requests.Session, 'post')
     def test_run(self, mock_post, mock_get):
         '''
         Tests Endpoint.run
