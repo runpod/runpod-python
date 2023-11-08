@@ -4,6 +4,7 @@ Tests for runpod | endpoint | modules | endpoint.py
 
 import time
 import unittest
+from unittest import mock
 from unittest.mock import patch, Mock, MagicMock
 from itertools import cycle
 import requests
@@ -37,14 +38,14 @@ class TestEndpoint(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             endpoint.run(request_data)
 
-    @patch('runpod.endpoint.runner.RunPodClient')
-    def test_run(self, mock_client):
+    @patch.object(runpod.endpoint.runner.RunPodClient, '_request')
+    def test_run(self, mock_client_post):
         '''
         Tests Endpoint.run
         '''
-        mock_client_instance = mock_client.return_value
-        mock_client_instance.headers = {
-            "Authorization": "Bearer MOCK_API_KEY"
+        mock_client_post.return_value = {
+            "id": "123",
+            "status": "IN_PROGRESS"
         }
 
         runpod.api_key = "MOCK_API_KEY"
@@ -54,7 +55,7 @@ class TestEndpoint(unittest.TestCase):
         run_request = endpoint.run(request_data)
 
         self.assertEqual(run_request.job_id, "123")
-        self.assertEqual(run_request.status(), "in_progress")
+        self.assertEqual(run_request.status(), "IN_PROGRESS")
 
     @patch('runpod.endpoint.runner.RunPodClient')
     @patch.object(requests.Session, 'post')
