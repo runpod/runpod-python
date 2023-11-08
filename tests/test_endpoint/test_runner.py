@@ -3,7 +3,6 @@ Tests for runpod | endpoint | modules | endpoint.py
 '''
 
 import unittest
-from unittest import mock
 from unittest.mock import patch, Mock
 import requests
 
@@ -194,6 +193,23 @@ class TestEndpoint(unittest.TestCase):
 
         self.assertEqual(run_request, {"result": "YOUR_MODEL_OUTPUT_VALUE"})
 
+    @patch.object(runpod.endpoint.runner.RunPodClient, '_request')
+    def test_run_sync_with_timeout(self, mock_client_request):
+        '''
+        Tests Endpoint.run_sync with timeout
+        '''
+        mock_client_request.return_value = {
+            "id": "123",
+            "status": "IN_PROGRESS"
+        }
+
+        runpod.api_key = "MOCK_API_KEY"
+        endpoint = runpod.Endpoint("ENDPOINT_ID")
+
+        request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
+        with self.assertRaises(TimeoutError):
+            endpoint.run_sync(request_data, timeout=1)
+
 
 class TestJob(unittest.TestCase):
     ''' Tests for Job '''
@@ -246,6 +262,19 @@ class TestJob(unittest.TestCase):
         self.assertEqual(output, "Job output")
 
     @patch('runpod.endpoint.runner.RunPodClient')
+    def test_output_timeout(self, mock_client):
+        '''
+        Tests Job.output with timeout
+        '''
+        mock_client.get.return_value = {
+            "status": "IN_PROGRESS"
+        }
+
+        job = runner.Job("endpoint_id", "job_id", mock_client)
+        with self.assertRaises(TimeoutError):
+            job.output(timeout=1)
+
+    @patch('runpod.endpoint.runner.RunPodClient')
     def test_job_status(self, mock_client):
         '''
         Tests Job.status
@@ -261,4 +290,5 @@ class TestJob(unittest.TestCase):
 
         job = runner.Job("endpoint_id", "job_id", mock_client)
         self.assertEqual(job.status(), "IN_PROGRESS")
+        self.assertEqual(job.status(), "COMPLETED")
         self.assertEqual(job.status(), "COMPLETED")

@@ -10,6 +10,13 @@
 
 - Reduced polling when checking for job completion.
 - Removed print statements for endpoint calls.
+- Serverless progress updates no longer restricted to only strings.
+
+## Changed
+
+- Removed `pillow` dependency.
+- Removed `python-dotenv` dependency.
+- Removed `setuptools_scm` from required dependencies.
 
 ---
 
