@@ -10,10 +10,34 @@ import requests
 
 import runpod
 from runpod.endpoint import runner
+from runpod.endpoint.runner import Endpoint, Job
 
 
 class TestEndpoint(unittest.TestCase):
     ''' Tests for Endpoint '''
+
+    ENDPOINT_ID = "ENDPOINT_ID"
+    MOCK_API_KEY = "MOCK_API_KEY"
+    MODEL_INPUT = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}
+    MODEL_OUTPUT = {"result": "YOUR_MODEL_OUTPUT_VALUE"}
+
+    def setUp(self):
+        ''' Common setup for the tests. '''
+        runpod.api_key = self.MOCK_API_KEY
+        self.endpoint = Endpoint(self.ENDPOINT_ID)
+
+    @patch('runpod.endpoint.runner.RunPodClient')
+    def test_endpoint_run(self, mock_client_class):
+        ''' Test the run method of Endpoint with a successful job initiation. '''
+        mock_client_instance = mock_client_class.return_value
+        mock_client_instance.post.return_value = {"id": "123", "status": "IN_PROGRESS"}
+
+        run_request = self.endpoint.run(self.MODEL_INPUT)
+        self.assertIsInstance(run_request, Job)
+        self.assertEqual(run_request.job_id, "123")
+        self.assertEqual(run_request.status(), "IN_PROGRESS")
+
+        mock_client_instance.post.assert_called_with(f"{self.ENDPOINT_ID}/run", self.MODEL_INPUT)
 
     def test_missing_api_key(self):
         '''
