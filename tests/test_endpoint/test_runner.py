@@ -39,11 +39,11 @@ class TestEndpoint(unittest.TestCase):
             endpoint.run(request_data)
 
     @patch.object(runpod.endpoint.runner.RunPodClient, '_request')
-    def test_run(self, mock_client_post):
+    def test_run(self, mock_client_request):
         '''
         Tests Endpoint.run
         '''
-        mock_client_post.return_value = {
+        mock_client_request.return_value = {
             "id": "123",
             "status": "IN_PROGRESS"
         }
@@ -57,24 +57,16 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "IN_PROGRESS")
 
-    @patch('runpod.endpoint.runner.RunPodClient')
-    @patch.object(requests.Session, 'post')
-    def test_run_sync(self, mock_post, mock_client):
+    @patch.object(runpod.endpoint.runner.RunPodClient, '_request')
+    def test_run_sync(self, mock_client_request):
         '''
         Tests Endpoint.run_sync
         '''
-        mock_client_instance = mock_client.return_value
-        mock_client_instance.headers = {
-            "Authorization": "Bearer MOCK_API_KEY"
-        }
-
-        mock_response = Mock()
-        mock_response.json.return_value = {
+        mock_client_request.return_value = {
             "id": "123",
-            "status": "completed",
+            "status": "COMPLETED",
             "output": {"result": "YOUR_MODEL_OUTPUT_VALUE"}
         }
-        mock_post.return_value = mock_response
 
         runpod.api_key = "MOCK_API_KEY"
         endpoint = runpod.Endpoint("ENDPOINT_ID")
@@ -84,7 +76,7 @@ class TestEndpoint(unittest.TestCase):
 
         self.assertEqual(run_request, {
             "id": "123",
-            "status": "completed",
+            "status": "COMPLETED",
             "output": {"result": "YOUR_MODEL_OUTPUT_VALUE"}
         })
 
