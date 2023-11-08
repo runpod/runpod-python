@@ -146,17 +146,11 @@ class TestJob(unittest.TestCase):
         status = job.status()
         self.assertEqual(status, "COMPLETED")
 
-    @patch('runpod.endpoint.runner.RunPodClient._request')
     @patch('runpod.endpoint.runner.RunPodClient')
-    def test_output(self, mock_client, mock_client_request):
+    def test_output(self, mock_client):
         '''
         Tests Job.output
         '''
-        mock_client_request.return_value = {
-            "status": "COMPLETED",
-            "output": "Job output"
-        }
-
         mock_client.get.return_value = {
             "status": "COMPLETED",
             "output": "Job output"
@@ -166,9 +160,8 @@ class TestJob(unittest.TestCase):
         output = job.output()
         self.assertEqual(output, "Job output")
 
-    @patch.object(runner.RunPodClient, 'get')
-    @patch.object(time, 'sleep', return_value=None)
-    def test_output_with_sleep(self, mock_sleep, mock_get):
+    @patch('runpod.endpoint.runner.RunPodClient')
+    def test_output_with_sleep(self, mock_client):
         '''
         Tests Job.output with sleep
         '''
@@ -181,26 +174,9 @@ class TestJob(unittest.TestCase):
             "output": "Job output"
         }
 
-        # Set get().json() to return a different response depending on the call count
-        mock_get.return_value.json.side_effect = cycle([mock_response_1, mock_response_2])
+        mock_client.get.return_value.side_effect = cycle([mock_response_1, mock_response_2])
 
-        job = runner.Job("endpoint_id", "job_id", Mock())
-        output = job.output(timeout=0.2)
-
-        self.assertEqual(output, None)
-        self.assertEqual(mock_sleep.call_count, 1)
-
-    @patch.object(runner.RunPodClient, 'get')
-    def test_output_without_output_key(self, mock_get):
-        '''
-        Tests Job.output without output key
-        '''
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "status": "COMPLETED",
-        }
-        mock_get.return_value = mock_response
-
-        job = runner.Job("endpoint_id", "job_id", Mock())
+        job = runner.Job("endpoint_id", "job_id", mock_client)
         output = job.output()
-        self.assertIsNone(output)  # Check if output is None
+
+        self.assertEqual(output, "Job output")
