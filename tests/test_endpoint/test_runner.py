@@ -157,6 +157,11 @@ class TestJob(unittest.TestCase):
             "output": "Job output"
         }
 
+        mock_client._request.return_value = {  # pylint: disable=protected-access
+            "status": "COMPLETED",
+            "output": "Job output"
+        }
+
         job = runner.Job("endpoint_id", "job_id", mock_client)
         output = job.output()
         self.assertEqual(output, "Job output")
