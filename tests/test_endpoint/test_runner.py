@@ -131,7 +131,7 @@ class TestJob(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        job = runner.Job("endpoint_id", "job_id")
+        job = runner.Job("endpoint_id", "job_id", runner.RunPodClient())
         with self.assertRaises(RuntimeError):
             job.status()
 
