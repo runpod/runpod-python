@@ -3,7 +3,7 @@ RunPod | CLI | Utils | Userspace
 '''
 import os
 import paramiko
-from runpod.cli import SSH_KEY_PATH
+from runpod import SSH_KEY_PATH
 
 
 def find_ssh_key_file(pod_ip, pod_port):

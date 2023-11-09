@@ -18,6 +18,10 @@ from .api.ctl_commands import (
 from .cli.groups.config.functions import set_credentials, check_credentials, get_credentials
 
 
+# ------------------------------- Config Paths ------------------------------- #
+SSH_KEY_PATH = os.path.expanduser('~/.runpod/ssh')
+
+
 profile = "default"  # pylint: disable=invalid-name
 
 _credentials = get_credentials(profile)
