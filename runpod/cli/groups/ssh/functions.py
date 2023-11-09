@@ -7,7 +7,7 @@ import base64
 import hashlib
 import paramiko
 
-from runpod import SSH_KEY_PATH
+from runpod.cli import SSH_KEY_PATH
 from runpod.api.ctl_commands import get_user, update_user_settings
 
 

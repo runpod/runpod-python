@@ -1,10 +1,20 @@
 ''' Allows the CLI to be imported as a module. '''
 
+import os
 import threading
 
 from .groups import config, ssh
 
 STOP_EVENT = threading.Event()
+
+
+# ------------------------------- Config Paths ------------------------------- #
+SSH_KEY_PATH = os.path.expanduser('~/.runpod/ssh')
+try:
+    os.makedirs(os.path.join(SSH_KEY_PATH), exist_ok=True)
+except OSError:
+    pass
+
 
 # --------------------------- runpod.toml Defaults --------------------------- #
 BASE_DOCKER_IMAGE = 'runpod/base:0.4.0-cuda{cuda_version}'
