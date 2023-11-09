@@ -62,7 +62,6 @@ def generate_ssh_key_pair(filename):
     - filename (str):   The base filename to save the key pair.
                         The public key will have '.pub' appended to it.
     """
-    # Create the SSH directory if it doesn't exist
     os.makedirs(os.path.join(SSH_FILES), exist_ok=True)
 
     # Generate private key
