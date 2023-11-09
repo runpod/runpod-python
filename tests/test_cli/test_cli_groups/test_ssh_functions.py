@@ -2,7 +2,6 @@
 
 import base64
 import unittest
-from unittest import mock
 from unittest.mock import patch, mock_open
 from runpod.cli.groups.ssh.functions import (
     get_ssh_key_fingerprint, get_user_pub_keys,
