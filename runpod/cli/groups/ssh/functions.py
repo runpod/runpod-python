@@ -10,7 +10,7 @@ import paramiko
 from runpod.api.ctl_commands import get_user, update_user_settings
 
 SSH_FILES = os.path.expanduser('~/.runpod/ssh')
-os.makedirs(os.path.join(SSH_FILES), exist_ok=True)
+
 
 def get_ssh_key_fingerprint(public_key):
     '''
@@ -53,6 +53,7 @@ def get_user_pub_keys():
 
     return key_list
 
+
 def generate_ssh_key_pair(filename):
     """
     Generate an RSA SSH key pair and save it to disk.
@@ -61,6 +62,8 @@ def generate_ssh_key_pair(filename):
     - filename (str):   The base filename to save the key pair.
                         The public key will have '.pub' appended to it.
     """
+    os.makedirs(os.path.join(SSH_FILES), exist_ok=True)
+
     # Generate private key
     private_key = paramiko.RSAKey.generate(bits=2048)
     private_key.write_private_key_file(os.path.join(SSH_FILES, filename))

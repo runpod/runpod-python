@@ -6,6 +6,7 @@ from .groups import config, ssh
 
 STOP_EVENT = threading.Event()
 
+
 # --------------------------- runpod.toml Defaults --------------------------- #
 BASE_DOCKER_IMAGE = 'runpod/base:0.4.0-cuda{cuda_version}'
 GPU_TYPES = [

@@ -8,6 +8,7 @@ from runpod.cli.groups.ssh.functions import (
     generate_ssh_key_pair, add_ssh_key
 )
 
+
 class TestSSHFunctions(unittest.TestCase):
     """ Tests for the SSH functions """
 
@@ -58,9 +59,11 @@ class TestSSHFunctions(unittest.TestCase):
         mock_generate.return_value.get_base64.return_value = "ABCDE12345"
         mock_path_join.return_value = "/path/to/private_key"
 
-        with patch("builtins.open", mock_open()) as mock_file, \
-             patch("runpod.cli.groups.ssh.functions.os.chmod") as mock_chmod, \
-             patch("runpod.cli.groups.ssh.functions.add_ssh_key") as mock_add_key:
+        with patch("os.mkdir") as mock_mkdir, \
+                patch("builtins.open", mock_open()) as mock_file, \
+                patch("runpod.cli.groups.ssh.functions.os.chmod") as mock_chmod, \
+                patch("runpod.cli.groups.ssh.functions.add_ssh_key") as mock_add_key:
+            mock_mkdir.return_value = None
             mock_file.return_value.write.return_value = None
             private_key, public_key = generate_ssh_key_pair("test_key")
             self.assertEqual(public_key, "ssh-rsa ABCDE12345 test_key")

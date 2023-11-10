@@ -17,7 +17,7 @@ def find_ssh_key_file(pod_ip, pod_port):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    for file  in os.listdir(SSH_KEY_PATH):
+    for file in os.listdir(SSH_KEY_PATH):
         file_path = os.path.join(SSH_KEY_PATH, file)
 
         if not os.path.isfile(file_path) or file.endswith('.pub'):
@@ -28,7 +28,7 @@ def find_ssh_key_file(pod_ip, pod_port):
             ssh.close()
             print(f"Connected to pod {pod_ip}:{pod_port} using key {file}")
             return file_path
-        except Exception as err: # pylint: disable=broad-except
+        except Exception as err:  # pylint: disable=broad-except
             print(f"An error occurred with key {file}: {err}")
 
     print("Failed to connect using all available keys.")
