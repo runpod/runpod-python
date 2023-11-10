@@ -35,7 +35,7 @@ def get_project_endpoint(project_id: str):
     """
     for endpoint in get_endpoints():
         if project_id in endpoint['name']:
-            return endpoint['id']
+            return endpoint
 
     return None
 

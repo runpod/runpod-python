@@ -9,7 +9,7 @@ import uuid
 import tomlkit
 from tomlkit import document, comment, table, nl
 
-from runpod import __version__, get_pod, create_template, create_endpoint, update_endpoint_template
+from runpod import __version__, get_pod, create_template, create_endpoint, update_endpoint_template, get_endpoints
 from runpod.cli import BASE_DOCKER_IMAGE, GPU_TYPES, ENV_VARS
 from runpod.cli.utils.ssh_cmd import SSHConnection
 from .helpers import get_project_pod, copy_template_files, attempt_pod_launch, load_project_config, get_project_endpoint
@@ -300,7 +300,8 @@ def create_project_endpoint():
     """
     config = load_project_config()
 
-    project_pod_id = get_project_pod(config['project']['uuid'])
+    project_id = config['project']['uuid']
+    project_pod_id = get_project_pod(project_id)
 
     # Check if the project pod already exists, if not create it.
     if not project_pod_id:
@@ -348,7 +349,7 @@ def create_project_endpoint():
         env=environment_variables, is_serverless=True
     )
 
-    deployed_endpoint = get_project_endpoint(project_pod_id)
+    deployed_endpoint = get_project_endpoint(project_id)
     if not deployed_endpoint:
         deployed_endpoint = create_endpoint(
             name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
@@ -357,7 +358,7 @@ def create_project_endpoint():
         )
     else:
         deployed_endpoint = update_endpoint_template(
-            id=deployed_endpoint['id'],
+            endpoint_id=deployed_endpoint['id'],
             template_id=project_endpoint_template['id'],
         )
     

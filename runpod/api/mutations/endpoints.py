@@ -66,15 +66,16 @@ def update_endpoint_template_mutation(
 
     # ------------------------------ Required Fields ----------------------------- #
     input_fields.append(f'templateId: "{template_id}"')
-    input_fields.append(f'id: "{endpoint_id}"')
+    input_fields.append(f'endpointId: "{endpoint_id}"')
 
     # Format the input fields into a string
     input_fields_string = ", ".join(input_fields)
-    return f"""
-    mutation UpdateEndpointTemplate($input: UpdateEndpointTemplateInput) {{
+    result = f"""
+    mutation {{
         updateEndpointTemplate(input: {{{input_fields_string}}}) {{
             id
             templateId
         }}
     }}
-"""
+    """
+    return result
