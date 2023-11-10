@@ -9,6 +9,7 @@ from .queries import user as user_queries
 from .mutations import user as user_mutations
 from .queries import gpus
 from .queries import pods as pod_queries
+from .queries import endpoints as endpoint_queries
 from .graphql import run_graphql_query
 from .mutations import pods as pod_mutations
 from .mutations import endpoints as endpoint_mutations
@@ -228,6 +229,14 @@ def create_template(
 
     return raw_response["data"]["saveTemplate"]
 
+def get_endpoints() -> dict:
+    '''
+    Get all endpoints
+    '''
+    raw_return = run_graphql_query(endpoint_queries.QUERY_ENDPOINT)
+    cleaned_return = raw_return["data"]["myself"]["endpoints"]
+    return cleaned_return
+
 def create_endpoint(
         name:str, template_id:str, gpu_ids:str="AMPERE_16",
         network_volume_id:str=None, locations:str=None,
@@ -262,3 +271,25 @@ def create_endpoint(
     )
 
     return raw_response["data"]["saveEndpoint"]
+
+
+def update_endpoint_template(
+        endpoint_id:str, template_id:str
+):
+    '''
+    Update an endpoint template
+
+    :param endpoint_id: the id of the endpoint
+    :param template_id: the id of the template to use for the endpoint
+
+    :example:
+
+    >>> endpoint_id = runpod.update_endpoint_template("test", "template_id")
+    '''
+    raw_response = run_graphql_query(
+        endpoint_mutations.update_endpoint_template_mutation(
+            endpoint_id, template_id
+        )
+    )
+
+    return raw_response["data"]["updateEndpointTemplate"]
