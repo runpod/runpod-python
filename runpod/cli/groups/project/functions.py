@@ -349,7 +349,7 @@ def create_project_endpoint():
     )
 
     deployed_endpoint = get_endpoint_from_project_id(project_pod_id)
-    if deployed_endpoint:
+    if not deployed_endpoint:
         deployed_endpoint = create_endpoint(
             name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
             template_id=project_endpoint_template['id'],
@@ -360,5 +360,7 @@ def create_project_endpoint():
             id=deployed_endpoint['id'],
             template_id=project_endpoint_template['id'],
         )
+    
+    #does user want to tear down and recreate workers immediately?
 
     return deployed_endpoint['id']
