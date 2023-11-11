@@ -6,6 +6,8 @@ import time
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
+FINAL_STATES = ["COMPLETED", "FAILED", "TIMED_OUT"]
+
 # Exception Messages
 UNAUTHORIZED_MSG = "401 Unauthorized | Make sure Runpod API key is set and valid."
 API_KEY_NOT_SET_MSG = ("Expected `run_pod.api_key` to be initialized. "
@@ -33,7 +35,7 @@ class RunPodClient:
             raise RuntimeError(API_KEY_NOT_SET_MSG)
 
         self.rp_session = requests.Session()
-        retries = Retry(total=5, backoff_factor=1, status_forcelist=[429])
+        retries = Retry(total=5, backoff_factor=1, status_forcelist=[408, 429])
         self.rp_session.mount('http://', HTTPAdapter(max_retries=retries))
 
         self.headers = {
@@ -102,12 +104,12 @@ class Job:
         self.job_status = None
         self.job_output = None
 
-    def _fetch_job(self):
+    def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
         """ Returns the raw json of the status, raises an exception if invalid """
-        status_url = f"{self.endpoint_id}/status/{self.job_id}"
+        status_url = f"{self.endpoint_id}/{source}/{self.job_id}"
         job_state = self.rp_client.get(endpoint=status_url)
 
-        if job_state["status"] in ["COMPLETED", "FAILED", "TIMEOUT"]:
+        if job_state["status"] in FINAL_STATES:
             self.job_status = job_state["status"]
             self.job_output = job_state.get("output", None)
 
@@ -128,7 +130,7 @@ class Job:
             timeout: The number of seconds to wait for the server to send data before giving up.
         """
         if timeout > 0:
-            while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
+            while self.status() not in FINAL_STATES:
                 time.sleep(1)
                 timeout -= 1
                 if timeout <= 0:
@@ -138,6 +140,17 @@ class Job:
             return self.job_output
 
         return self._fetch_job().get("output", None)
+
+    def stream(self) -> Any:
+        """ Returns a generator that yields the output of the job request. """
+        while True:
+            time.sleep(1)
+            stream_partial = self._fetch_job(source="stream")
+            if stream_partial["status"] not in FINAL_STATES or len(stream_partial["stream"]) > 0:
+                for chunk in stream_partial.get("stream", []):
+                    yield chunk["output"]
+            elif stream_partial["status"] in FINAL_STATES:
+                break
 
 
 # ---------------------------------------------------------------------------- #
@@ -191,7 +204,11 @@ class Endpoint:
         job_request = self.rp_client.post(
             f"{self.endpoint_id}/runsync", request_input, timeout=timeout)
 
-        if job_request["status"] in ["COMPLETED", "FAILED", "TIMEOUT"]:
+        if job_request["status"] in FINAL_STATES:
             return job_request.get("output", None)
 
         return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
+
+    def health(self) -> Dict[str, Any]:
+        """ Returns the health of the endpoint. """
+        return self.rp_client.get(f"{self.endpoint_id}/health")
