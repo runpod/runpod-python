@@ -216,12 +216,13 @@ class TestCreateProjectEndpoint(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.create_endpoint')
     @patch('runpod.cli.groups.project.functions.get_project_pod')
     def test_create_project_endpoint(self, mock_get_project_pod, mock_create_endpoint,
-                                     mock_create_template, mock_load_project_config, mock_ssh_connection):
+                                     mock_create_template, mock_load_project_config, mock_ssh_connection):  # pylint: disable=line-too-long, too-many-arguments
         """ Test that a project endpoint is created successfully. """
         mock_get_project_pod.return_value = {'id': 'test_pod_id'}
         mock_load_project_config.return_value = {
             'project': {
                 'name': 'test_project',
+                'volume_mount_path': '/runpod-volume/123456',
                 'uuid': '123456',
                 'env_vars': {'TEST_VAR': 'value'},
                 'base_image': 'test_image',
