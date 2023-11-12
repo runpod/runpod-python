@@ -21,6 +21,41 @@ from ...utils.rp_sync import sync_directory
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
 
+def _launch_dev_pod():
+    """ Launch a development pod. """
+    config = load_project_config()  # Load runpod.toml
+
+    print("Deploying development pod on RunPod...")
+
+    # Prepare the environment variables
+    environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
+    for variable in config['project'].get('env_vars', {}):
+        environment_variables[variable] = config['project']['env_vars'][variable]
+
+    # Prepare the GPU types
+    selected_gpu_types = config['project'].get('gpu_types', [])
+    if config['project'].get('gpu', None):
+        selected_gpu_types.append(config['project']['gpu'])
+
+    # Attempt to launch a pod with the given configuration
+    new_pod = attempt_pod_launch(config, environment_variables)
+    if new_pod is None:
+        print("Selected GPU types unavailable, try again later or use a different type.")
+        return None
+
+    print("Waiting for pod to come online... ", end="")
+    sys.stdout.flush()
+
+    # Wait for the pod to come online
+    while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime') is None:
+        new_pod = get_pod(new_pod['id'])
+
+    project_pod_id = new_pod['id']
+
+    print(f"Project {config['project']['name']} pod ({project_pod_id}) created.", end="\n\n")
+    return project_pod_id
+
+
 # -------------------------------- New Project ------------------------------- #
 def create_new_project(project_name, runpod_volume_id, cuda_version, python_version,  # pylint: disable=too-many-locals, too-many-arguments, too-many-statements
                        model_type=None, model_name=None, init_current_dir=False):
@@ -97,41 +132,6 @@ def create_new_project(project_name, runpod_volume_id, cuda_version, python_vers
 
     with open(os.path.join(project_folder, "runpod.toml"), 'w', encoding="UTF-8") as config_file:
         tomlkit.dump(toml_config, config_file)
-
-
-def _launch_dev_pod():
-    """ Launch a development pod. """
-    config = load_project_config()  # Load runpod.toml
-
-    print("Deploying development pod on RunPod...")
-
-    # Prepare the environment variables
-    environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
-    for variable in config['project'].get('env_vars', {}):
-        environment_variables[variable] = config['project']['env_vars'][variable]
-
-    # Prepare the GPU types
-    selected_gpu_types = config['project'].get('gpu_types', [])
-    if config['project'].get('gpu', None):
-        selected_gpu_types.append(config['project']['gpu'])
-
-    # Attempt to launch a pod with the given configuration
-    new_pod = attempt_pod_launch(config, environment_variables)
-    if new_pod is None:
-        print("Selected GPU types unavailable, try again later or use a different type.")
-        return None
-
-    print("Waiting for pod to come online... ", end="")
-    sys.stdout.flush()
-
-    # Wait for the pod to come online
-    while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime') is None:
-        new_pod = get_pod(new_pod['id'])
-
-    project_pod_id = new_pod['id']
-
-    print(f"Project {config['project']['name']} pod ({project_pod_id}) created.", end="\n\n")
-    return project_pod_id
 
 
 # ------------------------------- Start Project ------------------------------ #
