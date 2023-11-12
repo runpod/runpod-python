@@ -202,7 +202,7 @@ class TestStartProjectAPI(unittest.TestCase):
         mock_get_project_pod.assert_called_with('123456')
         mock_ssh_connection.assert_called_with({'id': 'pod_id'})
         mock_sync_directory.assert_called_with(mock_ssh_instance,
-                                               '/current/path', '/mount/path/123456')
+                                               '/current/path', '/mount/path/123456/dev')
         mock_ssh_instance.run_commands.assert_called()
         assert mock_getcwd.called
 
@@ -210,12 +210,13 @@ class TestStartProjectAPI(unittest.TestCase):
 class TestCreateProjectEndpoint(unittest.TestCase):
     """ Test the create_project_endpoint function. """
 
+    @patch('runpod.cli.groups.project.functions.SSHConnection')
     @patch('runpod.cli.groups.project.functions.load_project_config')
     @patch('runpod.cli.groups.project.functions.create_template')
     @patch('runpod.cli.groups.project.functions.create_endpoint')
     @patch('runpod.cli.groups.project.functions.get_project_pod')
     def test_create_project_endpoint(self, mock_get_project_pod, mock_create_endpoint,
-                                     mock_create_template, mock_load_project_config):
+                                     mock_create_template, mock_load_project_config, mock_ssh_connection):
         """ Test that a project endpoint is created successfully. """
         mock_get_project_pod.return_value = {'id': 'test_pod_id'}
         mock_load_project_config.return_value = {
@@ -233,6 +234,10 @@ class TestCreateProjectEndpoint(unittest.TestCase):
         }
         mock_create_template.return_value = {'id': 'test_template_id'}
         mock_create_endpoint.return_value = {'id': 'test_endpoint_id'}
+
+        mock_ssh_instance = mock_ssh_connection.return_value
+        mock_ssh_instance.__enter__.return_value = mock_ssh_instance
+        mock_ssh_instance.run_commands.return_value = None
 
         result = create_project_endpoint()
 
