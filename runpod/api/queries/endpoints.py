@@ -1,4 +1,6 @@
-QUERY_ENDPOINT="""
+""" GraphQL queries for endpoints. """
+
+QUERY_ENDPOINT = """
 query Query {
   myself {
     endpoints {

@@ -9,10 +9,13 @@ import uuid
 import tomlkit
 from tomlkit import document, comment, table, nl
 
-from runpod import __version__, get_pod, create_template, create_endpoint, update_endpoint_template, get_endpoints
+from runpod import __version__, get_pod, create_template, create_endpoint, update_endpoint_template
 from runpod.cli import BASE_DOCKER_IMAGE, GPU_TYPES, ENV_VARS
 from runpod.cli.utils.ssh_cmd import SSHConnection
-from .helpers import get_project_pod, copy_template_files, attempt_pod_launch, load_project_config, get_project_endpoint
+from .helpers import (
+    get_project_pod, copy_template_files,
+    attempt_pod_launch, load_project_config, get_project_endpoint
+)
 from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
@@ -96,6 +99,7 @@ def create_new_project(project_name, runpod_volume_id, cuda_version, python_vers
     with open(os.path.join(project_folder, "runpod.toml"), 'w', encoding="UTF-8") as config_file:
         tomlkit.dump(toml_config, config_file)
 
+
 def launch_pod():
     config = load_project_config()  # Load runpod.toml
 
@@ -130,6 +134,8 @@ def launch_pod():
     return project_pod_id
 
 # ------------------------------- Start Project ------------------------------ #
+
+
 def start_project():  # pylint: disable=too-many-locals, too-many-branches
     '''
     Start the project development environment from runpod.toml
@@ -339,8 +345,8 @@ def create_project_endpoint():
     docker_start_cmd_suffix = '"'
     docker_start_cmd = docker_start_cmd_prefix + activate_cmd + ' && ' + \
         python_cmd + docker_start_cmd_suffix  # pylint: disable=line-too-long
-    
-    project_name_unique = str(uuid.uuid4())[:8] #project name unique constraint
+
+    project_name_unique = str(uuid.uuid4())[:8]  # project name unique constraint
     project_endpoint_template = create_template(
         name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]} | {project_name_unique}',
         image_name=config['project']['base_image'],
@@ -361,7 +367,7 @@ def create_project_endpoint():
             endpoint_id=deployed_endpoint['id'],
             template_id=project_endpoint_template['id'],
         )
-    
-    #does user want to tear down and recreate workers immediately?
+
+    # does user want to tear down and recreate workers immediately?
 
     return deployed_endpoint['id']

@@ -2,11 +2,12 @@
 
 # pylint: disable=too-many-arguments
 
+
 def generate_endpoint_mutation(
-    name:str, template_id:str, gpu_ids:str="AMPERE_16",
-    network_volume_id:str=None, locations:str=None,
-    idle_timeout:int=5, scaler_type:str="QUEUE_DELAY", scaler_value:int=4,
-    workers_min:int=0, workers_max:int=3
+    name: str, template_id: str, gpu_ids: str = "AMPERE_16",
+    network_volume_id: str = None, locations: str = None,
+    idle_timeout: int = 5, scaler_type: str = "QUEUE_DELAY", scaler_value: int = 4,
+    workers_min: int = 0, workers_max: int = 3
 ):
     """ Generate a string for a GraphQL mutation to create a new endpoint. """
     input_fields = []
@@ -58,9 +59,10 @@ def generate_endpoint_mutation(
     }}
     """
 
+
 def update_endpoint_template_mutation(
-    endpoint_id: str, template_id: str    
-):    
+    endpoint_id: str, template_id: str
+):
     """ Generate a string for a GraphQL mutation to update an existing endpoint's template. """
     input_fields = []
 
