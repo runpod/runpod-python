@@ -316,10 +316,12 @@ def create_project_endpoint():
         project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
         project_path_uuid_prod = os.path.join(project_path_uuid, 'prod')
         remote_project_path = os.path.join(project_path_uuid_prod, config["project"]["name"])
+
         # Copy local files to the pod project folder
         ssh_conn.run_commands([f'mkdir -p {remote_project_path}'])
         print(f'Syncing files to pod {project_pod_id} prod')
         ssh_conn.rsync(os.getcwd(), project_path_uuid_prod)
+
         # Create the virtual environment
         venv_path = os.path.join(project_path_uuid_prod, 'venv')
         print(f'Activating Python virtual environment: {venv_path} on pod {project_pod_id}')
@@ -351,8 +353,7 @@ def create_project_endpoint():
         env=environment_variables, is_serverless=True
     )
 
-    deployed_endpoint = get_project_endpoint(project_id)
-    if not deployed_endpoint:
+    if not get_project_endpoint(project_id):
         deployed_endpoint = create_endpoint(
             name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
             template_id=project_endpoint_template['id'],
