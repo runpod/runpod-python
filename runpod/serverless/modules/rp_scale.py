@@ -5,6 +5,7 @@ Provides the functionality for scaling the runpod serverless worker.
 
 import asyncio
 import typing
+import dataclasses
 
 from aiohttp_retry import Dict
 
@@ -14,6 +15,14 @@ from .worker_state import Jobs
 
 log = RunPodLogger()
 job_list = Jobs()
+
+
+@dataclasses.dataclass
+class ConcurrencyConfig:
+    min_concurrent_requests: int = 2
+    max_concurrent_requests: int = 100
+    concurrency_scale_factor: int = 4
+    availability_ratio_threshold: float = 0.90
 
 
 class JobScaler():
@@ -56,12 +65,15 @@ class JobScaler():
         job_scaler.rescale_request_rate()
     """
 
-    def __init__(self, concurrency_controller: typing.Any, config: Dict[str, typing.Any]):  # pylint: disable=too-many-instance-attributes
+    def __init__(self, concurrency_controller: typing.Any, config: Dict[str, typing.Any]):
         self.concurrency_controller = concurrency_controller
-        self.min_concurrent_requests = config.get("min_concurrent_requests", 2)
-        self.max_concurrent_requests = config.get("max_concurrent_requests", 100)
-        self.concurrency_scale_factor = config.get("concurrency_scale_factor", 4)
-        self.availability_ratio_threshold = config.get("availability_ratio_threshold", 0.90)
+
+        self.config = ConcurrencyConfig(
+            min_concurrent_requests=config.get("min_concurrent_requests", 2),
+            max_concurrent_requests=config.get("max_concurrent_requests", 100),
+            concurrency_scale_factor=config.get("concurrency_scale_factor", 4),
+            availability_ratio_threshold=config.get("availability_ratio_threshold", 0.90)
+        )
 
         self.background_get_job_tasks = set()
         self.job_history = []
@@ -141,8 +153,8 @@ class JobScaler():
         """
         self.current_concurrency = min(
             self.current_concurrency *
-            self.concurrency_scale_factor,
-            self.max_concurrent_requests
+            self.config.concurrency_scale_factor,
+            self.config.max_concurrent_requests
         )
 
     def downscale_rate(self) -> None:
@@ -153,8 +165,8 @@ class JobScaler():
         effectively retrieving fewer jobs per unit of time.
         """
         self.current_concurrency = int(max(
-            self.current_concurrency // self.concurrency_scale_factor,
-            self.min_concurrent_requests
+            self.current_concurrency // self.config.concurrency_scale_factor,
+            self.config.min_concurrent_requests
         ))
 
     def rescale_request_rate(self) -> None:
@@ -169,12 +181,12 @@ class JobScaler():
             log.debug("Reducing job query rate due to full worker utilization.")
 
             self.downscale_rate()
-        elif availability_ratio < 1 / self.concurrency_scale_factor:
+        elif availability_ratio < 1 / self.config.concurrency_scale_factor:
             log.debug(
                 "Reducing job query rate due to low job queue availability.")
 
             self.downscale_rate()
-        elif availability_ratio >= self.availability_ratio_threshold:
+        elif availability_ratio >= self.config.availability_ratio_threshold:
             log.debug(
                 "Increasing job query rate due to increased job queue availability.")
 
