@@ -338,12 +338,9 @@ def create_project_endpoint():
         environment_variables[variable] = config['project']['env_vars'][variable]
 
     # Construct the docker start command
-    docker_start_cmd_prefix = 'bash -c "'
     activate_cmd = f'. /runpod-volume/{config["project"]["uuid"]}/prod/venv/bin/activate'
     python_cmd = f'python -u /runpod-volume/{config["project"]["uuid"]}/prod/{config["project"]["name"]}/{config["runtime"]["handler_path"]}'  # pylint: disable=line-too-long
-    docker_start_cmd_suffix = '"'
-    docker_start_cmd = docker_start_cmd_prefix + activate_cmd + ' && ' + \
-        python_cmd + docker_start_cmd_suffix  # pylint: disable=line-too-long
+    docker_start_cmd = 'bash -c "' + activate_cmd + ' && ' + python_cmd + '"'
 
     project_name_unique = str(uuid.uuid4())[:8]  # project name unique constraint
     project_endpoint_template = create_template(
