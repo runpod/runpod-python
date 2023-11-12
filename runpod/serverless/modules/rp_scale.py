@@ -13,6 +13,7 @@ from .worker_state import Jobs
 log = RunPodLogger()
 job_list = Jobs()
 
+
 class JobScaler():
     """
     A class for automatically retrieving new jobs from the server and processing them concurrently.
@@ -95,12 +96,16 @@ class JobScaler():
             List[Any]: A list of job data retrieved from the server.
         """
         while True:
-            # Finish if the job_scale is not alive
             if not self.is_alive():
                 break
 
-            for _ in range(self.num_concurrent_get_job_requests):
-                job = await get_job(session, retry=False)
+            tasks = [
+                asyncio.create_task(get_job(session, retry=False))
+                for _ in range(self.num_concurrent_get_job_requests if job_list.get_job_list() else 1)
+            ]
+
+            for job_future in asyncio.as_completed(tasks):
+                job = await job_future
                 self.job_history.append(1 if job else 0)
                 if job:
                     yield job
@@ -127,8 +132,6 @@ class JobScaler():
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
                 f"{self.num_concurrent_get_job_requests}."
             )
-
-
 
     def upscale_rate(self) -> None:
         """
