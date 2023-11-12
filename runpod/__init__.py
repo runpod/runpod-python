@@ -13,7 +13,7 @@ from .api.ctl_commands import (
     get_gpu, get_gpus,
     get_pod, get_pods, create_pod, stop_pod, resume_pod, terminate_pod,
     create_template,
-    create_endpoint
+    get_endpoints, create_endpoint, update_endpoint_template
 )
 from .cli.groups.config.functions import set_credentials, check_credentials, get_credentials
 

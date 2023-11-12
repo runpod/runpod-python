@@ -57,3 +57,25 @@ def generate_endpoint_mutation(
         }}
     }}
     """
+
+def update_endpoint_template_mutation(
+    endpoint_id: str, template_id: str    
+):    
+    """ Generate a string for a GraphQL mutation to update an existing endpoint's template. """
+    input_fields = []
+
+    # ------------------------------ Required Fields ----------------------------- #
+    input_fields.append(f'templateId: "{template_id}"')
+    input_fields.append(f'endpointId: "{endpoint_id}"')
+
+    # Format the input fields into a string
+    input_fields_string = ", ".join(input_fields)
+    result = f"""
+    mutation {{
+        updateEndpointTemplate(input: {{{input_fields_string}}}) {{
+            id
+            templateId
+        }}
+    }}
+    """
+    return result

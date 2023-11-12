@@ -7,7 +7,7 @@ import shutil
 import click
 import tomlkit
 
-from runpod import get_pods, create_pod
+from runpod import get_pods, create_pod, get_endpoints
 from runpod import error as rp_error
 
 def validate_project_name(name):
@@ -26,6 +26,16 @@ def get_project_pod(project_id: str):
     for pod in get_pods():
         if project_id in pod['name']:
             return pod['id']
+
+    return None
+
+def get_project_endpoint(project_id: str):
+    """Check if a project endpoint exists.
+    Return the endpoint_id if it exists, else return None.
+    """
+    for endpoint in get_endpoints():
+        if project_id in endpoint['name']:
+            return endpoint
 
     return None
 
