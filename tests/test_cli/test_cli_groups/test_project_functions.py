@@ -215,8 +215,8 @@ class TestCreateProjectEndpoint(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.create_template')
     @patch('runpod.cli.groups.project.functions.create_endpoint')
     @patch('runpod.cli.groups.project.functions.get_project_pod')
-    def test_create_project_endpoint(self, mock_get_project_pod, mock_create_endpoint,
-                                     mock_create_template, mock_load_project_config, mock_ssh_connection):  # pylint: disable=line-too-long, too-many-arguments
+    def test_create_project_endpoint(self, mock_get_project_pod, mock_create_endpoint,  # pylint: disable=too-many-arguments
+                                     mock_create_template, mock_load_project_config, mock_ssh_connection):  # pylint: disable=line-too-long
         """ Test that a project endpoint is created successfully. """
         mock_get_project_pod.return_value = {'id': 'test_pod_id'}
         mock_load_project_config.return_value = {
@@ -230,7 +230,9 @@ class TestCreateProjectEndpoint(unittest.TestCase):
                 'storage_id': 'test_storage_id',
             },
             'runtime': {
-                'handler_path': 'handler.py'
+                'python_version': '3.8',
+                'handler_path': 'handler.py',
+                'requirements_path': 'requirements.txt'
             }
         }
         mock_create_template.return_value = {'id': 'test_template_id'}
