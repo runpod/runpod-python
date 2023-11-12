@@ -165,7 +165,7 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
         project_pod_id = _launch_dev_pod()
 
     if project_pod_id is None:
-        return None
+        return
 
     with SSHConnection(project_pod_id) as ssh_conn:
 
@@ -308,9 +308,7 @@ def create_project_endpoint():
     - Create a new endpoint using the template
     """
     config = load_project_config()
-
-    project_id = config['project']['uuid']
-    project_pod_id = get_project_pod(project_id)
+    project_pod_id = get_project_pod(config['project']['uuid'])
 
     # Check if the project pod already exists, if not create it.
     if not project_pod_id:
@@ -359,7 +357,7 @@ def create_project_endpoint():
         env=environment_variables, is_serverless=True
     )
 
-    if not get_project_endpoint(project_id):
+    if not get_project_endpoint(config['project']['uuid']):
         deployed_endpoint = create_endpoint(
             name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
             template_id=project_endpoint_template['id'],
