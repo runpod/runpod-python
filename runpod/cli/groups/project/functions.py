@@ -4,7 +4,9 @@ RunPod | CLI | Project | Functions
 
 import os
 import sys
+import time
 import uuid
+import datetime
 
 import tomlkit
 from tomlkit import document, comment, table, nl
@@ -344,9 +346,8 @@ def create_project_endpoint():
     python_cmd = f'python -u /runpod-volume/{config["project"]["uuid"]}/prod/{config["project"]["name"]}/{config["runtime"]["handler_path"]}'  # pylint: disable=line-too-long
     docker_start_cmd = 'bash -c "' + activate_cmd + ' && ' + python_cmd + '"'
 
-    project_name_unique = str(uuid.uuid4())[:8]  # project name unique constraint
     project_endpoint_template = create_template(
-        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]} | {project_name_unique}',
+        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]} | {datetime.datetime.now()}',  # pylint: disable=line-too-long
         image_name=config['project']['base_image'],
         container_disk_in_gb=config['project']['container_disk_size_gb'],
         docker_start_cmd=docker_start_cmd,

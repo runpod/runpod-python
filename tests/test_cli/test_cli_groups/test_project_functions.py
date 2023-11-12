@@ -154,7 +154,7 @@ class TestStartProject(unittest.TestCase):
         assert mock_sync_directory.called
 
     @patch('runpod.cli.groups.project.functions.get_project_pod')
-    @patch('runpod.cli.groups.project.functions._launch_dev_pod.attempt_pod_launch')
+    @patch('runpod.cli.groups.project.functions.attempt_pod_launch')
     def test_failed_pod_launch(self, mock_attempt_pod, mock_get_pod):
         """ Test that a project is not launched if pod launch fails. """
         mock_attempt_pod.return_value = None
@@ -212,9 +212,11 @@ class TestCreateProjectEndpoint(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.load_project_config')
     @patch('runpod.cli.groups.project.functions.create_template')
     @patch('runpod.cli.groups.project.functions.create_endpoint')
-    def test_create_project_endpoint(self, mock_create_endpoint,
+    @patch('runpod.cli.groups.project.functions.get_project_pod')
+    def test_create_project_endpoint(self, mock_get_project_pod, mock_create_endpoint,
                                      mock_create_template, mock_load_project_config):
         """ Test that a project endpoint is created successfully. """
+        mock_get_project_pod.return_value = {'id': 'test_pod_id'}
         mock_load_project_config.return_value = {
             'project': {
                 'name': 'test_project',
