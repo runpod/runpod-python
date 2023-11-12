@@ -56,7 +56,7 @@ class JobScaler():
         job_scaler.rescale_request_rate()
     """
 
-    def __init__(self, concurrency_controller: typing.Any, config: Dict[str, typing.Any]):
+    def __init__(self, concurrency_controller: typing.Any, config: Dict[str, typing.Any]):  # pylint: disable=too-many-instance-attributes
         self.concurrency_controller = concurrency_controller
         self.min_concurrent_requests = config.get("min_concurrent_requests", 2)
         self.max_concurrent_requests = config.get("max_concurrent_requests", 100)
