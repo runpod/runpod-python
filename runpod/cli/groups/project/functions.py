@@ -20,9 +20,8 @@ from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
+
 # -------------------------------- New Project ------------------------------- #
-
-
 def create_new_project(project_name, runpod_volume_id, cuda_version, python_version,  # pylint: disable=too-many-locals, too-many-arguments, too-many-statements
                        model_type=None, model_name=None, init_current_dir=False):
     """ Create a new project. """
@@ -100,7 +99,8 @@ def create_new_project(project_name, runpod_volume_id, cuda_version, python_vers
         tomlkit.dump(toml_config, config_file)
 
 
-def launch_pod():
+def _launch_dev_pod():
+    """ Launch a development pod. """
     config = load_project_config()  # Load runpod.toml
 
     print("Deploying development pod on RunPod...")
@@ -119,7 +119,7 @@ def launch_pod():
     new_pod = attempt_pod_launch(config, environment_variables)
     if new_pod is None:
         print("Selected GPU types unavailable, try again later or use a different type.")
-        return
+        return None
 
     print("Waiting for pod to come online... ", end="")
     sys.stdout.flush()
@@ -133,9 +133,8 @@ def launch_pod():
     print(f"Project {config['project']['name']} pod ({project_pod_id}) created.", end="\n\n")
     return project_pod_id
 
+
 # ------------------------------- Start Project ------------------------------ #
-
-
 def start_project():  # pylint: disable=too-many-locals, too-many-branches
     '''
     Start the project development environment from runpod.toml
@@ -162,7 +161,7 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
 
     # Check if the project pod already exists, if not create it.
     if not project_pod_id:
-        project_pod_id = launch_pod()
+        project_pod_id = _launch_dev_pod()
 
     with SSHConnection(project_pod_id) as ssh_conn:
 
@@ -311,7 +310,7 @@ def create_project_endpoint():
 
     # Check if the project pod already exists, if not create it.
     if not project_pod_id:
-        project_pod_id = launch_pod()
+        project_pod_id = _launch_dev_pod()
 
     with SSHConnection(project_pod_id) as ssh_conn:
         project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
