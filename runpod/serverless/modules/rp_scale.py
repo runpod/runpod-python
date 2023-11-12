@@ -19,6 +19,7 @@ job_list = Jobs()
 
 @dataclasses.dataclass
 class ConcurrencyConfig:
+    """ A class for storing the configuration for the concurrency controller. """
     min_concurrent_requests: int = 2
     max_concurrent_requests: int = 100
     concurrency_scale_factor: int = 4
