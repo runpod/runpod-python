@@ -4,7 +4,6 @@ RunPod | CLI | Project | Functions
 
 import os
 import sys
-import time
 import uuid
 import datetime
 
@@ -165,6 +164,9 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
     if not project_pod_id:
         project_pod_id = _launch_dev_pod()
 
+    if project_pod_id is None:
+        return None
+
     with SSHConnection(project_pod_id) as ssh_conn:
 
         project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
@@ -313,6 +315,9 @@ def create_project_endpoint():
     # Check if the project pod already exists, if not create it.
     if not project_pod_id:
         project_pod_id = _launch_dev_pod()
+
+    if project_pod_id is None:
+        return None
 
     with SSHConnection(project_pod_id) as ssh_conn:
         project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
