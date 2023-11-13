@@ -357,7 +357,8 @@ def create_project_endpoint():
         env=environment_variables, is_serverless=True
     )
 
-    if not get_project_endpoint(config['project']['uuid']):
+    deployed_endpoint = get_project_endpoint(config['project']['uuid'])
+    if not deployed_endpoint:
         deployed_endpoint = create_endpoint(
             name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
             template_id=project_endpoint_template['id'],
