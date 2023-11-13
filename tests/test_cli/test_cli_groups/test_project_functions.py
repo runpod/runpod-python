@@ -251,13 +251,9 @@ class TestCreateProjectEndpoint(unittest.TestCase):
         mock_ssh_instance.__enter__.return_value = mock_ssh_instance
         mock_ssh_instance.run_commands.return_value = None
 
-        mock_update_endpoint.return_value = {'id': 'test_endpoint_id'}
         with patch('runpod.cli.groups.project.functions.datetime') as mock_datetime:
             mock_datetime.now.return_value = '123456'
             result = create_project_endpoint()
-
-            mock_get_project_endpoint.return_value = {'id': 'test_endpoint_id'}
-            create_project_endpoint()
 
         self.assertEqual(result, 'test_endpoint_id')
         mock_create_template.assert_called_with(
@@ -273,3 +269,11 @@ class TestCreateProjectEndpoint(unittest.TestCase):
             template_id='test_template_id',
             network_volume_id='test_storage_id'
         )
+
+        mock_update_endpoint.return_value = {'id': 'test_endpoint_id'}
+        with patch('runpod.cli.groups.project.functions.datetime') as mock_datetime:
+
+            result = mock_get_project_endpoint.return_value = {'id': 'test_endpoint_id'}
+            create_project_endpoint()
+
+        self.assertEqual(result, 'test_endpoint_id')
