@@ -1,7 +1,6 @@
 """ Test functions in runpod.cli.groups.project.functions module. """
 
 import os
-from sys import path
 import unittest
 from unittest.mock import patch, mock_open
 
@@ -223,7 +222,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
         mock_get_project_endpoint.return_value = False
 
         mock_get_project_pod.return_value = None
-        with patch('runpod.cli.groups.project.functions._launch_dev_pod`') as mock_launch_dev_pod:
+        with patch('runpod.cli.groups.project.functions._launch_dev_pod') as mock_launch_dev_pod:
             mock_launch_dev_pod.return_value = None
             assert create_project_endpoint() is None
 
