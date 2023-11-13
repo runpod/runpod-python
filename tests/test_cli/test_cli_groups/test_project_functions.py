@@ -244,11 +244,13 @@ class TestCreateProjectEndpoint(unittest.TestCase):
         mock_ssh_instance.__enter__.return_value = mock_ssh_instance
         mock_ssh_instance.run_commands.return_value = None
 
-        result = create_project_endpoint()
+        with patch('runpod.cli.groups.project.functions.datetime') as mock_datetime:
+            mock_datetime.now.return_value = '123456'
+            result = create_project_endpoint()
 
         self.assertEqual(result, 'test_endpoint_id')
         mock_create_template.assert_called_once_with(
-            name='test_project-endpoint | 123456',
+            name='test_project-endpoint | 123456| 123456',
             image_name='test_image',
             container_disk_in_gb=10,
             docker_start_cmd='bash -c ". /runpod-volume/123456/venv/bin/activate && python -u /runpod-volume/123456/test_project/handler.py"',  # pylint: disable=line-too-long

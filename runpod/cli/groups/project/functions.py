@@ -5,7 +5,7 @@ RunPod | CLI | Project | Functions
 import os
 import sys
 import uuid
-import datetime
+from datetime import datetime
 
 import tomlkit
 from tomlkit import document, comment, table, nl
@@ -350,7 +350,7 @@ def create_project_endpoint():
     docker_start_cmd = 'bash -c "' + activate_cmd + ' && ' + python_cmd + '"'
 
     project_endpoint_template = create_template(
-        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]} | {datetime.datetime.now()}',  # pylint: disable=line-too-long
+        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]} | {datetime.now()}',  # pylint: disable=line-too-long
         image_name=config['project']['base_image'],
         container_disk_in_gb=config['project']['container_disk_size_gb'],
         docker_start_cmd=docker_start_cmd,
