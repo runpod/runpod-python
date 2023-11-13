@@ -215,7 +215,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.create_template')
     @patch('runpod.cli.groups.project.functions.create_endpoint')
     @patch('runpod.cli.groups.project.functions.get_project_pod')
-    @patch('runpod.cli.groups.project.get_project_endpoint')
+    @patch('runpod.cli.groups.project.functions.get_project_endpoint')
     def test_create_project_endpoint(self, mock_get_project_endpoint, mock_get_project_pod, mock_create_endpoint,  # pylint: disable=too-many-arguments,line-too-long
                                      mock_create_template, mock_load_project_config, mock_ssh_connection):  # pylint: disable=line-too-long
         """ Test that a project endpoint is created successfully. """
