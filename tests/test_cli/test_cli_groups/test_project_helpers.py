@@ -48,6 +48,9 @@ class TestHelpers(unittest.TestCase):
     @patch("runpod.cli.groups.project.helpers.get_endpoints")
     def test_get_project_endpoint_exists(self, mock_get_endpoints):
         """Test the get_project_endpoint function when the project endpoint exists."""
+        mock_get_endpoints.return_value = None
+        assert get_project_endpoint("1234") is None
+
         mock_get_endpoints.return_value = [{"name": "test-1234", "id": "endpoint_id"}]
         result = get_project_endpoint("1234")
         self.assertEqual(result, {"name": "test-1234", "id": "endpoint_id"})

@@ -273,7 +273,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
         mock_update_endpoint.return_value = {'id': 'test_endpoint_id'}
         with patch('runpod.cli.groups.project.functions.datetime') as mock_datetime:
 
-            result = mock_get_project_endpoint.return_value = {'id': 'test_endpoint_id'}
-            create_project_endpoint()
+            mock_get_project_endpoint.return_value = {'id': 'test_endpoint_id'}
+            result = create_project_endpoint()
 
         self.assertEqual(result, 'test_endpoint_id')
