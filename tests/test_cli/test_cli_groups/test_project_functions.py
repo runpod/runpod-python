@@ -214,7 +214,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.load_project_config')
     @patch('runpod.cli.groups.project.functions.create_template')
     @patch('runpod.cli.groups.project.functions.create_endpoint')
-    @patch('runpod.cli.groups.project.functions.update_endpoint')
+    @patch('runpod.cli.groups.project.functions.update_endpoint_template')
     @patch('runpod.cli.groups.project.functions.get_project_pod')
     @patch('runpod.cli.groups.project.functions.get_project_endpoint')
     def test_create_project_endpoint(self, mock_get_project_endpoint, mock_get_project_pod, mock_create_endpoint, mock_update_endpoint,  # pylint: disable=too-many-arguments,line-too-long
@@ -251,6 +251,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
         mock_ssh_instance.__enter__.return_value = mock_ssh_instance
         mock_ssh_instance.run_commands.return_value = None
 
+        mock_update_endpoint.return_value = {'id': 'test_endpoint_id'}
         with patch('runpod.cli.groups.project.functions.datetime') as mock_datetime:
             mock_datetime.now.return_value = '123456'
             result = create_project_endpoint()
