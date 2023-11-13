@@ -256,7 +256,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
 
         self.assertEqual(result, 'test_endpoint_id')
         mock_create_template.assert_called_once_with(
-            name='test_project-endpoint | 123456| 123456',
+            name='test_project-endpoint | 123456 | 123456',
             image_name='test_image',
             container_disk_in_gb=10,
             docker_start_cmd='bash -c ". /runpod-volume/123456/prod/venv/bin/activate && python -u /runpod-volume/123456/prod/test_project/handler.py"',  # pylint: disable=line-too-long

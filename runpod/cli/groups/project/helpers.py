@@ -10,6 +10,7 @@ import tomlkit
 from runpod import get_pods, create_pod, get_endpoints
 from runpod import error as rp_error
 
+
 def validate_project_name(name):
     '''
     Validate the project name.
@@ -18,6 +19,7 @@ def validate_project_name(name):
     if match:
         raise click.BadParameter(f"Project name contains an invalid character: '{match.group()}'.")
     return name
+
 
 def get_project_pod(project_id: str):
     """Check if a project pod exists.
@@ -29,15 +31,17 @@ def get_project_pod(project_id: str):
 
     return None
 
+
 def get_project_endpoint(project_id: str):
     """Check if a project endpoint exists.
-    Return the endpoint_id if it exists, else return None.
+    Return the endpoint if it exists, else return None.
     """
     for endpoint in get_endpoints():
         if project_id in endpoint['name']:
             return endpoint
 
     return None
+
 
 def copy_template_files(template_dir, destination):
     """Copy the template files to the destination directory."""
@@ -48,6 +52,7 @@ def copy_template_files(template_dir, destination):
             shutil.copytree(source_item, destination_item)
         else:
             shutil.copy2(source_item, destination_item)
+
 
 def attempt_pod_launch(config, environment_variables):
     """Attempt to launch a pod with the given configuration."""
@@ -71,6 +76,7 @@ def attempt_pod_launch(config, environment_variables):
         except rp_error.QueryError:
             print("Unavailable.")
     return None
+
 
 def load_project_config():
     """Load the project config file."""

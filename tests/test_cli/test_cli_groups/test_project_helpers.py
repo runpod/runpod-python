@@ -50,7 +50,7 @@ class TestHelpers(unittest.TestCase):
         """Test the get_project_endpoint function when the project endpoint exists."""
         mock_get_endpoints.return_value = [{"name": "test-1234", "id": "endpoint_id"}]
         result = get_project_endpoint("1234")
-        self.assertEqual(result, "endpoint_id")
+        self.assertEqual(result, {"name": "test-1234", "id": "endpoint_id"})
 
     @patch("os.listdir")
     @patch("os.path.isdir", return_value=False)
