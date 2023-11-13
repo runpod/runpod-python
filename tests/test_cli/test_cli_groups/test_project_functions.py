@@ -1,6 +1,7 @@
 """ Test functions in runpod.cli.groups.project.functions module. """
 
 import os
+from sys import path
 import unittest
 from unittest.mock import patch, mock_open
 
@@ -220,6 +221,12 @@ class TestCreateProjectEndpoint(unittest.TestCase):
                                      mock_create_template, mock_load_project_config, mock_ssh_connection):  # pylint: disable=line-too-long
         """ Test that a project endpoint is created successfully. """
         mock_get_project_endpoint.return_value = False
+
+        mock_get_project_pod.return_value = None
+        with patch('runpod.cli.groups.project.functions._launch_dev_pod`') as mock_launch_dev_pod:
+            mock_launch_dev_pod.return_value = None
+            assert create_project_endpoint() is None
+
         mock_get_project_pod.return_value = {'id': 'test_pod_id'}
         mock_load_project_config.return_value = {
             'project': {
@@ -253,7 +260,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
             name='test_project-endpoint | 123456| 123456',
             image_name='test_image',
             container_disk_in_gb=10,
-            docker_start_cmd='bash -c ". /runpod-volume/123456/venv/bin/activate && python -u /runpod-volume/123456/test_project/handler.py"',  # pylint: disable=line-too-long
+            docker_start_cmd='bash -c ". /runpod-volume/123456/prod/venv/bin/activate && python -u /runpod-volume/123456/prod/test_project/handler.py"',  # pylint: disable=line-too-long
             env={'TEST_VAR': 'value'},
             is_serverless=True
         )

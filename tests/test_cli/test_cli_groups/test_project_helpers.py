@@ -9,6 +9,7 @@ from runpod import error as rp_error
 from runpod.cli.groups.project.helpers import (
     validate_project_name,
     get_project_pod,
+    get_project_endpoint,
     copy_template_files,
     attempt_pod_launch,
     load_project_config
@@ -44,6 +45,13 @@ class TestHelpers(unittest.TestCase):
         result = get_project_pod("1234")
         self.assertIsNone(result)
 
+    @patch("runpod.cli.groups.project.helpers.get_endpoints")
+    def test_get_project_endpoint_exists(self, mock_get_endpoints):
+        """Test the get_project_endpoint function when the project endpoint exists."""
+        mock_get_endpoints.return_value = [{"name": "test-1234", "id": "endpoint_id"}]
+        result = get_project_endpoint("1234")
+        self.assertEqual(result, "endpoint_id")
+
     @patch("os.listdir")
     @patch("os.path.isdir", return_value=False)
     @patch("shutil.copy2")
@@ -63,7 +71,6 @@ class TestHelpers(unittest.TestCase):
         copy_template_files("/template", "/destination")
         self.assertEqual(mock_copy.call_count, 2)
         assert mock_isdir.called
-
 
     @patch("runpod.cli.groups.project.helpers.create_pod")
     def test_attempt_pod_launch_success(self, mock_create_pod):
@@ -89,7 +96,6 @@ class TestHelpers(unittest.TestCase):
         mock_create_pod.side_effect = rp_error.QueryError("error")
         assert attempt_pod_launch(config, environment_variables) is None
 
-
     @patch("os.path.exists", return_value=True)
     @patch("builtins.open", new_callable=mock_open, read_data="[project]\nname='test'")
     def test_load_project_config(self, mock_file, mock_exists):
@@ -99,7 +105,6 @@ class TestHelpers(unittest.TestCase):
         assert mock_exists.called
         assert mock_file.called
 
-
         with patch("os.path.exists", return_value=False), \
-             self.assertRaises(FileNotFoundError):
+                self.assertRaises(FileNotFoundError):
             load_project_config()
