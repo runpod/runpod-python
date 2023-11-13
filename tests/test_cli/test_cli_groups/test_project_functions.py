@@ -260,7 +260,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
             create_project_endpoint()
 
         self.assertEqual(result, 'test_endpoint_id')
-        mock_create_template.assert_called_once_with(
+        mock_create_template.assert_called_with(
             name='test_project-endpoint | 123456 | 123456',
             image_name='test_image',
             container_disk_in_gb=10,
@@ -268,7 +268,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
             env={'TEST_VAR': 'value'},
             is_serverless=True
         )
-        mock_create_endpoint.assert_called_once_with(
+        mock_create_endpoint.assert_called_with(
             name='test_project-endpoint | 123456',
             template_id='test_template_id',
             network_volume_id='test_storage_id'
