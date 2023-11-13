@@ -2,6 +2,7 @@
 
 import os
 import unittest
+from unittest import mock
 from unittest.mock import patch, mock_open
 
 from runpod.cli.groups.project.functions import (
@@ -214,9 +215,10 @@ class TestCreateProjectEndpoint(unittest.TestCase):
     @patch('runpod.cli.groups.project.functions.load_project_config')
     @patch('runpod.cli.groups.project.functions.create_template')
     @patch('runpod.cli.groups.project.functions.create_endpoint')
+    @patch('runpod.cli.groups.project.functions.update_endpoint')
     @patch('runpod.cli.groups.project.functions.get_project_pod')
     @patch('runpod.cli.groups.project.functions.get_project_endpoint')
-    def test_create_project_endpoint(self, mock_get_project_endpoint, mock_get_project_pod, mock_create_endpoint,  # pylint: disable=too-many-arguments,line-too-long
+    def test_create_project_endpoint(self, mock_get_project_endpoint, mock_get_project_pod, mock_create_endpoint, mock_update_endpoint,  # pylint: disable=too-many-arguments,line-too-long
                                      mock_create_template, mock_load_project_config, mock_ssh_connection):  # pylint: disable=line-too-long
         """ Test that a project endpoint is created successfully. """
         mock_get_project_endpoint.return_value = False
@@ -253,6 +255,9 @@ class TestCreateProjectEndpoint(unittest.TestCase):
         with patch('runpod.cli.groups.project.functions.datetime') as mock_datetime:
             mock_datetime.now.return_value = '123456'
             result = create_project_endpoint()
+
+            mock_get_project_endpoint.return_value = {'id': 'test_endpoint_id'}
+            create_project_endpoint()
 
         self.assertEqual(result, 'test_endpoint_id')
         mock_create_template.assert_called_once_with(
