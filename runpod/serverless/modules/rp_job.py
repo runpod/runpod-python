@@ -70,7 +70,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 next_job = await response.json()
-                log.debug(f"Received Job | {next_job}")
+                log.debug(f"Request Received | {next_job}")
 
             # Check if the job is valid
             job_id = next_job.get("id", None)
@@ -94,11 +94,11 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             if not retry:
                 return None
 
-    log.debug(f"{next_job['id']} | Valid Job Confirmed")
+    log.debug("Confirmed valid request.", next_job['id'])
 
     if next_job:
         job_list.add_job(next_job["id"])
-        log.debug(f"{next_job['id']} | Added Job ID")
+        log.debug("Request ID added.", next_job['id'])
 
     return next_job
 
@@ -108,14 +108,14 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     Run the job using the handler.
     Returns the job output or error.
     """
-    log.info(f'{job["id"]} | Started')
+    log.info('Started', job["id"])
     run_result = {"error": "No output from handler."}
 
     try:
         handler_return = handler(job)
         job_output = await handler_return if inspect.isawaitable(handler_return) else handler_return
 
-        log.debug(f'{job["id"]} | Handler output: {job_output}')
+        log.debug(f'Handler output: {job_output}', job["id"])
 
         if isinstance(job_output, dict):
             error_msg = job_output.pop("error", None)
@@ -149,12 +149,12 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
             "runpod_version": runpod_version
         }
 
-        log.error(f'{job["id"]} | Captured Handler Exception')
+        log.error('Captured Handler Exception', job["id"])
         log.error(json.dumps(error_info, indent=4))
         run_result = {"error": json.dumps(error_info)}
 
     finally:
-        log.debug(f'{job["id"]} | run_job return: {run_result}')
+        log.debug(f'run_job return: {run_result}', job["id"])
 
     return run_result
 
@@ -175,7 +175,7 @@ async def run_job_generator(
             for output_partial in job_output:
                 yield {"output": output_partial}
     except Exception as err:    # pylint: disable=broad-except
-        log.error(f'Error while running job {job["id"]}: {err}')
+        log.error(err, job["id"])
         yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
-        log.info(f'{job["id"]} | Finished ')
+        log.info('Finished', job["id"])
