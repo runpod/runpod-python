@@ -1,5 +1,18 @@
 # Change Log
 
+## Release 1.3.4 (11/14/23)
+
+### Changed
+
+- Logs are now JSON formatted
+- Exposed logging `job_id` now `request_id`
+
+### Added
+
+- `get_endpoints` exposed to return all endpoints for a given user
+
+---
+
 ## Release 1.3.3 (11/8/23)
 
 ### Added
