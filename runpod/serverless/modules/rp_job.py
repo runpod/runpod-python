@@ -70,7 +70,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 next_job = await response.json()
-                log.debug(f"Received Job | {next_job}")
+                log.debug(f"Request Received | {next_job}")
 
             # Check if the job is valid
             job_id = next_job.get("id", None)
@@ -108,14 +108,14 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     Run the job using the handler.
     Returns the job output or error.
     """
-    log.info(f'{job["id"]} | Started')
+    log.info('Started', job["id"])
     run_result = {"error": "No output from handler."}
 
     try:
         handler_return = handler(job)
         job_output = await handler_return if inspect.isawaitable(handler_return) else handler_return
 
-        log.debug(f'{job["id"]} | Handler output: {job_output}')
+        log.debug(f'Handler output: {job_output}', job["id"])
 
         if isinstance(job_output, dict):
             error_msg = job_output.pop("error", None)
