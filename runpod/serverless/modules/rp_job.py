@@ -70,7 +70,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 next_job = await response.json()
-                log.debug(f"Received Job | {next_job}")
+                log.debug("Request Received", {next_job})
 
             # Check if the job is valid
             job_id = next_job.get("id", None)
@@ -94,11 +94,11 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             if not retry:
                 return None
 
-    log.debug("Valid Job Confirmed", next_job['id'])
+    log.debug("Confirmed valid request.", next_job['id'])
 
     if next_job:
         job_list.add_job(next_job["id"])
-        log.debug("Added Job ID", next_job['id'])
+        log.debug("Request ID added.", next_job['id'])
 
     return next_job
 
