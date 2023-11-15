@@ -131,6 +131,7 @@ class SSHConnection:
 
         return subprocess.run(rsync_cmd, check=True)
 
+
     def close(self):
         ''' Close the SSH connection. '''
         self.ssh.close()
