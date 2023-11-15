@@ -38,13 +38,13 @@ class JobScaler():
 
     Methods:
         get_jobs() -> List[Dict]:
-            Retrieves multiple jobs from the server in parallel using concurrent requests.
+            Retrieves multiple jobs from the server in parallel using concurrent get requests.
 
         upscale_rate() -> None:
-            Upscales the job retrieval rate by adjusting the number of concurrent requests.
+            Upscales the job retrieval rate by increasing the number of concurrent get requests.
 
         downscale_rate() -> None:
-            Downscales the job retrieval rate by adjusting the number of concurrent requests.
+            Downscales the job retrieval rate by reducing the number of concurrent get requests.
 
         rescale_request_rate() -> None:
             Rescales the job retrieval rate based on factors such as job queue availability
