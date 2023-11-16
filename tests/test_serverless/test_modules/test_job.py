@@ -10,6 +10,7 @@ from aiohttp.test_utils import make_mocked_coro
 
 from runpod.serverless.modules import rp_job
 
+
 class TestJob(IsolatedAsyncioTestCase):
     ''' Tests the Job class. '''
 
@@ -38,18 +39,17 @@ class TestJob(IsolatedAsyncioTestCase):
         response4.json = make_mocked_coro(return_value={"id": "123", "input": {"number": 1}})
 
         with patch("aiohttp.ClientSession") as mock_session, \
-            patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             # Set side_effect to a list of mock responses
             mock_session.get.return_value.__aenter__.side_effect = [
                 response1, response2, response3, response4
-                ]
+            ]
 
             job = await rp_job.get_job(mock_session, retry=True)
 
             # Assertions for the success case
             assert job == {"id": "123", "input": {"number": 1}}
-
 
     async def test_get_job_204(self):
         '''
@@ -61,7 +61,7 @@ class TestJob(IsolatedAsyncioTestCase):
         response_204.json = make_mocked_coro(return_value=None)
 
         with patch("aiohttp.ClientSession") as mock_session_204, \
-            patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             mock_session_204.get.return_value.__aenter__.return_value = response_204
             job = await rp_job.get_job(mock_session_204, retry=False)
@@ -78,13 +78,12 @@ class TestJob(IsolatedAsyncioTestCase):
         response_400.status = 400
 
         with patch("aiohttp.ClientSession") as mock_session_400, \
-             patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             mock_session_400.get.return_value.__aenter__.return_value = response_400
             job = await rp_job.get_job(mock_session_400, retry=False)
 
             assert job is None
-
 
     async def test_get_job_500(self):
         '''
@@ -95,13 +94,12 @@ class TestJob(IsolatedAsyncioTestCase):
         response_500.status = 500
 
         with patch("aiohttp.ClientSession") as mock_session_500, \
-            patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             mock_session_500.get.return_value.__aenter__.return_value = response_500
             job = await rp_job.get_job(mock_session_500, retry=False)
 
             assert job is None
-
 
     async def test_get_job_no_id(self):
         '''
@@ -111,10 +109,9 @@ class TestJob(IsolatedAsyncioTestCase):
         response.status = 200
         response.json = make_mocked_coro(return_value={})
 
-
         with patch("aiohttp.ClientSession") as mock_session, \
-            patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log, \
-            patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+                patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log, \
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             mock_session.get.return_value.__aenter__.return_value = response
 
@@ -131,10 +128,9 @@ class TestJob(IsolatedAsyncioTestCase):
         response.status = 200
         response.json = make_mocked_coro(return_value={"id": "123"})
 
-
         with patch("aiohttp.ClientSession") as mock_session, \
-            patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log, \
-            patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+                patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log, \
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             mock_session.get.return_value.__aenter__.return_value = response
 
@@ -152,14 +148,15 @@ class TestJob(IsolatedAsyncioTestCase):
         response_exception.status = 200
 
         with patch("aiohttp.ClientSession") as mock_session_exception, \
-            patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log, \
-            patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+                patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log, \
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             mock_session_exception.get.return_value.__aenter__.side_effect = Exception
             job = await rp_job.get_job(mock_session_exception, retry=False)
 
             assert job is None
             assert mock_log.error.call_count == 1
+
 
 class TestRunJob(IsolatedAsyncioTestCase):
     ''' Tests the run_job function '''
@@ -184,7 +181,7 @@ class TestRunJob(IsolatedAsyncioTestCase):
 
         mock_handler.return_value = ['test1', 'test2']
         job_result_list = await rp_job.run_job(mock_handler, self.sample_job)
-        assert job_result_list == {"output":["test1", "test2"]}
+        assert job_result_list == {"output": ["test1", "test2"]}
 
         mock_handler.return_value = 123
         job_result_int = await rp_job.run_job(mock_handler, self.sample_job)
@@ -249,14 +246,14 @@ class TestRunJob(IsolatedAsyncioTestCase):
 class TestRunJobGenerator(IsolatedAsyncioTestCase):
     ''' Tests the run_job_generator function '''
 
-    def handler_gen_success(self, job): # pylint: disable=unused-argument
+    def handler_gen_success(self, job):  # pylint: disable=unused-argument
         '''
         Test handler that returns a generator.
         '''
         yield "partial_output_1"
         yield "partial_output_2"
 
-    async def handler_async_gen_success(self, job): # pylint: disable=unused-argument
+    async def handler_async_gen_success(self, job):  # pylint: disable=unused-argument
         '''
         Test handler that returns an async generator.
         '''
@@ -267,7 +264,7 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         '''
         Test handler that raises an exception.
         '''
-        raise Exception("Test Exception") # pylint: disable=broad-exception-raised
+        raise Exception("Test Exception")  # pylint: disable=broad-exception-raised
 
     async def test_run_job_generator_success(self):
         '''
@@ -282,7 +279,7 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert result == [{"output": "partial_output_1"}, {"output": "partial_output_2"}]
         assert mock_log.error.call_count == 0
         assert mock_log.info.call_count == 1
-        mock_log.info.assert_called_with('123 | Finished ')
+        mock_log.info.assert_called_with('Finished', '123')
 
     async def test_run_job_generator_success_async(self):
         '''
@@ -297,7 +294,7 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert result == [{"output": "partial_output_1"}, {"output": "partial_output_2"}]
         assert mock_log.error.call_count == 0
         assert mock_log.info.call_count == 1
-        mock_log.info.assert_called_with('123 | Finished ')
+        mock_log.info.assert_called_with('Finished', '123')
 
     async def test_run_job_generator_exception(self):
         '''
@@ -313,4 +310,4 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert "error" in result[0]
         assert mock_log.error.call_count == 1
         assert mock_log.info.call_count == 1
-        mock_log.info.assert_called_with('123 | Finished ')
+        mock_log.info.assert_called_with('Finished', '123')

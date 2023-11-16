@@ -5,21 +5,59 @@ RunPod | CLI | Project | Functions
 import os
 import sys
 import uuid
+from datetime import datetime
 
 import tomlkit
 from tomlkit import document, comment, table, nl
 
-from runpod import __version__, get_pod, create_template, create_endpoint
+from runpod import __version__, get_pod, create_template, create_endpoint, update_endpoint_template
 from runpod.cli import BASE_DOCKER_IMAGE, GPU_TYPES, ENV_VARS
 from runpod.cli.utils.ssh_cmd import SSHConnection
-from .helpers import get_project_pod, copy_template_files, attempt_pod_launch, load_project_config
+from .helpers import (
+    get_project_pod, copy_template_files,
+    attempt_pod_launch, load_project_config, get_project_endpoint
+)
 from ...utils.rp_sync import sync_directory
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), 'starter_templates')
 
+
+def _launch_dev_pod():
+    """ Launch a development pod. """
+    config = load_project_config()  # Load runpod.toml
+
+    print("Deploying development pod on RunPod...")
+
+    # Prepare the environment variables
+    environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
+    for variable in config['project'].get('env_vars', {}):
+        environment_variables[variable] = config['project']['env_vars'][variable]
+
+    # Prepare the GPU types
+    selected_gpu_types = config['project'].get('gpu_types', [])
+    if config['project'].get('gpu', None):
+        selected_gpu_types.append(config['project']['gpu'])
+
+    # Attempt to launch a pod with the given configuration
+    new_pod = attempt_pod_launch(config, environment_variables)
+    if new_pod is None:
+        print("Selected GPU types unavailable, try again later or use a different type.")
+        return None
+
+    print("Waiting for pod to come online... ", end="")
+    sys.stdout.flush()
+
+    # Wait for the pod to come online
+    while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime') is None:
+        new_pod = get_pod(new_pod['id'])
+
+    project_pod_id = new_pod['id']
+
+    print(f"Project {config['project']['name']} pod ({project_pod_id}) created.", end="\n\n")
+    return project_pod_id
+
+
 # -------------------------------- New Project ------------------------------- #
-
-
 def create_new_project(project_name, runpod_volume_id, cuda_version, python_version,  # pylint: disable=too-many-locals, too-many-arguments, too-many-statements
                        model_type=None, model_name=None, init_current_dir=False):
     """ Create a new project. """
@@ -124,63 +162,40 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
 
     # Check if the project pod already exists, if not create it.
     if not project_pod_id:
+        project_pod_id = _launch_dev_pod()
 
-        print("Deploying development pod on RunPod...")
-
-        # Prepare the environment variables
-        environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
-        for variable in config['project'].get('env_vars', {}):
-            environment_variables[variable] = config['project']['env_vars'][variable]
-
-        # Prepare the GPU types
-        selected_gpu_types = config['project'].get('gpu_types', [])
-        if config['project'].get('gpu', None):
-            selected_gpu_types.append(config['project']['gpu'])
-
-        # Attempt to launch a pod with the given configuration
-        new_pod = attempt_pod_launch(config, environment_variables)
-        if new_pod is None:
-            print("Selected GPU types unavailable, try again later or use a different type.")
-            return
-
-        print("Waiting for pod to come online... ", end="")
-        sys.stdout.flush()
-
-        # Wait for the pod to come online
-        while new_pod.get('desiredStatus', None) != 'RUNNING' or new_pod.get('runtime') is None:
-            new_pod = get_pod(new_pod['id'])
-
-        project_pod_id = new_pod['id']
-
-        print(f"Project {config['project']['name']} pod ({project_pod_id}) created.", end="\n\n")
+    if project_pod_id is None:
+        return
 
     with SSHConnection(project_pod_id) as ssh_conn:
 
         project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
-        remote_project_path = os.path.join(project_path_uuid, config["project"]["name"])
+        project_path_uuid_dev = os.path.join(project_path_uuid, 'dev')
+        project_path_uuid_prod = os.path.join(project_path_uuid, 'prod')
+        remote_project_path = os.path.join(project_path_uuid_dev, config["project"]["name"])
 
         # Create the project folder on the pod
         print(f'Checking pod project folder: {remote_project_path} on pod {project_pod_id}')
-        ssh_conn.run_commands([f'mkdir -p {remote_project_path}'])
+        ssh_conn.run_commands([f'mkdir -p {remote_project_path} {project_path_uuid_prod}'])
 
         # Copy local files to the pod project folder
         print(f'Syncing files to pod {project_pod_id}')
-        ssh_conn.rsync(os.getcwd(), project_path_uuid)
+        ssh_conn.rsync(os.getcwd(), project_path_uuid_dev)
 
         # Create the virtual environment
-        venv_path = os.path.join(project_path_uuid, "venv")
+        venv_path = os.path.join(project_path_uuid_dev, "venv")
         print(f'Activating Python virtual environment: {venv_path} on pod {project_pod_id}')
         commands = [
             f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
             f'source {venv_path}/bin/activate &&'
             f'cd {remote_project_path} &&'
             'python -m pip install --upgrade pip &&'
-            f'python -m pip install --requirement {config["runtime"]["requirements_path"]}'
+            f'python -m pip install -v --requirement {config["runtime"]["requirements_path"]}'
         ]
         ssh_conn.run_commands(commands)
 
         # Start the watcher and then start the API development server
-        sync_directory(ssh_conn, os.getcwd(), project_path_uuid)
+        sync_directory(ssh_conn, os.getcwd(), project_path_uuid_dev)
 
         project_name = config["project"]["name"]
         pip_req_path = os.path.join(remote_project_path, config['runtime']['requirements_path'])
@@ -217,14 +232,14 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
 
             trap cleanup EXIT SIGINT
 
-            if source {project_path_uuid}/venv/bin/activate; then
+            if source {project_path_uuid_dev}/venv/bin/activate; then
                 echo -e "- Activated virtual environment."
             else
                 echo "Failed to activate virtual environment."
                 exit 1
             fi
 
-            if cd {project_path_uuid}/{project_name}; then
+            if cd {project_path_uuid_dev}/{project_name}; then
                 echo -e "- Changed to project directory."
             else
                 echo "Failed to change directory."
@@ -287,35 +302,74 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
 # ------------------------------ Deploy Project ------------------------------ #
 def create_project_endpoint():
     """ Create a project endpoint.
+    - Move code in dev to prod folder
+    - TODO: git commit the diff from current state to new state
     - Create a serverless template for the project
     - Create a new endpoint using the template
     """
     config = load_project_config()
+    project_pod_id = get_project_pod(config['project']['uuid'])
+
+    # Check if the project pod already exists, if not create it.
+    if not project_pod_id:
+        project_pod_id = _launch_dev_pod()
+
+    if project_pod_id is None:
+        return None
+
+    with SSHConnection(project_pod_id) as ssh_conn:
+        project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
+        project_path_uuid_prod = os.path.join(project_path_uuid, 'prod')
+        remote_project_path = os.path.join(project_path_uuid_prod, config["project"]["name"])
+
+        # Copy local files to the pod project folder
+        ssh_conn.run_commands([f'mkdir -p {remote_project_path}'])
+        print(f'Syncing files to pod {project_pod_id} prod')
+        ssh_conn.rsync(os.getcwd(), project_path_uuid_prod)
+
+        # Create the virtual environment
+        venv_path = os.path.join(project_path_uuid_prod, 'venv')
+        print(f'Activating Python virtual environment: {venv_path} on pod {project_pod_id}')
+        commands = [
+            f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
+            f'source {venv_path}/bin/activate &&'
+            f'cd {remote_project_path} &&'
+            'python -m pip install --upgrade pip &&'
+            f'python -m pip install -v --requirement {config["runtime"]["requirements_path"]}'
+        ]
+        ssh_conn.run_commands(commands)
+        ssh_conn.close()
 
     environment_variables = {}
     for variable in config['project']['env_vars']:
         environment_variables[variable] = config['project']['env_vars'][variable]
 
     # Construct the docker start command
-    docker_start_cmd_prefix = 'bash -c "'
-    activate_cmd = f'. /runpod-volume/{config["project"]["uuid"]}/venv/bin/activate'
-    python_cmd = f'python -u /runpod-volume/{config["project"]["uuid"]}/{config["project"]["name"]}/{config["runtime"]["handler_path"]}'  # pylint: disable=line-too-long
-    docker_start_cmd_suffix = '"'
-    docker_start_cmd = docker_start_cmd_prefix + activate_cmd + ' && ' + \
-        python_cmd + docker_start_cmd_suffix  # pylint: disable=line-too-long
+    activate_cmd = f'. /runpod-volume/{config["project"]["uuid"]}/prod/venv/bin/activate'
+    python_cmd = f'python -u /runpod-volume/{config["project"]["uuid"]}/prod/{config["project"]["name"]}/{config["runtime"]["handler_path"]}'  # pylint: disable=line-too-long
+    docker_start_cmd = 'bash -c "' + activate_cmd + ' && ' + python_cmd + '"'
 
     project_endpoint_template = create_template(
-        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
+        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]} | {datetime.now()}',  # pylint: disable=line-too-long
         image_name=config['project']['base_image'],
         container_disk_in_gb=config['project']['container_disk_size_gb'],
         docker_start_cmd=docker_start_cmd,
         env=environment_variables, is_serverless=True
     )
 
-    deployed_endpoint = create_endpoint(
-        name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
-        template_id=project_endpoint_template['id'],
-        network_volume_id=config['project']['storage_id'],
-    )
+    deployed_endpoint = get_project_endpoint(config['project']['uuid'])
+    if not deployed_endpoint:
+        deployed_endpoint = create_endpoint(
+            name=f'{config["project"]["name"]}-endpoint | {config["project"]["uuid"]}',
+            template_id=project_endpoint_template['id'],
+            network_volume_id=config['project']['storage_id'],
+        )
+    else:
+        deployed_endpoint = update_endpoint_template(
+            endpoint_id=deployed_endpoint['id'],
+            template_id=project_endpoint_template['id'],
+        )
+
+    # does user want to tear down and recreate workers immediately?
 
     return deployed_endpoint['id']
