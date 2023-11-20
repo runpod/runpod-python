@@ -17,6 +17,21 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
+def _default_concurrency_modifier(current_concurrency: int) -> int:
+    """
+    Default concurrency modifier.
+
+    This function returns the current concurrency without any modification.
+
+    Args:
+        current_concurrency (int): The current concurrency.
+
+    Returns:
+        int: The current concurrency.
+    """
+    return current_concurrency
+
+
 @dataclasses.dataclass
 class ConcurrencyConfig:
     """ A class for storing the configuration for the concurrency controller. """
@@ -66,15 +81,17 @@ class JobScaler():
         job_scaler.rescale_request_rate()
     """
 
-    def __init__(self, concurrency_controller: typing.Any, config: Dict[str, typing.Any]):
-        self.concurrency_controller = concurrency_controller
+    # , concurrency_controller: typing.Any, config: Dict[str, typing.Any]):
+    def __init__(self, concurrency_modifier: typing.Any = _default_concurrency_modifier):
+        self.concurrency_modifier = concurrency_modifier
+        # self.concurrency_controller = concurrency_controller
 
-        self.config = ConcurrencyConfig(
-            min_concurrent_requests=config.get("min_concurrent_requests", 2),
-            max_concurrent_requests=config.get("max_concurrent_requests", 100),
-            concurrency_scale_factor=config.get("concurrency_scale_factor", 4),
-            availability_ratio_threshold=config.get("availability_ratio_threshold", 0.90)
-        )
+        # self.config = ConcurrencyConfig(
+        #     min_concurrent_requests=config.get("min_concurrent_requests", 2),
+        #     max_concurrent_requests=config.get("max_concurrent_requests", 100),
+        #     concurrency_scale_factor=config.get("concurrency_scale_factor", 4),
+        #     availability_ratio_threshold=config.get("availability_ratio_threshold", 0.90)
+        # )
 
         self.background_get_job_tasks = set()
         self.job_history = []
@@ -111,6 +128,8 @@ class JobScaler():
             if not self.is_alive():
                 break
 
+            self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
+
             tasks = [
                 asyncio.create_task(get_job(session, retry=False))
                 for _ in range(self.current_concurrency if job_list.get_job_list() else 1)
@@ -123,21 +142,21 @@ class JobScaler():
                     yield job
 
             # During the single processing scenario, wait for the job to finish processing.
-            if self.concurrency_controller is None:
-                # Create a copy of the background job tasks list to keep references to the tasks.
-                job_tasks_copy = self.background_get_job_tasks.copy()
-                if job_tasks_copy:
-                    # Wait for the job tasks to finish processing before continuing.
-                    await asyncio.wait(job_tasks_copy)
-                # Exit the loop after processing a single job (since the handler is fully utilized).
-                await asyncio.sleep(1)
-                break
+            # if self.concurrency_controller is None:
+            #     # Create a copy of the background job tasks list to keep references to the tasks.
+            #     job_tasks_copy = self.background_get_job_tasks.copy()
+            #     if job_tasks_copy:
+            #         # Wait for the job tasks to finish processing before continuing.
+            #         await asyncio.wait(job_tasks_copy)
+            #     # Exit the loop after processing a single job (since the handler is fully utilized).
+            #     await asyncio.sleep(1)
+            #     break
 
             # We retrieve current_concurrency jobs per second.
             await asyncio.sleep(1)
 
             # Rescale the retrieval rate appropriately.
-            self.rescale_request_rate()
+            # self.rescale_request_rate() # Using concurrency_modifier instead
 
             # Show logs
             log.info(

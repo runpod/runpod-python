@@ -114,8 +114,9 @@ async def run_worker(config: Dict[str, Any]) -> None:
 
     async with client_session as session:
         job_scaler = rp_scale.JobScaler(
-            concurrency_controller=config.get('concurrency_controller', None),
-            config=config.get('concurrency_config', {})
+            concurrency_modifier=config.get('concurrency_modifier', None),
+            # concurrency_controller=config.get('concurrency_controller', None),
+            # config=config.get('concurrency_config', {})
         )
 
         while job_scaler.is_alive():
