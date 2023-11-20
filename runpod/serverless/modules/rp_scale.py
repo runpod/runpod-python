@@ -164,53 +164,53 @@ class JobScaler():
                 f"{self.current_concurrency}."
             )
 
-    def upscale_rate(self) -> None:
-        """
-        Upscale the job retrieval rate by adjusting the number of concurrent requests.
+    # def upscale_rate(self) -> None:
+    #     """
+    #     Upscale the job retrieval rate by adjusting the number of concurrent requests.
 
-        This method increases the number of concurrent requests to the server,
-        effectively retrieving more jobs per unit of time.
-        """
-        self.current_concurrency = min(
-            self.current_concurrency *
-            self.config.concurrency_scale_factor,
-            self.config.max_concurrent_requests
-        )
+    #     This method increases the number of concurrent requests to the server,
+    #     effectively retrieving more jobs per unit of time.
+    #     """
+    #     self.current_concurrency = min(
+    #         self.current_concurrency *
+    #         self.config.concurrency_scale_factor,
+    #         self.config.max_concurrent_requests
+    #     )
 
-    def downscale_rate(self) -> None:
-        """
-        Downscale the job retrieval rate by adjusting the number of concurrent requests.
+    # def downscale_rate(self) -> None:
+    #     """
+    #     Downscale the job retrieval rate by adjusting the number of concurrent requests.
 
-        This method decreases the number of concurrent requests to the server,
-        effectively retrieving fewer jobs per unit of time.
-        """
-        self.current_concurrency = int(max(
-            self.current_concurrency // self.config.concurrency_scale_factor,
-            self.config.min_concurrent_requests
-        ))
+    #     This method decreases the number of concurrent requests to the server,
+    #     effectively retrieving fewer jobs per unit of time.
+    #     """
+    #     self.current_concurrency = int(max(
+    #         self.current_concurrency // self.config.concurrency_scale_factor,
+    #         self.config.min_concurrent_requests
+    #     ))
 
-    def rescale_request_rate(self) -> None:
-        """
-        Scale up or down the rate at which we are handling jobs from SLS.
-        """
-        # Compute the availability ratio of the job queue.
-        availability_ratio = sum(self.job_history) / len(self.job_history)
+    # def rescale_request_rate(self) -> None:
+    #     """
+    #     Scale up or down the rate at which we are handling jobs from SLS.
+    #     """
+    #     # Compute the availability ratio of the job queue.
+    #     availability_ratio = sum(self.job_history) / len(self.job_history)
 
-        # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
-        if self.concurrency_controller() is True:
-            log.debug("Reducing job query rate due to full worker utilization.")
+    #     # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
+    #     if self.concurrency_controller() is True:
+    #         log.debug("Reducing job query rate due to full worker utilization.")
 
-            self.downscale_rate()
-        elif availability_ratio < 1 / self.config.concurrency_scale_factor:
-            log.debug(
-                "Reducing job query rate due to low job queue availability.")
+    #         self.downscale_rate()
+    #     elif availability_ratio < 1 / self.config.concurrency_scale_factor:
+    #         log.debug(
+    #             "Reducing job query rate due to low job queue availability.")
 
-            self.downscale_rate()
-        elif availability_ratio >= self.config.availability_ratio_threshold:
-            log.debug(
-                "Increasing job query rate due to increased job queue availability.")
+    #         self.downscale_rate()
+    #     elif availability_ratio >= self.config.availability_ratio_threshold:
+    #         log.debug(
+    #             "Increasing job query rate due to increased job queue availability.")
 
-            self.upscale_rate()
+    #         self.upscale_rate()
 
-        # Clear the job history
-        self.job_history.clear()
+    #     # Clear the job history
+    #     self.job_history.clear()
