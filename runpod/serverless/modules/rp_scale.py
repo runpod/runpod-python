@@ -84,7 +84,7 @@ class JobScaler():
     # , concurrency_controller: typing.Any, config: Dict[str, typing.Any]):
     def __init__(self, concurrency_modifier: typing.Any):
         if concurrency_modifier is None:
-            concurrency_modifier = _default_concurrency_modifier
+            self.concurrency_modifier = _default_concurrency_modifier
         else:
             self.concurrency_modifier = concurrency_modifier
         # self.concurrency_controller = concurrency_controller
