@@ -50,16 +50,16 @@ version_file = "runpod/_version.py"
 runpod = "runpod.cli.entry:runpod_cli"
 
 
-[project.optional-dependencies]
-test = [
-    "asynctest",
-    "nest_asyncio",
-    "pylint",
-    "pytest",
-    "pytest-cov",
-    "pytest-timeout",
-    "pytest-asyncio",
-]
+# [project.optional-dependencies]
+# test = [
+#     "asynctest",
+#     "nest_asyncio",
+#     "pylint",
+#     "pytest",
+#     "pytest-cov",
+#     "pytest-timeout",
+#     "pytest-asyncio",
+# ]
 
 [build-system]
 requires = ["setuptools>=45", "wheel", "setuptools_scm"]
