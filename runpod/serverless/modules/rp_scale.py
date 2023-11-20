@@ -30,15 +30,6 @@ def _default_concurrency_modifier(current_concurrency: int) -> int:
     return current_concurrency
 
 
-@dataclasses.dataclass
-class ConcurrencyConfig:
-    """ A class for storing the configuration for the concurrency controller. """
-    min_concurrent_requests: int = 2
-    max_concurrent_requests: int = 100
-    concurrency_scale_factor: int = 4
-    availability_ratio_threshold: float = 0.90
-
-
 class JobScaler():
     """
     A class for automatically retrieving new jobs from the server and processing them concurrently.
