@@ -1,4 +1,5 @@
-aiohttp >= 3.8.6
+aiodns >= 3.1.1
+aiohttp[speedups] >= 3.9.0
 aiohttp-retry >= 2.8.3
 
 backoff >= 2.2.1
