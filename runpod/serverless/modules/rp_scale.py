@@ -7,8 +7,6 @@ import asyncio
 import typing
 import dataclasses
 
-from aiohttp_retry import Dict
-
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .rp_job import get_job
 from .worker_state import Jobs
@@ -81,7 +79,6 @@ class JobScaler():
         job_scaler.rescale_request_rate()
     """
 
-    # , concurrency_controller: typing.Any, config: Dict[str, typing.Any]):
     def __init__(self, concurrency_modifier: typing.Any):
         if concurrency_modifier is None:
             self.concurrency_modifier = _default_concurrency_modifier
