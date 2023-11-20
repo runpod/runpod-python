@@ -13,7 +13,8 @@ API_KEY_NOT_SET_MSG = ("Expected `run_pod.api_key` to be initialized. "
                        "An API key can be generated at "
                        "https://runpod.io/console/user/settings")
 
-
+def is_completed(status:str)->bool:
+    return status in ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED"]
 # ---------------------------------------------------------------------------- #
 #                                    Client                                    #
 # ---------------------------------------------------------------------------- #
@@ -107,7 +108,7 @@ class Job:
         status_url = f"{self.endpoint_id}/status/{self.job_id}"
         job_state = self.rp_client.get(endpoint=status_url)
 
-        if job_state["status"] in ["COMPLETED", "FAILED", "TIMEOUT"]:
+        if is_completed(job_state["status"]):
             self.job_status = job_state["status"]
             self.job_output = job_state.get("output", None)
 
@@ -128,7 +129,7 @@ class Job:
             timeout: The number of seconds to wait for the server to send data before giving up.
         """
         if timeout > 0:
-            while self.status() not in ["COMPLETED", "FAILED", "TIMEOUT"]:
+            while not is_completed(self.status()):
                 time.sleep(1)
                 timeout -= 1
                 if timeout <= 0:
@@ -138,6 +139,10 @@ class Job:
             return self.job_output
 
         return self._fetch_job().get("output", None)
+    
+    def cancel(self, timeout: int = 3000) -> Any:
+        pass
+
 
 
 # ---------------------------------------------------------------------------- #
@@ -195,3 +200,8 @@ class Endpoint:
             return job_request.get("output", None)
 
         return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
+    
+    def health(self,timeout: int = 3000) -> Dict[str, Any]:
+        pass
+    def purge_queue(self,timeout: int = 3000) -> Dict[str, Any]:
+        pass
