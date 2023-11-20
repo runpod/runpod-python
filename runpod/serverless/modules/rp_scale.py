@@ -84,14 +84,6 @@ class JobScaler():
             self.concurrency_modifier = _default_concurrency_modifier
         else:
             self.concurrency_modifier = concurrency_modifier
-        # self.concurrency_controller = concurrency_controller
-
-        # self.config = ConcurrencyConfig(
-        #     min_concurrent_requests=config.get("min_concurrent_requests", 2),
-        #     max_concurrent_requests=config.get("max_concurrent_requests", 100),
-        #     concurrency_scale_factor=config.get("concurrency_scale_factor", 4),
-        #     availability_ratio_threshold=config.get("availability_ratio_threshold", 0.90)
-        # )
 
         self.background_get_job_tasks = set()
         self.job_history = []
@@ -141,76 +133,10 @@ class JobScaler():
                 if job:
                     yield job
 
-            # During the single processing scenario, wait for the job to finish processing.
-            # if self.concurrency_controller is None:
-            #     # Create a copy of the background job tasks list to keep references to the tasks.
-            #     job_tasks_copy = self.background_get_job_tasks.copy()
-            #     if job_tasks_copy:
-            #         # Wait for the job tasks to finish processing before continuing.
-            #         await asyncio.wait(job_tasks_copy)
-            #     # Exit the loop after processing a single job (since the handler is fully utilized).
-            #     await asyncio.sleep(1)
-            #     break
-
-            # We retrieve current_concurrency jobs per second.
             await asyncio.sleep(1)
-
-            # Rescale the retrieval rate appropriately.
-            # self.rescale_request_rate() # Using concurrency_modifier instead
 
             # Show logs
             log.info(
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
                 f"{self.current_concurrency}."
             )
-
-    # def upscale_rate(self) -> None:
-    #     """
-    #     Upscale the job retrieval rate by adjusting the number of concurrent requests.
-
-    #     This method increases the number of concurrent requests to the server,
-    #     effectively retrieving more jobs per unit of time.
-    #     """
-    #     self.current_concurrency = min(
-    #         self.current_concurrency *
-    #         self.config.concurrency_scale_factor,
-    #         self.config.max_concurrent_requests
-    #     )
-
-    # def downscale_rate(self) -> None:
-    #     """
-    #     Downscale the job retrieval rate by adjusting the number of concurrent requests.
-
-    #     This method decreases the number of concurrent requests to the server,
-    #     effectively retrieving fewer jobs per unit of time.
-    #     """
-    #     self.current_concurrency = int(max(
-    #         self.current_concurrency // self.config.concurrency_scale_factor,
-    #         self.config.min_concurrent_requests
-    #     ))
-
-    # def rescale_request_rate(self) -> None:
-    #     """
-    #     Scale up or down the rate at which we are handling jobs from SLS.
-    #     """
-    #     # Compute the availability ratio of the job queue.
-    #     availability_ratio = sum(self.job_history) / len(self.job_history)
-
-    #     # If our worker is fully utilized or the SLS queue is throttling, reduce the job query rate.
-    #     if self.concurrency_controller() is True:
-    #         log.debug("Reducing job query rate due to full worker utilization.")
-
-    #         self.downscale_rate()
-    #     elif availability_ratio < 1 / self.config.concurrency_scale_factor:
-    #         log.debug(
-    #             "Reducing job query rate due to low job queue availability.")
-
-    #         self.downscale_rate()
-    #     elif availability_ratio >= self.config.availability_ratio_threshold:
-    #         log.debug(
-    #             "Increasing job query rate due to increased job queue availability.")
-
-    #         self.upscale_rate()
-
-    #     # Clear the job history
-    #     self.job_history.clear()
