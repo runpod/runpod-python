@@ -18,10 +18,10 @@ log.error('An error message')
 # ERROR   | An error message
 
 
-log.debug('A debug message', job_id=JOB_ID)
-log.info('An info message', job_id=JOB_ID)
-log.warn('A warning message', job_id=JOB_ID)
-log.error('An error message', job_id=JOB_ID)
+log.debug('A debug message', request_id=JOB_ID)
+log.info('An info message', request_id=JOB_ID)
+log.warn('A warning message', request_id=JOB_ID)
+log.error('An error message', request_id=JOB_ID)
 
 # Output:
 # {"requestId": "1234567890", "message": "A debug message", "level": "DEBUG"}

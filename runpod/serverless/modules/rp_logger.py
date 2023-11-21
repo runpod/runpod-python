@@ -71,7 +71,7 @@ class RunPodLogger:
         if level_index > LOG_LEVELS.index(message_level) and message_level != 'TIP':
             return
 
-        if job_id:
+        if os.environ.get('RUNPOD_ENDPOINT_ID'):
             log_json = {
                 'requestId': job_id,
                 'message': message,
@@ -79,6 +79,9 @@ class RunPodLogger:
             }
             print(json.dumps(log_json), flush=True)
             return
+
+        if job_id:
+            message = f'{job_id} | {message}'
 
         print(f'{message_level.ljust(7)}| {message}', flush=True)
         return
@@ -92,29 +95,29 @@ class RunPodLogger:
         redacted_secret = secret[0] + '*' * (len(secret)-2) + secret[-1]
         self.info(f"{secret_name}: {redacted_secret}")
 
-    def debug(self, message, job_id=None):
+    def debug(self, message, request_id=None):
         '''
         debug log
         '''
-        self.log(message, 'DEBUG', job_id)
+        self.log(message, 'DEBUG', request_id)
 
-    def info(self, message, job_id=None):
+    def info(self, message, request_id=None):
         '''
         info log
         '''
-        self.log(message, 'INFO', job_id)
+        self.log(message, 'INFO', request_id)
 
-    def warn(self, message, job_id=None):
+    def warn(self, message, request_id=None):
         '''
         warn log
         '''
-        self.log(message, 'WARN', job_id)
+        self.log(message, 'WARN', request_id)
 
-    def error(self, message, job_id=None):
+    def error(self, message, request_id=None):
         '''
         error log
         '''
-        self.log(message, 'ERROR', job_id)
+        self.log(message, 'ERROR', request_id)
 
     def tip(self, message):
         '''

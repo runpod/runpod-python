@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from runpod.api import ctl_commands
 
+
 class TestCTL(unittest.TestCase):
     ''' Tests for CTL Commands '''
 
@@ -94,18 +95,17 @@ class TestCTL(unittest.TestCase):
             with self.assertRaises(ValueError) as context:
                 gpu = ctl_commands.get_gpu("Not a GPU")
 
-
             self.assertEqual(str(context.exception),
-                                "No GPU found with the specified ID, "
-                                "run runpod.get_gpus() to get a list of all GPUs")
+                             "No GPU found with the specified ID, "
+                             "run runpod.get_gpus() to get a list of all GPUs")
 
     def test_create_pod(self):
         '''
         Tests create_pod
         '''
         with patch("runpod.api.graphql.requests.post") as patch_request, \
-             patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu, \
-             patch("runpod.api.ctl_commands.get_user") as patch_get_user:
+                patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu, \
+                patch("runpod.api.ctl_commands.get_user") as patch_get_user:
 
             patch_request.return_value.json.return_value = {
                 "data": {
@@ -145,7 +145,7 @@ class TestCTL(unittest.TestCase):
                     network_volume_id="NETWORK_VOLUME_ID")
 
             self.assertEqual(str(context.exception),
-                                "cloud_type must be one of ALL, COMMUNITY or SECURE")
+                             "cloud_type must be one of ALL, COMMUNITY or SECURE")
 
     def test_stop_pod(self):
         '''
@@ -215,7 +215,6 @@ class TestCTL(unittest.TestCase):
 
             self.assertEqual(str(context.exception), "Error Message")
 
-
         # Test Unauthorized with status code 401
         with patch("runpod.api.graphql.requests.post") as patch_request:
             patch_request.return_value.status_code = 401
@@ -256,7 +255,7 @@ class TestCTL(unittest.TestCase):
                                 "vcpuCount": 21,
                                 "volumeInGb": 200,
                                 "volumeMountPath": "/workspace",
-                                "machine": { "gpuDisplayName": "RTX 3090" }
+                                "machine": {"gpuDisplayName": "RTX 3090"}
                             }
                         ]
                     }
@@ -296,7 +295,7 @@ class TestCTL(unittest.TestCase):
                         "vcpuCount": 21,
                         "volumeInGb": 200,
                         "volumeMountPath": "/workspace",
-                        "machine": { "gpuDisplayName": "RTX 3090" }
+                        "machine": {"gpuDisplayName": "RTX 3090"}
                     }
                 }
             }
@@ -310,7 +309,7 @@ class TestCTL(unittest.TestCase):
         Tests create_template
         '''
         with patch("runpod.api.graphql.requests.post") as patch_request, \
-             patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
+                patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
 
             patch_request.return_value.json.return_value = {
                 "data": {
@@ -329,12 +328,39 @@ class TestCTL(unittest.TestCase):
 
             self.assertEqual(template["id"], "TEMPLATE_ID")
 
+    def test_get_endpoints(self):
+        '''
+        Tests get_endpoints
+        '''
+        with patch("runpod.api.graphql.requests.post") as patch_request:
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "myself": {
+                        "endpoints": [
+                            {
+                                "id": "ENDPOINT_ID",
+                                "name": "ENDPOINT_NAME",
+                                "template": {
+                                    "id": "TEMPLATE_ID",
+                                    "imageName": "IMAGE_NAME"
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+
+            endpoints = ctl_commands.get_endpoints()
+
+            self.assertEqual(len(endpoints), 1)
+            self.assertEqual(endpoints[0]["id"], "ENDPOINT_ID")
+
     def test_create_endpoint(self):
         '''
         Tests create_endpoint
         '''
         with patch("runpod.api.graphql.requests.post") as patch_request, \
-             patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
+                patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
 
             patch_request.return_value.json.return_value = {
                 "data": {
@@ -348,6 +374,30 @@ class TestCTL(unittest.TestCase):
 
             endpoint = ctl_commands.create_endpoint(
                 name="ENDPOINT_NAME",
+                template_id="TEMPLATE_ID"
+            )
+
+            self.assertEqual(endpoint["id"], "ENDPOINT_ID")
+
+    def test_update_endpoint_template(self):
+        '''
+        Tests update_endpoint_template
+        '''
+        with patch("runpod.api.graphql.requests.post") as patch_request, \
+                patch("runpod.api.ctl_commands.get_gpu") as patch_get_gpu:
+
+            patch_request.return_value.json.return_value = {
+                "data": {
+                    "updateEndpointTemplate": {
+                        "id": "ENDPOINT_ID"
+                    }
+                }
+            }
+
+            patch_get_gpu.return_value = None
+
+            endpoint = ctl_commands.update_endpoint_template(
+                endpoint_id="ENDPOINT_ID",
                 template_id="TEMPLATE_ID"
             )
 
