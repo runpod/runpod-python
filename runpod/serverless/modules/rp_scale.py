@@ -5,7 +5,6 @@ Provides the functionality for scaling the runpod serverless worker.
 
 import asyncio
 import typing
-import dataclasses
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .rp_job import get_job
