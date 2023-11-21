@@ -123,9 +123,6 @@ async def run_worker(config: Dict[str, Any]) -> None:
                 # Process the job here
                 task = asyncio.create_task(_process_job(job, session, job_scaler, config))
 
-                # Track the task
-                job_scaler.track_task(task)
-
                 # Allow job processing
                 await asyncio.sleep(0)
 
