@@ -201,7 +201,7 @@ class Endpoint:
 
         return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
     
-    def health(self,timeout: int = 3000) -> Dict[str, Any]:
-        pass
-    def purge_queue(self,timeout: int = 3000) -> Dict[str, Any]:
-        pass
+    def health(self,timeout: int = 3) -> Dict[str, Any]:
+        return self.rp_client.get(f"{self.endpoint_id}/health",timeout=timeout)
+    def purge_queue(self,timeout: int = 3) -> Dict[str, Any]:
+        return self.rp_client.post(f"{self.endpoint_id}/purge-queue",timeout=timeout)
