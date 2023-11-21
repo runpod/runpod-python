@@ -63,7 +63,7 @@ async def _process_job(job, session, job_scaler, config):
 
     # If refresh_worker is set, pod will be reset after job is complete.
     if config.get("refresh_worker", False):
-        log.info(f"refresh_worker | Flag set, stopping pod after job {job['id']}.")
+        log.info("refresh_worker flag set, stopping pod after job.", job['id'])
         job_result["stopPod"] = True
         job_scaler.kill_worker()
 
