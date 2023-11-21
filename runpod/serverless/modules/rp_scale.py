@@ -31,42 +31,7 @@ def _default_concurrency_modifier(current_concurrency: int) -> int:
 
 class JobScaler():
     """
-    A class for automatically retrieving new jobs from the server and processing them concurrently.
-
-    Attributes:
-        server_url (str): The URL of the server to retrieve jobs from.
-        max_concurrent_jobs (int): The maximum number of jobs to process concurrently.
-        upscale_factor (float): The factor by which to upscale the job retrieval rate.
-        downscale_factor (float): The factor by which to downscale the job retrieval rate.
-
-    Methods:
-        get_jobs() -> List[Dict]:
-            Retrieves multiple jobs from the server in parallel using concurrent get requests.
-
-        upscale_rate() -> None:
-            Upscales the job retrieval rate by increasing the number of concurrent get requests.
-
-        downscale_rate() -> None:
-            Downscales the job retrieval rate by reducing the number of concurrent get requests.
-
-        rescale_request_rate() -> None:
-            Rescales the job retrieval rate based on factors such as job queue availability
-            and handler utilization.
-
-    Usage example:
-        job_scaler = JobScaler(config)
-
-        # Retrieving multiple jobs in parallel
-        jobs_list = job_scaler.get_jobs(session)
-
-        # Upscaling the rate for faster job retrieval
-        job_scaler.upscale_rate()
-
-        # Downscaling the rate for more conservative job retrieval
-        job_scaler.downscale_rate()
-
-        # Rescaling based on the queue, availability, and other metrics
-        job_scaler.rescale_request_rate()
+    Job Scaler. This class is responsible for scaling the number of concurrent requests.
     """
 
     def __init__(self, concurrency_modifier: typing.Any):
@@ -91,13 +56,6 @@ class JobScaler():
         Whether to kill the worker.
         """
         self._is_alive = False
-
-    def track_task(self, task):
-        """
-        Keep track of the task to avoid python garbage collection of the coroutine.
-        """
-        self.background_get_job_tasks.add(task)
-        task.add_done_callback(self.background_get_job_tasks.discard)
 
     async def get_jobs(self, session):
         """
@@ -125,8 +83,4 @@ class JobScaler():
 
             await asyncio.sleep(1)
 
-            # Show logs
-            log.info(
-                f"Concurrent Get Jobs | The number of concurrent get_jobs is "
-                f"{self.current_concurrency}."
-            )
+            log.debug(f"Concurrency set to: {self.current_concurrency}")
