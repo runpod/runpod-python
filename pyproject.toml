@@ -1,6 +1,6 @@
 [project]
 name = "runpod"
-dynamic = ["version"]
+dynamic = ["version", "dependencies"]
 description = "🐍 | Python library for RunPod API and serverless worker SDK."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.8"
@@ -64,6 +64,9 @@ test = [
 [build-system]
 requires = ["setuptools>=45", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
 
 # Used by pytest coverage
 [tool.coverage.run]
