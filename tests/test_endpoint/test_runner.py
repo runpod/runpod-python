@@ -303,7 +303,7 @@ class TestJob(unittest.TestCase):
         job.cancel()
 
         mock_client.assert_called_with(
-            'POST', f"{self.ENDPOINT_ID}/cancel",
+            'POST', f"endpoint_id/cancel",
             None, 3
         )
 
