@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
 import json
+import asyncio
 import traceback
 from aiohttp import ClientSession
 
@@ -98,6 +99,8 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             log.debug("No job available, waiting for the next one.")
             if retry is False:
                 break
+
+        await asyncio.sleep(1)
     else:
         log.debug("Confirmed valid request.", next_job['id'])
 
