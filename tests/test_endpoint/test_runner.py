@@ -293,16 +293,17 @@ class TestJob(unittest.TestCase):
             job.output(timeout=1)
     
     @patch('runpod.endpoint.runner.RunPodClient')
-    def test_cancel(self, mock_client):
+    @patch('runpod.endpoint.runner.RunPodClient._request')
+    def test_cancel(self, mock_client, mock_client_request):
         ''' Test the cancel method of Job with a successful job initiation. '''
-        mock_client.get.return_value = {
+        mock_client_request.return_value = {
             "id": "123", "status": "COMPLETED", "output": self.MODEL_OUTPUT}
-
+        
         job = runner.Job("endpoint_id", "job_id", mock_client)
 
         job.cancel()
 
-        mock_client.assert_called_with(
+        mock_client_request.assert_called_with(
             'POST', f"endpoint_id/cancel",
             None, 3
         )
