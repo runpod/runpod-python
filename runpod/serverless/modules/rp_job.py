@@ -76,6 +76,9 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             job_id = next_job.get("id", None)
             job_input = next_job.get("input", None)
 
+            print(f"job_id: {job_id}")
+            print(f"job_input: {job_input}")
+
             if None in [job_id, job_input]:
                 missing_fields = []
                 if job_id is None:
