@@ -69,7 +69,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                         break
                     continue
 
-                next_job = await response.json()
+                received_request = await response.json()
                 log.debug("Request Received", {next_job})
 
                 # Check if the job is valid
@@ -85,6 +85,8 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 
                     log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
                     next_job = None
+                else:
+                    next_job = received_request
 
         except Exception as err:  # pylint: disable=broad-except
             err_type = type(err).__name__
