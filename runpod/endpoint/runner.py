@@ -141,7 +141,7 @@ class Job:
         return self._fetch_job().get("output", None)
     
     def cancel(self, timeout: int = 3000) -> Any:
-        return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",timeout=timeout)
+        return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",data=None,timeout=timeout)
 
 
 
@@ -204,4 +204,4 @@ class Endpoint:
     def health(self,timeout: int = 3) -> Dict[str, Any]:
         return self.rp_client.get(f"{self.endpoint_id}/health",timeout=timeout)
     def purge_queue(self,timeout: int = 3) -> Dict[str, Any]:
-        return self.rp_client.post(f"{self.endpoint_id}/purge-queue",timeout=timeout)
+        return self.rp_client.post(f"{self.endpoint_id}/purge-queue",data=None,timeout=timeout)
