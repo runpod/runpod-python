@@ -137,7 +137,7 @@ class TestEndpoint(unittest.TestCase):
         ''' Test the health method of Endpoint '''
         health_resp = self.endpoint.health()
 
-        mock_client_request.assert_called_once_with('GET', f"{self.ENDPOINT_ID}/health", 3)
+        mock_client_request.assert_called_once_with('GET', f"{self.ENDPOINT_ID}/health", timeout=3)
 
     @patch('runpod.endpoint.runner.RunPodClient._request')
     def test_endpoint_purge_queue(self, mock_client_request):
@@ -292,17 +292,17 @@ class TestJob(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             job.output(timeout=1)
     
-    @patch('runpod.endpoint.runner.RunPodClient._request')
-    def test_cancel(self, mock_client_request):
+    @patch('runpod.endpoint.runner.RunPodClient')
+    def test_cancel(self, mock_client):
         ''' Test the cancel method of Job with a successful job initiation. '''
-        mock_client_request.return_value = {
+        mock_client.get.return_value = {
             "id": "123", "status": "COMPLETED", "output": self.MODEL_OUTPUT}
 
-        run_request = self.endpoint.run(self.MODEL_INPUT)
+        job = runner.Job("endpoint_id", "job_id", mock_client)
 
-        run_request.cancel()
+        job.cancel()
 
-        mock_client_request.assert_called_with(
+        mock_client.assert_called_with(
             'POST', f"{self.ENDPOINT_ID}/cancel",
             None, 3
         )
