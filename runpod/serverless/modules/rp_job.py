@@ -53,19 +53,19 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             async with session.get(_job_get_url()) as response:
                 if response.status == 204:
                     log.debug("No content, no job to process.")
-                    if not retry:
+                    if retry is False:
                         return None
                     continue
 
                 if response.status == 400:
                     log.debug("Received 400 status, expected when FlashBoot is enabled.")
-                    if not retry:
+                    if retry is False:
                         return None
                     continue
 
                 if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
-                    if not retry:
+                    if retry is False:
                         return None
                     continue
 
@@ -95,7 +95,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 
         if next_job is None:
             log.debug("No job available, waiting for the next one.")
-            if not retry:
+            if retry is False:
                 return None
 
     log.debug("Confirmed valid request.", next_job['id'])
