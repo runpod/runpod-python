@@ -299,10 +299,8 @@ class TestJob(unittest.TestCase):
 
         job.cancel()
 
-        mock_client.post.assert_called_with(
-            'POST', f"endpoint_id/cancel/job_id",
-            None, 3
-        )
+        mock_client.post.assert_called_with(f"endpoint_id/cancel/job_id",
+                                            data=None, timeout=3000)
 
 
     @patch('runpod.endpoint.runner.RunPodClient')
