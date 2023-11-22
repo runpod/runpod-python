@@ -54,40 +54,37 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                 if response.status == 204:
                     log.debug("No content, no job to process.")
                     if retry is False:
-                        return None
+                        break
                     continue
 
                 if response.status == 400:
                     log.debug("Received 400 status, expected when FlashBoot is enabled.")
                     if retry is False:
-                        return None
+                        break
                     continue
 
                 if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
                     if retry is False:
-                        return None
+                        break
                     continue
 
                 next_job = await response.json()
                 log.debug("Request Received", {next_job})
 
-            # Check if the job is valid
-            job_id = next_job.get("id", None)
-            job_input = next_job.get("input", None)
+                # Check if the job is valid
+                job_id = next_job.get("id", None)
+                job_input = next_job.get("input", None)
 
-            print(f"job_id: {job_id}")
-            print(f"job_input: {job_input}")
+                if None in [job_id, job_input]:
+                    missing_fields = []
+                    if job_id is None:
+                        missing_fields.append("id")
+                    if job_input is None:
+                        missing_fields.append("input")
 
-            if None in [job_id, job_input]:
-                missing_fields = []
-                if job_id is None:
-                    missing_fields.append("id")
-                if job_input is None:
-                    missing_fields.append("input")
-
-                log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
-                next_job = None
+                    log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
+                    next_job = None
 
         except Exception as err:  # pylint: disable=broad-except
             err_type = type(err).__name__
@@ -99,15 +96,16 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
         if next_job is None:
             log.debug("No job available, waiting for the next one.")
             if retry is False:
-                return None
+                break
+    else:
+        log.debug("Confirmed valid request.", next_job['id'])
 
-    log.debug("Confirmed valid request.", next_job['id'])
-
-    if next_job:
         job_list.add_job(next_job["id"])
         log.debug("Request ID added.", next_job['id'])
 
-    return next_job
+        return next_job
+
+    return None
 
 
 async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
