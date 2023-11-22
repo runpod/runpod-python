@@ -141,7 +141,7 @@ class Job:
         return self._fetch_job().get("output", None)
     
     def cancel(self, timeout: int = 3000) -> Any:
-        pass
+        return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",timeout=timeout)
 
 
 
