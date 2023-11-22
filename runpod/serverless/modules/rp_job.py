@@ -70,7 +70,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 next_job = await response.json()
-                log.debug(f"Request Received | {next_job}")
+                log.debug("Request Received", {next_job})
 
             # Check if the job is valid
             job_id = next_job.get("id", None)
@@ -87,7 +87,11 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                 next_job = None
 
         except Exception as err:  # pylint: disable=broad-except
-            log.error(f"Error while getting job: {err}")
+            err_type = type(err).__name__
+            err_message = str(err)
+            err_traceback = traceback.format_exc()
+            log.error(f"Failed to get job, error type: {err_type}, error message: {err_message}")
+            log.error(f"Traceback: {err_traceback}")
 
         if next_job is None:
             log.debug("No job available, waiting for the next one.")
