@@ -73,8 +73,8 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                 log.debug("Request Received", {next_job})
 
                 # Check if the job is valid
-                job_id = next_job.get("id", None)
-                job_input = next_job.get("input", None)
+                job_id = received_request.get("id", None)
+                job_input = received_request.get("input", None)
 
                 if None in [job_id, job_input]:
                     missing_fields = []
@@ -84,7 +84,6 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                         missing_fields.append("input")
 
                     log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
-                    next_job = None
                 else:
                     next_job = received_request
 
