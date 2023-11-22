@@ -137,13 +137,10 @@ class TestEndpoint(unittest.TestCase):
         ''' Test the health method of Endpoint '''
         health_resp = self.endpoint.health()
 
-        mock_client_request.assert_called_once_with(
-            'GET', f"{self.ENDPOINT_ID}/health",
-            3
-        )
+        mock_client_request.assert_called_once_with('GET', f"{self.ENDPOINT_ID}/health", 3)
 
     @patch('runpod.endpoint.runner.RunPodClient._request')
-    def test_endpoint_health(self, mock_client_request):
+    def test_endpoint_purge_queue(self, mock_client_request):
         ''' Test the health method of Endpoint '''
         purge_resp = self.endpoint.purge_queue()
 
@@ -233,6 +230,7 @@ class TestEndpoint(unittest.TestCase):
 
 class TestJob(unittest.TestCase):
     ''' Tests for Job '''
+    MODEL_OUTPUT = {"result": "YOUR_MODEL_OUTPUT_VALUE"}
 
     @patch('runpod.endpoint.runner.RunPodClient')
     def test_status(self, mock_client):
