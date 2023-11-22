@@ -131,24 +131,24 @@ class TestEndpoint(unittest.TestCase):
             'POST', f"{self.ENDPOINT_ID}/runsync",
             {'input': {'YOUR_MODEL_INPUT_JSON': 'YOUR_MODEL_INPUT_VALUE'}}, 86400
         )
-    
+
     @patch('runpod.endpoint.runner.RunPodClient._request')
     def test_endpoint_health(self, mock_client_request):
         ''' Test the health method of Endpoint '''
-        health_resp = self.endpoint.health()
+        self.endpoint.health()
 
         mock_client_request.assert_called_once_with('GET', f"{self.ENDPOINT_ID}/health", timeout=3)
 
     @patch('runpod.endpoint.runner.RunPodClient._request')
     def test_endpoint_purge_queue(self, mock_client_request):
         ''' Test the health method of Endpoint '''
-        purge_resp = self.endpoint.purge_queue()
+        self.endpoint.purge_queue()
 
         mock_client_request.assert_called_once_with(
             'POST', f"{self.ENDPOINT_ID}/purge-queue",
             None, 3
         )
-        
+
     def test_missing_api_key(self):
         '''
         Tests Endpoint.run without api_key
@@ -291,7 +291,7 @@ class TestJob(unittest.TestCase):
         job = runner.Job("endpoint_id", "job_id", mock_client)
         with self.assertRaises(TimeoutError):
             job.output(timeout=1)
-    
+
     @patch('runpod.endpoint.runner.RunPodClient')
     def test_cancel(self, mock_client):
         ''' Test the cancel method of Job with a successful job initiation. '''        
@@ -299,8 +299,8 @@ class TestJob(unittest.TestCase):
 
         job.cancel()
 
-        mock_client.post.assert_called_with(f"endpoint_id/cancel/job_id",
-                                            data=None, timeout=3000)
+        mock_client.post.assert_called_with("endpoint_id/cancel/job_id",
+                                            data=None, timeout=3)
 
 
     @patch('runpod.endpoint.runner.RunPodClient')
