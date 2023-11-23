@@ -1,5 +1,12 @@
 # Change Log
 
+## Release 1.3.5 (11/23/23)
+
+### Fixed
+
+- Robust `get_job` error handling
+- `project.toml` now includes required dependencies
+
 ## Release 1.3.4 (11/14/23)
 
 ### Changed
