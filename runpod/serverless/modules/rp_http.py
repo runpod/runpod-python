@@ -20,7 +20,7 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
-async def _transmit(client_session, url, job_data ):
+async def _transmit(client_session, url, job_data):
     """
     Wrapper for transmitting results via POST.
     """
@@ -31,7 +31,7 @@ async def _transmit(client_session, url, job_data ):
         "data": job_data,
         "headers": {"charset": "utf-8", "Content-Type": "application/x-www-form-urlencoded"},
         "raise_for_status": True
-        }
+    }
 
     async with retry_client.post(url, **kwargs) as client_response:
         await client_response.text()
@@ -46,18 +46,18 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         url = url_template.replace('$ID', job['id'])
 
         await _transmit(session, url, serialized_job_data)
-        log.debug(f"{job['id']} | {log_message}")
+        log.debug(f"{log_message}", job['id'])
 
     except aiohttp.ClientError as err:
-        log.error(f"{job['id']} | Failed to return job results. | {err}")
+        log.error(f"Failed to return job results. | {err}", job['id'])
 
     except (TypeError, RuntimeError) as err:
-        log.error(f"Error while returning job result {job['id']}: {err}")
+        log.error(f"Error while returning job result. | {err}", job['id'])
 
     finally:
         if url_template == JOB_DONE_URL and job_data.get('status', None) != 'IN_PROGRESS':
             job_list.remove_job(job["id"])
-            log.info(f'{job["id"]} | Finished')
+            log.info("Finished.", job['id'])
 
 
 async def send_result(session, job_data, job):
