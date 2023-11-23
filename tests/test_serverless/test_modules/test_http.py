@@ -11,6 +11,7 @@ import aiohttp
 
 from runpod.serverless.modules import rp_http
 
+
 class MockRequestInfo:
     ''' Mock aiohttp.RequestInfo class. '''
 
@@ -34,17 +35,16 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         gc.collect()
 
-
     async def test_send_result(self):
         '''
         Test send_result function.
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
+                patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+                patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
             mock_retry.return_value.post.return_value = AsyncMock()
-            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
+            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text"  # pylint: disable=line-too-long
 
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
@@ -64,11 +64,11 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 raise_for_status=True
             )
 
-
     async def test_send_result_client_response_error(self):
         '''
         Test send_result function with ClientResponseError.
         '''
+
         def mock_request_info_init(self, *args, **kwargs):
             '''
             Mock aiohttp.RequestInfo.__init__ method.
@@ -80,9 +80,9 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             self.real_url = "http://test_url"
 
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry, \
-             patch.object(aiohttp.RequestInfo, "__init__", mock_request_info_init):
+                patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+                patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry, \
+                patch.object(aiohttp.RequestInfo, "__init__", mock_request_info_init):
 
             mock_retry.side_effect = aiohttp.ClientResponseError(
                 request_info=MockRequestInfo,
@@ -99,15 +99,14 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.error.call_count == 1
             assert mock_log.info.call_count == 1
 
-
     async def test_send_result_type_error(self):
         '''
         Test send_result function with TypeError.
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps, \
-             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
+                patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+                patch('runpod.serverless.modules.rp_http.json.dumps') as mock_dumps, \
+                patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
             mock_dumps.side_effect = TypeError("Forced exception")
 
@@ -119,19 +118,19 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.error.call_count == 1
             assert mock_log.info.call_count == 1
             assert mock_retry.return_value.post.call_count == 0
-            mock_log.error.assert_called_with("Error while returning job result test_id: Forced exception") # pylint: disable=line-too-long
-
+            mock_log.error.assert_called_with(
+                'Error while returning job result. | Forced exception', 'test_id')  # pylint: disable=line-too-long
 
     async def test_stream_result(self):
         '''
         Test stream_result function.
         '''
         with patch('runpod.serverless.modules.rp_http.log') as mock_log, \
-             patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
-             patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
+                patch('runpod.serverless.modules.rp_http.job_list.jobs') as mock_jobs, \
+                patch('runpod.serverless.modules.rp_http.RetryClient') as mock_retry:
 
             mock_retry.return_value.post.return_value = AsyncMock()
-            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text" # pylint: disable=line-too-long
+            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text"  # pylint: disable=line-too-long
 
             mock_jobs.return_value = set(['test_id'])
             send_return_local = await rp_http.stream_result(AsyncMock(), self.job_data, self.job)
