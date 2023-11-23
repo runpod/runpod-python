@@ -71,7 +71,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 received_request = await response.json()
-                log.debug("Request Received", {next_job})
+                log.debug(f"Request Received | {received_request}")
 
                 # Check if the job is valid
                 job_id = received_request.get("id", None)
