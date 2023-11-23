@@ -1,5 +1,13 @@
 # Change Log
 
+## Release 1.3.6 (11/23/23)
+
+## Fixed
+
+- Restrict version of `aiohttp` to 3.8.6 to avoid breaking changes in 3.9.0
+
+---
+
 ## Release 1.3.5 (11/23/23)
 
 ### Fixed
