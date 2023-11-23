@@ -155,7 +155,7 @@ class TestJob(IsolatedAsyncioTestCase):
             job = await rp_job.get_job(mock_session_exception, retry=False)
 
             assert job is None
-            assert mock_log.error.call_count == 1
+            assert mock_log.error.call_count == 2
 
 
 class TestRunJob(IsolatedAsyncioTestCase):

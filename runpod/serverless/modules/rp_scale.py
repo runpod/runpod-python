@@ -13,6 +13,7 @@ from .worker_state import Jobs
 log = RunPodLogger()
 job_list = Jobs()
 
+
 class JobScaler():
     """
     A class for automatically retrieving new jobs from the server and processing them concurrently.
@@ -100,7 +101,7 @@ class JobScaler():
                 break
 
             for _ in range(self.num_concurrent_get_job_requests):
-                job = await get_job(session, retry=False)
+                job = await get_job(session)
                 self.job_history.append(1 if job else 0)
                 if job:
                     yield job
@@ -127,8 +128,6 @@ class JobScaler():
                 f"Concurrent Get Jobs | The number of concurrent get_jobs is "
                 f"{self.num_concurrent_get_job_requests}."
             )
-
-
 
     def upscale_rate(self) -> None:
         """
