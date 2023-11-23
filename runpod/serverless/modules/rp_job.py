@@ -71,7 +71,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 received_request = await response.json()
-                log.debug("Request Received", {next_job})
+                log.debug(f"Request Received | {received_request}")
 
                 # Check if the job is valid
                 job_id = received_request.get("id", None)
@@ -92,7 +92,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             err_type = type(err).__name__
             err_message = str(err)
             err_traceback = traceback.format_exc()
-            log.error(f"Failed to get job, error type: {err_type}, error message: {err_message}")
+            log.error(f"Failed to get job. | Error Type: {err_type} | Error Message: {err_message}")
             log.error(f"Traceback: {err_traceback}")
 
         if next_job is None:
