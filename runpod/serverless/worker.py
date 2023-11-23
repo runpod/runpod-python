@@ -22,8 +22,6 @@ log = RunPodLogger()
 job_list = Jobs()
 heartbeat = Heartbeat()
 
-_TIMEOUT = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
-
 
 def _get_auth_header() -> Dict[str, str]:
     '''
@@ -94,8 +92,9 @@ async def run_worker(config: Dict[str, Any]) -> None:
     heartbeat.start_ping()
 
     client_session = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(limit=None),
-        headers=_get_auth_header(), timeout=_TIMEOUT
+        connector=aiohttp.TCPConnector(limit=0),
+        headers=_get_auth_header(),
+        timeout=aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
     )
 
     async with client_session as session:
