@@ -178,9 +178,11 @@ async def run_job_generator(
     try:
         job_output = handler(job)
         if inspect.isasyncgenfunction(handler):
+            log.debug('Async generator', job["id"])
             async for output_partial in job_output:
                 yield {"output": output_partial}
         else:
+            log.debug('Generator', job["id"])
             for output_partial in job_output:
                 yield {"output": output_partial}
     except Exception as err:    # pylint: disable=broad-except
