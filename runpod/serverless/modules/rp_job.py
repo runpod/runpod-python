@@ -88,6 +88,11 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                 else:
                     next_job = received_request
 
+        except asyncio.TimeoutError:
+            log.debug("Timeout error, retrying.")
+            if retry is False:
+                break
+
         except Exception as err:  # pylint: disable=broad-except
             err_type = type(err).__name__
             err_message = str(err)
