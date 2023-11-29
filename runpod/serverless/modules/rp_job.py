@@ -126,7 +126,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The result of running the job.
     """
-    log.info('Started', job["id"])
+    log.info('Started.', job["id"])
     run_result = {}
 
     try:

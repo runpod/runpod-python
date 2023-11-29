@@ -1,5 +1,17 @@
 # Change Log
 
+## Release 1.3.7 (11/29/23)
+
+### Fixed
+
+- Catch timeouts when checking for available jobs.
+
+### Changed
+
+- Updated and pinned aiohttp to 3.9.1
+
+---
+
 ## Release 1.3.6 (11/23/23)
 
 ## Fixed
