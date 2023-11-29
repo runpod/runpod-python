@@ -88,6 +88,11 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                 else:
                     next_job = received_request
 
+        except asyncio.TimeoutError:
+            log.debug("Timeout error, retrying.")
+            if retry is False:
+                break
+
         except Exception as err:  # pylint: disable=broad-except
             err_type = type(err).__name__
             err_message = str(err)
@@ -102,8 +107,6 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 
         await asyncio.sleep(1)
     else:
-        log.debug("Confirmed valid request.", next_job['id'])
-
         job_list.add_job(next_job["id"])
         log.debug("Request ID added.", next_job['id'])
 
@@ -115,10 +118,16 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
 async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     """
     Run the job using the handler.
-    Returns the job output or error.
+
+    Args:
+        handler (Callable): The handler function to use.
+        job (Dict[str, Any]): The job to run.
+
+    Returns:
+        Dict[str, Any]: The result of running the job.
     """
-    log.info('Started', job["id"])
-    run_result = {"error": "No output from handler."}
+    log.info('Started.', job["id"])
+    run_result = {}
 
     try:
         handler_return = handler(job)
@@ -129,8 +138,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(job_output, dict):
             error_msg = job_output.pop("error", None)
             refresh_worker = job_output.pop("refresh_worker", None)
-
-            run_result = {"output": job_output}
+            run_result['output'] = job_output
 
             if error_msg:
                 run_result["error"] = error_msg
