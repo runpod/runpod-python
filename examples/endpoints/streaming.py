@@ -1,3 +1,5 @@
+""" Example of streaming data from an endpoint. """
+
 import runpod
 
 # Set your global API key with `runpod config` or uncomment the line below:
