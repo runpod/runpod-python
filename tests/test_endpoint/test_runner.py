@@ -294,14 +294,13 @@ class TestJob(unittest.TestCase):
 
     @patch('runpod.endpoint.runner.RunPodClient')
     def test_cancel(self, mock_client):
-        ''' Test the cancel method of Job with a successful job initiation. '''        
+        ''' Test the cancel method of Job with a successful job initiation. '''
         job = runner.Job("endpoint_id", "job_id", mock_client)
 
         job.cancel()
 
         mock_client.post.assert_called_with("endpoint_id/cancel/job_id",
                                             data=None, timeout=3)
-
 
     @patch('runpod.endpoint.runner.RunPodClient')
     def test_job_status(self, mock_client):
@@ -321,3 +320,22 @@ class TestJob(unittest.TestCase):
         self.assertEqual(job.status(), "IN_PROGRESS")
         self.assertEqual(job.status(), "COMPLETED")
         self.assertEqual(job.status(), "COMPLETED")
+
+    @patch('runpod.endpoint.runner.RunPodClient')
+    def test_job_stream(self, mock_client):
+        '''
+        Tests Job.stream
+        '''
+        mock_client.get.side_effect = [
+            {
+                "status": "IN_PROGRESS"
+            },
+            {
+                "status": "COMPLETED",
+                "output": self.MODEL_OUTPUT
+            }
+        ]
+
+        job = runner.Job("endpoint_id", "job_id", mock_client)
+        output = list(job.stream())
+        self.assertEqual(output, [self.MODEL_OUTPUT])

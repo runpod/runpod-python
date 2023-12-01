@@ -15,9 +15,12 @@ API_KEY_NOT_SET_MSG = ("Expected `run_pod.api_key` to be initialized. "
                        "An API key can be generated at "
                        "https://runpod.io/console/user/settings")
 
-def is_completed(status:str)->bool:
+
+def is_completed(status: str) -> bool:
     """Returns true if status is one of the possible final states for a serverless request."""
     return status in ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED"]
+
+
 # ---------------------------------------------------------------------------- #
 #                                    Client                                    #
 # ---------------------------------------------------------------------------- #
@@ -151,7 +154,7 @@ class Job:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
         return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",
-                                   data=None,timeout=timeout)
+                                   data=None, timeout=timeout)
 
     def stream(self) -> Any:
         """ Returns a generator that yields the output of the job request. """
@@ -221,19 +224,20 @@ class Endpoint:
 
         return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
 
-    def health(self,timeout: int = 3) -> Dict[str, Any]:
+    def health(self, timeout: int = 3) -> Dict[str, Any]:
         """
         Check the health of the endpoint (number/state of workers, number/state of requests).
 
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
-        return self.rp_client.get(f"{self.endpoint_id}/health",timeout=timeout)
-    def purge_queue(self,timeout: int = 3) -> Dict[str, Any]:
+        return self.rp_client.get(f"{self.endpoint_id}/health", timeout=timeout)
+
+    def purge_queue(self, timeout: int = 3) -> Dict[str, Any]:
         """
         Purges the endpoint's job queue and returns the result of the purge request.
 
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
-        return self.rp_client.post(f"{self.endpoint_id}/purge-queue",data=None,timeout=timeout)
+        return self.rp_client.post(f"{self.endpoint_id}/purge-queue", data=None, timeout=timeout)
