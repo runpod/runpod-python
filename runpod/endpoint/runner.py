@@ -6,6 +6,8 @@ import time
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
+FINAL_STATES = ["COMPLETED", "FAILED", "TIMED_OUT"]
+
 # Exception Messages
 UNAUTHORIZED_MSG = "401 Unauthorized | Make sure Runpod API key is set and valid."
 API_KEY_NOT_SET_MSG = ("Expected `run_pod.api_key` to be initialized. "
@@ -13,9 +15,12 @@ API_KEY_NOT_SET_MSG = ("Expected `run_pod.api_key` to be initialized. "
                        "An API key can be generated at "
                        "https://runpod.io/console/user/settings")
 
-def is_completed(status:str)->bool:
+
+def is_completed(status: str) -> bool:
     """Returns true if status is one of the possible final states for a serverless request."""
     return status in ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED"]
+
+
 # ---------------------------------------------------------------------------- #
 #                                    Client                                    #
 # ---------------------------------------------------------------------------- #
@@ -35,7 +40,7 @@ class RunPodClient:
             raise RuntimeError(API_KEY_NOT_SET_MSG)
 
         self.rp_session = requests.Session()
-        retries = Retry(total=5, backoff_factor=1, status_forcelist=[429])
+        retries = Retry(total=5, backoff_factor=1, status_forcelist=[408, 429])
         self.rp_session.mount('http://', HTTPAdapter(max_retries=retries))
 
         self.headers = {
@@ -104,9 +109,9 @@ class Job:
         self.job_status = None
         self.job_output = None
 
-    def _fetch_job(self):
+    def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
         """ Returns the raw json of the status, raises an exception if invalid """
-        status_url = f"{self.endpoint_id}/status/{self.job_id}"
+        status_url = f"{self.endpoint_id}/{source}/{self.job_id}"
         job_state = self.rp_client.get(endpoint=status_url)
 
         if is_completed(job_state["status"]):
@@ -149,8 +154,18 @@ class Job:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
         return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",
-                                   data=None,timeout=timeout)
+                                   data=None, timeout=timeout)
 
+    def stream(self) -> Any:
+        """ Returns a generator that yields the output of the job request. """
+        while True:
+            time.sleep(1)
+            stream_partial = self._fetch_job(source="stream")
+            if stream_partial["status"] not in FINAL_STATES or len(stream_partial["stream"]) > 0:
+                for chunk in stream_partial.get("stream", []):
+                    yield chunk["output"]
+            elif stream_partial["status"] in FINAL_STATES:
+                break
 
 
 # ---------------------------------------------------------------------------- #
@@ -204,24 +219,25 @@ class Endpoint:
         job_request = self.rp_client.post(
             f"{self.endpoint_id}/runsync", request_input, timeout=timeout)
 
-        if job_request["status"] in ["COMPLETED", "FAILED", "TIMEOUT"]:
+        if job_request["status"] in FINAL_STATES:
             return job_request.get("output", None)
 
         return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
 
-    def health(self,timeout: int = 3) -> Dict[str, Any]:
+    def health(self, timeout: int = 3) -> Dict[str, Any]:
         """
         Check the health of the endpoint (number/state of workers, number/state of requests).
 
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
-        return self.rp_client.get(f"{self.endpoint_id}/health",timeout=timeout)
-    def purge_queue(self,timeout: int = 3) -> Dict[str, Any]:
+        return self.rp_client.get(f"{self.endpoint_id}/health", timeout=timeout)
+
+    def purge_queue(self, timeout: int = 3) -> Dict[str, Any]:
         """
         Purges the endpoint's job queue and returns the result of the purge request.
 
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
-        return self.rp_client.post(f"{self.endpoint_id}/purge-queue",data=None,timeout=timeout)
+        return self.rp_client.post(f"{self.endpoint_id}/purge-queue", data=None, timeout=timeout)
