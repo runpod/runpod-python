@@ -42,8 +42,9 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
     Get the job from the queue.
     Will continue trying to get a job until one is available.
 
-    Inputs:
-    - session | The aiohttp session
+    Args:
+        session (ClientSession): The aiohttp ClientSession to use for the request.
+        retry (bool): Whether to retry if no job is available.
 
     Note: Retry True just for ease of, if testing improved this can be removed.
     """

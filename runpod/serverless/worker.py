@@ -8,32 +8,29 @@ from typing import Dict, Any
 
 import aiohttp
 
-from runpod.serverless.modules.rp_logger import RunPodLogger
-from runpod.serverless.modules.rp_scale import JobScaler
-from .modules import rp_local
-from .modules.rp_handler import is_generator
-from .modules.rp_ping import Heartbeat
+from runpod.serverless.modules.rp_metrics import MetricsCollector
+from runpod.serverless.modules import (
+    rp_logger, rp_local, rp_handler, rp_ping,
+    rp_scale
+)
 from .modules.rp_job import run_job, run_job_generator
 from .modules.rp_http import send_result, stream_result
 from .modules.worker_state import REF_COUNT_ZERO, Jobs
 from .utils import rp_debugger
 
-log = RunPodLogger()
+log = rp_logger.RunPodLogger()
 job_list = Jobs()
-heartbeat = Heartbeat()
+heartbeat = rp_ping.Heartbeat()
+metrics_collector = MetricsCollector()
 
 
 def _get_auth_header() -> Dict[str, str]:
-    '''
-    Returns the authorization header for the worker HTTP requests.
-    '''
+    """ Returns the authorization header with the API key. """
     return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
 
 
 def _is_local(config) -> bool:
-    '''
-    Returns True if the environment variable RUNPOD_WEBHOOK_GET_JOB is not set.
-    '''
+    """ Returns True if the worker is running locally, False otherwise. """
     if config['rp_args'].get('test_input', None):
         return True
 
@@ -44,7 +41,7 @@ def _is_local(config) -> bool:
 
 
 async def _process_job(job, session, job_scaler, config):
-    if is_generator(config["handler"]):
+    if rp_handler.is_generator(config["handler"]):
         generator_output = run_job_generator(config["handler"], job)
         log.debug("Handler is a generator, streaming results.")
 
@@ -55,9 +52,26 @@ async def _process_job(job, session, job_scaler, config):
                 break
             if config.get('return_aggregate_stream', False):
                 job_result['output'].append(stream_output['output'])
+
+            # Incorporate metrics into the stream output, if any.
+            metrics = metrics_collector.pop_metrics_internal(job['id'])
+            if metrics:
+                stream_output['metrics'] = metrics
+
             await stream_result(session, stream_output, job)
+
+        # Use special aggregation function to transform the stream into its final output.
+        aggregation_function = metrics_collector.pop_stream_aggregate(job['id'])
+        if config.get('return_aggregate_stream', False) and aggregation_function:
+            job_result['output'] = aggregation_function(job_result['output'])
+
     else:
         job_result = await run_job(config["handler"], job)
+
+        # Incorporate metrics into the job result, if any.
+        metrics = metrics_collector.pop_metrics_internal(job['id'])
+        if metrics:
+            job_result['metrics'] = metrics
 
     # If refresh_worker is set, pod will be reset after job is complete.
     if config.get("refresh_worker", False):
@@ -98,21 +112,20 @@ async def run_worker(config: Dict[str, Any]) -> None:
     )
 
     async with client_session as session:
-        job_scaler = JobScaler(
-            concurrency_controller=config.get('concurrency_controller', None)
+        job_scaler = rp_scale.JobScaler(
+            concurrency_modifier=config.get('concurrency_modifier', None)
         )
 
         while job_scaler.is_alive():
 
             async for job in job_scaler.get_jobs(session):
                 # Process the job here
-                task = asyncio.create_task(_process_job(job, session, job_scaler, config))
-
-                # Track the task
-                job_scaler.track_task(task)
+                asyncio.create_task(_process_job(job, session, job_scaler, config))
 
                 # Allow job processing
                 await asyncio.sleep(0)
+
+            await asyncio.sleep(0)
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()
