@@ -328,11 +328,15 @@ class TestJob(unittest.TestCase):
         '''
         mock_client.get.side_effect = [
             {
-                "status": "IN_PROGRESS"
+                "status": "IN_PROGRESS",
+                "stream": [
+                    {"output": "Job output 1"},
+                    {"output": "Job output 2"}
+                ]
             },
             {
                 "status": "COMPLETED",
-                "output": self.MODEL_OUTPUT
+                "stream": []
             }
         ]
 
