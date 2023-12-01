@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Generator, Optional, Union
 
 import os
 import json
+import asyncio
 import traceback
 from aiohttp import ClientSession
 
@@ -53,63 +54,80 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             async with session.get(_job_get_url()) as response:
                 if response.status == 204:
                     log.debug("No content, no job to process.")
-                    if not retry:
-                        return None
+                    if retry is False:
+                        break
                     continue
 
                 if response.status == 400:
                     log.debug("Received 400 status, expected when FlashBoot is enabled.")
-                    if not retry:
-                        return None
+                    if retry is False:
+                        break
                     continue
 
                 if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
-                    if not retry:
-                        return None
+                    if retry is False:
+                        break
                     continue
 
-                next_job = await response.json()
-                log.debug(f"Request Received | {next_job}")
+                received_request = await response.json()
+                log.debug(f"Request Received | {received_request}")
 
-            # Check if the job is valid
-            job_id = next_job.get("id", None)
-            job_input = next_job.get("input", None)
+                # Check if the job is valid
+                job_id = received_request.get("id", None)
+                job_input = received_request.get("input", None)
 
-            if None in [job_id, job_input]:
-                missing_fields = []
-                if job_id is None:
-                    missing_fields.append("id")
-                if job_input is None:
-                    missing_fields.append("input")
+                if None in [job_id, job_input]:
+                    missing_fields = []
+                    if job_id is None:
+                        missing_fields.append("id")
+                    if job_input is None:
+                        missing_fields.append("input")
 
-                log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
-                next_job = None
+                    log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
+                else:
+                    next_job = received_request
+
+        except asyncio.TimeoutError:
+            log.debug("Timeout error, retrying.")
+            if retry is False:
+                break
 
         except Exception as err:  # pylint: disable=broad-except
-            log.error(f"Error while getting job: {err}")
+            err_type = type(err).__name__
+            err_message = str(err)
+            err_traceback = traceback.format_exc()
+            log.error(f"Failed to get job. | Error Type: {err_type} | Error Message: {err_message}")
+            log.error(f"Traceback: {err_traceback}")
 
         if next_job is None:
             log.debug("No job available, waiting for the next one.")
-            if not retry:
-                return None
+            if retry is False:
+                break
 
-    log.debug("Confirmed valid request.", next_job['id'])
-
-    if next_job:
+        await asyncio.sleep(1)
+    else:
         job_list.add_job(next_job["id"])
         log.debug("Request ID added.", next_job['id'])
 
-    return next_job
+        return next_job
+
+    return None
 
 
 async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     """
     Run the job using the handler.
-    Returns the job output or error.
+
+    Args:
+        handler (Callable): The handler function to use.
+        job (Dict[str, Any]): The job to run.
+
+    Returns:
+        Dict[str, Any]: The result of running the job.
     """
-    log.info('Started', job["id"])
-    run_result = {"error": "No output from handler."}
+    log.info('Started.', job["id"])
+    run_result = {}
 
     try:
         handler_return = handler(job)
@@ -120,8 +138,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(job_output, dict):
             error_msg = job_output.pop("error", None)
             refresh_worker = job_output.pop("refresh_worker", None)
-
-            run_result = {"output": job_output}
+            run_result['output'] = job_output
 
             if error_msg:
                 run_result["error"] = error_msg
@@ -169,9 +186,11 @@ async def run_job_generator(
     try:
         job_output = handler(job)
         if inspect.isasyncgenfunction(handler):
+            log.debug('Async generator', job["id"])
             async for output_partial in job_output:
                 yield {"output": output_partial}
         else:
+            log.debug('Generator', job["id"])
             for output_partial in job_output:
                 yield {"output": output_partial}
     except Exception as err:    # pylint: disable=broad-except

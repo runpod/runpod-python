@@ -15,7 +15,9 @@ API_KEY_NOT_SET_MSG = ("Expected `run_pod.api_key` to be initialized. "
                        "An API key can be generated at "
                        "https://runpod.io/console/user/settings")
 
-
+def is_completed(status:str)->bool:
+    """Returns true if status is one of the possible final states for a serverless request."""
+    return status in ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED"]
 # ---------------------------------------------------------------------------- #
 #                                    Client                                    #
 # ---------------------------------------------------------------------------- #
@@ -109,7 +111,7 @@ class Job:
         status_url = f"{self.endpoint_id}/{source}/{self.job_id}"
         job_state = self.rp_client.get(endpoint=status_url)
 
-        if job_state["status"] in FINAL_STATES:
+        if is_completed(job_state["status"]):
             self.job_status = job_state["status"]
             self.job_output = job_state.get("output", None)
 
@@ -130,7 +132,7 @@ class Job:
             timeout: The number of seconds to wait for the server to send data before giving up.
         """
         if timeout > 0:
-            while self.status() not in FINAL_STATES:
+            while not is_completed(self.status()):
                 time.sleep(1)
                 timeout -= 1
                 if timeout <= 0:
@@ -140,6 +142,16 @@ class Job:
             return self.job_output
 
         return self._fetch_job().get("output", None)
+
+    def cancel(self, timeout: int = 3) -> Any:
+        """
+        Cancels the job and returns the result of the cancellation request.
+
+        Args:
+            timeout: The number of seconds to wait for the server to respond before giving up.
+        """
+        return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",
+                                   data=None,timeout=timeout)
 
     def stream(self) -> Any:
         """ Returns a generator that yields the output of the job request. """
@@ -209,6 +221,19 @@ class Endpoint:
 
         return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
 
-    def health(self) -> Dict[str, Any]:
-        """ Returns the health of the endpoint. """
-        return self.rp_client.get(f"{self.endpoint_id}/health")
+    def health(self,timeout: int = 3) -> Dict[str, Any]:
+        """
+        Check the health of the endpoint (number/state of workers, number/state of requests).
+
+        Args:
+            timeout: The number of seconds to wait for the server to respond before giving up.
+        """
+        return self.rp_client.get(f"{self.endpoint_id}/health",timeout=timeout)
+    def purge_queue(self,timeout: int = 3) -> Dict[str, Any]:
+        """
+        Purges the endpoint's job queue and returns the result of the purge request.
+
+        Args:
+            timeout: The number of seconds to wait for the server to respond before giving up.
+        """
+        return self.rp_client.post(f"{self.endpoint_id}/purge-queue",data=None,timeout=timeout)
