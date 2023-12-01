@@ -12,6 +12,7 @@ ERROR - 4 - Serious problem, the software has not been able to perform some func
 
 import os
 import json
+from typing import Optional
 
 
 LOG_LEVELS = ['NOTSET', 'DEBUG', 'INFO', 'WARN', 'ERROR']
@@ -95,25 +96,25 @@ class RunPodLogger:
         redacted_secret = secret[0] + '*' * (len(secret)-2) + secret[-1]
         self.info(f"{secret_name}: {redacted_secret}")
 
-    def debug(self, message, request_id=None):
+    def debug(self, message, request_id: Optional[str] = None):
         '''
         debug log
         '''
         self.log(message, 'DEBUG', request_id)
 
-    def info(self, message, request_id=None):
+    def info(self, message, request_id: Optional[str] = None):
         '''
         info log
         '''
         self.log(message, 'INFO', request_id)
 
-    def warn(self, message, request_id=None):
+    def warn(self, message, request_id: Optional[str] = None):
         '''
         warn log
         '''
         self.log(message, 'WARN', request_id)
 
-    def error(self, message, request_id=None):
+    def error(self, message, request_id: Optional[str] = None):
         '''
         error log
         '''

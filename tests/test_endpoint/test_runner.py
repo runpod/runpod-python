@@ -132,6 +132,23 @@ class TestEndpoint(unittest.TestCase):
             {'input': {'YOUR_MODEL_INPUT_JSON': 'YOUR_MODEL_INPUT_VALUE'}}, 86400
         )
 
+    @patch('runpod.endpoint.runner.RunPodClient._request')
+    def test_endpoint_health(self, mock_client_request):
+        ''' Test the health method of Endpoint '''
+        self.endpoint.health()
+
+        mock_client_request.assert_called_once_with('GET', f"{self.ENDPOINT_ID}/health", timeout=3)
+
+    @patch('runpod.endpoint.runner.RunPodClient._request')
+    def test_endpoint_purge_queue(self, mock_client_request):
+        ''' Test the health method of Endpoint '''
+        self.endpoint.purge_queue()
+
+        mock_client_request.assert_called_once_with(
+            'POST', f"{self.ENDPOINT_ID}/purge-queue",
+            None, 3
+        )
+
     def test_missing_api_key(self):
         '''
         Tests Endpoint.run without api_key
@@ -213,6 +230,7 @@ class TestEndpoint(unittest.TestCase):
 
 class TestJob(unittest.TestCase):
     ''' Tests for Job '''
+    MODEL_OUTPUT = {"result": "YOUR_MODEL_OUTPUT_VALUE"}
 
     @patch('runpod.endpoint.runner.RunPodClient')
     def test_status(self, mock_client):
@@ -275,6 +293,16 @@ class TestJob(unittest.TestCase):
             job.output(timeout=1)
 
     @patch('runpod.endpoint.runner.RunPodClient')
+    def test_cancel(self, mock_client):
+        ''' Test the cancel method of Job with a successful job initiation. '''
+        job = runner.Job("endpoint_id", "job_id", mock_client)
+
+        job.cancel()
+
+        mock_client.post.assert_called_with("endpoint_id/cancel/job_id",
+                                            data=None, timeout=3)
+
+    @patch('runpod.endpoint.runner.RunPodClient')
     def test_job_status(self, mock_client):
         '''
         Tests Job.status
@@ -292,3 +320,26 @@ class TestJob(unittest.TestCase):
         self.assertEqual(job.status(), "IN_PROGRESS")
         self.assertEqual(job.status(), "COMPLETED")
         self.assertEqual(job.status(), "COMPLETED")
+
+    @patch('runpod.endpoint.runner.RunPodClient')
+    def test_job_stream(self, mock_client):
+        '''
+        Tests Job.stream
+        '''
+        mock_client.get.side_effect = [
+            {
+                "status": "IN_PROGRESS",
+                "stream": [
+                    {"output": "Job output 1"},
+                    {"output": "Job output 2"}
+                ]
+            },
+            {
+                "status": "COMPLETED",
+                "stream": []
+            }
+        ]
+
+        job = runner.Job("endpoint_id", "job_id", mock_client)
+        output = list(job.stream())
+        self.assertEqual(output, ['Job output 1', 'Job output 2'])

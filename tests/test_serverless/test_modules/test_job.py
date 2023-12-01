@@ -2,6 +2,7 @@
 Test Serverless Job Module
 '''
 
+import asyncio
 from unittest.mock import Mock, patch
 
 from unittest import IsolatedAsyncioTestCase
@@ -139,6 +140,22 @@ class TestJob(IsolatedAsyncioTestCase):
             assert job is None
             assert mock_log.error.call_count == 1
 
+    async def test_get_job_no_timeout(self):
+        """ Tests the get_job function with a timeout """
+        # Timeout Mock
+        response_timeout = Mock(ClientResponse)
+        response_timeout.status = 200
+
+        with patch("aiohttp.ClientSession") as mock_session_timeout, \
+                patch("runpod.serverless.modules.rp_job.log", new_callable=Mock) as mock_log, \
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+
+            mock_session_timeout.get.return_value.__aenter__.side_effect = asyncio.TimeoutError
+            job = await rp_job.get_job(mock_session_timeout, retry=False)
+
+            assert job is None
+            assert mock_log.error.call_count == 0
+
     async def test_get_job_exception(self):
         '''
         Tests the get_job function with an exception
@@ -155,7 +172,7 @@ class TestJob(IsolatedAsyncioTestCase):
             job = await rp_job.get_job(mock_session_exception, retry=False)
 
             assert job is None
-            assert mock_log.error.call_count == 1
+            assert mock_log.error.call_count == 2
 
 
 class TestRunJob(IsolatedAsyncioTestCase):
