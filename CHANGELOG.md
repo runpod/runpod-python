@@ -1,5 +1,13 @@
 # Change Log
 
+## Release 1.3.8 (12/1/23)
+
+### Added
+
+- Stream support for calling endpoints.
+
+---
+
 ## Release 1.3.7 (11/29/23)
 
 ### Fixed

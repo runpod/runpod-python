@@ -342,4 +342,4 @@ class TestJob(unittest.TestCase):
 
         job = runner.Job("endpoint_id", "job_id", mock_client)
         output = list(job.stream())
-        self.assertEqual(output, [self.MODEL_OUTPUT])
+        self.assertEqual(output, ['Job output 1', 'Job output 2'])
