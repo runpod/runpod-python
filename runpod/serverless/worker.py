@@ -8,7 +8,6 @@ from typing import Dict, Any
 
 import aiohttp
 
-from runpod.serverless.modules.rp_metrics import MetricsCollector
 from runpod.serverless.modules import (
     rp_logger, rp_local, rp_handler, rp_ping,
     rp_scale
@@ -21,7 +20,6 @@ from .utils import rp_debugger
 log = rp_logger.RunPodLogger()
 job_list = Jobs()
 heartbeat = rp_ping.Heartbeat()
-metrics_collector = MetricsCollector()
 
 
 def _get_auth_header() -> Dict[str, str]:
@@ -53,25 +51,9 @@ async def _process_job(job, session, job_scaler, config):
             if config.get('return_aggregate_stream', False):
                 job_result['output'].append(stream_output['output'])
 
-            # Incorporate metrics into the stream output, if any.
-            metrics = metrics_collector.pop_metrics_internal(job['id'])
-            if metrics:
-                stream_output['metrics'] = metrics
-
             await stream_result(session, stream_output, job)
-
-        # Use special aggregation function to transform the stream into its final output.
-        aggregation_function = metrics_collector.pop_stream_aggregate(job['id'])
-        if config.get('return_aggregate_stream', False) and aggregation_function:
-            job_result['output'] = aggregation_function(job_result['output'])
-
     else:
         job_result = await run_job(config["handler"], job)
-
-        # Incorporate metrics into the job result, if any.
-        metrics = metrics_collector.pop_metrics_internal(job['id'])
-        if metrics:
-            job_result['metrics'] = metrics
 
     # If refresh_worker is set, pod will be reset after job is complete.
     if config.get("refresh_worker", False):
