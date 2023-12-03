@@ -349,7 +349,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert mock_stream_result.called is False
         assert mock_session.called
 
-     @patch("aiohttp.ClientSession")
+    @patch("aiohttp.ClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
@@ -372,13 +372,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
-        # Include multi-processing inside config
-        def concurrency_controller():
-            return False
-
-        # Include the concurrency_controller
-        self.config['concurrency_controller'] = concurrency_controller
-
         # Call the function
         runpod.serverless.start(self.config)
 
@@ -393,8 +386,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # Test generator handler
         generator_config = {
             "handler": generator_handler,
-            "refresh_worker": True,
-            "concurrency_controller": concurrency_controller
+            "refresh_worker": True
         }
         runpod.serverless.start(generator_config)
         assert mock_stream_result.called
@@ -449,15 +441,10 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             'counter': 0,
         }
 
-        def concurrency_controller():
-            val = scale_behavior['behavior'][scale_behavior['counter']]
-            return val
-
         # Let the test be a long running one so we can capture the scale-up and scale-down.
         config = {
             "handler": MagicMock(),
             "refresh_worker": False,
-            "concurrency_controller": concurrency_controller,
             "rp_args": {
                 "rp_debugger": True,
                 "rp_log_level": "DEBUG"
@@ -496,15 +483,11 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
-        # For downscaling, we'll rely entirely on the availability ratio.
-        def concurrency_controller():
-            return False
 
         # Let the test be a long running one so we can capture the scale-up and scale-down.
         config = {
             "handler": MagicMock(),
             "refresh_worker": False,
-            "concurrency_controller": concurrency_controller,
             "rp_args": {
                 "rp_debugger": True,
                 "rp_log_level": "DEBUG"
