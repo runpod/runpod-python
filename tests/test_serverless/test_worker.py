@@ -395,7 +395,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
             limited_config = {
                 "handler": Mock(),
-                "reference_counter_start": time.perf_counter(),
                 "refresh_worker": True,
                 "rp_args": {
                     "rp_debugger": True,
