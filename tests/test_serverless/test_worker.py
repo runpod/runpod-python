@@ -1,6 +1,8 @@
 ''' Tests for runpod | serverless| worker '''
+# pylint: disable=protected-access
+
+from calendar import c
 import os
-import time
 import argparse
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
@@ -36,7 +38,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
             assert runpod.serverless.worker._get_auth_header(
-            ) == {'Authorization': 'test'}  # pylint: disable=protected-access
+            ) == {'Authorization': 'test'}
 
     def test_is_local(self):
         '''
@@ -45,13 +47,13 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
             assert runpod.serverless.worker._is_local(
-                {"rp_args": {}}) is True  # pylint: disable=protected-access
+                {"rp_args": {}}) is True
             assert runpod.serverless.worker._is_local(
-                {"rp_args": {"test_input": "something"}}) is True  # pylint: disable=protected-access, line-too-long
+                {"rp_args": {"test_input": "something"}}) is True  # pylint: line-too-long
 
             mock_os.environ.get.return_value = "something"
             assert runpod.serverless.worker._is_local(
-                self.mock_config) is False  # pylint: disable=protected-access
+                self.mock_config) is False
 
     def test_start(self):
         '''
@@ -71,11 +73,10 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
             assert runpod.serverless.worker._is_local(
-                self.mock_config) is True  # pylint: disable=protected-access
-
+                self.mock_config) is True
             mock_os.environ.get.return_value = "something"
             assert runpod.serverless.worker._is_local(
-                self.mock_config) is False  # pylint: disable=protected-access
+                self.mock_config) is False
 
     def test_local_api(self):
         '''
@@ -309,3 +310,42 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # Since return_aggregate_stream is activated, we should submit a list of the outputs.
         _, args, _ = mock_send_result.mock_calls[0]
         assert args[1] == {'output': ['test1', 'test2'], 'stopPod': True}
+
+    @patch("aiohttp.ClientSession")
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.stream_result")
+    @patch("runpod.serverless.worker.send_result")
+    # pylint: disable=too-many-arguments
+    async def test_run_worker_concurrency(
+            self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
+        '''
+        Test run_worker with synchronous handler.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+        # Define the mock behaviors
+        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        def concurrency_modifier(current_concurrency):
+            return current_concurrency + 1
+
+        config_with_concurrency = self.config.copy()
+        config_with_concurrency['concurrency_modifier'] = concurrency_modifier
+
+        # Call the function
+        runpod.serverless.start(config_with_concurrency)
+
+        # Make assertions about the behaviors
+        mock_get_job.assert_called_once()
+        mock_run_job.assert_called_once()
+        mock_send_result.assert_called_once()
+
+        assert mock_stream_result.called is False
+        assert mock_session.called
