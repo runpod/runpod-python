@@ -1,7 +1,6 @@
 ''' Tests for runpod | serverless| worker '''
 # pylint: disable=protected-access
 
-from calendar import c
 import os
 import argparse
 from unittest.mock import patch, mock_open, Mock, MagicMock
@@ -49,7 +48,7 @@ class TestWorker(IsolatedAsyncioTestCase):
             assert runpod.serverless.worker._is_local(
                 {"rp_args": {}}) is True
             assert runpod.serverless.worker._is_local(
-                {"rp_args": {"test_input": "something"}}) is True  # pylint: line-too-long
+                {"rp_args": {"test_input": "something"}}) is True
 
             mock_os.environ.get.return_value = "something"
             assert runpod.serverless.worker._is_local(
