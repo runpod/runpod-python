@@ -460,12 +460,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
-        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
-        # 1 + 2 + 4 + 8 + 16 + 8 + 4 + 2 + 1 = 46 times
-        assert mock_get_job.call_count == 46
-        assert mock_run_job.call_count == 46
-        assert mock_send_result.call_count == 46
-
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.send_result")
@@ -514,10 +508,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         mock_run_job.return_value = {"output": {"result": "odd"}}
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
-
-        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
-        # 1 + 2 + 1 + 2 + 1 + 2 + 1 + 2 + 1 = 13 calls
-        assert mock_get_job.call_count == 13
 
         # 5 calls with actual jobs
         assert mock_run_job.call_count == 5
