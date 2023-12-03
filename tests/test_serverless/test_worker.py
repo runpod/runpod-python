@@ -414,9 +414,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.send_result")
     async def test_run_worker_multi_processing_scaling_up(
-            self, mock_send_result, mock_run_job, mock_get_job):
+            self, mock_run_job, mock_get_job):
         '''
         Test run_worker with multi processing enabled, the scale-up and scale-down
         behavior with concurrency_controller.
