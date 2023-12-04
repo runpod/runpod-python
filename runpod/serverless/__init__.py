@@ -90,6 +90,7 @@ def _get_realtime_concurrency() -> int:
     """
     return int(os.environ.get("RUNPOD_REALTIME_CONCURRENCY", "1"))
 
+
 def _signal_handler(sig, frame):
     """
     Handles the SIGINT signal.
@@ -97,6 +98,7 @@ def _signal_handler(sig, frame):
     del sig, frame
     log.info("SIGINT received. Shutting down.")
     sys.exit(0)
+
 
 # ---------------------------------------------------------------------------- #
 #                            Start Serverless Worker                           #
@@ -108,7 +110,7 @@ def start(config: Dict[str, Any]):
     config (Dict[str, Any]): Configuration parameters for the worker.
 
     config["handler"] (Callable): The handler function to run.
-    config["concurrency_controller"] (Callable): Concurrency controller function to run.
+    config["concurrency_modifier"] (Callable): Concurrency modifier function to run.
 
     config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
     """

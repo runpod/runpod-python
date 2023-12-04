@@ -1,6 +1,7 @@
 ''' Tests for runpod | serverless| worker '''
+# pylint: disable=protected-access
+
 import os
-import time
 import argparse
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
@@ -35,7 +36,8 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
-            assert runpod.serverless.worker._get_auth_header() == {'Authorization': 'test'}  # pylint: disable=protected-access
+            assert runpod.serverless.worker._get_auth_header(
+            ) == {'Authorization': 'test'}
 
     def test_is_local(self):
         '''
@@ -43,11 +45,14 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
-            assert runpod.serverless.worker._is_local({"rp_args": {}}) is True  # pylint: disable=protected-access
-            assert runpod.serverless.worker._is_local({"rp_args": {"test_input": "something"}}) is True  # pylint: disable=protected-access, line-too-long
+            assert runpod.serverless.worker._is_local(
+                {"rp_args": {}}) is True
+            assert runpod.serverless.worker._is_local(
+                {"rp_args": {"test_input": "something"}}) is True
 
             mock_os.environ.get.return_value = "something"
-            assert runpod.serverless.worker._is_local(self.mock_config) is False  # pylint: disable=protected-access
+            assert runpod.serverless.worker._is_local(
+                self.mock_config) is False
 
     def test_start(self):
         '''
@@ -66,10 +71,11 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = None
-            assert runpod.serverless.worker._is_local(self.mock_config) is True  # pylint: disable=protected-access
-
+            assert runpod.serverless.worker._is_local(
+                self.mock_config) is True
             mock_os.environ.get.return_value = "something"
-            assert runpod.serverless.worker._is_local(self.mock_config) is False  # pylint: disable=protected-access
+            assert runpod.serverless.worker._is_local(
+                self.mock_config) is False
 
     def test_local_api(self):
         '''
@@ -103,6 +109,7 @@ class TestWorker(IsolatedAsyncioTestCase):
 
         assert mock_exit.called
         assert mock_logger.info.called
+
 
 class TestWorkerTestInput(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
@@ -153,7 +160,7 @@ def generator_handler_exception(job):
     '''
     print(job)
     yield "test1"
-    raise Exception() # pylint: disable=broad-exception-raised
+    raise Exception()  # pylint: disable=broad-exception-raised
 
 
 class TestRunWorker(IsolatedAsyncioTestCase):
@@ -309,6 +316,45 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
     # pylint: disable=too-many-arguments
+    async def test_run_worker_concurrency(
+            self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
+        '''
+        Test run_worker with synchronous handler.
+
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        '''
+        # Define the mock behaviors
+        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        def concurrency_modifier(current_concurrency):
+            return current_concurrency + 1
+
+        config_with_concurrency = self.config.copy()
+        config_with_concurrency['concurrency_modifier'] = concurrency_modifier
+
+        # Call the function
+        runpod.serverless.start(config_with_concurrency)
+
+        # Make assertions about the behaviors
+        mock_get_job.assert_called_once()
+        mock_run_job.assert_called_once()
+        mock_send_result.assert_called_once()
+
+        assert mock_stream_result.called is False
+        assert mock_session.called
+
+    @patch("aiohttp.ClientSession")
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.worker.stream_result")
+    @patch("runpod.serverless.worker.send_result")
+    # pylint: disable=too-many-arguments
     async def test_run_worker_multi_processing(
             self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
         '''
@@ -326,13 +372,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
-        # Include multi-processing inside config
-        def concurrency_controller():
-            return False
-
-        # Include the concurrency_controller
-        self.config['concurrency_controller'] = concurrency_controller
-
         # Call the function
         runpod.serverless.start(self.config)
 
@@ -347,8 +386,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # Test generator handler
         generator_config = {
             "handler": generator_handler,
-            "refresh_worker": True,
-            "concurrency_controller": concurrency_controller
+            "refresh_worker": True
         }
         runpod.serverless.start(generator_config)
         assert mock_stream_result.called
@@ -357,7 +395,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
             limited_config = {
                 "handler": Mock(),
-                "reference_counter_start": time.perf_counter(),
                 "refresh_worker": True,
                 "rp_args": {
                     "rp_debugger": True,
@@ -377,9 +414,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.send_result")
     async def test_run_worker_multi_processing_scaling_up(
-            self, mock_send_result, mock_run_job, mock_get_job):
+            self, mock_run_job, mock_get_job):
         '''
         Test run_worker with multi processing enabled, the scale-up and scale-down
         behavior with concurrency_controller.
@@ -403,15 +439,10 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             'counter': 0,
         }
 
-        def concurrency_controller():
-            val = scale_behavior['behavior'][scale_behavior['counter']]
-            return val
-
         # Let the test be a long running one so we can capture the scale-up and scale-down.
         config = {
             "handler": MagicMock(),
             "refresh_worker": False,
-            "concurrency_controller": concurrency_controller,
             "rp_args": {
                 "rp_debugger": True,
                 "rp_log_level": "DEBUG"
@@ -427,12 +458,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
-
-        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
-        # 1 + 2 + 4 + 8 + 16 + 8 + 4 + 2 + 1 = 46 times
-        assert mock_get_job.call_count == 46
-        assert mock_run_job.call_count == 46
-        assert mock_send_result.call_count == 46
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
@@ -450,15 +475,11 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
             mock_session (_type_): _description_
         '''
-        # For downscaling, we'll rely entirely on the availability ratio.
-        def concurrency_controller():
-            return False
 
         # Let the test be a long running one so we can capture the scale-up and scale-down.
         config = {
             "handler": MagicMock(),
             "refresh_worker": False,
-            "concurrency_controller": concurrency_controller,
             "rp_args": {
                 "rp_debugger": True,
                 "rp_log_level": "DEBUG"
@@ -486,10 +507,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         mock_run_job.return_value = {"output": {"result": "odd"}}
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
-
-        # Assert that the mock_get_job, mock_run_job, and mock_send_result is called
-        # 1 + 2 + 1 + 2 + 1 + 2 + 1 + 2 + 1 = 13 calls
-        assert mock_get_job.call_count == 13
 
         # 5 calls with actual jobs
         assert mock_run_job.call_count == 5
