@@ -99,11 +99,10 @@ def _signal_handler(sig, frame):
     log.info("SIGINT received. Shutting down.")
     sys.exit(0)
 
+
 # ---------------------------------------------------------------------------- #
 #                            Start Serverless Worker                           #
 # ---------------------------------------------------------------------------- #
-
-
 def start(config: Dict[str, Any]):
     """
     Starts the serverless worker.

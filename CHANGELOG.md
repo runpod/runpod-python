@@ -1,5 +1,13 @@
 # Change Log
 
+## Release 1.4.0 (TBD)
+
+### Changed
+
+- [Breaking] concurrency is now handled by `concurrency_modifier` which is a user provided function that takes in the current concurrency and returns the new concurrency. This allows for more complex concurrency logic to be implemented by the user.
+
+---
+
 ## Release 1.3.8 (12/1/23)
 
 ### Added
