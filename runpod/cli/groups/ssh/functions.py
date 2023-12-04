@@ -30,7 +30,7 @@ def get_user_pub_keys():
     Get the current user's SSH keys
     '''
     user = get_user()
-    keys = user['pubKey']
+    keys = '' if user['pubKey'] is None else user['pubKey']
 
     # Parse the keys
     keys = keys.split('\n')
@@ -86,7 +86,7 @@ def add_ssh_key(public_key):
     Checks if the key already exists before adding it.
     """
     user = get_user()
-    current_keys = user['pubKey']
+    current_keys = '' if user['pubKey'] is None else user['pubKey']
 
     # Check if the key already exists
     if public_key in current_keys:
