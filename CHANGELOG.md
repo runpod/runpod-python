@@ -1,10 +1,15 @@
 # Change Log
 
-## Release 1.4.0 (TBD)
+## Release 1.4.0 (12/4/23)
 
 ### Changed
 
-- [Breaking] concurrency is now handled by `concurrency_modifier` which is a user provided function that takes in the current concurrency and returns the new concurrency. This allows for more complex concurrency logic to be implemented by the user.
+- [BREAKING] concurrency is now handled by `concurrency_modifier` which is a user provided function that takes in the current concurrency and returns the new concurrency. This allows for more complex concurrency logic to be implemented by the user.
+- Updated the `colorama` requirement version to `>= 0.2.5, < 0.4.5`
+
+### Added
+
+- Streaming support for calling endpoints.
 
 ---
 
