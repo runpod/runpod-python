@@ -32,6 +32,9 @@ def get_user_pub_keys():
     user = get_user()
     keys = user['pubKey']
 
+    if keys is None:
+        keys = ''
+
     # Parse the keys
     keys = keys.split('\n')
     keys = [key for key in keys if key != '']
@@ -87,6 +90,9 @@ def add_ssh_key(public_key):
     """
     user = get_user()
     current_keys = user['pubKey']
+
+    if current_keys is None:
+        current_keys = ''
 
     # Check if the key already exists
     if public_key in current_keys:
