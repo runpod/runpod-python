@@ -20,12 +20,10 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
-async def _transmit(client_session, url, job_data):
+async def _transmit(client_session, url, job_data, retry_client):
     """
     Wrapper for transmitting results via POST.
     """
-    retry_options = ExponentialRetry(attempts=3)
-    retry_client = RetryClient(client_session=client_session, retry_options=retry_options)
 
     kwargs = {
         "data": job_data,
@@ -37,7 +35,7 @@ async def _transmit(client_session, url, job_data):
         await client_response.text()
 
 
-async def _handle_result(session, job_data, job, url_template, log_message):
+async def _handle_result(session, job_data, job, url_template, log_message, retry_client):
     """
     A helper function to handle the result, either for sending or streaming.
     """
@@ -45,7 +43,7 @@ async def _handle_result(session, job_data, job, url_template, log_message):
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
         url = url_template.replace('$ID', job['id'])
 
-        await _transmit(session, url, serialized_job_data)
+        await _transmit(session, url, serialized_job_data, retry_client)
         log.debug(f"{log_message}", job['id'])
 
     except aiohttp.ClientError as err:
@@ -60,11 +58,11 @@ async def _handle_result(session, job_data, job, url_template, log_message):
             log.info("Finished.", job['id'])
 
 
-async def send_result(session, job_data, job):
+async def send_result(session, job_data, job, retry_client):
     """
     Return the job results.
     """
-    await _handle_result(session, job_data, job, JOB_DONE_URL, "Results sent.")
+    await _handle_result(session, job_data, job, JOB_DONE_URL, "Results sent.", retry_client)
 
 
 async def stream_result(session, job_data, job):

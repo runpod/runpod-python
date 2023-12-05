@@ -7,6 +7,7 @@ import asyncio
 from typing import Dict, Any
 
 import aiohttp
+from aiohttp_retry import RetryClient, ExponentialRetry
 
 from runpod.serverless.modules import (
     rp_logger, rp_local, rp_handler, rp_ping,
@@ -38,7 +39,7 @@ def _is_local(config) -> bool:
     return False
 
 
-async def _process_job(job, session, job_scaler, config):
+async def _process_job(job, session, job_scaler, config, retry_client):
     if rp_handler.is_generator(config["handler"]):
         generator_output = run_job_generator(config["handler"], job)
         log.debug("Handler is a generator, streaming results.")
@@ -74,7 +75,7 @@ async def _process_job(job, session, job_scaler, config):
         rp_debugger.clear_debugger_output()
 
     # Send the job result to SLS
-    await send_result(session, job_result, job)
+    await send_result(session, job_result, job, retry_client)
 
 
 # ------------------------- Main Worker Running Loop ------------------------- #
@@ -93,21 +94,27 @@ async def run_worker(config: Dict[str, Any]) -> None:
         timeout=aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
     )
 
+    retry_options = ExponentialRetry(attempts=3)
+    retry_client = RetryClient(client_session=client_session, retry_options=retry_options)
+
+
+
     async with client_session as session:
         job_scaler = rp_scale.JobScaler(
             concurrency_modifier=config.get('concurrency_modifier', None)
         )
 
+        tasks = []
         while job_scaler.is_alive():
-
             async for job in job_scaler.get_jobs(session):
-                # Process the job here
-                asyncio.create_task(_process_job(job, session, job_scaler, config))
+                task = asyncio.create_task(_process_job(job, session, job_scaler, config, retry_client))
+                tasks.append(task)
 
-                # Allow job processing
-                await asyncio.sleep(0)
-
-            await asyncio.sleep(0)
+            # Run tasks concurrently
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+                tasks = []
+        await retry_client.close()
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()
