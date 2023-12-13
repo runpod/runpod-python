@@ -240,7 +240,7 @@ class TestFastAPI(unittest.TestCase):
             assert generator_stream_return == {
                 "id": "test-123",
                 "status": "COMPLETED",
-                "stream": [{"output": {"result": "success"}}]
+                "output": [{"result": "success"}]
             }
 
         loop.close()
