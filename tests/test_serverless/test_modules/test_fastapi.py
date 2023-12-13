@@ -24,8 +24,7 @@ class TestFastAPI(unittest.TestCase):
         Tests the start_serverless() method with the realtime option.
         '''
         module_location = "runpod.serverless.modules.rp_fastapi"
-        with patch(f"{module_location}.Heartbeat.start_ping", Mock()) as mock_ping, \
-                patch(f"{module_location}.FastAPI", Mock()) as mock_fastapi, \
+        with patch(f"{module_location}.FastAPI", Mock()) as mock_fastapi, \
                 patch(f"{module_location}.APIRouter", return_value=Mock()) as mock_router, \
                 patch(f"{module_location}.uvicorn", Mock()) as mock_uvicorn:
 
@@ -138,6 +137,51 @@ class TestFastAPI(unittest.TestCase):
                 "id": "test-123",
                 "status": "COMPLETED",
                 "output": [{"result": "success"}]
+            }
+
+        loop.close()
+
+    @pytest.mark.asyncio
+    def test_stream(self):
+        '''
+        Tests the _stream() method.
+        '''
+        loop = asyncio.get_event_loop()
+
+        module_location = "runpod.serverless.modules.rp_fastapi"
+        with patch(f"{module_location}.FastAPI", Mock()), \
+                patch(f"{module_location}.APIRouter", return_value=Mock()), \
+                patch(f"{module_location}.uvicorn", Mock()), \
+                patch(f"{module_location}.uuid.uuid4", return_value="123"):
+
+            default_input_object = rp_fastapi.DefaultInput(
+                input={"test_input": "test_input"}
+            )
+
+            worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
+
+            # Add job to job_list
+            asyncio.run(worker_api._sim_run(default_input_object))
+
+            stream_return = asyncio.run(worker_api._sim_stream("test_job_id"))
+            assert stream_return == {
+                "id": "test_job_id",
+                "status": "COMPLETED",
+                "stream": [{"output": {"result": "success"}}]
+            }
+
+            # Test with generator handler
+            def generator_handler(job):
+                del job
+                yield {"result": "success"}
+
+            generator_worker_api = rp_fastapi.WorkerAPI({"handler": generator_handler})
+            generator_stream_return = asyncio.run(
+                generator_worker_api._sim_stream("test_job_id"))
+            assert generator_stream_return == {
+                "id": "test_job_id",
+                "status": "COMPLETED",
+                "stream": [{"output": {"result": "success"}}]
             }
 
         loop.close()
