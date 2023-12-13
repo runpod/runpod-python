@@ -233,9 +233,6 @@ class WorkerAPI:
     # ---------------------------------- status ---------------------------------- #
     async def _sim_status(self, job_id: str) -> JobOutput:
         """ Development endpoint to simulate status behavior. """
-        if self.config["handler"] is None:
-            raise Exception("Handler not provided")  # pylint: disable=broad-exception-raised
-
         job_input = job_list.get_job_input(job_id)
         if job_input is None:
             return jsonable_encoder({
