@@ -225,7 +225,8 @@ class TestFastAPI(unittest.TestCase):
             status_return = asyncio.run(worker_api._sim_status("test-123"))
             assert status_return == {
                 "id": "test-123",
-                "status": "IN_PROGRESS"
+                "status": "COMPLETED",
+                "output": {"result": "success"}
             }
 
         loop.close()

@@ -79,6 +79,11 @@ class TestJobs(unittest.TestCase):
         job1 = Job(job_id="id1")
         job2 = Job(job_id="id2")
         self.assertNotEqual(job1, job2)
+
+        job = Job(job_id="id1")
+        non_job_object = "some_string"
+        self.assertNotEqual(job, non_job_object)
+
         self.assertEqual(self.jobs.get_job_input('123'), None)
         self.jobs.add_job('123', 'test_input')
         self.assertEqual(self.jobs.get_job_input('123'), 'test_input')
