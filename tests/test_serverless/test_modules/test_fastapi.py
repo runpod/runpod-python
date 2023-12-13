@@ -124,16 +124,12 @@ class TestFastAPI(unittest.TestCase):
             # Test with handler
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
-            run_return = asyncio.run(worker_api._realtime(job_object))
-            assert run_return == {"output": {"result": "success"}}
-
-            debug_run_return = asyncio.run(worker_api._sim_run(default_input_object))
-            assert debug_run_return == {
+            runsync_return = asyncio.run(worker_api._sim_runsync(default_input_object))
+            assert runsync_return == {
                 "id": "test-123",
-                "status": "IN_PROGRESS"
+                "status": "COMPLETED",
+                "output": {"result": "success"}
             }
-
-            self.assertTrue(mock_ping.called)
 
             # Test with generator handler
             def generator_handler(job):
@@ -141,10 +137,12 @@ class TestFastAPI(unittest.TestCase):
                 yield {"result": "success"}
 
             generator_worker_api = rp_fastapi.WorkerAPI({"handler": generator_handler})
-            generator_run_return = asyncio.run(generator_worker_api._sim_run(default_input_object))
+            generator_run_return = asyncio.run(
+                generator_worker_api._sim_runsync(default_input_object))
             assert generator_run_return == {
                 "id": "test-123",
-                "status": "IN_PROGRESS"
+                "status": "COMPLETED",
+                "output": [{"result": "success"}]
             }
 
         loop.close()
