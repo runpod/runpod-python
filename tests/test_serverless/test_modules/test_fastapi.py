@@ -236,7 +236,7 @@ class TestFastAPI(unittest.TestCase):
             generator_worker_api = rp_fastapi.WorkerAPI({"handler": generator_handler})
             asyncio.run(generator_worker_api._sim_run(default_input_object))
             generator_stream_return = asyncio.run(
-                generator_worker_api._sim_stream("test-123"))
+                generator_worker_api._sim_status("test-123"))
             assert generator_stream_return == {
                 "id": "test-123",
                 "status": "COMPLETED",
