@@ -97,3 +97,54 @@ class TestFastAPI(unittest.TestCase):
             }
 
         loop.close()
+
+    @pytest.mark.asyncio
+    def test_runsync(self):
+        '''
+        Tests the _runsync() method.
+        '''
+        loop = asyncio.get_event_loop()
+
+        module_location = "runpod.serverless.modules.rp_fastapi"
+        with patch(f"{module_location}.Heartbeat.start_ping", Mock()) as mock_ping, \
+                patch(f"{module_location}.FastAPI", Mock()), \
+                patch(f"{module_location}.APIRouter", return_value=Mock()), \
+                patch(f"{module_location}.uvicorn", Mock()), \
+                patch(f"{module_location}.uuid.uuid4", return_value="123"):
+
+            job_object = rp_fastapi.Job(
+                id="test_job_id",
+                input={"test_input": "test_input"}
+            )
+
+            default_input_object = rp_fastapi.DefaultInput(
+                input={"test_input": "test_input"}
+            )
+
+            # Test with handler
+            worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
+
+            run_return = asyncio.run(worker_api._realtime(job_object))
+            assert run_return == {"output": {"result": "success"}}
+
+            debug_run_return = asyncio.run(worker_api._sim_run(default_input_object))
+            assert debug_run_return == {
+                "id": "test-123",
+                "status": "IN_PROGRESS"
+            }
+
+            self.assertTrue(mock_ping.called)
+
+            # Test with generator handler
+            def generator_handler(job):
+                del job
+                yield {"result": "success"}
+
+            generator_worker_api = rp_fastapi.WorkerAPI({"handler": generator_handler})
+            generator_run_return = asyncio.run(generator_worker_api._sim_run(default_input_object))
+            assert generator_run_return == {
+                "id": "test-123",
+                "status": "IN_PROGRESS"
+            }
+
+        loop.close()
