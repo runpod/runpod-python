@@ -186,9 +186,46 @@ class TestFastAPI(unittest.TestCase):
             generator_stream_return = asyncio.run(
                 generator_worker_api._sim_stream("test-123"))
             assert generator_stream_return == {
-                "id": "test_job_id",
+                "id": "test-123",
                 "status": "COMPLETED",
                 "stream": [{"output": {"result": "success"}}]
+            }
+
+        loop.close()
+
+    @pytest.mark.asyncio
+    def test_status(self):
+        '''
+        Tests the _status() method.
+        '''
+        loop = asyncio.get_event_loop()
+
+        module_location = "runpod.serverless.modules.rp_fastapi"
+        with patch(f"{module_location}.FastAPI", Mock()), \
+                patch(f"{module_location}.APIRouter", return_value=Mock()), \
+                patch(f"{module_location}.uvicorn", Mock()), \
+                patch(f"{module_location}.uuid.uuid4", return_value="123"):
+
+            worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
+
+            default_input_object = rp_fastapi.DefaultInput(
+                input={"test_input": "test_input"}
+            )
+
+            # Add job to job_list
+            asyncio.run(worker_api._sim_run(default_input_object))
+
+            status_return = asyncio.run(worker_api._sim_status("test_job_id"))
+            assert status_return == {
+                "id": "test_job_id",
+                "status": "FAILED",
+                "error": "Job ID not found"
+            }
+
+            status_return = asyncio.run(worker_api._sim_status("test-123"))
+            assert status_return == {
+                "id": "test-123",
+                "status": "IN_PROGRESS"
             }
 
         loop.close()

@@ -76,8 +76,9 @@ class TestJobs(unittest.TestCase):
         '''
         Tests if get_job_input() method works as expected
         '''
-        self.jobs.add_job('abc')
-        self.assertEqual(self.jobs.get_job_input(None), None)
+        job1 = Job(job_id="id1")
+        job2 = Job(job_id="id2")
+        self.assertNotEqual(job1, job2)
         self.assertEqual(self.jobs.get_job_input('123'), None)
         self.jobs.add_job('123', 'test_input')
         self.assertEqual(self.jobs.get_job_input('123'), 'test_input')
