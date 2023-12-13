@@ -49,7 +49,7 @@ class TestJob(BaseModel):
     ''' Represents a test job.
     input can be any type of data.
     '''
-    id: Optional[str] = f"test_job_{uuid.uuid4()}"
+    id: Optional[str]
     input: Optional[Union[dict, list, str, int, float, bool]]
 
 
@@ -180,7 +180,8 @@ class WorkerAPI:
     # ---------------------------------- runsync --------------------------------- #
     async def _sim_runsync(self, job_input: DefaultInput) -> JobOutput:
         """ Development endpoint to simulate runsync behavior. """
-        job = TestJob(input=job_input.input)
+        assigned_job_id = f"test-{uuid.uuid4()}"
+        job = TestJob(id=assigned_job_id, input=job_input.input)
 
         if is_generator(self.config["handler"]):
             generator_output = run_job_generator(self.config["handler"], job.__dict__)

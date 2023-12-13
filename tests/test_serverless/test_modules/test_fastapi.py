@@ -112,11 +112,6 @@ class TestFastAPI(unittest.TestCase):
                 patch(f"{module_location}.uvicorn", Mock()), \
                 patch(f"{module_location}.uuid.uuid4", return_value="123"):
 
-            job_object = rp_fastapi.Job(
-                id="test_job_id",
-                input={"test_input": "test_input"}
-            )
-
             default_input_object = rp_fastapi.DefaultInput(
                 input={"test_input": "test_input"}
             )
@@ -137,9 +132,9 @@ class TestFastAPI(unittest.TestCase):
                 yield {"result": "success"}
 
             generator_worker_api = rp_fastapi.WorkerAPI({"handler": generator_handler})
-            generator_run_return = asyncio.run(
+            generator_runsync_return = asyncio.run(
                 generator_worker_api._sim_runsync(default_input_object))
-            assert generator_run_return == {
+            assert generator_runsync_return == {
                 "id": "test-123",
                 "status": "COMPLETED",
                 "output": [{"result": "success"}]
