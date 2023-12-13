@@ -73,7 +73,7 @@ class Jobs:
         Used within rp_fastapi.py for local testing.
         '''
         for job in self.jobs:
-            if job.job_id == job_id:
+            if job == Job(job_id):
                 return job.job_input
 
         return None

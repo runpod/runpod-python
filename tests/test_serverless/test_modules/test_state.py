@@ -76,6 +76,7 @@ class TestJobs(unittest.TestCase):
         '''
         Tests if get_job_input() method works as expected
         '''
+        self.assertEqual(self.jobs.get_job_input('123'), None)
         self.jobs.add_job('123', 'test_input')
         self.assertEqual(self.jobs.get_job_input('123'), 'test_input')
 
