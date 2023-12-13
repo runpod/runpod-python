@@ -3,7 +3,8 @@
 import os
 import unittest
 
-from runpod.serverless.modules.worker_state import Jobs, IS_LOCAL_TEST, WORKER_ID, get_auth_header
+from runpod.serverless.modules.worker_state import Job, Jobs, IS_LOCAL_TEST, WORKER_ID, get_auth_header
+
 
 class TestEnvVars(unittest.TestCase):
     ''' Tests for environment variables module '''
@@ -36,6 +37,7 @@ class TestEnvVars(unittest.TestCase):
         '''
         self.assertEqual(get_auth_header(), {'Authorization': self.test_api_key})
 
+
 class TestJobs(unittest.TestCase):
     ''' Tests for Jobs class '''
 
@@ -58,7 +60,7 @@ class TestJobs(unittest.TestCase):
         Tests if add_job() method works as expected
         '''
         self.jobs.add_job('123')
-        self.assertIn('123', self.jobs.jobs)
+        self.assertIn(Job('123'), self.jobs.jobs)
 
     def test_remove_job(self):
         '''
@@ -66,7 +68,7 @@ class TestJobs(unittest.TestCase):
         '''
         self.jobs.add_job('123')
         self.jobs.remove_job('123')
-        self.assertNotIn('123', self.jobs.jobs)
+        self.assertNotIn(Job('123'), self.jobs.jobs)
 
     def test_get_job_list(self):
         '''
@@ -77,7 +79,7 @@ class TestJobs(unittest.TestCase):
         self.jobs.add_job('123')
         self.jobs.add_job('456')
         self.assertEqual(len(self.jobs.jobs), 2)
-        self.assertTrue('123' in self.jobs.jobs)
-        self.assertTrue('456' in self.jobs.jobs)
+        self.assertTrue(Job('123') in self.jobs.jobs)
+        self.assertTrue(Job('456') in self.jobs.jobs)
 
         self.assertTrue(self.jobs.get_job_list() in ['123,456', '456,123'])

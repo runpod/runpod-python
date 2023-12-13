@@ -70,7 +70,7 @@ class TestFastAPI(unittest.TestCase):
             )
 
             # Test with handler
-            worker_api = rp_fastapi.WorkerAPI(self.handler)
+            worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
             run_return = asyncio.run(worker_api._realtime(job_object))
             assert run_return == {"output": {"result": "success"}}
