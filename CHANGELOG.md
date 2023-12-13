@@ -1,5 +1,14 @@
 # Change Log
 
+## Release 1.4.1 (12/13/23)
+
+### Added
+
+- Local test API server includes simulated endpoints that mimic the behavior of `run`, `runsync`, `stream`, and `status`.
+- Internal job tracker can be used to track job inputs.
+
+---
+
 ## Release 1.4.0 (12/4/23)
 
 ### Changed
