@@ -4,7 +4,7 @@ Job related helpers.
 # pylint: disable=too-many-branches
 
 import inspect
-from typing import Any, Callable, Dict, Generator, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union, AsyncGenerator
 
 import os
 import json
@@ -179,9 +179,9 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
 async def run_job_generator(
         handler: Callable,
-        job: Dict[str, Any]) -> Generator[Dict[str, Union[str, Any]], None, None]:
+        job: Dict[str, Any]) -> AsyncGenerator[Dict[str, Union[str, Any]], None]:
     '''
-    Run generator job.
+    Run generator job used to stream output.
     Yields output partials from the generator.
     '''
     try:
