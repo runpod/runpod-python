@@ -72,6 +72,13 @@ class TestJobs(unittest.TestCase):
         self.jobs.remove_job('123')
         self.assertNotIn(Job('123'), self.jobs.jobs)
 
+    def test_get_job_input(self):
+        '''
+        Tests if get_job_input() method works as expected
+        '''
+        self.jobs.add_job('123', 'test_input')
+        self.assertEqual(self.jobs.get_job_input('123'), 'test_input')
+
     def test_get_job_list(self):
         '''
         Tests if get_job_list() method works as expected
