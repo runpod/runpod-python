@@ -166,8 +166,8 @@ class TestFastAPI(unittest.TestCase):
             stream_return = asyncio.run(worker_api._sim_stream("test_job_id"))
             assert stream_return == {
                 "id": "test_job_id",
-                "status": "COMPLETED",
-                "stream": [{"output": {"result": "success"}}]
+                "status": "FAILED",
+                "error": "Stream not supported, handler must be a generator."
             }
 
             # Test with generator handler
