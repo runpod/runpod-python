@@ -3,6 +3,7 @@
 
 import os
 import asyncio
+import re
 
 import unittest
 from unittest.mock import patch, Mock
@@ -58,7 +59,8 @@ class TestFastAPI(unittest.TestCase):
         with patch(f"{module_location}.Heartbeat.start_ping", Mock()) as mock_ping, \
                 patch(f"{module_location}.FastAPI", Mock()), \
                 patch(f"{module_location}.APIRouter", return_value=Mock()), \
-                patch(f"{module_location}.uvicorn", Mock()):
+                patch(f"{module_location}.uvicorn", Mock()), \
+                patch(f"{module_location}.uuid", return_value="123"):
 
             job_object = rp_fastapi.Job(
                 id="test_job_id",
@@ -77,7 +79,7 @@ class TestFastAPI(unittest.TestCase):
 
             debug_run_return = asyncio.run(worker_api._sim_run(default_input_object))
             assert debug_run_return == {
-                "id": "test_job_id",
+                "id": "test-123",
                 "output": {"result": "success"}
             }
 
@@ -91,7 +93,7 @@ class TestFastAPI(unittest.TestCase):
             generator_worker_api = rp_fastapi.WorkerAPI({"handler": generator_handler})
             generator_run_return = asyncio.run(generator_worker_api._sim_run(default_input_object))
             assert generator_run_return == {
-                "id": "test_job_id",
+                "id": "test-123",
                 "output": [{"result": "success"}]
             }
 
