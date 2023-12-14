@@ -9,7 +9,7 @@ import uvicorn
 from fastapi import FastAPI, APIRouter
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from dataclasses import dataclass
 
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
@@ -39,40 +39,45 @@ heartbeat = Heartbeat()
 
 
 # ------------------------------- Input Objects ------------------------------ #
-class Job(BaseModel):
+@dataclass
+class Job:
     ''' Represents a job. '''
     id: str
     input: Union[dict, list, str, int, float, bool]
 
 
-class TestJob(BaseModel):
+@dataclass
+class TestJob:
     ''' Represents a test job.
     input can be any type of data.
     '''
-    id: Optional[str]
-    input: Optional[Union[dict, list, str, int, float, bool]]
+    id: Optional[str] = None
+    input: Optional[Union[dict, list, str, int, float, bool]] = None
 
 
-class DefaultInput(BaseModel):
+@dataclass
+class DefaultInput:
     """ Represents a test input. """
     input: Dict[str, Any]
 
 
 # ------------------------------ Output Objects ------------------------------ #
-class JobOutput(BaseModel):
+@dataclass
+class JobOutput:
     ''' Represents the output of a job. '''
     id: str
     status: str
-    output: Optional[Union[dict, list, str, int, float, bool]]
-    error: Optional[str]
+    output: Optional[Union[dict, list, str, int, float, bool]] = None
+    error: Optional[str] = None
 
 
-class StreamOutput(BaseModel):
+@dataclass
+class StreamOutput:
     """ Stream representation of a job. """
     id: str
     status: str = "IN_PROGRESS"
-    stream: Optional[Union[dict, list, str, int, float, bool]]
-    error: Optional[str]
+    stream: Optional[Union[dict, list, str, int, float, bool]] = None
+    error: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------- #
@@ -252,6 +257,13 @@ class WorkerAPI:
             job_output = await run_job(self.config["handler"], job.__dict__)
 
         job_list.remove_job(job.id)
+
+        if job_output.get('error', None):
+            return jsonable_encoder({
+                "id": job_id,
+                "status": "FAILED",
+                "error": job_output['error']
+            })
 
         return jsonable_encoder({
             "id": job_id,
