@@ -254,6 +254,7 @@ class TestFastAPI(unittest.TestCase):
 
             # Test with error handler
             error_worker_api = rp_fastapi.WorkerAPI({"handler": self.error_handler})
+            asyncio.run(error_worker_api._sim_run(default_input_object))
             error_status_return = asyncio.run(
                 error_worker_api._sim_status("test-123"))
             assert "error" in error_status_return
