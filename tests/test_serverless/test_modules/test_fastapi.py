@@ -19,6 +19,9 @@ class TestFastAPI(unittest.TestCase):
         self.handler = Mock()
         self.handler.return_value = {"result": "success"}
 
+        self.error_handler = Mock()
+        self.error_handler.side_effect = Exception("test error")
+
     def test_start_serverless_with_realtime(self):
         '''
         Tests the start_serverless() method with the realtime option.
@@ -139,6 +142,12 @@ class TestFastAPI(unittest.TestCase):
                 "output": [{"result": "success"}]
             }
 
+            # Test with error handler
+            error_worker_api = rp_fastapi.WorkerAPI({"handler": self.error_handler})
+            error_runsync_return = asyncio.run(
+                error_worker_api._sim_runsync(default_input_object))
+            assert "error" in error_runsync_return
+
         loop.close()
 
     @pytest.mark.asyncio
@@ -242,5 +251,12 @@ class TestFastAPI(unittest.TestCase):
                 "status": "COMPLETED",
                 "output": [{"result": "success"}]
             }
+
+            # Test with error handler
+            error_worker_api = rp_fastapi.WorkerAPI({"handler": self.error_handler})
+            asyncio.run(error_worker_api._sim_run(default_input_object))
+            error_status_return = asyncio.run(
+                error_worker_api._sim_status("test-123"))
+            assert "error" in error_status_return
 
         loop.close()

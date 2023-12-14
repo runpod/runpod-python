@@ -1,5 +1,11 @@
 # Change Log
 
+## Release 1.4.2 (12/14/23)
+
+### Fixed
+
+- Added defaults for optional parameters in `rp_fastapi` to be compatible with pydantic.
+
 ## Release 1.4.1 (12/13/23)
 
 ### Added
