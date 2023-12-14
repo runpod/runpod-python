@@ -3,13 +3,13 @@
 
 import os
 import uuid
+from dataclasses import dataclass
 from typing import Union, Optional, Dict, Any
 
 import uvicorn
 from fastapi import FastAPI, APIRouter
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
-from dataclasses import dataclass
 
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
@@ -195,6 +195,13 @@ class WorkerAPI:
                 job_output['output'].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
+
+        if job_output.get('error', None):
+            return jsonable_encoder({
+                "id": job.id,
+                "status": "FAILED",
+                "error": job_output['error']
+            })
 
         return jsonable_encoder({
             "id": job.id,
