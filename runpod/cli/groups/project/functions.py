@@ -186,7 +186,7 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
         venv_path = os.path.join(project_path_uuid_dev, "venv")
         print(f'Activating Python virtual environment: {venv_path} on pod {project_pod_id}')
         commands = [
-            f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
+            f'python{config["runtime"]["python_version"]} -m virtualenv {venv_path}',
             f'source {venv_path}/bin/activate &&'
             f'cd {remote_project_path} &&'
             'python -m pip install --upgrade pip &&'
@@ -266,7 +266,7 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
 
             echo -e "- Started API server with PID: $last_pid" && echo ""
             echo "Connect to the API server at:"
-            echo ">  https://$RUNPOD_POD_ID-8080.proxy.runpod.net/docs" && echo ""
+            echo ">  https://$RUNPOD_POD_ID-8080.proxy.runpod.net" && echo ""
 
             while true; do
                 if changed_file=$(inotifywait -q -r -e modify,create,delete --exclude "$exclude_pattern" {remote_project_path} --format '%w%f'); then
