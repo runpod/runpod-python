@@ -50,7 +50,7 @@ This python package can also be used to create a serverless worker that can be d
 
 ### Quick Start
 
-Create an python script in your project that contains your model definition and the RunPod worker start code. Run this python code as your default container start command:
+Create a python script in your project that contains your model definition and the RunPod worker start code. Run this python code as your default container start command:
 
 ```python
 # my_worker.py
@@ -73,7 +73,7 @@ def is_even(job):
 runpod.serverless.start({"handler": is_even})
 ```
 
-Make sure that this file is ran when your container starts. This can be accomplished by calling it in the docker command when you setup a template at [runpod.io/console/serverless/user/templates](https://www.runpod.io/console/serverless/user/templates) or by setting it as the default command in your Dockerfile.
+Make sure that this file is ran when your container starts. This can be accomplished by calling it in the docker command when you set up a template at [runpod.io/console/serverless/user/templates](https://www.runpod.io/console/serverless/user/templates) or by setting it as the default command in your Dockerfile.
 
 See our [blog post](https://www.runpod.io/blog/serverless-create-a-basic-api) for creating a basic Serverless API, or view the [details docs](https://docs.runpod.io/serverless-ai/custom-apis) for more information.
 

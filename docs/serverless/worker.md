@@ -24,7 +24,7 @@ The `config` parameter is a dictionary containing the following keys:
 
 ### handler
 
-The handler function can either had a standard return or be a generator function. If the handler is a generator function, it will be called with the job input and the generator will be iterated over until it is exhausted.
+The handler function can either have a standard return or be a generator function. If the handler is a generator function, it will be called with the job input and the generator will be iterated over until it is exhausted.
 
 ## Worker Refresh
 

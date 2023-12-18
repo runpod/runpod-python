@@ -2,7 +2,7 @@
 
 It is important to test your serverless workers locally before deploying them to the cloud. This will help you catch errors early and avoid wasting cloud resources. This guide will show you how to test your serverless workers locally.
 
-If any errors are returned by the worker while running a test_input job the worker will exit with a non-zero exit code. Otherwise the worker will exit with a zero exit code. This can be used to check if the worker ran successfully, for example in a CI/CD pipeline.
+If any errors are returned by the worker while running a test_input job the worker will exit with a non-zero exit code. Otherwise, the worker will exit with a zero exit code. This can be used to check if the worker ran successfully, for example in a CI/CD pipeline.
 
 ## Test Input File
 
