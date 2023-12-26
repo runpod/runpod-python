@@ -144,5 +144,10 @@ def start(config: Dict[str, Any]):
             api_concurrency=realtime_concurrency
         )
 
+    # --------------------------------- Rust Core -------------------------------- #
+    elif os.environ.get("RUNPOD_RUST_CORE", None):
+        print("Using Rust Core.")
+
+    # --------------------------------- Standard --------------------------------- #
     else:
         worker.main(config)
