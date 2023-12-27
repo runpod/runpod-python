@@ -3,29 +3,13 @@ import inspect
 import json
 import os
 import pathlib
-import sys
-import traceback
 from ctypes import CDLL, byref, c_char_p, c_int
-from dataclasses import dataclass
-from typing import Any, Callable,  List, TypeVar, Dict, Optional
+from typing import Any, Callable,  List, Dict, Optional
 
-import friendlyjson
-import log
-
-T = TypeVar("T")
-O = TypeVar("O")
+from runpod.serverless.modules.rp_logger import RunPodLogger
 
 
-def debug(*args, **kwargs):
-    print("DEBUG: ", *args, file=sys.stderr, **kwargs)
-
-
-@dataclass
-class Job:
-    id: str
-    input: Any
-    status: str
-    retries: int = 0
+log = RunPodLogger()
 
 
 class CGetJobResult(ctypes.Structure):
@@ -58,9 +42,13 @@ class Hook:
     def __new__(cls):
         if Hook._instance is None:
             Hook._instance = object.__new__(cls)
+            Hook._initialized = False
         return Hook._instance
 
     def __init__(self, rust_so_path: Optional[str] = None) -> None:
+        if self._initialized:
+            return
+
         if rust_so_path is None:
             default_path = pathlib.Path(__file__).parent / "runpod_rust_sdk.so"
             self.rust_so_path = os.environ.get("RUNPOD_RUST_SDK_PATH", str(default_path))
@@ -112,7 +100,12 @@ class Hook:
         rust_library._runpod_sls_init.restype = c_int
         rust_library._runpod_sls_init()
 
-    def get_jobs(self, max_concurrency: int, max_jobs: int, *, json_decoder: Optional[Callable[[str], Any]] = None) -> List[Job]:
+        self._initialized = True
+
+    def _json_serialize_job_data(self, job_data: Any) -> bytes:
+        return json.dumps(job_data, ensure_ascii=False).encode("utf-8")
+
+    def get_jobs(self, max_concurrency: int, max_jobs: int) -> List[Dict[str, Any]]:
         """Get a job or jobs from the queue. The jobs are returned as a list of Job objects."""
         buffer = ctypes.create_string_buffer(1024 * 1024 * 20)  # 20MB
         destination_length = len(buffer.raw)
@@ -122,8 +115,7 @@ class Hook:
             return []  # still waiting for jobs
         if result.status_code == 1:  # success! the job was stored bytes 0..res_len of buf.raw
             return [
-                Job(id=d["id"], input=d["input"], status=d["status"], retries=d["retries"])
-                for d in json_decoder(buffer.raw[: result.res_len].decode("utf-8"))
+                data for data in json.loads(buffer.raw[: result.res_len].decode("utf-8"))
             ]
 
     def progress_update(self, job_id: str, json_data: bytes) -> bool:
@@ -133,18 +125,20 @@ class Hook:
         id_bytes = job_id.encode("utf-8")
         return bool(self._progress_update(c_char_p(id_bytes), c_int(len(id_bytes)), c_char_p(json_data), c_int(len(json_data))))
 
-    def stream_output(self, job_id: str, json_data: bytes) -> bool:
+    def stream_output(self, job_id: str, job_output: bytes) -> bool:
         """
         send part of a streaming result to AI-API.
         """
+        json_data = self._json_serialize_job_data(job_output)
         id_bytes = job_id.encode("utf-8")
         return bool(self._stream_output(c_char_p(id_bytes), c_int(len(id_bytes)), c_char_p(json_data), c_int(len(json_data))))
 
-    def post_output(self, job_id: str, json_data: bytes) -> bool:
+    def post_output(self, job_id: str, job_output: bytes) -> bool:
         """
         send the result of a job to AI-API.
         Returns True if the task was successfully stored, False otherwise.
         """
+        json_data = self._json_serialize_job_data(job_output)
         id_bytes = job_id.encode("utf-8")
         return bool(self._post_output(c_char_p(id_bytes), c_int(len(id_bytes)), c_char_p(json_data), c_int(len(json_data))))
 
@@ -156,102 +150,29 @@ class Hook:
         return bool(self._finish_stream(c_char_p(id_bytes), c_int(len(id_bytes))))
 
 
-def process_job(handler: Callable, job: Job) -> None:
-    """process a job using the user-provided handler.
-    This means:
-    - deserialize the job data to the user-provided type
-    - call the user-provided handler
-    - serialize the result to JSON
-    - store the result upstream by sending a POST to AI-API
-
-    Success will remove the job from the SLS queue.
-    Failure will be bubbled as a `ValueError` or `RuntimeError`:
-    - a ValueError from issues on our end (e.g, failed to serialize the result to JSON, failed to post the result to AI-API)
-    - a RuntimeError when bubbling up from user-provided handlers
-    """
+# -------------------------------- Process Job ------------------------------- #
+def _process_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
+    """ Process a single job. """
     hook = Hook()
 
-    log.debug(f"processing job {job.id}")
     try:
-        result = handler(job.input, id=job.id)
+        result = handler(job)
     except Exception as err:
         raise RuntimeError(
-            f"run {job.id}: user code raised an {type(err).__name__}") from err
+            f"run {job['id']}: user code raised an {type(err).__name__}") from err
 
     if inspect.isgeneratorfunction(handler):
-        # this is a STREAMED result, not a regular result.
-        log.trace(f"process_job: job is a generator", job_id=job.id)
-        i = 0
         for part in result:
-            log.trace(f"run: stream: got part {i} of {job.id}", job_id=job.id)
-            try:
-                as_json = json.dumps(
-                    part, cls=friendlyjson.Encoder).encode("utf-8")
-            except Exception as e:
-                raise ValueError(
-                    f"failed to serialize result of {job.id} to JSON (a {type(result)}: {e}")
-            if not hook.stream_output(job.id, as_json):
-                raise ValueError(
-                    "failed to stream output of part {i} of {job.id} to AI-API"
-                )
-            i += 1
-            log.debug(f"run: stream: partial stream OK", job_id=job.id, part=i)
-        else:  # no break
-            log.debug(f"run: stream: finished streaming",
-                      parts=i, job_id=job.id)
-            hook.finish_stream(job.id)
+            hook.stream_output(job['id'], part)
 
-        return
-    # --- REGULAR RESULT ---
-    try:
-        as_json = json.dumps(result, cls=friendlyjson.Encoder).encode("utf-8")
-    except Exception as e:
-        raise ValueError(
-            f"failed to serialize result of {job.id} to JSON (a {type(result)})"
-        ) from e
-    if not hook.post_output(job.id, as_json):
-        raise ValueError(f"failed to post output of {job.id} to AI-API")
+        hook.finish_stream(job['id'])
+
+    else:
+        hook.post_output(job['id'], result)
 
 
-@dataclass
-class ErrorInfo:
-    error_message: str
-    error_traceback: str
-    error_type: str
-    hostname: str
-    job_id: Optional[str]
-    runpod_version: str
-    sdk_core_crate_version: str
-    worker_id: str
-
-    @classmethod
-    def from_exception(cls, exc: Exception, id: Optional[str] = None) -> "ErrorInfo":
-        return cls(
-            error_type=type(exc).__name__,
-            error_message=str(exc),
-            error_traceback=traceback.format_exc(),
-            job_id="unknown" if id is None else id,
-            hostname=optional_envvar(
-                "RUNPOD_POD_HOSTNAME", "unknown", log_frame_skip=4),
-            worker_id=optional_envvar(
-                "RUNPOD_WORKER_ID", "unknown", log_frame_skip=4),
-            runpod_version=optional_envvar(
-                "RUNPOD_VERSION", "unknown", log_frame_skip=4),
-            sdk_core_crate_version=str(rust_crate_version),
-        )
-
-
-@dataclass
-class RunResult:
-    passed: List[str]
-    failed: List[str]
-    errors: Dict[str, ErrorInfo]
-
-    def total_jobs(self) -> int:
-        return len(self.passed) + len(self.failed)
-
-
-def run(config: Dict[str, Any]) -> RunResult:
+# -------------------------------- Run Worker -------------------------------- #
+def run(config: Dict[str, Any]) -> None:
     """
     obtain up to max(max_concurrency, max_jobs) jobs from the SLS queue and process them using the given handler.
     - `handler`: the function to call for each job. it should take a single argument of type T and return a value of type O.
@@ -264,39 +185,14 @@ def run(config: Dict[str, Any]) -> RunResult:
     handler = config['handler']
     max_concurrency = config.get('max_concurrency', 4)
     max_jobs = config.get('max_jobs', 4)
-    json_decoder = config.get('json_decoder', None)
 
     hook = Hook()
 
     while True:
-        # bounds checking
-        if not isinstance(max_concurrency, int) or not isinstance(max_jobs, int):
-            raise TypeError(
-                f"max_concurrency and max_jobs must be integers, got {type(max_concurrency)} and {type(max_jobs)}")
-        if (max_concurrency < 1 or max_jobs < 1 or max_concurrency > 1024 or max_jobs > 1024):
-            raise ValueError(
-                f"{max_concurrency=} and {max_jobs=} must be between 1 and 1024")
-
-        if json_decoder is None:
-            json_decoder = json.loads
-
-        try:
-            jobs = hook.get_jobs(max_concurrency, max_jobs, json_decoder=json_decoder)
-        except Exception as err:
-            raise ValueError(f"failed to get jobs: {err}") from err
+        jobs = hook.get_jobs(max_concurrency, max_jobs)
 
         if len(jobs) == 0:
-            return RunResult(passed=[], failed=[], errors={})
-        log.trace("got jobs", jobs=jobs)
+            continue
 
-        passed, failed, errors = [], [], {}
         for job in jobs:
-            process_job(handler, job)
-
-        res = RunResult(
-            passed=passed,
-            failed=failed,
-            errors=errors,
-        )
-        log.trace("run: finished", jobs=res)
-        return res
+            _process_job(handler, job)
