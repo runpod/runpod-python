@@ -12,6 +12,7 @@ import signal
 import argparse
 from typing import Dict, Any
 
+from runpod.serverless import core
 from . import worker
 from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
@@ -147,6 +148,7 @@ def start(config: Dict[str, Any]):
     # --------------------------------- Rust Core -------------------------------- #
     elif os.environ.get("RUNPOD_RUST_CORE", None):
         print("Using Rust Core.")
+        core.run(config)
 
     # --------------------------------- Standard --------------------------------- #
     else:
