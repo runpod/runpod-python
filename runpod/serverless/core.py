@@ -52,7 +52,9 @@ class Hook:  # pylint: disable=too-many-instance-attributes
             return
 
         if rust_so_path is None:
-            default_path = pathlib.Path(__file__).parent / "runpod_rust_sdk.so"
+            default_path = os.path.join(
+                pathlib.Path(__file__).parent.absolute(), "runpod_rust_sdk.so"
+            )
             self.rust_so_path = os.environ.get("RUNPOD_RUST_SDK_PATH", str(default_path))
         else:
             self.rust_so_path = rust_so_path

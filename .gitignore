@@ -16,6 +16,7 @@ __pycache__/
 
 # C extensions
 *.so
+!runpod_rust_sdk.so
 
 # Distribution / packaging
 .Python
