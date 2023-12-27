@@ -1,3 +1,5 @@
+""" Core functionality for the runpod serverless worker. """
+
 import ctypes
 import inspect
 import json
@@ -12,7 +14,7 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 log = RunPodLogger()
 
 
-class CGetJobResult(ctypes.Structure):
+class CGetJobResult(ctypes.Structure):  # pylint: disable=too-few-public-methods
     """
      result of _runpod_sls_get_jobs.
     ## fields
@@ -107,10 +109,12 @@ class Hook:
 
     def get_jobs(self, max_concurrency: int, max_jobs: int) -> List[Dict[str, Any]]:
         """Get a job or jobs from the queue. The jobs are returned as a list of Job objects."""
-        buffer = ctypes.create_string_buffer(1024 * 1024 * 20)  # 20MB
+        buffer = ctypes.create_string_buffer(1024 * 1024 * 20)  # 20MB buffer to store jobs in
         destination_length = len(buffer.raw)
-        result: CGetJobResult = self._get_jobs(c_int(max_concurrency), c_int(
-            max_jobs), byref(buffer), c_int(destination_length))
+        result: CGetJobResult = self._get_jobs(
+            c_int(max_concurrency), c_int(max_jobs),
+            byref(buffer), c_int(destination_length)
+        )
         if result.status_code == 0:
             return []  # still waiting for jobs
         if result.status_code == 1:  # success! the job was stored bytes 0..res_len of buf.raw
