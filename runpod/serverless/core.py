@@ -16,7 +16,7 @@ class CGetJobResult(ctypes.Structure):
     """
      result of _runpod_sls_get_jobs.
     ## fields
-    - `res_len` tells you how many bytes were written to the `dst_buf` passed to _runpod_sls_get_jobs.
+    - `res_len` the number bytes were written to the `dst_buf` passed to _runpod_sls_get_jobs.
     - `status_code` tells you what happened.
     see CGetJobResult.status_code for more information.
     """
@@ -114,16 +114,17 @@ class Hook:
         if result.status_code == 0:
             return []  # still waiting for jobs
         if result.status_code == 1:  # success! the job was stored bytes 0..res_len of buf.raw
-            return [
-                data for data in json.loads(buffer.raw[: result.res_len].decode("utf-8"))
-            ]
+            return list(json.loads(buffer.raw[: result.res_len].decode("utf-8")))
 
     def progress_update(self, job_id: str, json_data: bytes) -> bool:
         """
         send a progress update to AI-API.
         """
         id_bytes = job_id.encode("utf-8")
-        return bool(self._progress_update(c_char_p(id_bytes), c_int(len(id_bytes)), c_char_p(json_data), c_int(len(json_data))))
+        return bool(self._progress_update(
+            c_char_p(id_bytes), c_int(len(id_bytes)),
+            c_char_p(json_data), c_int(len(json_data))
+        ))
 
     def stream_output(self, job_id: str, job_output: bytes) -> bool:
         """
@@ -131,7 +132,10 @@ class Hook:
         """
         json_data = self._json_serialize_job_data(job_output)
         id_bytes = job_id.encode("utf-8")
-        return bool(self._stream_output(c_char_p(id_bytes), c_int(len(id_bytes)), c_char_p(json_data), c_int(len(json_data))))
+        return bool(self._stream_output(
+            c_char_p(id_bytes), c_int(len(id_bytes)),
+            c_char_p(json_data), c_int(len(json_data))
+        ))
 
     def post_output(self, job_id: str, job_output: bytes) -> bool:
         """
@@ -140,14 +144,19 @@ class Hook:
         """
         json_data = self._json_serialize_job_data(job_output)
         id_bytes = job_id.encode("utf-8")
-        return bool(self._post_output(c_char_p(id_bytes), c_int(len(id_bytes)), c_char_p(json_data), c_int(len(json_data))))
+        return bool(self._post_output(
+            c_char_p(id_bytes), c_int(len(id_bytes)),
+            c_char_p(json_data), c_int(len(json_data))
+        ))
 
     def finish_stream(self, job_id: str) -> bool:
         """
         tell the SLS queue that the result of a streaming job is complete.
         """
         id_bytes = job_id.encode("utf-8")
-        return bool(self._finish_stream(c_char_p(id_bytes), c_int(len(id_bytes))))
+        return bool(self._finish_stream(
+            c_char_p(id_bytes), c_int(len(id_bytes))
+        ))
 
 
 # -------------------------------- Process Job ------------------------------- #
@@ -173,14 +182,11 @@ def _process_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
 # -------------------------------- Run Worker -------------------------------- #
 def run(config: Dict[str, Any]) -> None:
-    """
-    obtain up to max(max_concurrency, max_jobs) jobs from the SLS queue and process them using the given handler.
-    - `handler`: the function to call for each job. it should take a single argument of type T and return a value of type O.
-    - `max_concurrency`: maximum number of jobs to process at once. Must be >= 1.
-    - `max_jobs`: the maximum number of jobs to process in total. Must be >= 1.
-    - `max_retries`: the maximum number of times to retry a job before giving up. Must be >= 0.
-    - `json_decoder`: a function that takes a string and returns an object. defaults to `json.loads`.
+    """ Run the worker.
 
+    Args:
+        config: A dictionary containing the following keys:
+            handler: A function that takes a job and returns a result.
     """
     handler = config['handler']
     max_concurrency = config.get('max_concurrency', 4)
