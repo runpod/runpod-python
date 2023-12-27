@@ -29,7 +29,7 @@ class CGetJobResult(ctypes.Structure):  # pylint: disable=too-few-public-methods
         return f"CGetJobResult(res_len={self.res_len}, status_code={self.status_code})"
 
 
-class Hook:
+class Hook:  # pylint: disable=too-many-instance-attributes
     """ Singleton class for interacting with runpod_rust_sdk.so"""
 
     _instance = None
@@ -115,10 +115,13 @@ class Hook:
             c_int(max_concurrency), c_int(max_jobs),
             byref(buffer), c_int(destination_length)
         )
-        if result.status_code == 0:
-            return []  # still waiting for jobs
         if result.status_code == 1:  # success! the job was stored bytes 0..res_len of buf.raw
             return list(json.loads(buffer.raw[: result.res_len].decode("utf-8")))
+
+        if result.status_code not in [0, 1]:
+            raise RuntimeError(f"get_jobs failed with status code {result.status_code}")
+
+        return []  # Status code 0, still waiting for jobs
 
     def progress_update(self, job_id: str, json_data: bytes) -> bool:
         """
