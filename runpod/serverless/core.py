@@ -210,7 +210,7 @@ async def run(config: Dict[str, Any]) -> None:
         if len(jobs) == 0:
             continue
 
-        async for job in jobs:
+        for job in jobs:
             asyncio.create_task(_process_job(handler, job))
             await asyncio.sleep(0)
 
