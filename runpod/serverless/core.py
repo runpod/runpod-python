@@ -5,6 +5,7 @@ import inspect
 import json
 import os
 import pathlib
+import asyncio
 from ctypes import CDLL, byref, c_char_p, c_int
 from typing import Any, Callable,  List, Dict, Optional
 
@@ -30,7 +31,7 @@ class CGetJobResult(ctypes.Structure):  # pylint: disable=too-few-public-methods
 
 
 class Hook:  # pylint: disable=too-many-instance-attributes
-    """ Singleton class for interacting with runpod_rust_sdk.so"""
+    """ Singleton class for interacting with sls_core.so"""
 
     _instance = None
 
@@ -53,9 +54,9 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
         if rust_so_path is None:
             default_path = os.path.join(
-                pathlib.Path(__file__).parent.absolute(), "runpod_rust_sdk.so"
+                pathlib.Path(__file__).parent.absolute(), "sls_core.so"
             )
-            self.rust_so_path = os.environ.get("RUNPOD_RUST_SDK_PATH", str(default_path))
+            self.rust_so_path = os.environ.get("RUNPOD_SLS_CORE_PATH", str(default_path))
         else:
             self.rust_so_path = rust_so_path
 
@@ -190,7 +191,7 @@ def _process_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # -------------------------------- Run Worker -------------------------------- #
-def run(config: Dict[str, Any]) -> None:
+async def run(config: Dict[str, Any]) -> None:
     """ Run the worker.
 
     Args:
@@ -209,5 +210,18 @@ def run(config: Dict[str, Any]) -> None:
         if len(jobs) == 0:
             continue
 
-        for job in jobs:
-            _process_job(handler, job)
+        async for job in jobs:
+            asyncio.create_task(_process_job(handler, job))
+            await asyncio.sleep(0)
+
+        await asyncio.sleep(0)
+
+
+def main(config: Dict[str, Any]) -> None:
+    """Run the worker in an asyncio event loop."""
+    try:
+        work_loop = asyncio.new_event_loop()
+        asyncio.ensure_future(run(config), loop=work_loop)
+        work_loop.run_forever()
+    finally:
+        work_loop.close()
