@@ -146,7 +146,7 @@ def start(config: Dict[str, Any]):
         )
 
     # --------------------------------- SLS-Core --------------------------------- #
-    elif os.environ.get("RUNPOD_SLS_CORE", None) or os.environ.get("RUNPOD_SLS_CORE_PATH", None):
+    elif os.environ.get("RUNPOD_USE_CORE", None) or os.environ.get("RUNPOD_CORE_PATH", None):
         log.info("Starting worker with SLS-Core.")
         core.main(config)
 

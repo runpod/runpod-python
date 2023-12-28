@@ -517,7 +517,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         Test run_worker with sls-core.
         '''
-        os.environ["RUNPOD_SLS_CORE"] = "true"
+        os.environ["RUNPOD_USE_CORE"] = "true"
 
         with patch("runpod.serverless.core.main") as mock_main:
             runpod.serverless.start(self.config)

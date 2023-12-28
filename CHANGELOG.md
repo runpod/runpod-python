@@ -1,5 +1,17 @@
 # Change Log
 
+## Release 1.5.0 (12/28/23)
+
+### Added
+
+- Optional serverless core implementation, use with environment variable `RUNPOD_USE_CORE=True` or `RUNPOD_CORE_PATH=/path/to/core.so`
+
+### Changed
+
+- Reduced *await asyncio.sleep* calls to 0 to reduce execution time.
+
+---
+
 ## Release 1.4.2 (12/14/23)
 
 ### Fixed
