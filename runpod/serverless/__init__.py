@@ -12,6 +12,7 @@ import signal
 import argparse
 from typing import Dict, Any
 
+from runpod.serverless import core
 from . import worker
 from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
@@ -125,7 +126,7 @@ def start(config: Dict[str, Any]):
     realtime_concurrency = _get_realtime_concurrency()
 
     if config["rp_args"]["rp_serve_api"]:
-        print("Starting API server.")
+        log.info("Starting API server.")
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(
@@ -135,7 +136,7 @@ def start(config: Dict[str, Any]):
         )
 
     elif realtime_port:
-        print("Starting API server for realtime.")
+        log.info("Starting API server for realtime.")
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(
@@ -144,5 +145,11 @@ def start(config: Dict[str, Any]):
             api_concurrency=realtime_concurrency
         )
 
+    # --------------------------------- SLS-Core --------------------------------- #
+    elif os.environ.get("RUNPOD_USE_CORE", None) or os.environ.get("RUNPOD_CORE_PATH", None):
+        log.info("Starting worker with SLS-Core.")
+        core.main(config)
+
+    # --------------------------------- Standard --------------------------------- #
     else:
         worker.main(config)

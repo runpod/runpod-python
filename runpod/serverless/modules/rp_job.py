@@ -106,7 +106,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             if retry is False:
                 break
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(0)
     else:
         job_list.add_job(next_job["id"])
         log.debug("Request ID added.", next_job['id'])

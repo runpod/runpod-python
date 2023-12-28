@@ -511,3 +511,15 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # 5 calls with actual jobs
         assert mock_run_job.call_count == 5
         assert mock_send_result.call_count == 5
+
+    # Test with sls-core
+    async def test_run_worker_with_sls_core(self):
+        '''
+        Test run_worker with sls-core.
+        '''
+        os.environ["RUNPOD_USE_CORE"] = "true"
+
+        with patch("runpod.serverless.core.main") as mock_main:
+            runpod.serverless.start(self.config)
+
+            assert mock_main.called
