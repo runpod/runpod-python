@@ -70,4 +70,4 @@ dependencies = { file = ["requirements.txt"] }
 
 # Used by pytest coverage
 [tool.coverage.run]
-omit = ["runpod/_version.py"]
+omit = ["runpod/_version.py", "runpod/core.py"]

@@ -1,5 +1,4 @@
 """ Core functionality for the runpod serverless worker. """
-# pragma: no cover
 
 import ctypes
 import inspect
