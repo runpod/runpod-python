@@ -40,6 +40,7 @@ def _is_local(config) -> bool:
 
 async def _process_job(job, session, job_scaler, config):
     if rp_handler.is_generator(config["handler"]):
+        is_stream = 1
         generator_output = run_job_generator(config["handler"], job)
         log.debug("Handler is a generator, streaming results.")
 
@@ -53,6 +54,7 @@ async def _process_job(job, session, job_scaler, config):
 
             await stream_result(session, stream_output, job)
     else:
+        is_stream = 0
         job_result = await run_job(config["handler"], job)
 
     # If refresh_worker is set, pod will be reset after job is complete.
@@ -74,7 +76,7 @@ async def _process_job(job, session, job_scaler, config):
         rp_debugger.clear_debugger_output()
 
     # Send the job result to SLS
-    await send_result(session, job_result, job)
+    await send_result(session, job_result, job, is_stream=is_stream)
 
 
 # ------------------------- Main Worker Running Loop ------------------------- #
