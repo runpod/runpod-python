@@ -43,6 +43,8 @@ async def _handle_result(session, job_data, job, url_template, log_message, is_s
     """
     try:
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
+
+        is_stream = "true" if is_stream else "false"
         url = url_template.replace('$ID', job['id']) + f"&isStream={is_stream}"
 
         await _transmit(session, url, serialized_job_data)
