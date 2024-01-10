@@ -1,12 +1,11 @@
-'''
-Author: Oleg Rybalko
-Github: https://github.com/SkullMag
-Date: 2023-03-27
-'''
+""" Module for running endpoints asynchronously. """
 # pylint: disable=too-few-public-methods,R0801
 
+from typing import Any, Dict
 import asyncio
 import aiohttp
+
+from runpod.endpoint.helpers import FINAL_STATES, is_completed
 
 
 class Job:
@@ -17,13 +16,29 @@ class Job:
 
         self.endpoint_id = endpoint_id
         self.job_id = job_id
-        self.status_url = f"{endpoint_url_base}/{self.endpoint_id}/status/{self.job_id}"
-        self.cancel_url = f"{endpoint_url_base}/{self.endpoint_id}/cancel/{self.job_id}"
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}"
         }
         self.session = session
+
+        self.job_status = None
+        self.job_output = None
+
+    async def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
+        """ Returns the raw json of the status, reaises an exception if invalid.
+
+        Args:
+            source: The URL source path of the job status.
+        """
+        status_url = f"{self.endpoint_id}/{source}/{self.job_id}"
+        job_state = await self.session.get(status_url, headers=self.headers)
+
+        if is_completed(job_state["status"]):
+            self.job_status = job_state["status"]
+            self.job_output = job_state.get("output", None)
+
+        return job_state
 
     async def status(self) -> str:
         """Gets jobs' status
@@ -31,10 +46,12 @@ class Job:
         Returns:
             COMPLETED, FAILED or IN_PROGRESS
         """
-        async with self.session.get(self.status_url, headers=self.headers) as resp:
-            return (await resp.json())["status"]
+        if self.job_status is not None:
+            return self.job_status
 
-    async def output(self) -> any:
+        return (await self._fetch_job())["status"]
+
+    async def output(self, timeout: int = 0) -> Any:
         """Waits for serverless API job to complete or fail
 
         Returns:
@@ -42,11 +59,28 @@ class Job:
         Raises:
             KeyError if job Failed
         """
-        while await self.status() not in ["COMPLETED", "FAILED"]:
-            await asyncio.sleep(1)
+        if timeout > 0:
+            while not is_completed(self.status()):
+                await asyncio.sleep(1)
+                timeout -= 1
+                if timeout <= 0:
+                    raise TimeoutError("Job timed out.")
 
-        async with self.session.get(self.status_url, headers=self.headers) as resp:
-            return (await resp.json())["output"]
+        if self.job_output is not None:
+            return self.job_output
+
+        return (await self._fetch_job()).get("output", None)
+
+    async def stream(self) -> Any:
+        """ Returns a generator that yields the output of the job request. """
+        while True:
+            await asyncio.sleep(1)
+            stream_partial = await self._fetch_job(source="stream")
+            if stream_partial not in FINAL_STATES or len(stream_partial["stream"]) > 0:
+                for chunk in stream_partial.get("stream", []):
+                    yield chunk["output"]
+            elif stream_partial in FINAL_STATES:
+                break
 
     async def cancel(self) -> dict:
         """Cancels current job
@@ -54,8 +88,8 @@ class Job:
         Returns:
             Output of cancel operation
         """
-
-        async with self.session.post(self.cancel_url, headers=self.headers) as resp:
+        cancel_url = f"{self.endpoint_id}/cancel/{self.job_id}"
+        async with self.session.post(cancel_url, headers=self.headers) as resp:
             return await resp.json()
 
 
@@ -88,3 +122,21 @@ class Endpoint:
             json_resp = await resp.json()
 
         return Job(self.endpoint_id, json_resp["id"], self.session)
+
+    async def health(self) -> dict:
+        """Checks health of endpoint
+
+        Returns:
+            Health of endpoint
+        """
+        async with self.session.get(f"{self.endpoint_id}/health", headers=self.headers) as resp:
+            return await resp.json()
+
+    async def purge_queue(self) -> dict:
+        """Purges queue of endpoint
+
+        Returns:
+            Purge status
+        """
+        async with self.session.post(f"{self.endpoint_id}/purge", headers=self.headers) as resp:
+            return await resp.json()
