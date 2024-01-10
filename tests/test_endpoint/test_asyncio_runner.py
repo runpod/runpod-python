@@ -34,7 +34,7 @@ class TestJob(IsolatedAsyncioTestCase):
         Tests Job.output
         '''
         with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
-             patch("aiohttp.ClientSession") as mock_session:
+             patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session:
             mock_resp = AsyncMock()
 
             async def json_side_effect():
