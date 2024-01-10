@@ -69,7 +69,7 @@ class TestJob(IsolatedAsyncioTestCase):
         '''Tests Job.output when status is initially IN_PROGRESS and then changes to COMPLETED'''
         with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
              patch("aiohttp.ClientSession") as mock_session:
-            mock_resp = MagicMock()
+            mock_resp = AsyncMock()
             responses = [
                 {"status": "IN_PROGRESS"},
                 {"status": "COMPLETED"},
