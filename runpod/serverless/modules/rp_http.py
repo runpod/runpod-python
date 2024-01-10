@@ -37,7 +37,7 @@ async def _transmit(client_session, url, job_data):
         await client_response.text()
 
 
-async def _handle_result(session, job_data, job, url_template, log_message, is_stream=False):
+async def _handle_result(session, job_data, job, url_template, log_message, is_stream=False): # pylint: disable=too-many-arguments
     """
     A helper function to handle the result, either for sending or streaming.
     """
