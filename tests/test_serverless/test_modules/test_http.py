@@ -55,7 +55,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.info.call_count == 1
 
             mock_retry.return_value.post.assert_called_with(
-                'JOB_DONE_URL',
+                'JOB_DONE_URL' + "&isStream=false",
                 data=str(json.dumps(self.job_data, ensure_ascii=False)),
                 headers={
                     "charset": "utf-8",
@@ -141,7 +141,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.info.call_count == 0
 
             mock_retry.return_value.post.assert_called_with(
-                'JOB_STREAM_URL',
+                'JOB_STREAM_URL' + "&isStream=false",
                 data=str(json.dumps(self.job_data, ensure_ascii=False)),
                 headers={
                     "charset": "utf-8",
