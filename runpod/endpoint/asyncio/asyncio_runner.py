@@ -53,6 +53,10 @@ class Job:
 
         return (await self._fetch_job())["status"]
 
+    async def _wait_for_completion(self):
+        while not is_completed(await self.status()):
+            await asyncio.sleep(1)
+
     async def output(self, timeout: int = 0) -> Any:
         """Waits for serverless API job to complete or fail
 
@@ -61,17 +65,18 @@ class Job:
         Raises:
             KeyError if job Failed
         """
-        if timeout > 0:
-            while not is_completed(await self.status()):
-                await asyncio.sleep(1)
-                timeout -= 1
-                if timeout <= 0:
-                    raise TimeoutError("Job timed out.")
+        try:
+            await asyncio.wait_for(self._wait_for_completion(), timeout)
+        except asyncio.TimeoutError:
+            raise TimeoutError("Job timed out.")
 
         if self.job_output is not None:
             return self.job_output
 
-        return (await self._fetch_job()).get("output", None)
+        job_data = await self._fetch_job()
+        if job_data["status"] == "FAILED":
+            raise KeyError("Job failed.")
+        return job_data.get("output", None)
 
     async def stream(self) -> Any:
         """ Returns a generator that yields the output of the job request. """
