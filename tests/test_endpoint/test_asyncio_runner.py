@@ -19,12 +19,12 @@ class TestJob(IsolatedAsyncioTestCase):
         '''
         Tests Job.status
         '''
-        with patch("aiohttp.ClientSession") as mock_session:
-            mock_resp = MagicMock()
-            mock_resp.json = MagicMock(return_value=asyncio.Future())
-            mock_resp.json.return_value.set_result({"status": "COMPLETED"})
-            mock_session.get.return_value.__aenter__.return_value = mock_resp
+        with patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            mock_resp = AsyncMock()
+            mock_resp.json.return_value = {"status": "COMPLETED"}
+            mock_get.return_value = mock_resp
 
+            mock_session = AsyncMock()
             job = Job("endpoint_id", "job_id", mock_session)
             status = await job.status()
             assert status == "COMPLETED"
