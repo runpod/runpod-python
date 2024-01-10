@@ -37,14 +37,15 @@ async def _transmit(client_session, url, job_data):
         await client_response.text()
 
 
-async def _handle_result(session, job_data, job, url_template, log_message):
+async def _handle_result(session, job_data, job, url_template, log_message, is_stream=False): # pylint: disable=too-many-arguments
     """
     A helper function to handle the result, either for sending or streaming.
     """
     try:
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
 
-        url = url_template.replace('$ID', job['id'])
+        is_stream = "true" if is_stream else "false"
+        url = url_template.replace('$ID', job['id']) + f"&isStream={is_stream}"
 
         await _transmit(session, url, serialized_job_data)
         log.debug(f"{log_message}", job['id'])
@@ -65,9 +66,7 @@ async def send_result(session, job_data, job, is_stream=False):
     """
     Return the job results.
     """
-    is_stream = "true" if is_stream else "false"
-    job_done_url = JOB_DONE_URL + f"&isStream={is_stream}"
-    await _handle_result(session, job_data, job, job_done_url, "Results sent.")
+    await _handle_result(session, job_data, job, JOB_DONE_URL, "Results sent.", is_stream=is_stream)
 
 
 async def stream_result(session, job_data, job):
