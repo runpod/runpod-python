@@ -34,6 +34,7 @@ class Job:
         """
         status_url = f"{self.endpoint_url_base}/{self.endpoint_id}/{source}/{self.job_id}"
         job_state = await self.session.get(status_url, headers=self.headers)
+        job_state = await job_state.json()
 
         if is_completed(job_state["status"]):
             self.job_status = job_state["status"]
