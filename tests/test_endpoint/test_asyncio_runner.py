@@ -46,7 +46,7 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_session.get.return_value.__aenter__.return_value = mock_resp
 
             job = Job("endpoint_id", "job_id", mock_session)
-            output_task = asyncio.create_task(job.output())
+            output_task = asyncio.create_task(job.output(timeout=3))
 
             output = await output_task
             assert output == "OUTPUT"
@@ -85,7 +85,7 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_session.get.return_value.__aenter__.return_value = mock_resp
 
             job = Job("endpoint_id", "job_id", mock_session)
-            output = await job.output()
+            output = await job.output(timeout=3)
             assert output == "OUTPUT"
             mock_sleep.assert_called_once_with(1)
 
