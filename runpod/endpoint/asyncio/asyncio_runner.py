@@ -21,6 +21,7 @@ class Job:
             "Authorization": f"Bearer {api_key}"
         }
         self.session = session
+        self.endpoint_url_base = endpoint_url_base
 
         self.job_status = None
         self.job_output = None
@@ -31,7 +32,7 @@ class Job:
         Args:
             source: The URL source path of the job status.
         """
-        status_url = f"{self.endpoint_id}/{source}/{self.job_id}"
+        status_url = f"{self.endpoint_url_base}/{self.endpoint_id}/{source}/{self.job_id}"
         job_state = await self.session.get(status_url, headers=self.headers)
 
         if is_completed(job_state["status"]):
@@ -88,7 +89,7 @@ class Job:
         Returns:
             Output of cancel operation
         """
-        cancel_url = f"{self.endpoint_id}/cancel/{self.job_id}"
+        cancel_url = f"{self.endpoint_url_base}/{self.endpoint_id}/cancel/{self.job_id}"
         async with self.session.post(cancel_url, headers=self.headers) as resp:
             return await resp.json()
 
