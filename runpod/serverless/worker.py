@@ -40,7 +40,7 @@ def _is_local(config) -> bool:
 
 async def _process_job(job, session, job_scaler, config):
     if rp_handler.is_generator(config["handler"]):
-        is_stream = 1
+        is_stream = True
         generator_output = run_job_generator(config["handler"], job)
         log.debug("Handler is a generator, streaming results.")
 

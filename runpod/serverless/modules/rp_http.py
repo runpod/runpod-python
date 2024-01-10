@@ -37,7 +37,7 @@ async def _transmit(client_session, url, job_data):
         await client_response.text()
 
 
-async def _handle_result(session, job_data, job, url_template, log_message, is_stream=0):
+async def _handle_result(session, job_data, job, url_template, log_message, is_stream=False):
     """
     A helper function to handle the result, either for sending or streaming.
     """
@@ -60,7 +60,7 @@ async def _handle_result(session, job_data, job, url_template, log_message, is_s
             log.info("Finished.", job['id'])
 
 
-async def send_result(session, job_data, job, is_stream=0):
+async def send_result(session, job_data, job, is_stream=False):
     """
     Return the job results.
     """
