@@ -62,7 +62,7 @@ class Job:
             KeyError if job Failed
         """
         if timeout > 0:
-            while not is_completed(self.status()):
+            while not is_completed(await self.status()):
                 await asyncio.sleep(1)
                 timeout -= 1
                 if timeout <= 0:
