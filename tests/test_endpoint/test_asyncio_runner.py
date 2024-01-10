@@ -21,8 +21,7 @@ class TestJob(IsolatedAsyncioTestCase):
         '''
         with patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
             mock_resp = AsyncMock()
-            mock_resp.json.return_value = asyncio.Future()
-            mock_resp.json.return_value.set_result({"status": "COMPLETED"})
+            mock_resp.json = AsyncMock(return_value={"status": "COMPLETED"})  # Directly return the expected dict
             mock_get.return_value = mock_resp
 
             mock_session = AsyncMock()
