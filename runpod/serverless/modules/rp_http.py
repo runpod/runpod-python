@@ -37,7 +37,7 @@ async def _transmit(client_session, url, job_data):
         await client_response.text()
 
 
-async def _handle_result(session, job_data, job, url_template, log_message) -> None:
+async def _handle_result(session, job_data, job, url_template, log_message):
     """
     A helper function to handle the result, either for sending or streaming.
     """
