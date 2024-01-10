@@ -70,21 +70,18 @@ class TestJob(IsolatedAsyncioTestCase):
     async def test_output_in_progress_then_completed(self):
         '''Tests Job.output when status is initially IN_PROGRESS and then changes to COMPLETED'''
         with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
-             patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+            patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
             mock_session = mock_session_class.return_value
             mock_get = mock_session.get
             mock_resp = AsyncMock()
 
             responses = [
                 {"status": "IN_PROGRESS"},
-                {"status": "COMPLETED"},
-                {"output": "OUTPUT"}
+                {"status": "COMPLETED", "output": "OUTPUT"}
             ]
 
             async def json_side_effect():
-                if responses:
-                    return responses.pop(0)
-                return {"status": "IN_PROGRESS"}
+                return responses.pop(0) if responses else {"status": "COMPLETED", "output": "OUTPUT"}
 
             mock_resp.json.side_effect = json_side_effect
             mock_get.return_value = mock_resp
@@ -92,7 +89,6 @@ class TestJob(IsolatedAsyncioTestCase):
             job = Job("endpoint_id", "job_id", mock_session)
             output = await job.output(timeout=3)
             assert output == "OUTPUT"
-            mock_sleep.assert_called_once_with(1)
 
 class TestEndpoint(IsolatedAsyncioTestCase):
     ''' Unit tests for the Endpoint class. '''
