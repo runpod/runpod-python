@@ -71,8 +71,7 @@ class Job:
         if self.job_output is not None:
             return self.job_output
 
-        job_output = await self._fetch_job()
-        return job_output.get("output", None)
+        return (await self._fetch_job()).get("output", None)
 
     async def stream(self) -> Any:
         """ Returns a generator that yields the output of the job request. """

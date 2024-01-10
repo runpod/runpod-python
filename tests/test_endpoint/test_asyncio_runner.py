@@ -4,7 +4,7 @@
 import tracemalloc
 import asyncio
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from unittest import IsolatedAsyncioTestCase
 
 from runpod.endpoint.asyncio.asyncio_runner import Job, Endpoint
@@ -35,7 +35,7 @@ class TestJob(IsolatedAsyncioTestCase):
         '''
         with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
              patch("aiohttp.ClientSession") as mock_session:
-            mock_resp = MagicMock()
+            mock_resp = AsyncMock()
 
             async def json_side_effect():
                 if mock_sleep.call_count == 0:
