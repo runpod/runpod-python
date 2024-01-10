@@ -34,7 +34,7 @@ class TestJob(IsolatedAsyncioTestCase):
         Tests Job.output
         '''
         with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
-             patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session:
+             patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
             mock_resp = AsyncMock()
 
             async def json_side_effect():
@@ -43,7 +43,7 @@ class TestJob(IsolatedAsyncioTestCase):
                 return {"output": "OUTPUT", "status": "COMPLETED"}
 
             mock_resp.json = json_side_effect
-            mock_session.get.return_value.__aenter__.return_value = mock_resp
+            mock_get.return_value = mock_resp
 
             job = Job("endpoint_id", "job_id", mock_session)
             output_task = asyncio.create_task(job.output(timeout=3))
