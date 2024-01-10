@@ -67,8 +67,8 @@ class Job:
         """
         try:
             await asyncio.wait_for(self._wait_for_completion(), timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError("Job timed out.")
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError("Job timed out.") from exc
 
         if self.job_output is not None:
             return self.job_output
