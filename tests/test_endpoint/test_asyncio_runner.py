@@ -45,7 +45,7 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_resp.json = json_side_effect
             mock_get.return_value = mock_resp
 
-            job = Job("endpoint_id", "job_id", mock_session)
+            job = Job("endpoint_id", "job_id", MagicMock())
             output_task = asyncio.create_task(job.output(timeout=3))
 
             output = await output_task
