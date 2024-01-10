@@ -133,7 +133,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text"  # pylint: disable=line-too-long
 
             mock_jobs.return_value = set(['test_id'])
-            send_return_local = await rp_http.stream_result(AsyncMock(), self.job_data, self.job, is_stream=True) # pylint: disable=line-too-long
+            send_return_local = await rp_http.stream_result(AsyncMock(), self.job_data, self.job)
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 1
@@ -141,7 +141,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             assert mock_log.info.call_count == 0
 
             mock_retry.return_value.post.assert_called_with(
-                'JOB_STREAM_URL' + "&isStream=true",
+                'JOB_STREAM_URL',
                 data=str(json.dumps(self.job_data, ensure_ascii=False)),
                 headers={
                     "charset": "utf-8",
