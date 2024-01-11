@@ -80,23 +80,31 @@ class TestJob(IsolatedAsyncioTestCase):
         Tests Job.stream
         '''
         with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
-             patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+            patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
             mock_session = mock_session_class.return_value
             mock_get = mock_session.get
             mock_resp = AsyncMock()
 
+            responses = [
+                {"stream": [{"output": "OUTPUT1"}], "status": "IN_PROGRESS"},
+                {"stream": [{"output": "OUTPUT2"}], "status": "COMPLETED"}
+            ]
+
             async def json_side_effect():
-                if mock_sleep.call_count == 0:
-                    return {"stream": [{"output": "OUTPUT"}], "status": "IN_PROGRESS"}
-                return {"stream": [{"output": "OUTPUT"}], "status": "COMPLETED"}
+                return responses.pop(0) if responses else {"stream": [], "status": "COMPLETED"}
 
             mock_resp.json.side_effect = json_side_effect
             mock_get.return_value = mock_resp
 
             job = Job("endpoint_id", "job_id", mock_session)
 
-            async  for stream_output in job.stream():
-                assert stream_output == "OUTPUT"
+            outputs = []
+            async for stream_output in job.stream():
+                outputs.append(stream_output)
+                if not responses:  # Break the loop when responses are exhausted
+                    break
+
+            assert outputs == ["OUTPUT1", "OUTPUT2"]
 
     async def test_cancel(self):
         '''
