@@ -86,7 +86,7 @@ class TestJob(IsolatedAsyncioTestCase):
 
             responses = [
                 {"stream": [{"output": "OUTPUT1"}], "status": "IN_PROGRESS"},
-                {"stream": [], "status": "COMPLETED"}
+                {"stream": [{"output": "OUTPUT2"}], "status": "IN_PROGRESS"},
             ]
 
             async def json_side_effect():
