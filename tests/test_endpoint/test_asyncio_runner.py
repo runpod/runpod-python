@@ -75,6 +75,31 @@ class TestJob(IsolatedAsyncioTestCase):
             with self.assertRaises(TimeoutError):
                 await output_task
 
+    async def test_stream(self):
+        '''
+        Tests Job.stream
+        '''
+        with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
+             patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+            mock_session = mock_session_class.return_value
+            mock_get = mock_session.get
+            mock_resp = AsyncMock()
+
+            async def json_side_effect():
+                if mock_sleep.call_count == 0:
+                    return {"status": "IN_PROGRESS"}
+                return {"stream": [{"output": "OUTPUT"}], "status": "COMPLETED"}
+
+            mock_resp.json.side_effect = json_side_effect
+            mock_get.return_value = mock_resp
+
+            job = Job("endpoint_id", "job_id", mock_session)
+            stream_task = asyncio.create_task(job.stream())
+
+            output = await stream_task
+            assert output == "OUTPUT"
+            assert await job.stream() == "OUTPUT"
+
     async def test_cancel(self):
         '''
         Tests Job.cancel
