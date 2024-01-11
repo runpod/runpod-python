@@ -96,9 +96,8 @@ class TestJob(IsolatedAsyncioTestCase):
             job = Job("endpoint_id", "job_id", mock_session)
             stream_task = asyncio.create_task(job.stream())
 
-            output = await stream_task
-            assert output == "OUTPUT"
-            assert await job.stream() == "OUTPUT"
+            for stream_output in await stream_task:
+                assert stream_output == "OUTPUT"
 
     async def test_cancel(self):
         '''
