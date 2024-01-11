@@ -82,10 +82,10 @@ class Job:
         while True:
             await asyncio.sleep(1)
             stream_partial = await self._fetch_job(source="stream")
-            if stream_partial not in FINAL_STATES or len(stream_partial["stream"]) > 0:
+            if stream_partial["status"] not in FINAL_STATES:
                 for chunk in stream_partial.get("stream", []):
                     yield chunk["output"]
-            elif stream_partial in FINAL_STATES:
+            else:  # If the status is in FINAL_STATES, break the loop
                 break
 
     async def cancel(self) -> dict:
