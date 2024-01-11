@@ -21,7 +21,7 @@ class TestJob(IsolatedAsyncioTestCase):
         '''
         with patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
             mock_resp = AsyncMock()
-            mock_resp.json = AsyncMock(return_value={"status": "COMPLETED"})  # Directly return the expected dict
+            mock_resp.json = AsyncMock(return_value={"status": "COMPLETED"})
             mock_get.return_value = mock_resp
 
             mock_session = AsyncMock()
@@ -69,8 +69,7 @@ class TestJob(IsolatedAsyncioTestCase):
 
     async def test_output_in_progress_then_completed(self):
         '''Tests Job.output when status is initially IN_PROGRESS and then changes to COMPLETED'''
-        with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
-            patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
             mock_session = mock_session_class.return_value
             mock_get = mock_session.get
             mock_resp = AsyncMock()
@@ -81,7 +80,7 @@ class TestJob(IsolatedAsyncioTestCase):
             ]
 
             async def json_side_effect():
-                return responses.pop(0) if responses else {"status": "COMPLETED", "output": "OUTPUT"}
+                return responses.pop(0) if responses else {"status": "COMPLETED", "output": "OUTPUT"} # pylint: disable=line-too-long
 
             mock_resp.json.side_effect = json_side_effect
             mock_get.return_value = mock_resp
