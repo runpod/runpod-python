@@ -6,19 +6,9 @@ import time
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
-FINAL_STATES = ["COMPLETED", "FAILED", "TIMED_OUT"]
-
-# Exception Messages
-UNAUTHORIZED_MSG = "401 Unauthorized | Make sure Runpod API key is set and valid."
-API_KEY_NOT_SET_MSG = ("Expected `run_pod.api_key` to be initialized. "
-                       "You can solve this by setting `run_pod.api_key = 'your-key'. "
-                       "An API key can be generated at "
-                       "https://runpod.io/console/user/settings")
-
-
-def is_completed(status: str) -> bool:
-    """Returns true if status is one of the possible final states for a serverless request."""
-    return status in ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED"]
+from runpod.endpoint.helpers import (
+    FINAL_STATES, UNAUTHORIZED_MSG, API_KEY_NOT_SET_MSG, is_completed
+)
 
 
 # ---------------------------------------------------------------------------- #
@@ -146,16 +136,6 @@ class Job:
 
         return self._fetch_job().get("output", None)
 
-    def cancel(self, timeout: int = 3) -> Any:
-        """
-        Cancels the job and returns the result of the cancellation request.
-
-        Args:
-            timeout: The number of seconds to wait for the server to respond before giving up.
-        """
-        return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",
-                                   data=None, timeout=timeout)
-
     def stream(self) -> Any:
         """ Returns a generator that yields the output of the job request. """
         while True:
@@ -166,6 +146,16 @@ class Job:
                     yield chunk["output"]
             elif stream_partial["status"] in FINAL_STATES:
                 break
+
+    def cancel(self, timeout: int = 3) -> Any:
+        """
+        Cancels the job and returns the result of the cancellation request.
+
+        Args:
+            timeout: The number of seconds to wait for the server to respond before giving up.
+        """
+        return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",
+                                   data=None, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------- #

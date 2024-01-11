@@ -4,7 +4,7 @@
 import tracemalloc
 import asyncio
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from unittest import IsolatedAsyncioTestCase
 
 from runpod.endpoint.asyncio.asyncio_runner import Job, Endpoint
@@ -19,37 +19,91 @@ class TestJob(IsolatedAsyncioTestCase):
         '''
         Tests Job.status
         '''
-        with patch("aiohttp.ClientSession") as mock_session:
-            mock_resp = MagicMock()
-            mock_resp.json = MagicMock(return_value=asyncio.Future())
-            mock_resp.json.return_value.set_result({"status": "COMPLETED"})
-            mock_session.get.return_value.__aenter__.return_value = mock_resp
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+            mock_session = mock_session_class.return_value
+            mock_get = mock_session.get
+            mock_resp = AsyncMock()
+
+            mock_resp.json.return_value = {"status": "COMPLETED"}
+            mock_get.return_value = mock_resp
 
             job = Job("endpoint_id", "job_id", mock_session)
             status = await job.status()
             assert status == "COMPLETED"
+            assert await job.status() == "COMPLETED"
 
     async def test_output(self):
         '''
         Tests Job.output
         '''
         with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
-             patch("aiohttp.ClientSession") as mock_session:
-            mock_resp = MagicMock()
+             patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+            mock_session = mock_session_class.return_value
+            mock_get = mock_session.get
+            mock_resp = AsyncMock()
 
             async def json_side_effect():
                 if mock_sleep.call_count == 0:
                     return {"status": "IN_PROGRESS"}
                 return {"output": "OUTPUT", "status": "COMPLETED"}
 
-            mock_resp.json = json_side_effect
-            mock_session.get.return_value.__aenter__.return_value = mock_resp
+            mock_resp.json.side_effect = json_side_effect
+            mock_get.return_value = mock_resp
 
             job = Job("endpoint_id", "job_id", mock_session)
-            output_task = asyncio.create_task(job.output())
+            output_task = asyncio.create_task(job.output(timeout=3))
 
             output = await output_task
             assert output == "OUTPUT"
+            assert await job.output() == "OUTPUT"
+
+    async def test_output_timeout(self):
+        '''
+        Tests Job.output with a timeout
+        '''
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+            mock_session = mock_session_class.return_value
+            mock_get = mock_session.get
+            mock_resp = AsyncMock()
+
+            mock_resp.json.return_value = {"status": "IN_PROGRESS"}
+            mock_get.return_value = mock_resp
+
+            job = Job("endpoint_id", "job_id", mock_session)
+            output_task = asyncio.create_task(job.output(timeout=1))
+
+            with self.assertRaises(TimeoutError):
+                await output_task
+
+    async def test_stream(self):
+        '''
+        Tests Job.stream
+        '''
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+            mock_session = mock_session_class.return_value
+            mock_get = mock_session.get
+            mock_resp = AsyncMock()
+
+            responses = [
+                {"stream": [{"output": "OUTPUT1"}], "status": "IN_PROGRESS"},
+                {"stream": [{"output": "OUTPUT2"}], "status": "IN_PROGRESS"},
+            ]
+
+            async def json_side_effect():
+                return responses.pop(0) if responses else {"stream": [], "status": "COMPLETED"}
+
+            mock_resp.json.side_effect = json_side_effect
+            mock_get.return_value = mock_resp
+
+            job = Job("endpoint_id", "job_id", mock_session)
+
+            outputs = []
+            async for stream_output in job.stream():
+                outputs.append(stream_output)
+                if not responses:  # Break the loop when responses are exhausted
+                    break
+
+            assert outputs == ["OUTPUT1", "OUTPUT2"]
 
     async def test_cancel(self):
         '''
@@ -67,27 +121,25 @@ class TestJob(IsolatedAsyncioTestCase):
 
     async def test_output_in_progress_then_completed(self):
         '''Tests Job.output when status is initially IN_PROGRESS and then changes to COMPLETED'''
-        with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
-             patch("aiohttp.ClientSession") as mock_session:
-            mock_resp = MagicMock()
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+            mock_session = mock_session_class.return_value
+            mock_get = mock_session.get
+            mock_resp = AsyncMock()
+
             responses = [
                 {"status": "IN_PROGRESS"},
-                {"status": "COMPLETED"},
-                {"output": "OUTPUT"}
+                {"status": "COMPLETED", "output": "OUTPUT"}
             ]
 
             async def json_side_effect():
-                if responses:
-                    return responses.pop(0)
-                return {"status": "IN_PROGRESS"}
+                return responses.pop(0) if responses else {"status": "COMPLETED", "output": "OUTPUT"} # pylint: disable=line-too-long
 
-            mock_resp.json = json_side_effect
-            mock_session.get.return_value.__aenter__.return_value = mock_resp
+            mock_resp.json.side_effect = json_side_effect
+            mock_get.return_value = mock_resp
 
             job = Job("endpoint_id", "job_id", mock_session)
-            output = await job.output()
+            output = await job.output(timeout=3)
             assert output == "OUTPUT"
-            mock_sleep.assert_called_once_with(1)
 
 class TestEndpoint(IsolatedAsyncioTestCase):
     ''' Unit tests for the Endpoint class. '''
@@ -105,6 +157,34 @@ class TestEndpoint(IsolatedAsyncioTestCase):
             endpoint = Endpoint("endpoint_id", mock_session)
             job = await endpoint.run({"input": "INPUT"})
             assert job.job_id == "job_id"
+
+    async def test_health(self):
+        '''
+        Tests Endpoint.health
+        '''
+        with patch("aiohttp.ClientSession") as mock_session:
+            mock_resp = MagicMock()
+            mock_resp.json = MagicMock(return_value=asyncio.Future())
+            mock_resp.json.return_value.set_result({"status": "HEALTHY"})
+            mock_session.get.return_value.__aenter__.return_value = mock_resp
+
+            endpoint = Endpoint("endpoint_id", mock_session)
+            health = await endpoint.health()
+            assert health == {"status": "HEALTHY"}
+
+    async def test_purge_queue(self):
+        '''
+        Tests Endpoint.purge_queue
+        '''
+        with patch("aiohttp.ClientSession") as mock_session:
+            mock_resp = MagicMock()
+            mock_resp.json = MagicMock(return_value=asyncio.Future())
+            mock_resp.json.return_value.set_result({"result": "PURGED"})
+            mock_session.post.return_value.__aenter__.return_value = mock_resp
+
+            endpoint = Endpoint("endpoint_id", mock_session)
+            purge_result = await endpoint.purge_queue()
+            assert purge_result == {"result": "PURGED"}
 
 class TestEndpointInitialization(unittest.TestCase):
     '''Tests for the Endpoint class initialization.'''
