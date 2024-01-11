@@ -30,6 +30,7 @@ class TestJob(IsolatedAsyncioTestCase):
             job = Job("endpoint_id", "job_id", mock_session)
             status = await job.status()
             assert status == "COMPLETED"
+            assert await job.status() == "COMPLETED"
 
     async def test_output(self):
         '''
