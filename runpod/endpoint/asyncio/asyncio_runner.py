@@ -85,8 +85,6 @@ class Job:
             if stream_partial["status"] not in FINAL_STATES:
                 for chunk in stream_partial.get("stream", []):
                     yield chunk["output"]
-            else:  # If the status is in FINAL_STATES, break the loop
-                break
 
     async def cancel(self) -> dict:
         """Cancels current job
