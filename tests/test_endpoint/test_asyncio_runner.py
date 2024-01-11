@@ -158,6 +158,34 @@ class TestEndpoint(IsolatedAsyncioTestCase):
             job = await endpoint.run({"input": "INPUT"})
             assert job.job_id == "job_id"
 
+    async def test_health(self):
+        '''
+        Tests Endpoint.health
+        '''
+        with patch("aiohttp.ClientSession") as mock_session:
+            mock_resp = MagicMock()
+            mock_resp.json = MagicMock(return_value=asyncio.Future())
+            mock_resp.json.return_value.set_result({"status": "HEALTHY"})
+            mock_session.get.return_value.__aenter__.return_value = mock_resp
+
+            endpoint = Endpoint("endpoint_id", mock_session)
+            health = await endpoint.health()
+            assert health == {"status": "HEALTHY"}
+
+    async def test_purge_queue(self):
+        '''
+        Tests Endpoint.purge_queue
+        '''
+        with patch("aiohttp.ClientSession") as mock_session:
+            mock_resp = MagicMock()
+            mock_resp.json = MagicMock(return_value=asyncio.Future())
+            mock_resp.json.return_value.set_result({"result": "PURGED"})
+            mock_session.post.return_value.__aenter__.return_value = mock_resp
+
+            endpoint = Endpoint("endpoint_id", mock_session)
+            purge_result = await endpoint.purge_queue()
+            assert purge_result == {"result": "PURGED"}
+
 class TestEndpointInitialization(unittest.TestCase):
     '''Tests for the Endpoint class initialization.'''
 
