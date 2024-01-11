@@ -1,5 +1,17 @@
 # Change Log
 
+## Release 1.5.1 (1/11/24)
+
+### Fixed
+
+- Prevent stream from hanging on the final output.
+- Allow `GET` method for `stream` test endpoint.
+- Updated async runner for endpoint API calls.
+
+### Changed
+
+- Updated sls-core to `0.0.2`
+
 ## Release 1.5.0 (12/28/23)
 
 ### Added
