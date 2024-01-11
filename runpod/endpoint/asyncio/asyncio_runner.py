@@ -51,8 +51,8 @@ class Job:
         if self.job_status is not None:
             return self.job_status
 
-        job_State = await self._fetch_job()
-        return job_State["status"]
+        job_state = await self._fetch_job()
+        return job_state["status"]
 
     async def _wait_for_completion(self):
         while not is_completed(await self.status()):
