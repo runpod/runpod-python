@@ -75,8 +75,6 @@ class Job:
             raise TimeoutError("Job timed out.") from exc
 
         job_data = await self._fetch_job()
-        if job_data["status"] == "FAILED":
-            raise KeyError("Job failed.")
         return job_data.get("output", None)
 
     async def stream(self) -> Any:
