@@ -95,7 +95,7 @@ class TestJob(IsolatedAsyncioTestCase):
 
             job = Job("endpoint_id", "job_id", mock_session)
 
-            for stream_output in job.stream():
+            async  for stream_output in job.stream():
                 assert stream_output == "OUTPUT"
 
     async def test_cancel(self):
