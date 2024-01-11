@@ -131,7 +131,7 @@ class WorkerAPI:
             description="Returns job output directly when called."
         )
         api_router.add_api_route(
-            "/stream/{job_id}", self._sim_stream, methods=["POST"],
+            "/stream/{job_id}", self._sim_stream, methods=["POST", "GET"],
             response_model_exclude_none=True, summary="Simulate stream behavior.",
             description="Aggregates the output of the job and returns it when the job is complete."
         )
