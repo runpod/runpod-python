@@ -79,15 +79,14 @@ class TestJob(IsolatedAsyncioTestCase):
         '''
         Tests Job.stream
         '''
-        with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, \
-            patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
             mock_session = mock_session_class.return_value
             mock_get = mock_session.get
             mock_resp = AsyncMock()
 
             responses = [
                 {"stream": [{"output": "OUTPUT1"}], "status": "IN_PROGRESS"},
-                {"stream": [{"output": "OUTPUT2"}], "status": "COMPLETED"}
+                {"stream": [], "status": "COMPLETED"}
             ]
 
             async def json_side_effect():
