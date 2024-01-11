@@ -55,6 +55,7 @@ class TestJob(IsolatedAsyncioTestCase):
 
             output = await output_task
             assert output == "OUTPUT"
+            assert await job.output() == "OUTPUT"
 
     async def test_output_timeout(self):
         '''
