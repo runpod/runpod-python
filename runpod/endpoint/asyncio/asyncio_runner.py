@@ -66,13 +66,13 @@ class Job:
         Raises:
             KeyError if job Failed
         """
+        if self.job_output is not None:
+            return self.job_output
+
         try:
             await asyncio.wait_for(self._wait_for_completion(), timeout)
         except asyncio.TimeoutError as exc:
             raise TimeoutError("Job timed out.") from exc
-
-        if self.job_output is not None:
-            return self.job_output
 
         job_data = await self._fetch_job()
         if job_data["status"] == "FAILED":
