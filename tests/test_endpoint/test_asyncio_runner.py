@@ -87,7 +87,7 @@ class TestJob(IsolatedAsyncioTestCase):
 
             async def json_side_effect():
                 if mock_sleep.call_count == 0:
-                    return {"status": "IN_PROGRESS"}
+                    return {"stream": [{"output": "OUTPUT"}], "status": "IN_PROGRESS"}
                 return {"stream": [{"output": "OUTPUT"}], "status": "COMPLETED"}
 
             mock_resp.json.side_effect = json_side_effect
