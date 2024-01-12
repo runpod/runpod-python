@@ -93,7 +93,7 @@ def send_file(pod_id, local_path, remote_path):
         click.echo(
             f"File sent successfully to {remote_directory_display} on pod {pod_id}."
         )
-        click.echo(f"To access the file, use: cd {remote_directory_display}. Type pwd to make sure you get put in the right directory.")
+        click.echo(f"To access the file, type in the terminal on your pod: cd {remote_directory_display}. Type pwd to make sure you get put in the right directory.")
 
     except Exception as e:
         click.echo(f"Failed to send file: {e}", err=True)
