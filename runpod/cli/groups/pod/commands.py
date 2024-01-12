@@ -2,6 +2,7 @@
 RunPod | CLI | Pod | Commands
 '''
 import click
+import os
 from prettytable import PrettyTable
 
 from runpod import get_pods, create_pod
@@ -58,3 +59,65 @@ def connect_to_pod(pod_id):
     click.echo(f'Connecting to pod {pod_id}...')
     ssh = ssh_cmd.SSHConnection(pod_id)
     ssh.launch_terminal()
+
+@pod_cli.command("send")
+@click.argument("pod_id", required=True)
+@click.argument(
+    "local_path",
+    required=True,
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+)
+@click.argument("remote_path", required=True)
+def send_file(pod_id, local_path, remote_path):
+    """
+    Send a local file to a specified pod.
+    ...
+    """
+    try:
+        absolute_local_path = os.path.abspath(local_path)
+
+        if not os.path.isfile(absolute_local_path):
+            raise ValueError(f"The local path '{absolute_local_path}' is not a file.")
+
+        # Assuming the remote path is relative to the user's home directory
+        remote_directory = os.path.dirname(remote_path)
+        if remote_directory.startswith("."):
+            remote_directory = remote_directory[1:]  # Remove './' if present
+        remote_directory_display = f"{remote_directory}" if remote_directory else "~"
+
+        click.echo(
+            f"Sending file from {absolute_local_path} to pod {pod_id}:{remote_path}..."
+        )
+        with ssh_cmd.SSHConnection(pod_id) as ssh:
+            ssh.put_file(absolute_local_path, remote_path)
+        click.echo(
+            f"File sent successfully to {remote_directory_display} on pod {pod_id}."
+        )
+        click.echo(f"To access the file, use: cd {remote_directory_display}. Type pwd to make sure you get put in the right directory.")
+
+    except Exception as e:
+        click.echo(f"Failed to send file: {e}", err=True)
+
+
+@pod_cli.command("download")
+@click.argument("pod_id", required=True)
+@click.argument("remote_path", required=True)
+@click.argument("local_path", required=True)
+def download_file(pod_id, remote_path, local_path):
+    """
+    Download a file from a specified pod to local machine.
+    ...
+    """
+    try:
+        absolute_local_path = os.path.abspath(local_path)
+
+        click.echo(
+            f"Downloading file from pod {pod_id}:{remote_path} to {absolute_local_path}..."
+        )
+        with ssh_cmd.SSHConnection(pod_id) as ssh:
+            ssh.get_file(remote_path, absolute_local_path)
+        click.echo(f"File downloaded successfully to {absolute_local_path}.")
+
+    except Exception as e:
+        click.echo(f"Failed to download file: {e}", err=True)
+        click.echo(f"Ensure that the remote path exists on pod {pod_id}. \nAnd that the arguments are correct. \nFor example: runpod pod download 1234 /home/REMOTE_POD_PATH/file.txt /home/LOCAL_PATH/file.txt")
