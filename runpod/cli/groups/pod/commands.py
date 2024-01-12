@@ -4,10 +4,15 @@ RunPod | CLI | Pod | Commands
 import click
 import os
 from prettytable import PrettyTable
-
+import sys
 from runpod import get_pods, create_pod
 
 from ...utils import ssh_cmd
+
+def sftp_progress_callback(transferred, total):
+    progress_percentage = (transferred / total) * 100
+    sys.stdout.write(f'\rTransferring... {progress_percentage:.2f}% \n')
+    sys.stdout.flush()
 
 @click.group('pod', help='Manage and interact with pods.')
 def pod_cli():
@@ -83,20 +88,21 @@ def send_file(pod_id, local_path, remote_path):
         remote_directory = os.path.dirname(remote_path)
         if remote_directory.startswith("."):
             remote_directory = remote_directory[1:]  # Remove './' if present
-        remote_directory_display = f"{remote_directory}" if remote_directory else "~"
+        remote_directory_display = f"{remote_directory}" if remote_directory else "/"
 
         click.echo(
             f"Sending file from {absolute_local_path} to pod {pod_id}:{remote_path}..."
         )
         with ssh_cmd.SSHConnection(pod_id) as ssh:
-            ssh.put_file(absolute_local_path, remote_path)
+            ssh.put_file(absolute_local_path, remote_path, callback=sftp_progress_callback)
         click.echo(
-            f"File sent successfully to {remote_directory_display} on pod {pod_id}."
+            f"File sent successfully to directory {remote_directory_display} on pod {pod_id}."
         )
-        click.echo(f"To access the file, type in the terminal on your pod: cd {remote_directory_display}. Type pwd to make sure you get put in the right directory.")
+        click.echo(f"To access the file, type in the terminal on your pod: cd {remote_directory_display}. If you ls, the file should be there. Type pwd to make sure you get put in the right directory.")
 
     except Exception as e:
         click.echo(f"Failed to send file: {e}", err=True)
+        click.echo(f"Common reason for failure: a directory in '{remote_directory_display}' does not exist on pod {pod_id}.")
 
 
 @pod_cli.command("download")
@@ -115,7 +121,7 @@ def download_file(pod_id, remote_path, local_path):
             f"Downloading file from pod {pod_id}:{remote_path} to {absolute_local_path}..."
         )
         with ssh_cmd.SSHConnection(pod_id) as ssh:
-            ssh.get_file(remote_path, absolute_local_path)
+            ssh.get_file(remote_path, absolute_local_path, sftp_progress_callback)
         click.echo(f"File downloaded successfully to {absolute_local_path}.")
 
     except Exception as e:

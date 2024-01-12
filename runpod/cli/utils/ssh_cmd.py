@@ -89,15 +89,15 @@ class SSHConnection:
             stdout_thread.join()
             stderr_thread.join()
 
-    def put_file(self, local_path, remote_path):
-        ''' Copy local file to remote machine over SSH. '''
+    def put_file(self, local_path, remote_path, callback=None):
+        ''' Copy local file to remote machine over SSH with optional progress callback. '''
         with self.ssh.open_sftp() as sftp:
-            sftp.put(local_path, remote_path)
+            sftp.put(local_path, remote_path, callback=callback)
 
-    def get_file(self, remote_path, local_path):
-        ''' Fetch a remote file to local machine over SSH. '''
+    def get_file(self, remote_path, local_path, callback=None):
+        ''' Fetch a remote file to local machine over SSH with optional progress callback. '''
         with self.ssh.open_sftp() as sftp:
-            sftp.get(remote_path, local_path)
+            sftp.get(remote_path, local_path, callback=callback)
 
     def launch_terminal(self):
         ''' Launch an interactive terminal over SSH. '''
