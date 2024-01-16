@@ -170,7 +170,7 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
 
 # -------------------------------- Process Job ------------------------------- #
-def _process_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
+async def _process_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     """ Process a single job. """
     hook = Hook()
 
