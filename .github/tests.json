@@ -57,5 +57,24 @@
                 "value3"
             ]
         }
+    },
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
+                "name": "runpod-python E2E Test - Serverless Core"
+            },
+            "templateConfig": {
+                "env": [
+                    {
+                        "key": "RUNPOD_USE_CORE",
+                        "value": "true"
+                    }
+                ]
+            }
+        },
+        "input": {
+            "mock_return": "this worked!"
+        }
     }
 ]
