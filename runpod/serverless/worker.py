@@ -42,7 +42,7 @@ async def _process_job(job, session, job_scaler, config):
     if rp_handler.is_generator(config["handler"]):
         is_stream = True
         generator_output = run_job_generator(config["handler"], job)
-        log.debug("Handler is a generator, streaming results.")
+        log.debug("Handler is a generator, streaming results.", job['id'])
 
         job_result = {'output': []}
         async for stream_output in generator_output:
@@ -66,13 +66,13 @@ async def _process_job(job, session, job_scaler, config):
     # If rp_debugger is set, debugger output will be returned.
     if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
         job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
-        log.debug("rp_debugger | Flag set, returning debugger output.")
+        log.debug("rp_debugger | Flag set, returning debugger output.", job['id'])
 
         # Calculate ready delay for the debugger output.
         ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
         job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
     else:
-        log.debug("rp_debugger | Flag not set, skipping debugger output.")
+        log.debug("rp_debugger | Flag not set, skipping debugger output.", job['id'])
         rp_debugger.clear_debugger_output()
 
     # Send the job result to SLS

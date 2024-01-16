@@ -83,3 +83,9 @@ class Jobs:
         Returns the list of jobs as a string.
         '''
         return ','.join(str(job) for job in self.jobs) if self.jobs else None
+
+    def get_job_count(self):
+        '''
+        Returns the number of jobs.
+        '''
+        return len(self.jobs)
