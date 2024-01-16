@@ -70,17 +70,21 @@ class JobScaler():
 
             self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
 
-            tasks = [
-                asyncio.create_task(get_job(session, retry=False))
-                for _ in range(self.current_concurrency if job_list.get_job_list() else 1)
-            ]
+            jobs_tracked = len(job_list.get_job_list().split(","))
 
-            for job_future in asyncio.as_completed(tasks):
-                job = await job_future
-                self.job_history.append(1 if job else 0)
-                if job:
-                    yield job
+            if jobs_tracked < self.current_concurrency:
 
-            await asyncio.sleep(0)
+                tasks = [
+                    asyncio.create_task(get_job(session, retry=False))
+                    for _ in range(self.current_concurrency if job_list.get_job_list() else 1)
+                ]
 
-            log.debug(f"Concurrency set to: {self.current_concurrency}")
+                for job_future in asyncio.as_completed(tasks):
+                    job = await job_future
+                    self.job_history.append(1 if job else 0)
+                    if job:
+                        yield job
+
+                await asyncio.sleep(0)
+
+                log.debug(f"Concurrency set to: {self.current_concurrency}")
