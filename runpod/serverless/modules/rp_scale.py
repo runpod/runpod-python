@@ -70,9 +70,7 @@ class JobScaler():
 
             self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
 
-            jobs_tracked = len(job_list.get_job_list().split(","))
-
-            if jobs_tracked < self.current_concurrency:
+            if job_list.get_job_count() < self.current_concurrency:
 
                 tasks = [
                     asyncio.create_task(get_job(session, retry=False))
