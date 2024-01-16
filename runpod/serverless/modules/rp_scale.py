@@ -87,3 +87,6 @@ class JobScaler():
                         yield job
 
                 await asyncio.sleep(0)
+
+            else:
+                await asyncio.sleep(0.5)
