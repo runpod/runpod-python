@@ -65,7 +65,7 @@
                 "name": "runpod-python E2E Test - Serverless Core"
             },
             "templateConfig": {
-                "env"[
+                "env": [
                     {
                         "key": "RUNPOD_USE_CORE",
                         "value": "true"
