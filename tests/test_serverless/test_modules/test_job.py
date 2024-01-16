@@ -296,7 +296,7 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert result == [{"output": "partial_output_1"}, {"output": "partial_output_2"}]
         assert mock_log.error.call_count == 0
         assert mock_log.info.call_count == 1
-        mock_log.info.assert_called_with('Finished', '123')
+        mock_log.info.assert_called_with('Finished running generator.', '123')
 
     async def test_run_job_generator_success_async(self):
         '''
@@ -311,7 +311,7 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert result == [{"output": "partial_output_1"}, {"output": "partial_output_2"}]
         assert mock_log.error.call_count == 0
         assert mock_log.info.call_count == 1
-        mock_log.info.assert_called_with('Finished', '123')
+        mock_log.info.assert_called_with('Finished running generator.', '123')
 
     async def test_run_job_generator_exception(self):
         '''
@@ -327,4 +327,4 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert "error" in result[0]
         assert mock_log.error.call_count == 1
         assert mock_log.info.call_count == 1
-        mock_log.info.assert_called_with('Finished', '123')
+        mock_log.info.assert_called_with('Finished running generator.', '123')

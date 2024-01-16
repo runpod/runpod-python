@@ -198,4 +198,4 @@ async def run_job_generator(
         log.error(err, job["id"])
         yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
-        log.info('Finished streaming.', job["id"])
+        log.info('Finished running generator.', job["id"])
