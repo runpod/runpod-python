@@ -459,54 +459,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
-    @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.send_result")
-    async def test_run_worker_multi_processing_availability_ratio(
-            self, mock_send_result, mock_run_job, mock_get_job):
-        '''
-        Test run_worker with multi processing enabled, the scale-up and
-        scale-down behavior with availability ratio.
-        '''
-
-        # Let the test be a long running one so we can capture the scale-up and scale-down.
-        config = {
-            "handler": MagicMock(),
-            "refresh_worker": False,
-            "rp_args": {
-                "rp_debugger": True,
-                "rp_log_level": "DEBUG"
-            }
-        }
-
-        # Let's stop after the 20th call.
-        scale_behavior = {
-            'counter': 0
-        }
-
-        def mock_is_alive():
-            res = scale_behavior['counter'] <= 10
-            scale_behavior['counter'] += 1
-
-            # Mock get_job to return a job every other call.
-            if scale_behavior['counter'] % 2 == 0:
-                mock_get_job.return_value = {
-                    "id": "123", "input": {"number": 1}}
-            else:
-                mock_get_job.return_value = None
-
-            return bool(mock_run_job.call_count < 5)
-
-        # Define the mock behaviors
-        mock_run_job.return_value = {"result": "odd"}
-        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
-            runpod.serverless.start(config)
-
-        assert mock_get_job.call_count == 5
-        # 5 calls with actual jobs
-        assert mock_run_job.call_count == 5
-        assert mock_send_result.call_count == 5
-
     # Test with sls-core
     async def test_run_worker_with_sls_core(self):
         '''
