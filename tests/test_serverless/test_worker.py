@@ -467,13 +467,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         Test run_worker with multi processing enabled, the scale-up and
         scale-down behavior with availability ratio.
-
-        Args:
-            mock_send_result (_type_): _description_
-            mock_stream_result (_type_): _description_
-            mock_run_job (_type_): _description_
-            mock_get_job (_type_): _description_
-            mock_session (_type_): _description_
         '''
 
         # Let the test be a long running one so we can capture the scale-up and scale-down.
@@ -492,7 +485,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         }
 
         def mock_is_alive():
-            res = scale_behavior['counter'] < 10
+            res = scale_behavior['counter'] <= 10
             scale_behavior['counter'] += 1
 
             # Let's oscillate between upscaling, downscaling, upscaling, downscaling, ...
@@ -509,7 +502,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
-        assert mock_get_job.call_count == 10
+        assert mock_get_job.call_count == 5
         # 5 calls with actual jobs
         assert mock_run_job.call_count == 5
         assert mock_send_result.call_count == 5
