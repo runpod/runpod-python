@@ -69,7 +69,7 @@ class JobScaler():
             log.debug(f"Concurrency set to: {self.current_concurrency}")
 
             log.debug(f"Jobs in progress: {job_list.get_job_count()}")
-            if job_list.get_job_count() < self.current_concurrency:
+            if job_list.get_job_count() < self.current_concurrency and self.is_alive():
                 log.debug("Job list is less than concurrency, getting more jobs.")
 
                 tasks = [
