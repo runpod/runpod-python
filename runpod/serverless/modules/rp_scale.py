@@ -64,15 +64,12 @@ class JobScaler():
         Returns:
             List[Any]: A list of job data retrieved from the server.
         """
-        while True:
-            if not self.is_alive():
-                break
-
+        while self.is_alive():
             self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
             log.debug(f"Concurrency set to: {self.current_concurrency}")
 
             log.debug(f"Jobs in progress: {job_list.get_job_count()}")
-            if job_list.get_job_count() < self.current_concurrency:
+            if job_list.get_job_count() < self.current_concurrency and self.is_alive():
                 log.debug("Job list is less than concurrency, getting more jobs.")
 
                 tasks = [
