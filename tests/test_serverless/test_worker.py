@@ -501,10 +501,11 @@ class TestRunWorker(IsolatedAsyncioTestCase):
                     "id": "123", "input": {"number": 1}}
             else:
                 mock_get_job.return_value = None
-            return res
+
+            return bool(res)
 
         # Define the mock behaviors
-        mock_run_job.return_value = {"output": {"result": "odd"}}
+        mock_run_job.return_value = {"result": "odd"}
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 

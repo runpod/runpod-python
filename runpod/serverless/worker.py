@@ -54,7 +54,7 @@ async def _process_job(job, session, job_scaler, config):
 
             await stream_result(session, stream_output, job)
     else:
-        is_stream = 0
+        is_stream = False
         job_result = await run_job(config["handler"], job)
 
     # If refresh_worker is set, pod will be reset after job is complete.
