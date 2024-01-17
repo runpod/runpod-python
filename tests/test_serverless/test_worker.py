@@ -488,14 +488,14 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             res = scale_behavior['counter'] <= 10
             scale_behavior['counter'] += 1
 
-            # Let's oscillate between upscaling, downscaling, upscaling, downscaling, ...
+            # Mock get_job to return a job every other call.
             if scale_behavior['counter'] % 2 == 0:
                 mock_get_job.return_value = {
                     "id": "123", "input": {"number": 1}}
             else:
                 mock_get_job.return_value = None
 
-            return bool(res)
+            return bool(mock_run_job.call_count > 5)
 
         # Define the mock behaviors
         mock_run_job.return_value = {"result": "odd"}
