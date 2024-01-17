@@ -509,6 +509,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
+        assert mock_get_job.call_count == 10
         # 5 calls with actual jobs
         assert mock_run_job.call_count == 5
         assert mock_send_result.call_count == 5
