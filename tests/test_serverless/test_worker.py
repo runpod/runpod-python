@@ -495,7 +495,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             else:
                 mock_get_job.return_value = None
 
-            return bool(mock_run_job.call_count > 5)
+            return bool(mock_run_job.call_count < 5)
 
         # Define the mock behaviors
         mock_run_job.return_value = {"result": "odd"}
