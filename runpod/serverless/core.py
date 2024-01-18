@@ -6,11 +6,12 @@ import json
 import os
 import pathlib
 import asyncio
+import traceback
 from ctypes import CDLL, byref, c_char_p, c_int
 from typing import Any, Callable,  List, Dict, Optional
 
+from runpod.version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
-
 
 log = RunPodLogger()
 
@@ -170,23 +171,40 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
 
 # -------------------------------- Process Job ------------------------------- #
-async def _process_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
+async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str, Any]:
     """ Process a single job. """
     hook = Hook()
+    handler = config['handler']
 
     try:
-        result = handler(job)
-    except Exception as err:
-        raise RuntimeError(
-            f"run {job['id']}: user code raised an {type(err).__name__}") from err
+        if inspect.isgeneratorfunction(handler):
+            job_result = handler(job)
+            aggregated_output = {'output': []}
 
-    if inspect.isgeneratorfunction(handler):
-        for part in result:
-            hook.stream_output(job['id'], part)
+            async for part in job_result:
+                hook.stream_output(job['id'], part)
+                if config.get('return_aggregate_stream', False):
+                    aggregated_output['output'].append(part['output'])
 
-        hook.finish_stream(job['id'])
+            hook.finish_stream(job['id'])
+            result = aggregated_output
 
-    else:
+        else:
+            result = await handler(job) if asyncio.iscoroutinefunction(handler) else handler(job)
+
+    except Exception as err:    # pylint: disable=broad-except
+        error_info = {
+            "error_type": str(type(err)),
+            "error_message": str(err),
+            "error_traceback": traceback.format_exc(),
+            "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
+            "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
+            "runpod_version": runpod_version
+        }
+        result = {"error": json.dumps(error_info)}
+
+    finally:
+
         hook.post_output(job['id'], result)
 
 
@@ -200,7 +218,6 @@ async def run(config: Dict[str, Any]) -> None:
         config: A dictionary containing the following keys:
             handler: A function that takes a job and returns a result.
     """
-    handler = config['handler']
     max_concurrency = config.get('max_concurrency', 4)
     max_jobs = config.get('max_jobs', 4)
 
@@ -213,7 +230,7 @@ async def run(config: Dict[str, Any]) -> None:
             continue
 
         for job in jobs:
-            asyncio.create_task(_process_job(handler, job), name=job['id'])
+            asyncio.create_task(_process_job(config, job), name=job['id'])
             await asyncio.sleep(0)
 
         await asyncio.sleep(0)
