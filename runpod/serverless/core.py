@@ -176,6 +176,7 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str,
     hook = Hook()
     handler = config['handler']
 
+    result = {}
     try:
         if inspect.isgeneratorfunction(handler):
             job_result = handler(job)
