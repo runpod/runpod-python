@@ -2,8 +2,8 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
-                "name": "runpod-python E2E Test - Basic"
+                "name": "runpod-python E2E Test - Basic",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
             }
         },
         "input": {
@@ -13,8 +13,8 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
-                "name": "runpod-python E2E Test - Long Job"
+                "name": "runpod-python E2E Test - Long Job",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
             }
         },
         "input": {
@@ -25,8 +25,8 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
-                "name": "runpod-python E2E Test - Generator Handler"
+                "name": "runpod-python E2E Test - Generator Handler",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
             },
             "templateConfig": {
                 "dockerArgs": "python3 -u /handler.py --generator --return_aggregate_stream"
@@ -43,8 +43,8 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
-                "name": "runpod-python E2E Test - Async Generator Handler"
+                "name": "runpod-python E2E Test - Async Generator Handler",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
             },
             "templateConfig": {
                 "dockerArgs": "python3 -u /handler.py --async_generator --return_aggregate_stream"
@@ -61,8 +61,8 @@
     {
         "hardwareConfig": {
             "endpointConfig": {
-                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80",
-                "name": "runpod-python E2E Test - Serverless Core"
+                "name": "runpod-python E2E Test - Serverless Core - Basic",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
             },
             "templateConfig": {
                 "env": [
@@ -75,6 +75,74 @@
         },
         "input": {
             "mock_return": "this worked!"
+        }
+    },
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "name": "runpod-python E2E Test - Serverless Core - Long Job",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
+            },
+            "templateConfig": {
+                "env": [
+                    {
+                        "key": "RUNPOD_USE_CORE",
+                        "value": "true"
+                    }
+                ]
+            }
+        },
+        "input": {
+            "mock_return": "Delay test successful returned after waiting 5 minutes.",
+            "mock_delay": 300
+        }
+    },
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "name": "runpod-python E2E Test - Serverless Core - Generator Handler",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
+            },
+            "templateConfig": {
+                "dockerArgs": "python3 -u /handler.py --generator --return_aggregate_stream",
+                "env": [
+                    {
+                        "key": "RUNPOD_USE_CORE",
+                        "value": "true"
+                    }
+                ]
+            }
+        },
+        "input": {
+            "mock_return": [
+                "value1",
+                "value2",
+                "value3"
+            ]
+        }
+    },
+    {
+        "hardwareConfig": {
+            "endpointConfig": {
+                "name": "runpod-python E2E Test - Serverless Core - Async Generator Handler",
+                "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
+            },
+            "templateConfig": {
+                "dockerArgs": "python3 -u /handler.py --async_generator --return_aggregate_stream",
+                "env": [
+                    {
+                        "key": "RUNPOD_USE_CORE",
+                        "value": "true"
+                    }
+                ]
+            }
+        },
+        "input": {
+            "mock_return": [
+                "value1",
+                "value2",
+                "value3"
+            ]
         }
     }
 ]

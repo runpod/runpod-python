@@ -190,7 +190,9 @@ async def _process_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]
         hook.post_output(job['id'], result)
 
 
-# -------------------------------- Run Worker -------------------------------- #
+# ---------------------------------------------------------------------------- #
+#                                  Run Worker                                  #
+# ---------------------------------------------------------------------------- #
 async def run(config: Dict[str, Any]) -> None:
     """ Run the worker.
 
