@@ -12,6 +12,7 @@ from typing import Any, Callable,  List, Dict, Optional
 
 from runpod.version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
+from runpod.serverless.modules import rp_job
 
 log = RunPodLogger()
 
@@ -137,7 +138,7 @@ class Hook:  # pylint: disable=too-many-instance-attributes
             c_char_p(json_data), c_int(len(json_data))
         ))
 
-    def stream_output(self, job_id: str, job_output: bytes) -> bool:
+    async def stream_output(self, job_id: str, job_output: bytes) -> bool:
         """
         send part of a streaming result to AI-API.
         """
@@ -178,14 +179,18 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str,
 
     result = {}
     try:
-        if inspect.isgeneratorfunction(handler):
-            job_result = handler(job)
+        if inspect.isgeneratorfunction(handler) or inspect.isasyncgenfunction(handler):
+            generator_output = rp_job.run_job_generator(handler, job)
             aggregated_output = {'output': []}
 
-            async for part in job_result:
-                hook.stream_output(job['id'], part)
+            async for part in generator_output:
+                if 'error' in part:
+                    aggregated_output = part
+                    break
                 if config.get('return_aggregate_stream', False):
                     aggregated_output['output'].append(part['output'])
+
+                await hook.stream_output(job['id'], part)
 
             hook.finish_stream(job['id'])
             result = aggregated_output
@@ -193,7 +198,7 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str,
         else:
             result = await handler(job) if asyncio.iscoroutinefunction(handler) else handler(job)
 
-    except Exception as err:    # pylint: disable=broad-except
+    except Exception as err:    # pylint: disable=broad-except,duplicate-code
         error_info = {
             "error_type": str(type(err)),
             "error_message": str(err),
