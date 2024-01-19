@@ -196,18 +196,7 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str,
             result = aggregated_output
 
         else:
-            result = await handler(job) if asyncio.iscoroutinefunction(handler) else handler(job)
-
-    except Exception as err:    # pylint: disable=broad-except,duplicate-code
-        error_info = {
-            "error_type": str(type(err)),
-            "error_message": str(err),
-            "error_traceback": traceback.format_exc(),
-            "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
-            "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
-            "runpod_version": runpod_version
-        }
-        result = {"error": json.dumps(error_info)}
+            result = await rp_job.run_job(handler, job)
 
     finally:
 
