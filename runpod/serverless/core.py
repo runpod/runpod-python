@@ -6,7 +6,6 @@ import json
 import os
 import pathlib
 import asyncio
-import traceback
 from ctypes import CDLL, byref, c_char_p, c_int
 from typing import Any, Callable,  List, Dict, Optional
 
