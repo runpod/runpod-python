@@ -3,7 +3,7 @@
 # pylint: disable=too-many-arguments
 
 
-def generate_pod_template(
+def generate_pod_template(  # disable=too-many-branches
         name: str, image_name: str, docker_start_cmd: str = None,
         container_disk_in_gb: int = 10, volume_in_gb: int = None, volume_mount_path: str = None,
         ports: str = None, env: dict = None, is_serverless: bool = False, registry_auth: str = None
