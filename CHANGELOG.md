@@ -6,6 +6,10 @@
 
 - Expose bucket name for rp_upload.
 
+### Fixed
+
+- ReadMe typo *start_pod* -> *resume_pod*
+
 ## Release 1.5.2 (1/16/24)
 
 ### Fixed
