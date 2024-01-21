@@ -17,6 +17,7 @@ from .mutations import endpoints as endpoint_mutations
 # Templates
 from .mutations import templates as template_mutations
 
+
 def get_user() -> dict:
     '''
     Get the current user
@@ -25,7 +26,8 @@ def get_user() -> dict:
     cleaned_return = raw_response["data"]["myself"]
     return cleaned_return
 
-def update_user_settings(pubkey : str) -> dict:
+
+def update_user_settings(pubkey: str) -> dict:
     '''
     Update the current user
 
@@ -34,6 +36,7 @@ def update_user_settings(pubkey : str) -> dict:
     raw_response = run_graphql_query(user_mutations.generate_user_mutation(pubkey))
     cleaned_return = raw_response["data"]["updateUserSettings"]
     return cleaned_return
+
 
 def get_gpus() -> dict:
     '''
@@ -44,7 +47,7 @@ def get_gpus() -> dict:
     return cleaned_return
 
 
-def get_gpu(gpu_id : str, gpu_quantity : int = 1):
+def get_gpu(gpu_id: str, gpu_quantity: int = 1):
     '''
     Get a specific GPU type
 
@@ -61,6 +64,7 @@ def get_gpu(gpu_id : str, gpu_quantity : int = 1):
 
     return cleaned_return[0]
 
+
 def get_pods() -> dict:
     '''
     Get all pods
@@ -69,7 +73,8 @@ def get_pods() -> dict:
     cleaned_return = raw_return["data"]["myself"]["pods"]
     return cleaned_return
 
-def get_pod(pod_id : str):
+
+def get_pod(pod_id: str):
     '''
     Get a specific pod
 
@@ -78,17 +83,18 @@ def get_pod(pod_id : str):
     raw_response = run_graphql_query(pod_queries.generate_pod_query(pod_id))
     return raw_response["data"]["pod"]
 
+
 def create_pod(
-        name:str, image_name:str, gpu_type_id:str,
-        cloud_type:str="ALL", support_public_ip:bool=True,
-        start_ssh:bool=True,
-        data_center_id : Optional[str]=None, country_code:Optional[str]=None,
-        gpu_count:int=1, volume_in_gb:int=0, container_disk_in_gb:Optional[int]=None,
-        min_vcpu_count:int=1, min_memory_in_gb:int=1, docker_args:str="",
-        ports:Optional[str]=None, volume_mount_path:str="/runpod-volume",
-        env:Optional[dict]=None,  template_id:Optional[str]=None,
-        network_volume_id:Optional[str]=None
-    ) -> dict:
+    name: str, image_name: str, gpu_type_id: str,
+    cloud_type: str = "ALL", support_public_ip: bool = True,
+    start_ssh: bool = True,
+    data_center_id: Optional[str] = None, country_code: Optional[str] = None,
+    gpu_count: int = 1, volume_in_gb: int = 0, container_disk_in_gb: Optional[int] = None,
+    min_vcpu_count: int = 1, min_memory_in_gb: int = 1, docker_args: str = "",
+    ports: Optional[str] = None, volume_mount_path: str = "/runpod-volume",
+    env: Optional[dict] = None,  template_id: Optional[str] = None,
+    network_volume_id: Optional[str] = None
+) -> dict:
     '''
     Create a pod
 
@@ -112,7 +118,7 @@ def create_pod(
     >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
     '''
     # Input Validation
-    get_gpu(gpu_type_id) # Check if GPU exists, will raise ValueError if not.
+    get_gpu(gpu_type_id)  # Check if GPU exists, will raise ValueError if not.
     if cloud_type not in ["ALL", "COMMUNITY", "SECURE"]:
         raise ValueError("cloud_type must be one of ALL, COMMUNITY or SECURE")
 
@@ -196,9 +202,9 @@ def terminate_pod(pod_id: str):
 
 
 def create_template(
-        name:str, image_name:str, docker_start_cmd:str=None,
-        container_disk_in_gb:int=10, volume_in_gb:int=None, volume_mount_path:str=None,
-        ports:str=None, env:dict=None, is_serverless:bool=False
+        name: str, image_name: str, docker_start_cmd: str = None,
+        container_disk_in_gb: int = 10, volume_in_gb: int = None, volume_mount_path: str = None,
+        ports: str = None, env: dict = None, is_serverless: bool = False, registry_auth: str = None
 ):
     '''
     Create a template
@@ -223,11 +229,12 @@ def create_template(
         template_mutations.generate_pod_template(
             name, image_name, docker_start_cmd,
             container_disk_in_gb, volume_in_gb, volume_mount_path,
-            ports, env, is_serverless
+            ports, env, is_serverless, registry_auth
         )
     )
 
     return raw_response["data"]["saveTemplate"]
+
 
 def get_endpoints() -> dict:
     '''
@@ -237,11 +244,12 @@ def get_endpoints() -> dict:
     cleaned_return = raw_return["data"]["myself"]["endpoints"]
     return cleaned_return
 
+
 def create_endpoint(
-        name:str, template_id:str, gpu_ids:str="AMPERE_16",
-        network_volume_id:str=None, locations:str=None,
-        idle_timeout:int=5, scaler_type:str="QUEUE_DELAY", scaler_value:int=4,
-        workers_min:int=0, workers_max:int=3
+        name: str, template_id: str, gpu_ids: str = "AMPERE_16",
+        network_volume_id: str = None, locations: str = None,
+        idle_timeout: int = 5, scaler_type: str = "QUEUE_DELAY", scaler_value: int = 4,
+        workers_min: int = 0, workers_max: int = 3
 ):
     '''
     Create an endpoint
@@ -274,7 +282,7 @@ def create_endpoint(
 
 
 def update_endpoint_template(
-        endpoint_id:str, template_id:str
+        endpoint_id: str, template_id: str
 ):
     '''
     Update an endpoint template
