@@ -93,7 +93,7 @@ def get_boto_client(
 # ---------------------------------------------------------------------------- #
 #                                 Upload Image                                 #
 # ---------------------------------------------------------------------------- #
-def upload_image(job_id, image_location, result_index=0, results_list=None, bucket_name: Optional[str] = None):  # pylint: disable=line-too-long pragma: no cover
+def upload_image(job_id, image_location, result_index=0, results_list=None, bucket_name: Optional[str] = None):  # pylint: disable=line-too-long # pragma: no cover
     '''
     Upload a single file to bucket storage.
     '''
