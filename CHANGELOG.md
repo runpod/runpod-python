@@ -1,5 +1,11 @@
 # Change Log
 
+## Release 1.5.3 (TBD)
+
+### Added
+
+- Expose bucket name for rp_upload.
+
 ## Release 1.5.2 (1/16/24)
 
 ### Fixed
