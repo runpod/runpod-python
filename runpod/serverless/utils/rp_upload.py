@@ -93,7 +93,7 @@ def get_boto_client(
 # ---------------------------------------------------------------------------- #
 #                                 Upload Image                                 #
 # ---------------------------------------------------------------------------- #
-def upload_image(job_id, image_location, result_index=0, results_list=None):  # pragma: no cover
+def upload_image(job_id, image_location, result_index=0, results_list=None, bucket_name: Optional[str] = None):  # pylint: disable=line-too-long # pragma: no cover
     '''
     Upload a single file to bucket storage.
     '''
@@ -122,7 +122,7 @@ def upload_image(job_id, image_location, result_index=0, results_list=None):  # 
 
         return sim_upload_location
 
-    bucket = time.strftime('%m-%y')
+    bucket = bucket_name if bucket_name else time.strftime('%m-%y')
     boto_client.put_object(
         Bucket=f'{bucket}',
         Key=f'{job_id}/{image_name}{file_extension}',

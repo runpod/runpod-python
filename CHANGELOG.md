@@ -1,5 +1,16 @@
 # Change Log
 
+## Release 1.5.3 (TBD)
+
+### Added
+
+- Expose bucket name for rp_upload.
+- Exposed `containerRegistryAuthId` for template creation.
+
+### Fixed
+
+- ReadMe typo *start_pod* -> *resume_pod*
+
 ## Release 1.5.2 (1/16/24)
 
 ### Fixed

@@ -4,6 +4,7 @@ import unittest
 
 from runpod.api.mutations.templates import generate_pod_template
 
+
 class TestGeneratePodTemplate(unittest.TestCase):
     """ Unit tests for the function generate_pod_template in the file api_wrapper.py """
 
@@ -24,7 +25,8 @@ class TestGeneratePodTemplate(unittest.TestCase):
         result = generate_pod_template(
             "test_name", "test_image_name", docker_start_cmd="test_cmd",
             volume_in_gb=5, volume_mount_path="/path/to/volume",
-            ports="8000, 8001", env={"VAR1": "val1", "VAR2": "val2"}, is_serverless=True
+            ports="8000, 8001", env={"VAR1": "val1", "VAR2": "val2"}, is_serverless=True,
+            registry_auth="test_auth"
         )
         self.assertIn('dockerArgs: "test_cmd"', result)
         self.assertIn('volumeInGb: 5', result)
@@ -33,3 +35,4 @@ class TestGeneratePodTemplate(unittest.TestCase):
         self.assertIn(
             'env: [{ key: "VAR1", value: "val1" }, { key: "VAR2", value: "val2" }]', result)
         self.assertIn('isServerless: true', result)
+        self.assertIn('containerRegistryAuthId : "test_auth"', result)
