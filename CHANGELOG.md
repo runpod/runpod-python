@@ -5,6 +5,7 @@
 ### Added
 
 - Expose bucket name for rp_upload.
+- Exposed `containerRegistryAuthId` for template creation.
 
 ### Fixed
 
