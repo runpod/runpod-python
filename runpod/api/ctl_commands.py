@@ -93,7 +93,7 @@ def create_pod(
     min_vcpu_count: int = 1, min_memory_in_gb: int = 1, docker_args: str = "",
     ports: Optional[str] = None, volume_mount_path: str = "/runpod-volume",
     env: Optional[dict] = None,  template_id: Optional[str] = None,
-    network_volume_id: Optional[str] = None
+    network_volume_id: Optional[str] = None, allowed_cuda_versions: Optional[list] = None
 ) -> dict:
     '''
     Create a pod
@@ -138,7 +138,7 @@ def create_pod(
             cloud_type, support_public_ip, start_ssh,
             data_center_id, country_code, gpu_count,
             volume_in_gb, container_disk_in_gb, min_vcpu_count, min_memory_in_gb, docker_args,
-            ports, volume_mount_path, env, template_id, network_volume_id)
+            ports, volume_mount_path, env, template_id, network_volume_id, allowed_cuda_versions)
     )
 
     cleaned_response = raw_response["data"]["podFindAndDeployOnDemand"]
