@@ -9,7 +9,7 @@ try:
 
     new_template = runpod.create_template(
         name="test",
-        image_name="runpod/base:0.1.0",
+        image_name="runpod/base:0.4.4",
         is_serverless=True
     )
 
@@ -20,7 +20,8 @@ try:
         template_id=new_template["id"],
         gpu_ids="AMPERE_16",
         workers_min=0,
-        workers_max=1
+        workers_max=1,
+        flash_boot=True
     )
 
     print(new_endpoint)
