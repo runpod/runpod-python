@@ -21,7 +21,7 @@ try:
         gpu_ids="AMPERE_16",
         workers_min=0,
         workers_max=1,
-        flash_boot=True
+        flashboot=True
     )
 
     print(new_endpoint)

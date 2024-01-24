@@ -4,6 +4,8 @@
 
 ### Added
 
+- Expose cuda selection when creating a pod.
+- Expose `flashboot` when creating a new endpoint.
 - Expose bucket name for rp_upload.
 - Exposed `containerRegistryAuthId` for template creation.
 
