@@ -249,7 +249,7 @@ def create_endpoint(
         name: str, template_id: str, gpu_ids: str = "AMPERE_16",
         network_volume_id: str = None, locations: str = None,
         idle_timeout: int = 5, scaler_type: str = "QUEUE_DELAY", scaler_value: int = 4,
-        workers_min: int = 0, workers_max: int = 3
+        workers_min: int = 0, workers_max: int = 3, flash_boot=False
 ):
     '''
     Create an endpoint
@@ -274,7 +274,7 @@ def create_endpoint(
             name, template_id, gpu_ids,
             network_volume_id, locations,
             idle_timeout, scaler_type, scaler_value,
-            workers_min, workers_max
+            workers_min, workers_max, flash_boot
         )
     )
 

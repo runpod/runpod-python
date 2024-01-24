@@ -4,6 +4,7 @@ import unittest
 
 from runpod.api.mutations.endpoints import generate_endpoint_mutation
 
+
 class TestGenerateEndpointMutation(unittest.TestCase):
     """Tests for the endpoint mutation generation."""
 
@@ -20,9 +21,9 @@ class TestGenerateEndpointMutation(unittest.TestCase):
         """Test all the fields."""
         result = generate_endpoint_mutation(
             "test_name", "test_template_id", "AMPERE_20",
-            "test_volume_id", "US_WEST", 10, "WORKER_COUNT", 5, 2, 4
+            "test_volume_id", "US_WEST", 10, "WORKER_COUNT", 5, 2, 4, True
         )
-        self.assertIn('name: "test_name"', result)
+        self.assertIn('name: "test_name-fb"', result)
         self.assertIn('templateId: "test_template_id"', result)
         self.assertIn('gpuIds: "AMPERE_20"', result)
         self.assertIn('networkVolumeId: "test_volume_id"', result)
