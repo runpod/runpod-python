@@ -4,6 +4,7 @@ import unittest
 
 from runpod.api.mutations import pods
 
+
 class TestPodMutations(unittest.TestCase):
     ''' Test API Wrapper Pod Mutations '''
 
@@ -28,7 +29,9 @@ class TestPodMutations(unittest.TestCase):
             volume_mount_path="/path",
             env={"ENV": "test"},
             support_public_ip=True,
-            template_id="abcde")
+            template_id="abcde",
+            allowed_cuda_versions=["11.8", "12.0"]
+        )
 
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
@@ -56,6 +59,7 @@ class TestPodMutations(unittest.TestCase):
         result = pods.generate_pod_terminate_mutation("pod_id")
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
+
 
 if __name__ == "__main__":
     unittest.main()
