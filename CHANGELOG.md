@@ -1,6 +1,6 @@
 # Change Log
 
-## Release 1.5.3 (TBD)
+## Release 1.5.3 (1/25/14)
 
 ### Added
 
