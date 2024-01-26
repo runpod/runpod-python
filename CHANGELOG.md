@@ -1,9 +1,11 @@
 # Change Log
 
-## Release 1.5.3 (TBD)
+## Release 1.5.3 (1/25/14)
 
 ### Added
 
+- Expose cuda selection when creating a pod.
+- Expose `flashboot` when creating a new endpoint.
 - Expose bucket name for rp_upload.
 - Exposed `containerRegistryAuthId` for template creation.
 
