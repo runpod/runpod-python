@@ -201,6 +201,7 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any], hook) -> Dic
         else:
             log.debug("SLS Core | Running job as a standard function.")
             result = await rp_job.run_job(handler, job)
+            await asyncio.sleep(0)
 
     except Exception as err:  # pylint: disable=broad-except
         log.error(f"SLS Core | Error running job: {err}", job['id'])
