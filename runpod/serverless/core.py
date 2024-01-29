@@ -219,8 +219,8 @@ async def run(config: Dict[str, Any]) -> None:
         config: A dictionary containing the following keys:
             handler: A function that takes a job and returns a result.
     """
-    max_concurrency = config.get('max_concurrency', 4)
-    max_jobs = config.get('max_jobs', 4)
+    max_concurrency = config.get('max_concurrency', 1)
+    max_jobs = config.get('max_jobs', 1)
 
     hook = Hook()
 
