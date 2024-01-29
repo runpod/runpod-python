@@ -230,7 +230,7 @@ async def run(config: Dict[str, Any]) -> None:
         jobs = serverless_hook.get_jobs(max_concurrency, max_jobs)
 
         if len(jobs) == 0 or jobs is None:
-            asyncio.sleep(0)
+            await asyncio.sleep(0)
             continue
 
         for job in jobs:
