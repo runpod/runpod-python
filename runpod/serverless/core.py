@@ -50,6 +50,8 @@ class Hook:  # pylint: disable=too-many-instance-attributes
         return Hook._instance
 
     def __init__(self, rust_so_path: Optional[str] = None) -> None:
+        log.debug("SLS Core | Initializing Hook.")
+
         if self._initialized:
             return
 
@@ -179,10 +181,13 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str,
     result = {}
     try:
         if inspect.isgeneratorfunction(handler) or inspect.isasyncgenfunction(handler):
+            log.debug("SLS Core | Running job as a generator.")
             generator_output = rp_job.run_job_generator(handler, job)
             aggregated_output = {'output': []}
 
             async for part in generator_output:
+                log.debug(f"SLS Core | Streaming output: {part}", job['id'])
+
                 if 'error' in part:
                     aggregated_output = part
                     break
@@ -191,14 +196,16 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str,
 
                 await hook.stream_output(job['id'], part)
 
+            log.debug("SLS Core | Finished streaming output.", job['id'])
             hook.finish_stream(job['id'])
             result = aggregated_output
 
         else:
+            log.debug("SLS Core | Running job as a standard function.")
             result = await rp_job.run_job(handler, job)
 
     finally:
-
+        log.debug(f"SLS Core | Posting output: {result}", job['id'])
         hook.post_output(job['id'], result)
 
 
@@ -233,6 +240,7 @@ async def run(config: Dict[str, Any]) -> None:
 def main(config: Dict[str, Any]) -> None:
     """Run the worker in an asyncio event loop."""
     if config.get('handler') is None:
+        log.error("SLS Core | config must contain a handler function")
         raise ValueError("config must contain a handler function")
 
     try:
