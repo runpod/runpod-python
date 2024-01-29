@@ -3,14 +3,17 @@ RunPod | API Wrapper | Mutations | Pods
 """
 # pylint: disable=too-many-arguments, too-many-locals, too-many-branches
 
+from typing import Optional, List
+
 
 def generate_pod_deployment_mutation(
-        name:str, image_name:str, gpu_type_id:str,
-        cloud_type:str="ALL", support_public_ip:bool=True, start_ssh:bool=True,
+        name: str, image_name: str, gpu_type_id: str,
+        cloud_type: str = "ALL", support_public_ip: bool = True, start_ssh: bool = True,
         data_center_id=None, country_code=None,
         gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
-        env:dict=None, template_id=None, network_volume_id=None):
+        env: dict = None, template_id=None, network_volume_id=None,
+        allowed_cuda_versions: Optional[List[str]] = None):
     '''
     Generates a mutation to deploy a pod on demand.
     '''
@@ -63,6 +66,11 @@ def generate_pod_deployment_mutation(
 
     if network_volume_id is not None:
         input_fields.append(f'networkVolumeId: "{network_volume_id}"')
+
+    if allowed_cuda_versions is not None:
+        allowed_cuda_versions_string = ", ".join(
+            [f'"{version}"' for version in allowed_cuda_versions])
+        input_fields.append(f'allowedCudaVersions: [{allowed_cuda_versions_string}]')
 
     # Format input fields
     input_string = ", ".join(input_fields)

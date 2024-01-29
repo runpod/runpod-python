@@ -93,7 +93,7 @@ def create_pod(
     min_vcpu_count: int = 1, min_memory_in_gb: int = 1, docker_args: str = "",
     ports: Optional[str] = None, volume_mount_path: str = "/runpod-volume",
     env: Optional[dict] = None,  template_id: Optional[str] = None,
-    network_volume_id: Optional[str] = None
+    network_volume_id: Optional[str] = None, allowed_cuda_versions: Optional[list] = None
 ) -> dict:
     '''
     Create a pod
@@ -138,7 +138,7 @@ def create_pod(
             cloud_type, support_public_ip, start_ssh,
             data_center_id, country_code, gpu_count,
             volume_in_gb, container_disk_in_gb, min_vcpu_count, min_memory_in_gb, docker_args,
-            ports, volume_mount_path, env, template_id, network_volume_id)
+            ports, volume_mount_path, env, template_id, network_volume_id, allowed_cuda_versions)
     )
 
     cleaned_response = raw_response["data"]["podFindAndDeployOnDemand"]
@@ -249,7 +249,7 @@ def create_endpoint(
         name: str, template_id: str, gpu_ids: str = "AMPERE_16",
         network_volume_id: str = None, locations: str = None,
         idle_timeout: int = 5, scaler_type: str = "QUEUE_DELAY", scaler_value: int = 4,
-        workers_min: int = 0, workers_max: int = 3
+        workers_min: int = 0, workers_max: int = 3, flashboot=False
 ):
     '''
     Create an endpoint
@@ -274,7 +274,7 @@ def create_endpoint(
             name, template_id, gpu_ids,
             network_volume_id, locations,
             idle_timeout, scaler_type, scaler_value,
-            workers_min, workers_max
+            workers_min, workers_max, flashboot
         )
     )
 
