@@ -45,13 +45,12 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
     def __new__(cls):
         if Hook._instance is None:
+            log.debug("SLS Core | Initializing Hook.")
             Hook._instance = object.__new__(cls)
             Hook._initialized = False
         return Hook._instance
 
     def __init__(self, rust_so_path: Optional[str] = None) -> None:
-        log.debug("SLS Core | Initializing Hook.")
-
         if self._initialized:
             return
 
@@ -173,9 +172,8 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
 
 # -------------------------------- Process Job ------------------------------- #
-async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str, Any]:
+async def _process_job(config: Dict[str, Any], job: Dict[str, Any], hook) -> Dict[str, Any]:
     """ Process a single job. """
-    hook = Hook()
     handler = config['handler']
 
     result = {}
@@ -204,6 +202,10 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any]) -> Dict[str,
             log.debug("SLS Core | Running job as a standard function.")
             result = await rp_job.run_job(handler, job)
 
+    except Exception as err:  # pylint: disable=broad-except
+        log.error(f"SLS Core | Error running job: {err}", job['id'])
+        result = {'error': str(err)}
+
     finally:
         log.debug(f"SLS Core | Posting output: {result}", job['id'])
         hook.post_output(job['id'], result)
@@ -222,16 +224,16 @@ async def run(config: Dict[str, Any]) -> None:
     max_concurrency = config.get('max_concurrency', 1)
     max_jobs = config.get('max_jobs', 1)
 
-    hook = Hook()
+    serverless_hook = Hook()
 
     while True:
-        jobs = hook.get_jobs(max_concurrency, max_jobs)
+        jobs = serverless_hook.get_jobs(max_concurrency, max_jobs)
 
         if len(jobs) == 0 or jobs is None:
             continue
 
         for job in jobs:
-            asyncio.create_task(_process_job(config, job), name=job['id'])
+            asyncio.create_task(_process_job(config, job, serverless_hook), name=job['id'])
             await asyncio.sleep(0)
 
         await asyncio.sleep(0)
