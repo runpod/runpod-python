@@ -9,8 +9,9 @@ import asyncio
 from ctypes import CDLL, byref, c_char_p, c_int
 from typing import Any, Callable,  List, Dict, Optional
 
+from runpod.version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
-
+from runpod.serverless.modules import rp_job
 
 log = RunPodLogger()
 
@@ -44,6 +45,7 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
     def __new__(cls):
         if Hook._instance is None:
+            log.debug("SLS Core | Initializing Hook.")
             Hook._instance = object.__new__(cls)
             Hook._initialized = False
         return Hook._instance
@@ -136,7 +138,7 @@ class Hook:  # pylint: disable=too-many-instance-attributes
             c_char_p(json_data), c_int(len(json_data))
         ))
 
-    def stream_output(self, job_id: str, job_output: bytes) -> bool:
+    async def stream_output(self, job_id: str, job_output: bytes) -> bool:
         """
         send part of a streaming result to AI-API.
         """
@@ -170,27 +172,49 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
 
 # -------------------------------- Process Job ------------------------------- #
-async def _process_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
+async def _process_job(config: Dict[str, Any], job: Dict[str, Any], hook) -> Dict[str, Any]:
     """ Process a single job. """
-    hook = Hook()
+    handler = config['handler']
 
+    result = {}
     try:
-        result = handler(job)
-    except Exception as err:
-        raise RuntimeError(
-            f"run {job['id']}: user code raised an {type(err).__name__}") from err
+        if inspect.isgeneratorfunction(handler) or inspect.isasyncgenfunction(handler):
+            log.debug("SLS Core | Running job as a generator.")
+            generator_output = rp_job.run_job_generator(handler, job)
+            aggregated_output = {'output': []}
 
-    if inspect.isgeneratorfunction(handler):
-        for part in result:
-            hook.stream_output(job['id'], part)
+            async for part in generator_output:
+                log.debug(f"SLS Core | Streaming output: {part}", job['id'])
 
-        hook.finish_stream(job['id'])
+                if 'error' in part:
+                    aggregated_output = part
+                    break
+                if config.get('return_aggregate_stream', False):
+                    aggregated_output['output'].append(part['output'])
 
-    else:
+                await hook.stream_output(job['id'], part)
+
+            log.debug("SLS Core | Finished streaming output.", job['id'])
+            hook.finish_stream(job['id'])
+            result = aggregated_output
+
+        else:
+            log.debug("SLS Core | Running job as a standard function.")
+            result = await rp_job.run_job(handler, job)
+            result = result.get('output', result)
+
+    except Exception as err:  # pylint: disable=broad-except
+        log.error(f"SLS Core | Error running job: {err}", job['id'])
+        result = {'error': str(err)}
+
+    finally:
+        log.debug(f"SLS Core | Posting output: {result}", job['id'])
         hook.post_output(job['id'], result)
 
 
-# -------------------------------- Run Worker -------------------------------- #
+# ---------------------------------------------------------------------------- #
+#                                  Run Worker                                  #
+# ---------------------------------------------------------------------------- #
 async def run(config: Dict[str, Any]) -> None:
     """ Run the worker.
 
@@ -198,20 +222,20 @@ async def run(config: Dict[str, Any]) -> None:
         config: A dictionary containing the following keys:
             handler: A function that takes a job and returns a result.
     """
-    handler = config['handler']
-    max_concurrency = config.get('max_concurrency', 4)
-    max_jobs = config.get('max_jobs', 4)
+    max_concurrency = config.get('max_concurrency', 1)
+    max_jobs = config.get('max_jobs', 1)
 
-    hook = Hook()
+    serverless_hook = Hook()
 
     while True:
-        jobs = hook.get_jobs(max_concurrency, max_jobs)
+        jobs = serverless_hook.get_jobs(max_concurrency, max_jobs)
 
         if len(jobs) == 0 or jobs is None:
+            await asyncio.sleep(0)
             continue
 
         for job in jobs:
-            asyncio.create_task(_process_job(handler, job), name=job['id'])
+            asyncio.create_task(_process_job(config, job, serverless_hook), name=job['id'])
             await asyncio.sleep(0)
 
         await asyncio.sleep(0)
@@ -220,6 +244,7 @@ async def run(config: Dict[str, Any]) -> None:
 def main(config: Dict[str, Any]) -> None:
     """Run the worker in an asyncio event loop."""
     if config.get('handler') is None:
+        log.error("SLS Core | config must contain a handler function")
         raise ValueError("config must contain a handler function")
 
     try:

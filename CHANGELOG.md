@@ -1,5 +1,13 @@
 # Change Log
 
+## Release 1.6.0 (1/29/24)
+
+### Fixed
+
+- Rust Serverless Core Passing all tests.
+- GitHub Action and Python package updates
+- Changelog date typo
+
 ## Release 1.5.3 (1/25/24)
 
 ### Added
