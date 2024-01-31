@@ -1,69 +1,88 @@
-'''
+"""
 RunPod | CLI | Pod | Commands
-'''
-import click
+"""
 import os
-from prettytable import PrettyTable
 import sys
+import click
+from prettytable import PrettyTable
 from runpod import get_pods, create_pod
 
 from ...utils import ssh_cmd
+# pylint: disable=line-too-long
 
 def sftp_progress_callback(transferred, total):
+    """
+    Callback function for SFTP transfers to display progress.
+    """
     progress_percentage = (transferred / total) * 100
-    sys.stdout.write(f'\rTransferring... {progress_percentage:.2f}% \n')
+    sys.stdout.write(f"\rTransferring... {progress_percentage:.2f}% \n")
     sys.stdout.flush()
 
-@click.group('pod', help='Manage and interact with pods.')
-def pod_cli():
-    '''A collection of CLI functions for Pod.'''
 
-@pod_cli.command('list')
+@click.group("pod", help="Manage and interact with pods.")
+def pod_cli():
+    """A collection of CLI functions for Pod."""
+
+
+@pod_cli.command("list")
 def list_pods():
-    '''
+    """
     Lists the pods for the current user.
-    '''
-    table = PrettyTable(['ID', 'Name', 'Status', 'Image'])
+    """
+    table = PrettyTable(["ID", "Name", "Status", "Image"])
     for pod in get_pods():
-        table.add_row((pod['id'], pod['name'], pod['desiredStatus'], pod['imageName']))
+        table.add_row((pod["id"], pod["name"], pod["desiredStatus"], pod["imageName"]))
 
     click.echo(table)
 
-@pod_cli.command('create')
-@click.argument('name', required=False)
-@click.option('--image', default=None, help='The image to use for the pod.')
-@click.option('--gpu-type', default=None, help='The GPU type to use for the pod.')
-@click.option('--gpu-count', default=1, help='The number of GPUs to use for the pod.')
-@click.option('--support-public-ip', default=True, help='Whether or not to support a public IP.')
-def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip): # pylint: disable=too-many-arguments
-    '''
+
+@pod_cli.command("create")
+@click.argument("name", required=False)
+@click.option("--image", default=None, help="The image to use for the pod.")
+@click.option("--gpu-type", default=None, help="The GPU type to use for the pod.")
+@click.option("--gpu-count", default=1, help="The number of GPUs to use for the pod.")
+@click.option(
+    "--support-public-ip", default=True, help="Whether or not to support a public IP."
+)
+def create_new_pod(
+    name, image, gpu_type, gpu_count, support_public_ip
+):  # pylint: disable=too-many-arguments
+    """
     Creates a pod.
-    '''
+    """
     if not name:
-        name = click.prompt('Enter pod name', default='RunPod-CLI-Pod')
+        name = click.prompt("Enter pod name", default="RunPod-CLI-Pod")
 
-    quick_launch = click.confirm('Would you like to launch default pod?', abort=True)
+    quick_launch = click.confirm("Would you like to launch default pod?", abort=True)
     if quick_launch:
-        image = 'runpod/base:0.0.0'
-        gpu_type = 'NVIDIA GeForce RTX 3090'
-        ports ='22/tcp'
+        image = "runpod/base:0.0.0"
+        gpu_type = "NVIDIA GeForce RTX 3090"
+        ports = "22/tcp"
 
-        click.echo('Launching default pod...')
+        click.echo("Launching default pod...")
 
-    new_pod = create_pod(name, image, gpu_type,
-                         gpu_count=gpu_count, support_public_ip=support_public_ip, ports=ports)
+    new_pod = create_pod(
+        name,
+        image,
+        gpu_type,
+        gpu_count=gpu_count,
+        support_public_ip=support_public_ip,
+        ports=ports,
+    )
 
     click.echo(f'Pod {new_pod["id"]} has been created.')
 
-@pod_cli.command('connect')
-@click.argument('pod_id')
+
+@pod_cli.command("connect")
+@click.argument("pod_id")
 def connect_to_pod(pod_id):
-    '''
+    """
     Connects to a pod.
-    '''
-    click.echo(f'Connecting to pod {pod_id}...')
+    """
+    click.echo(f"Connecting to pod {pod_id}...")
     ssh = ssh_cmd.SSHConnection(pod_id)
     ssh.launch_terminal()
+
 
 @pod_cli.command("send")
 @click.argument("pod_id", required=True)
@@ -94,15 +113,21 @@ def send_file(pod_id, local_path, remote_path):
             f"Sending file from {absolute_local_path} to pod {pod_id}:{remote_path}..."
         )
         with ssh_cmd.SSHConnection(pod_id) as ssh:
-            ssh.put_file(absolute_local_path, remote_path, callback=sftp_progress_callback)
+            ssh.put_file(
+                absolute_local_path, remote_path, callback=sftp_progress_callback
+            )
         click.echo(
             f"File sent successfully to directory {remote_directory_display} on pod {pod_id}."
         )
-        click.echo(f"To access the file, type in the terminal on your pod: cd {remote_directory_display}. If you ls, the file should be there. Type pwd to make sure you get put in the right directory.")
+        click.echo(
+            f"To access the file, type in the terminal on your pod: cd {remote_directory_display}. If you ls, the file should be there. Type pwd to make sure you get put in the right directory."
+        )
 
-    except Exception as e:
+    except FileNotFoundError as e:
         click.echo(f"Failed to send file: {e}", err=True)
-        click.echo(f"Common reason for failure: a directory in '{remote_directory_display}' does not exist on pod {pod_id}.")
+        click.echo(
+            f"Common reason for failure: a directory in '{remote_directory_display}' does not exist on pod {pod_id}."
+        )
 
 
 @pod_cli.command("download")
@@ -124,6 +149,14 @@ def download_file(pod_id, remote_path, local_path):
             ssh.get_file(remote_path, absolute_local_path, sftp_progress_callback)
         click.echo(f"File downloaded successfully to {absolute_local_path}.")
 
-    except Exception as e:
+    except FileNotFoundError as e:
         click.echo(f"Failed to download file: {e}", err=True)
-        click.echo(f"Ensure that the remote path exists on pod {pod_id}. \nAnd that the arguments are correct. \nFor example: runpod pod download 1234 /home/REMOTE_POD_PATH/file.txt /home/LOCAL_PATH/file.txt")
+        click.echo(
+            f"Ensure that the remote path exists on pod {pod_id} and args are correct."
+        )
+
+    except PermissionError as e:
+        click.echo(f"Failed to download file: {e}", err=True)
+        click.echo(
+            f"Ensure that you have the necessary permissions to access the file on pod {pod_id}."
+        )
