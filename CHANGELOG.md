@@ -1,5 +1,11 @@
 # Change Log
 
+## Release 1.6.1 (TBD)
+
+### Added
+
+- User-Agent for better analytics tracking.
+
 ## Release 1.6.0 (1/29/24)
 
 ### Fixed
