@@ -2,7 +2,6 @@
 
 import os
 import logging
-import platform
 
 from . import serverless
 from .serverless.modules.rp_logger import RunPodLogger
@@ -35,13 +34,6 @@ api_url_base = "https://api.runpod.io"  # pylint: disable=invalid-name
 
 endpoint_url_base = "https://api.runpod.ai/v2"  # pylint: disable=invalid-name
 
-
-# ----------------------------- Config User Agent ---------------------------- #
-os_info = f"{platform.system()} {platform.release()}; {platform.machine()}"
-USER_AGENT = f"RunPod-Python-SDK/{__version__} ({os_info}) Language/Python{platform.python_version()}"  # pylint: disable=line-too-long
-
-if os.environ.get('RUNPOD_UA_INTEGRATION') is not None:
-    USER_AGENT += f" {os.environ.get('RUNPOD_UA_INTEGRATION')}"
 
 # --------------------------- Force Logging Levels --------------------------- #
 logging.getLogger("urllib3").setLevel(logging.WARNING)

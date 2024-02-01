@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 import aiohttp
 
-from runpod import USER_AGENT
+from runpod.user_agent import USER_AGENT
 from runpod.serverless.modules import (
     rp_logger, rp_local, rp_handler, rp_ping,
     rp_scale

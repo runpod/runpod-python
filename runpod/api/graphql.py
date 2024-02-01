@@ -7,7 +7,8 @@ from typing import Any, Dict
 
 import requests
 
-from runpod import error, USER_AGENT
+from runpod import error
+from runpod.user_agent import USER_AGENT
 
 HTTP_STATUS_UNAUTHORIZED = 401
 
