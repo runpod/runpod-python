@@ -2,6 +2,7 @@
 # pylint: disable=protected-access
 
 import os
+import platform
 import argparse
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
@@ -9,6 +10,7 @@ from unittest import IsolatedAsyncioTestCase
 import nest_asyncio
 
 import runpod
+from runpod._version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless import _signal_handler
 
@@ -34,10 +36,14 @@ class TestWorker(IsolatedAsyncioTestCase):
         '''
         Test _get_auth_header
         '''
+        os_info = f"{platform.system()} {platform.release()}; {platform.machine()}"
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
             assert runpod.serverless.worker._get_auth_header(
-            ) == {'Authorization': 'test'}
+            ) == {
+                'Authorization': 'test',
+                'User-Agent': f'RunPod-Python-SDK/{runpod_version} ({os_info}) Language/Python {platform.python_version()}'  # pylint: disable=line-too-long
+            }
 
     def test_is_local(self):
         '''
