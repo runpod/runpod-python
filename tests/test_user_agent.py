@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 import os
 
+from runpod import __version__ as runpod_version
 from runpod.user_agent import construct_user_agent
 
 
@@ -20,7 +21,7 @@ class TestConstructUserAgent(unittest.TestCase):
         if 'RUNPOD_UA_INTEGRATION' in os.environ:
             del os.environ['RUNPOD_UA_INTEGRATION']
 
-        expected_ua = "RunPod-Python-SDK/0.1.0 (Windows 10; AMD64) Language/Python 3.8.10"
+        expected_ua = f"RunPod-Python-SDK/{runpod_version} (Windows 10; AMD64) Language/Python 3.8.10"  # pylint: disable=line-too-long
         self.assertEqual(construct_user_agent(), expected_ua)
 
         assert mock_python_version.called
@@ -36,7 +37,7 @@ class TestConstructUserAgent(unittest.TestCase):
     def test_user_agent_with_integration(
             self, mock_python_version, mock_machine, mock_release, mock_system):
         """Test the User-Agent string with an integration method specified."""
-        expected_ua = "RunPod-Python-SDK/0.1.0 (Linux 5.4; x86_64) Language/Python 3.9.5 Integration/SkyPilot"  # pylint: disable=line-too-long
+        expected_ua = f"RunPod-Python-SDK/{runpod_version} (Linux 5.4; x86_64) Language/Python 3.9.5 Integration/SkyPilot"  # pylint: disable=line-too-long
         self.assertEqual(construct_user_agent(), expected_ua)
 
         assert mock_python_version.called
