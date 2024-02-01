@@ -39,11 +39,10 @@ class TestWorker(IsolatedAsyncioTestCase):
         os_info = f"{platform.system()} {platform.release()}; {platform.machine()}"
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
-            mock_os.getenv.return_value = "test"
             assert runpod.serverless.worker._get_auth_header(
             ) == {
                 'Authorization': 'test',
-                'User-Agent': f'RunPod-Python-SDK/{runpod_version} ({os_info}) Language/Python {platform.python_version()} Integration/test'  # pylint: disable=line-too-long
+                'User-Agent': f'RunPod-Python-SDK/{runpod_version} ({os_info}) Language/Python {platform.python_version()}'  # pylint: disable=line-too-long
             }
 
     def test_is_local(self):
