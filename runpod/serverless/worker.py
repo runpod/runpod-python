@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 import aiohttp
 
+from runpod import USER_AGENT
 from runpod.serverless.modules import (
     rp_logger, rp_local, rp_handler, rp_ping,
     rp_scale
@@ -24,7 +25,10 @@ heartbeat = rp_ping.Heartbeat()
 
 def _get_auth_header() -> Dict[str, str]:
     """ Returns the authorization header with the API key. """
-    return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+    return {
+        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}",
+        "User-Agent": USER_AGENT
+    }
 
 
 def _is_local(config) -> bool:
