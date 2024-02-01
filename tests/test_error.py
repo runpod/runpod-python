@@ -3,7 +3,8 @@
 import unittest
 
 # Assuming the error classes are in a file named 'error.py'
-from runpod.error import RunPodError, AuthenticationError, QueryError
+from runpod.error import AuthenticationError, QueryError, RunPodError
+
 
 class TestErrorClasses(unittest.TestCase):
     """Unit tests for the error classes in the runpod.error module."""
@@ -17,7 +18,7 @@ class TestErrorClasses(unittest.TestCase):
     def test_run_pod_error_without_message(self):
         """Test the RunPodError class without a message."""
         err = RunPodError()
-        self.assertEqual(str(err), 'None')
+        self.assertEqual(str(err), "None")
 
     def test_authentication_error(self):
         """Test the AuthenticationError class."""
@@ -36,5 +37,5 @@ class TestErrorClasses(unittest.TestCase):
     def test_query_error_without_message_and_query(self):
         """Test the QueryError class without a message or query."""
         err = QueryError()
-        self.assertEqual(str(err), 'None')
+        self.assertEqual(str(err), "None")
         self.assertIsNone(err.query)

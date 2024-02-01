@@ -1,8 +1,10 @@
-'''
+"""
 RunPod | CLI | Utils | Userspace
-'''
+"""
 import os
+
 import paramiko
+
 from runpod import SSH_KEY_PATH
 
 
@@ -20,11 +22,11 @@ def find_ssh_key_file(pod_ip, pod_port):
     for file in os.listdir(SSH_KEY_PATH):
         file_path = os.path.join(SSH_KEY_PATH, file)
 
-        if not os.path.isfile(file_path) or file.endswith('.pub'):
+        if not os.path.isfile(file_path) or file.endswith(".pub"):
             continue
 
         try:
-            ssh.connect(pod_ip, port=pod_port, username='root', key_filename=file_path)
+            ssh.connect(pod_ip, port=pod_port, username="root", key_filename=file_path)
             ssh.close()
             print(f"Connected to pod {pod_ip}:{pod_port} using key {file}")
             return file_path

@@ -1,11 +1,12 @@
 """Helper functions for the runpod cli group exec command"""
 
 import os
+
 import click
 
 from runpod import get_pod
 
-POD_ID_FILE = os.path.join(os.path.expanduser('~'), '.runpod', 'pod_id')
+POD_ID_FILE = os.path.join(os.path.expanduser("~"), ".runpod", "pod_id")
 
 
 def get_session_pod():
@@ -20,7 +21,7 @@ def get_session_pod():
     pod_id = None
 
     if os.path.exists(POD_ID_FILE):
-        with open(POD_ID_FILE, 'r', encoding="UTF-8") as pod_file:
+        with open(POD_ID_FILE, "r", encoding="UTF-8") as pod_file:
             pod_id = pod_file.read().strip()
 
     # Confirm that the pod_id is valid
@@ -28,9 +29,9 @@ def get_session_pod():
         return pod_id
 
     # If file doesn't exist or is empty, prompt user for the pod_id
-    pod_id = click.prompt('Please provide the pod ID')
+    pod_id = click.prompt("Please provide the pod ID")
     os.makedirs(os.path.dirname(POD_ID_FILE), exist_ok=True)
-    with open(POD_ID_FILE, 'w', encoding="UTF-8") as pod_file:
+    with open(POD_ID_FILE, "w", encoding="UTF-8") as pod_file:
         pod_file.write(pod_id)
 
     return pod_id

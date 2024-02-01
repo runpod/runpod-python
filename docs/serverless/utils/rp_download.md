@@ -27,7 +27,7 @@ job_id = "job_123"
 urls = [
     "https://example.com/file1.txt",
     "https://example.com/file2.png",
-    "https://example.com/file3.pdf"
+    "https://example.com/file3.pdf",
 ]
 
 downloaded_files = download_files_from_urls(job_id, urls)
@@ -45,7 +45,7 @@ job_id = "job_123"
 urls = [
     "https://example.com/file1.txt",
     "https://example.com/non_existent_file.png",
-    "https://example.com/file3.pdf"
+    "https://example.com/file3.pdf",
 ]
 
 downloaded_files = download_files_from_urls(job_id, urls)

@@ -18,13 +18,13 @@ from rp_debugger import Checkpoints
 checkpoints = Checkpoints()
 
 # Add a checkpoint
-checkpoints.add('checkpoint_name')
+checkpoints.add("checkpoint_name")
 
 # Start a checkpoint
-checkpoints.start('checkpoint_name')
+checkpoints.start("checkpoint_name")
 
 # Stop a checkpoint
-checkpoints.stop('checkpoint_name')
+checkpoints.stop("checkpoint_name")
 ```
 
 ## LineTimer
@@ -36,7 +36,7 @@ This is a context manager that you can use with the `with` statement to time the
 ```python
 from rp_debugger import LineTimer
 
-with LineTimer('my_block_of_code'):
+with LineTimer("my_block_of_code"):
     # Your code here
     pass
 ```
@@ -49,6 +49,7 @@ This is a class-based decorator that you can use to measure the time it takes fo
 
 ```python
 from rp_debugger import FunctionTimer
+
 
 @FunctionTimer
 def my_function():
@@ -75,19 +76,21 @@ from rp_debugger import Checkpoints, LineTimer, FunctionTimer, get_debugger_outp
 
 checkpoints = Checkpoints()
 
-checkpoints.add('checkpoint_name')
-checkpoints.start('checkpoint_name')
+checkpoints.add("checkpoint_name")
+checkpoints.start("checkpoint_name")
 
-with LineTimer('my_block_of_code'):
+with LineTimer("my_block_of_code"):
     # Your code here
     pass
 
-checkpoints.stop('checkpoint_name')
+checkpoints.stop("checkpoint_name")
+
 
 @FunctionTimer
 def my_function():
     # Your code here
     pass
+
 
 my_function()
 

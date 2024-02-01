@@ -7,9 +7,11 @@ A worker entry point is a python file containing the command `runpod.serverless.
 ```python
 import runpod
 
+
 def handler(job):
     # Handle the job and return the output
     return {"output": "Job completed successfully"}
+
 
 runpod.serverless.start({"handler": handler})
 ```
@@ -37,9 +39,11 @@ For more complex operations where you are downloading files or making changes to
         ```python
         from runpod.serverless import start
 
+
         def handler(job):
             # Handle the job and return the output
             return {"output": "Job completed successfully"}
+
 
         start({"handler": handler, "refresh_worker": True})
         ```

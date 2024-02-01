@@ -1,11 +1,13 @@
-''' A template for a Llama2 handler file. '''
+""" A template for a Llama2 handler file. """
 # pylint: skip-file
 
-import runpod
-import inspect
+
 from transformers import HfApi
 
+import runpod
+
 SELECTED_MODEL = "<<MODEL_NAME>>"
+
 
 def get_model_framework(model_name):
     api = HfApi()
@@ -18,6 +20,7 @@ def get_model_framework(model_name):
         return "TensorFlow"
     else:
         return "Unknown"
+
 
 def prepare_inputs(text, **kwargs):
     # Filter kwargs based on what the tokenizer accepts
@@ -32,5 +35,6 @@ def handle_request(text, **input_args):
     with torch.no_grad():
         outputs = model(**inputs)
     return process_outputs(outputs)
+
 
 runpod.serverless.start({"handler": handle_request})

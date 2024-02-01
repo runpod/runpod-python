@@ -25,9 +25,9 @@ The credentials can be set in your Docker image using `ENV`, however, it is reco
 
 ```python
 bucket_creds = {
-    'endpointUrl': 'https://your-bucket-endpoint-url.com',
-    'accessId': 'your_access_key_id',
-    'accessSecret': 'your_secret_access_key'
+    "endpointUrl": "https://your-bucket-endpoint-url.com",
+    "accessId": "your_access_key_id",
+    "accessSecret": "your_secret_access_key",
 }
 ```
 
@@ -42,21 +42,23 @@ from runpod.serverless.utils import upload_file_to_bucket
 
 # Define your bucket credentials
 bucket_creds = {
-    'endpointUrl': 'https://your-bucket-endpoint-url.com',
-    'accessId': 'your_access_key_id',
-    'accessSecret': 'your_secret_access_key'
+    "endpointUrl": "https://your-bucket-endpoint-url.com",
+    "accessId": "your_access_key_id",
+    "accessSecret": "your_secret_access_key",
 }
 
 # Define the file name and file location
-file_name = 'example.txt'
-file_location = '/path/to/your/local/file/example.txt'
+file_name = "example.txt"
+file_location = "/path/to/your/local/file/example.txt"
 
 # Optional: Define a bucket_name and prefix
-bucket_name = 'custom-bucket-name'
-prefix = 'your-prefix'
+bucket_name = "custom-bucket-name"
+prefix = "your-prefix"
 
 # Upload the file and get the presigned URL
-presigned_url = upload_file_to_bucket(file_name, file_location, bucket_creds, bucket_name, prefix)
+presigned_url = upload_file_to_bucket(
+    file_name, file_location, bucket_creds, bucket_name, prefix
+)
 
 # Print the presigned URL
 print(f"Presigned URL: {presigned_url}")
@@ -69,22 +71,24 @@ from runpod.serverless.utils import upload_in_memory_object
 
 # Define your bucket credentials
 bucket_creds = {
-    'endpointUrl': 'https://your-bucket-endpoint-url.com',
-    'accessId': 'your_access_key_id',
-    'accessSecret': 'your_secret_access_key',
-    'bucketName': 'your_bucket_name'
+    "endpointUrl": "https://your-bucket-endpoint-url.com",
+    "accessId": "your_access_key_id",
+    "accessSecret": "your_secret_access_key",
+    "bucketName": "your_bucket_name",
 }
 
 # Define the file name and file data (bytes)
-file_name = 'example.txt'
-file_data = b'This is an example text.'
+file_name = "example.txt"
+file_data = b"This is an example text."
 
 # Optional: Define a bucket_name and prefix
-bucket_name = 'custom-bucket-name'
-prefix = 'your-prefix'
+bucket_name = "custom-bucket-name"
+prefix = "your-prefix"
 
 # Upload the in-memory object and get the presigned URL
-presigned_url = upload_in_memory_object(file_name, file_data, bucket_creds, bucket_name, prefix)
+presigned_url = upload_in_memory_object(
+    file_name, file_data, bucket_creds, bucket_name, prefix
+)
 
 # Print the presigned URL
 print(f"Presigned URL: {presigned_url}")

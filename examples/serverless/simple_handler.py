@@ -8,7 +8,7 @@ import runpod
 
 
 def handler(job):
-    """ Simple handler """
+    """Simple handler"""
     job_input = job["input"]
 
     return f"Hello {job_input['name']}!"

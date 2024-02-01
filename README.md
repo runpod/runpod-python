@@ -57,8 +57,8 @@ Create a python script in your project that contains your model definition and t
 
 import runpod
 
-def is_even(job):
 
+def is_even(job):
     job_input = job["input"]
     the_number = job_input["number"]
 
@@ -69,6 +69,7 @@ def is_even(job):
         return True
 
     return False
+
 
 runpod.serverless.start({"handler": is_even})
 ```
@@ -102,9 +103,7 @@ You can interact with RunPod endpoints via a `run` or `run_sync` method.
 ```python
 endpoint = runpod.Endpoint("ENDPOINT_ID")
 
-run_request = endpoint.run(
-    {"your_model_input_key": "your_model_input_value"}
-)
+run_request = endpoint.run({"your_model_input_key": "your_model_input_value"})
 
 # Check the status of the endpoint run request
 print(run_request.status())
@@ -116,12 +115,10 @@ print(run_request.output())
 ```python
 endpoint = runpod.Endpoint("ENDPOINT_ID")
 
-run_request = endpoint.run_sync(
-    {"your_model_input_key": "your_model_input_value"}
-)
+run_request = endpoint.run_sync({"your_model_input_key": "your_model_input_value"})
 
 # Returns the job results if completed within 90 seconds, otherwise, returns the job status.
-print(run_request )
+print(run_request)
 ```
 
 ### GPU Cloud (Pods)

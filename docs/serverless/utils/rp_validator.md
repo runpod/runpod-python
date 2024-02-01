@@ -19,15 +19,15 @@ from runpod.serverless.utils.rp_validator import validate
 # Define the schema for the expected inputs
 schema = {
     "input1": {
-        "type": str,    # expected type
-        "required": True,    # is input required
+        "type": str,  # expected type
+        "required": True,  # is input required
     },
     "input2": {
-        "type": int,    # expected type
-        "required": False,    # is input required
-        "default": 10,    # default value if input isn't provided
-        "constraints": lambda x: x > 0,    # constraints on the value of the input
-    }
+        "type": int,  # expected type
+        "required": False,  # is input required
+        "default": 10,  # default value if input isn't provided
+        "constraints": lambda x: x > 0,  # constraints on the value of the input
+    },
 }
 
 # Define the raw input to be validated
@@ -40,7 +40,7 @@ raw_input = {
 result = validate(raw_input, schema)
 
 # Check if there were any errors
-if 'errors' in result:
+if "errors" in result:
     print(f"Errors: {result['errors']}")
 else:
     print(f"Validated input: {result['validated_input']}")

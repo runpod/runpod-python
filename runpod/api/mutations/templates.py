@@ -4,11 +4,18 @@
 
 
 def generate_pod_template(
-        name: str, image_name: str, docker_start_cmd: str = None,
-        container_disk_in_gb: int = 10, volume_in_gb: int = None, volume_mount_path: str = None,
-        ports: str = None, env: dict = None, is_serverless: bool = False, registry_auth: str = None
+    name: str,
+    image_name: str,
+    docker_start_cmd: str = None,
+    container_disk_in_gb: int = 10,
+    volume_in_gb: int = None,
+    volume_mount_path: str = None,
+    ports: str = None,
+    env: dict = None,
+    is_serverless: bool = False,
+    registry_auth: str = None,
 ):
-    """ Generate a string for a GraphQL mutation to create a new pod template. """
+    """Generate a string for a GraphQL mutation to create a new pod template."""
     input_fields = []
 
     # ------------------------------ Required Fields ----------------------------- #
@@ -22,12 +29,12 @@ def generate_pod_template(
     else:
         input_fields.append('dockerArgs: ""')
 
-    input_fields.append(f'containerDiskInGb: {container_disk_in_gb}')
+    input_fields.append(f"containerDiskInGb: {container_disk_in_gb}")
 
     if volume_in_gb is not None:
-        input_fields.append(f'volumeInGb: {volume_in_gb}')
+        input_fields.append(f"volumeInGb: {volume_in_gb}")
     else:
-        input_fields.append('volumeInGb: 0')
+        input_fields.append("volumeInGb: 0")
 
     if volume_mount_path is not None:
         input_fields.append(f'volumeMountPath: "{volume_mount_path}"')
@@ -40,15 +47,16 @@ def generate_pod_template(
 
     if env is not None:
         env_string = ", ".join(
-            [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()])
+            [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()]
+        )
         input_fields.append(f"env: [{env_string}]")
     else:
-        input_fields.append('env: []')
+        input_fields.append("env: []")
 
     if is_serverless:
-        input_fields.append('isServerless: true')
+        input_fields.append("isServerless: true")
     else:
-        input_fields.append('isServerless: false')
+        input_fields.append("isServerless: false")
 
     if registry_auth is not None:
         input_fields.append(f'containerRegistryAuthId : "{registry_auth}"')
@@ -56,8 +64,8 @@ def generate_pod_template(
         input_fields.append('containerRegistryAuthId : ""')
 
     # ------------------------------ Enforced Fields ----------------------------- #
-    input_fields.append('startSsh: true')
-    input_fields.append('isPublic: false')
+    input_fields.append("startSsh: true")
+    input_fields.append("isPublic: false")
     input_fields.append('readme: ""')
 
     # Format the input fields into a string

@@ -3,20 +3,23 @@ Example of calling an endpoint using asyncio.
 """
 
 import asyncio
+
 import aiohttp
 
 import runpod
 from runpod import AsyncioEndpoint, AsyncioJob
 
-asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # For Windows Users
+asyncio.set_event_loop_policy(
+    asyncio.WindowsSelectorEventLoopPolicy()
+)  # For Windows Users
 
 runpod.api_key = "YOUR_API_KEY"
 
 
 async def main():
-    '''
+    """
     Function to run the example.
-    '''
+    """
     async with aiohttp.ClientSession() as session:
         # Invoke API
         payload = {}
@@ -34,5 +37,6 @@ async def main():
 
         # Print output
         print(output)
+
 
 asyncio.run(main())
