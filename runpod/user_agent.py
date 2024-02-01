@@ -5,12 +5,24 @@ import platform
 
 from runpod.version import __version__ as runpod_version
 
-os_info = f"{platform.system()} {platform.release()}; {platform.machine()}"
 
-USER_AGENT = f"RunPod-Python-SDK/{runpod_version}"
-USER_AGENT += f" ({os_info})"
-USER_AGENT += f" Language/Python {platform.python_version()}"
+def construct_user_agent():
+    """ Constructs the User-Agent string for the RunPod-Python-SDK """
+    os_info = f"{platform.system()} {platform.release()}; {platform.machine()}"
+    python_version = platform.python_version()
+    integration_method = os.getenv('RUNPOD_UA_INTEGRATION')
+
+    ua_components = [
+        f"RunPod-Python-SDK/{runpod_version}",
+        f"({os_info})",
+        f"Language/Python {python_version}"
+    ]
+
+    if integration_method:
+        ua_components.append(f"Integration/{integration_method}")
+
+    user_agent = " ".join(ua_components)
+    return user_agent
 
 
-if os.environ.get('RUNPOD_UA_INTEGRATION') is not None:
-    USER_AGENT += f" Integration/{os.environ.get('RUNPOD_UA_INTEGRATION')}"
+USER_AGENT = construct_user_agent()
