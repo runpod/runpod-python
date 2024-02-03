@@ -20,8 +20,7 @@ try:
         template_id=new_template["id"],
         gpu_ids="AMPERE_16",
         workers_min=0,
-        workers_max=1,
-        flashboot=True
+        workers_max=1
     )
 
     print(new_endpoint)
