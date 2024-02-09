@@ -355,6 +355,17 @@ def update_endpoint_template(endpoint_id: str, template_id: str):
 
 
 def create_container_registry_auth(name: str, username: str, password: str):
+    """
+    Create a container registry authentication.
+
+    Args:
+        name (str): The name of the container registry.
+        username (str): The username for authentication.
+        password (str): The password for authentication.
+
+    Returns:
+        dict: The response data containing the saved container registry authentication.
+    """
     raw_response = run_graphql_query(
         container_register_auth_mutations.generate_container_registry_auth(
             name, username, password
