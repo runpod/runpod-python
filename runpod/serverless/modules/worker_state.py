@@ -25,7 +25,7 @@ def get_auth_header():
 
 # ------------------------------- Job Tracking ------------------------------- #
 class Job:
-    """ Represents a job. """
+    """ Represents a job object. """
 
     def __init__(
         self,
@@ -33,22 +33,25 @@ class Job:
         job_input: Optional[Dict[str, Any]] = None,
         webhook: Optional[str] = None,
     ) -> None:
-        self.job_id = job_id
-        self.job_input = job_input
+        self.id = job_id
+        self.input = job_input
         self.webhook = webhook
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Job):
-            return self.job_id == other.job_id
+            return self.id == other.id
         return False
 
     def __hash__(self) -> int:
-        return hash(self.job_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
-        return self.job_id
+        return self.id
 
 
+# ---------------------------------------------------------------------------- #
+#                                    Tracker                                   #
+# ---------------------------------------------------------------------------- #
 class Jobs:
     ''' Track the state of current jobs.'''
 
