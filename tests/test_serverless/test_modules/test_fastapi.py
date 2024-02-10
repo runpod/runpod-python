@@ -4,6 +4,7 @@
 import os
 import asyncio
 
+import aiohttp
 import unittest
 from unittest.mock import patch, Mock, MagicMock
 import pytest
@@ -71,7 +72,8 @@ class TestFastAPI(unittest.TestCase):
                 "test_webhook", {"test": "output"}))
             assert success is True
 
-            mock_post.return_value.__aenter__.return_value.status = 500  # Sim failure response
+            mock_post.return_value.__aenter__.return_value.raise_for_status.side_effect = aiohttp.ClientResponseError(  # pylint: disable=line-too-long
+                request_info=None, history=None, status=500)
 
             success = asyncio.run(rp_fastapi._send_webhook_async(
                 "test_webhook", {"test": "output"}))
@@ -245,7 +247,7 @@ class TestFastAPI(unittest.TestCase):
             }
 
             # Test webhook caller sent
-            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:
+            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
                 asyncio.run(worker_api._sim_stream(input_object_with_webhook))
                 assert mock_send_webhook.called
 
