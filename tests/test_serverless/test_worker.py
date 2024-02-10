@@ -124,7 +124,7 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
 
         self.mock_handler.return_value = "test"
 
-    async def test_worker_bad_local(self):
+    def test_worker_bad_local(self):
         '''
         Test sys args.
         '''
@@ -142,7 +142,7 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
                 self.assertRaises(SystemExit):
 
             mock_parse_known_args.return_value = known_args, []
-            await runpod.serverless.start({"handler": self.mock_handler})
+            runpod.serverless.start({"handler": self.mock_handler})
 
             # Confirm that the log level is set to WARN
             log = RunPodLogger()
