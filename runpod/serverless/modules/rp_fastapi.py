@@ -240,7 +240,7 @@ class WorkerAPI:
             })
 
         if job_request.webhook:
-            await _send_webhook_async(job_request.webhook, job_output)
+            asyncio.create_task(_send_webhook_async(job_request.webhook, job_output))
 
         return jsonable_encoder({
             "id": job.id,
@@ -276,7 +276,7 @@ class WorkerAPI:
         job_list.remove_job(job.id)
 
         if stashed_job.webhook:
-            await _send_webhook_async(stashed_job.webhook, stream_accumulator)
+            asyncio.create_task(_send_webhook_async(stashed_job.webhook, stream_accumulator))
 
         return jsonable_encoder({
             "id": job_id,
@@ -315,7 +315,7 @@ class WorkerAPI:
             })
 
         if stashed_job.webhook:
-            await _send_webhook_async(stashed_job.webhook, job_output)
+            asyncio.create_task(_send_webhook_async(stashed_job.webhook, job_output))
 
         return jsonable_encoder({
             "id": job_id,
