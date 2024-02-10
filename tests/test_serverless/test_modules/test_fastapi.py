@@ -259,7 +259,7 @@ class TestFastAPI(unittest.TestCase):
             # Test webhook caller sent
             with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
                 asyncio.run(worker_api._sim_run(input_object_with_webhook))
-                asyncio.run(worker_api._sim_stream(input_object_with_webhook))
+                asyncio.run(worker_api._sim_stream("test-123"))
                 assert mock_send_webhook.called
 
         loop.close()
@@ -329,7 +329,7 @@ class TestFastAPI(unittest.TestCase):
             # Test webhook caller sent
             with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
                 asyncio.run(worker_api._sim_run(input_object_with_webhook))
-                asyncio.run(worker_api._sim_status(input_object_with_webhook))
+                asyncio.run(worker_api._sim_status("test-123"))
                 assert mock_send_webhook.called
 
         loop.close()
