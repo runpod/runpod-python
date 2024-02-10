@@ -242,6 +242,12 @@ class TestFastAPI(unittest.TestCase):
                 "error": "Stream not supported, handler must be a generator."
             }
 
+            # Test webhook caller sent
+            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
+                asyncio.run(worker_api._sim_run(input_object_with_webhook))
+                asyncio.run(worker_api._sim_stream("test-123"))
+                assert mock_send_webhook.called
+
             # Test with generator handler
             def generator_handler(job):
                 del job
@@ -255,12 +261,6 @@ class TestFastAPI(unittest.TestCase):
                 "status": "COMPLETED",
                 "stream": [{"output": {"result": "success"}}]
             }
-
-            # Test webhook caller sent
-            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
-                asyncio.run(worker_api._sim_run(input_object_with_webhook))
-                asyncio.run(worker_api._sim_stream("test-123"))
-                assert mock_send_webhook.called
 
         loop.close()
 
@@ -305,6 +305,12 @@ class TestFastAPI(unittest.TestCase):
                 "output": {"result": "success"}
             }
 
+            # Test webhook caller sent
+            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
+                asyncio.run(worker_api._sim_run(input_object_with_webhook))
+                asyncio.run(worker_api._sim_status("test-123"))
+                assert mock_send_webhook.called
+
             # Test with generator handler
             def generator_handler(job):
                 del job
@@ -325,11 +331,5 @@ class TestFastAPI(unittest.TestCase):
             error_status_return = asyncio.run(
                 error_worker_api._sim_status("test-123"))
             assert "error" in error_status_return
-
-            # Test webhook caller sent
-            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
-                asyncio.run(worker_api._sim_run(input_object_with_webhook))
-                asyncio.run(worker_api._sim_status("test-123"))
-                assert mock_send_webhook.called
 
         loop.close()
