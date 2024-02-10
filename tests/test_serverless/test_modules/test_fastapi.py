@@ -58,8 +58,6 @@ class TestFastAPI(unittest.TestCase):
         '''
         Tests the _webhook_sender() method.
         '''
-        loop = asyncio.get_event_loop()
-
         module_location = "runpod.serverless.modules.rp_fastapi"
         with patch(f"{module_location}.aiohttp.ClientSession.post", new_callable=AsyncMock) as mock_post:  # pylint: disable=line-too-long
             mock_post.return_value.status = 200
