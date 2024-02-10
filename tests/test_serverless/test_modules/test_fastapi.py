@@ -71,7 +71,7 @@ class TestFastAPI(unittest.TestCase):
                 "test_webhook", {"test": "output"}))
             assert success is True
 
-            mock_post.return_value.__aenter__.return_value.status = 404  # Sim failure response
+            mock_post.return_value.__aenter__.return_value.status = 500  # Sim failure response
 
             success = asyncio.run(rp_fastapi._send_webhook_async(
                 "test_webhook", {"test": "output"}))
@@ -183,7 +183,7 @@ class TestFastAPI(unittest.TestCase):
             assert "error" in error_runsync_return
 
             # Test webhook caller sent
-            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:
+            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
                 asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
                 assert mock_send_webhook.called
 
