@@ -1,3 +1,5 @@
+""" Test suite for the generate_container_registry_auth function. """
+
 import unittest
 
 from runpod.api.mutations.container_register_auth import (
@@ -6,6 +8,8 @@ from runpod.api.mutations.container_register_auth import (
 
 
 class TestGenerateContainerRegistryAuth(unittest.TestCase):
+    """ Test suite for the generate_container_registry_auth function. """
+
     def test_generate_container_registry_auth(self):
         """
         Test that the generate_container_registry_auth function produces the correct
@@ -24,7 +28,7 @@ class TestGenerateContainerRegistryAuth(unittest.TestCase):
         # Verify key components of the mutation string
         self.assertIn("mutation SaveRegistryAuth", actual_mutation)
         self.assertIn(
-            'saveRegistryAuth(input: {name: "testRegistry", username: "testUser", password: "testPass"})',
+            'saveRegistryAuth(input: {name: "testRegistry", username: "testUser", password: "testPass"})',  # pylint: disable=line-too-long
             actual_mutation,
         )
         self.assertIn("id", actual_mutation)
