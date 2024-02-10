@@ -1,5 +1,6 @@
 ''' Tests for runpod.serverless.modules.rp_logger '''
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -117,7 +118,18 @@ class TestLogger(unittest.TestCase):
         # Patch print to capture stdout
         with patch("builtins.print") as mock_print:
             logger.log("test_message", "INFO", job_id)
+
+            mock_print.assert_called_once_with(
+                "'INFO   | test_job_id | test_message', flush=True",
+                flush=True
+            )
+
+            os.environ["RUNPOD_ENDPOINT_ID"] = "test_endpoint_id"
+            logger.log("test_message", "INFO", job_id)
+
             mock_print.assert_called_once_with(
                 '{"requestId": "test_job_id", "message": "test_message", "level": "INFO"}',
                 flush=True
             )
+
+            os.environ.pop("RUNPOD_ENDPOINT_ID")
