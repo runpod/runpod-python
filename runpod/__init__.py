@@ -1,7 +1,7 @@
 """ Allows runpod to be imported as a module. """
 
-import logging
 import os
+import logging
 
 from . import serverless
 from .api.ctl_commands import (  # noqa: F401

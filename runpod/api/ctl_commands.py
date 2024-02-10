@@ -9,8 +9,6 @@ from .graphql import run_graphql_query
 from .mutations import container_register_auth as container_register_auth_mutations
 from .mutations import endpoints as endpoint_mutations
 from .mutations import pods as pod_mutations
-
-# Templates
 from .mutations import templates as template_mutations
 from .mutations import user as user_mutations
 from .queries import endpoints as endpoint_queries
