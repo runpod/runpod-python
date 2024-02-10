@@ -71,7 +71,7 @@ class TestFastAPI(unittest.TestCase):
                 "test_webhook", {"test": "output"}))
             assert success is True
 
-            mock_post.return_value.__aenter__.return_value.status = 404  # Simulate failure response
+            mock_post.return_value.__aenter__.return_value.status = 404  # Sim failure response
 
             success = asyncio.run(rp_fastapi._send_webhook_async(
                 "test_webhook", {"test": "output"}))
@@ -184,7 +184,7 @@ class TestFastAPI(unittest.TestCase):
 
             # Test webhook caller sent
             with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:
-                runsync_return = asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
+                asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
                 assert mock_send_webhook.called
 
         loop.close()
@@ -204,6 +204,11 @@ class TestFastAPI(unittest.TestCase):
 
             default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
+            )
+
+            input_object_with_webhook = rp_fastapi.DefaultRequest(
+                input={"test_input": "test_input"},
+                webhook="test_webhook"
             )
 
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
@@ -238,6 +243,11 @@ class TestFastAPI(unittest.TestCase):
                 "status": "COMPLETED",
                 "stream": [{"output": {"result": "success"}}]
             }
+
+            # Test webhook caller sent
+            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:
+                asyncio.run(worker_api._sim_stream(input_object_with_webhook))
+                assert mock_send_webhook.called
 
         loop.close()
 
