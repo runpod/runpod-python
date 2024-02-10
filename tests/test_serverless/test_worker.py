@@ -80,7 +80,7 @@ class TestWorker(IsolatedAsyncioTestCase):
             assert runpod.serverless.worker._is_local(
                 self.mock_config) is False
 
-    async def test_local_api(self):
+    def test_local_api(self):
         '''
         Test local FastAPI setup.
         '''
@@ -97,7 +97,7 @@ class TestWorker(IsolatedAsyncioTestCase):
                 patch("runpod.serverless.rp_fastapi") as mock_fastapi:
 
             mock_parse_known_args.return_value = known_args, []
-            await runpod.serverless.start({"handler": self.mock_handler})
+            runpod.serverless.start({"handler": self.mock_handler})
 
             assert mock_fastapi.WorkerAPI.called
 
