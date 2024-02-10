@@ -5,7 +5,7 @@ import os
 import asyncio
 
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, AsyncMock
 import pytest
 
 import runpod
@@ -53,14 +53,13 @@ class TestFastAPI(unittest.TestCase):
             os.environ.pop("RUNPOD_REALTIME_PORT")
             os.environ.pop("RUNPOD_ENDPOINT_ID")
 
-    @pytest.mark.asyncio
     async def test_webhook_sender(self):
         '''
         Tests the _webhook_sender() method.
         '''
         module_location = "runpod.serverless.modules.rp_fastapi"
-        with patch(f"{module_location}.aiohttp.ClientSession.post", Mock()) as mock_post:
-            mock_post.return_value.status_code = 404
+        with patch(f"{module_location}.aiohttp.ClientSession.post", new_callable=AsyncMock) as mock_post:  # pylint: disable=line-too-long
+            mock_post.return_value.status = 200
 
             success = await rp_fastapi._send_webhook_async("test_webhook", "test_output")
             assert success is False
