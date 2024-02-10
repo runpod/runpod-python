@@ -4,6 +4,7 @@
 import os
 import platform
 import argparse
+from unittest import mock
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
 from unittest import IsolatedAsyncioTestCase
@@ -18,24 +19,17 @@ nest_asyncio.apply()
 
 
 class TestWorker(IsolatedAsyncioTestCase):
-    """ Tests for runpod | serverless| worker """
+    """Tests for RunPod serverless worker."""
 
     def setUp(self):
-        self.mock_handler = Mock()
-        self.mock_handler.return_value = "test"
-
-        self.mock_config = Mock()
+        self.mock_handler = mock.Mock(return_value="test")
         self.mock_config = {
             "handler": self.mock_handler,
-            "rp_args": {
-                "test_input": None,
-            }
+            "rp_args": {"test_input": None},
         }
 
     def test_get_auth_header(self):
-        '''
-        Test _get_auth_header
-        '''
+        """Test retrieval of the authentication header from _get_auth_header."""
         os_info = f"{platform.system()} {platform.release()}; {platform.machine()}"
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
