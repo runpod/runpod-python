@@ -141,7 +141,8 @@ class TestFastAPI(unittest.TestCase):
         with patch(f"{module_location}.FastAPI", Mock()), \
                 patch(f"{module_location}.APIRouter", return_value=Mock()), \
                 patch(f"{module_location}.uvicorn", Mock()), \
-                patch(f"{module_location}.uuid.uuid4", return_value="123"):
+                patch(f"{module_location}.uuid.uuid4", return_value="123"), \
+                patch(f"{module_location}.threading") as mock_threading:
 
             default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
@@ -183,9 +184,8 @@ class TestFastAPI(unittest.TestCase):
             assert "error" in error_runsync_return
 
             # Test webhook caller sent
-            with patch(f"{module_location}.threading") as mock_thread:
-                asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
-                assert mock_thread.Thread.called
+            asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
+            assert mock_threading.Thread.called
 
         loop.close()
 
@@ -201,7 +201,7 @@ class TestFastAPI(unittest.TestCase):
                 patch(f"{module_location}.APIRouter", return_value=Mock()), \
                 patch(f"{module_location}.uvicorn", Mock()), \
                 patch(f"{module_location}.uuid.uuid4", return_value="123"), \
-                patch(f"{module_location}.threading"):
+                patch(f"{module_location}.threading") as mock_threading:
 
             default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
@@ -232,10 +232,9 @@ class TestFastAPI(unittest.TestCase):
             }
 
             # Test webhook caller sent
-            with patch(f"{module_location}.threading", return_value=True) as mock_threading:
-                asyncio.run(worker_api._sim_run(input_object_with_webhook))
-                asyncio.run(worker_api._sim_stream("test-123"))
-                assert mock_threading.Thread.called
+            asyncio.run(worker_api._sim_run(input_object_with_webhook))
+            asyncio.run(worker_api._sim_stream("test-123"))
+            assert mock_threading.Thread.called
 
             # Test with generator handler
             def generator_handler(job):
@@ -265,7 +264,7 @@ class TestFastAPI(unittest.TestCase):
                 patch(f"{module_location}.APIRouter", return_value=Mock()), \
                 patch(f"{module_location}.uvicorn", Mock()), \
                 patch(f"{module_location}.uuid.uuid4", return_value="123"), \
-                patch(f"{module_location}.threading"):
+                patch(f"{module_location}.threading") as mock_threading:
 
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
@@ -296,10 +295,9 @@ class TestFastAPI(unittest.TestCase):
             }
 
             # Test webhook caller sent
-            with patch(f"{module_location}.threading", return_value=True) as mock_threading:
-                asyncio.run(worker_api._sim_run(input_object_with_webhook))
-                asyncio.run(worker_api._sim_status("test-123"))
-                assert mock_threading.Thread.called
+            asyncio.run(worker_api._sim_run(input_object_with_webhook))
+            asyncio.run(worker_api._sim_status("test-123"))
+            assert mock_threading.Thread.called
 
             # Test with generator handler
             def generator_handler(job):

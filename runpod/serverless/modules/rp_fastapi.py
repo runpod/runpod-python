@@ -3,7 +3,6 @@
 
 import os
 import uuid
-import time
 import threading
 from dataclasses import dataclass
 from typing import Union, Optional, Dict, Any
@@ -86,15 +85,18 @@ class StreamOutput:
 
 
 # ------------------------------ Webhook Sender ------------------------------ #
-def _send_webhook(url: str, payload: Dict[str, Any]) -> None:
+def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
     """
-    Sends a webhook to the provided URL. Retries once if the first attempt fails.
+    Sends a webhook to the provided URL.
 
     Args:
         url (str): The URL to send the webhook to.
         payload (Dict[str, Any]): The JSON payload to send.
+
+    Returns:
+        bool: True if the request was successful, False otherwise.
     """
-    def attempt_send(session, url, payload):
+    with requests.Session() as session:
         try:
             response = session.post(url, json=payload, timeout=10)
             response.raise_for_status()  # Raises exception for 4xx/5xx responses
@@ -102,19 +104,6 @@ def _send_webhook(url: str, payload: Dict[str, Any]) -> None:
         except requests.RequestException as err:
             print(f"Request to {url} failed: {err}")
             return False
-
-    with requests.Session() as session:
-        if attempt_send(session, url, payload):
-            return True
-
-        print("Retrying...")
-        time.sleep(1)  # Wait for 1 second before retrying
-
-        if attempt_send(session, url, payload):
-            return True
-
-        print("Failed to send webhook after retry.")
-        return False
 
 
 # ---------------------------------------------------------------------------- #
