@@ -80,7 +80,7 @@ class Jobs:
         '''
         for job in self.jobs:
             if job.job_id == job_id:
-                return job.job
+                return job
 
         return None
 
