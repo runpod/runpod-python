@@ -248,7 +248,7 @@ class TestFastAPI(unittest.TestCase):
 
             # Test webhook caller sent
             with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
-                asyncio.run(worker_api._sim_stream(input_object_with_webhook))
+                asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
                 assert mock_send_webhook.called
 
         loop.close()
@@ -264,8 +264,7 @@ class TestFastAPI(unittest.TestCase):
         with patch(f"{module_location}.FastAPI", Mock()), \
                 patch(f"{module_location}.APIRouter", return_value=Mock()), \
                 patch(f"{module_location}.uvicorn", Mock()), \
-                patch(f"{module_location}.uuid.uuid4", return_value="123"), \
-                patch("rp_fastapi._send_webhook_async", return_value=True) as mock_send_webhook:
+                patch(f"{module_location}.uuid.uuid4", return_value="123"):
 
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
@@ -317,7 +316,8 @@ class TestFastAPI(unittest.TestCase):
             assert "error" in error_status_return
 
             # Test webhook caller sent
-            asyncio.run(worker_api._sim_stream(input_object_with_webhook))
-            assert mock_send_webhook.called
+            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
+                asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
+                assert mock_send_webhook.called
 
         loop.close()
