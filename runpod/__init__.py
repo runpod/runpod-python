@@ -4,29 +4,41 @@ import os
 import logging
 
 from . import serverless
-from .serverless.modules.rp_logger import RunPodLogger
-from .endpoint import Endpoint
-from .endpoint import AsyncioEndpoint, AsyncioJob
-from .version import __version__
 from .api.ctl_commands import (
-    get_user, update_user_settings,
-    get_gpu, get_gpus,
-    get_pod, get_pods, create_pod, stop_pod, resume_pod, terminate_pod,
+    create_container_registry_auth,
+    create_endpoint,
+    create_pod,
     create_template,
-    get_endpoints, create_endpoint, update_endpoint_template
+    get_endpoints,
+    get_gpu,
+    get_gpus,
+    get_pod,
+    get_pods,
+    get_user,
+    resume_pod,
+    stop_pod,
+    terminate_pod,
+    update_endpoint_template,
+    update_user_settings,
 )
-from .cli.groups.config.functions import set_credentials, check_credentials, get_credentials
-
+from .cli.groups.config.functions import (
+    check_credentials,
+    get_credentials,
+    set_credentials,
+)
+from .endpoint import AsyncioEndpoint, AsyncioJob, Endpoint
+from .serverless.modules.rp_logger import RunPodLogger
+from .version import __version__
 
 # ------------------------------- Config Paths ------------------------------- #
-SSH_KEY_PATH = os.path.expanduser('~/.runpod/ssh')
+SSH_KEY_PATH = os.path.expanduser("~/.runpod/ssh")
 
 
 profile = "default"  # pylint: disable=invalid-name
 
 _credentials = get_credentials(profile)
 if _credentials is not None:
-    api_key = _credentials['api_key']  # pylint: disable=invalid-name
+    api_key = _credentials["api_key"]  # pylint: disable=invalid-name
 else:
     api_key = None  # pylint: disable=invalid-name
 
