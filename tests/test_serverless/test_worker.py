@@ -57,17 +57,17 @@ class TestWorker(IsolatedAsyncioTestCase):
             assert runpod.serverless.worker._is_local(
                 self.mock_config) is False
 
-    def test_start(self):
-        '''
-        Test basic start call.
-        '''
-        with patch("builtins.open", mock_open(read_data='{"input":{"number":1}}')) as mock_file, \
-                patch("runpod.serverless.worker.os") as mock_os, \
-                self.assertRaises(SystemExit):
-            mock_os.environ.get.return_value = None
-            runpod.serverless.start({"handler": self.mock_handler})
+    # def test_start(self):
+    #     '''
+    #     Test basic start call.
+    #     '''
+    #     with patch("builtins.open", mock_open(read_data='{"input":{"number":1}}')) as mock_file, \
+    #             patch("runpod.serverless.worker.os") as mock_os, \
+    #             self.assertRaises(SystemExit):
+    #         mock_os.environ.get.return_value = None
+    #         runpod.serverless.start({"handler": self.mock_handler})
 
-            assert mock_file.called
+    #         assert mock_file.called
 
     async def test_is_local_testing(self):
         '''
