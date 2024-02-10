@@ -7,14 +7,11 @@ import argparse
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
 from unittest import IsolatedAsyncioTestCase
-import nest_asyncio
 
 import runpod
 from runpod._version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless import _signal_handler
-
-nest_asyncio.apply()
 
 
 class TestWorker(IsolatedAsyncioTestCase):
@@ -32,7 +29,7 @@ class TestWorker(IsolatedAsyncioTestCase):
             }
         }
 
-    def test_get_auth_header(self):
+    async def test_get_auth_header(self):
         '''
         Test _get_auth_header
         '''
@@ -45,7 +42,7 @@ class TestWorker(IsolatedAsyncioTestCase):
                 'User-Agent': f'RunPod-Python-SDK/{runpod_version} ({os_info}) Language/Python {platform.python_version()}'  # pylint: disable=line-too-long
             }
 
-    def test_is_local(self):
+    async def test_is_local(self):
         '''
         Test _is_local
         '''
@@ -60,7 +57,7 @@ class TestWorker(IsolatedAsyncioTestCase):
             assert runpod.serverless.worker._is_local(
                 self.mock_config) is False
 
-    def test_start(self):
+    async def test_start(self):
         '''
         Test basic start call.
         '''
@@ -71,7 +68,7 @@ class TestWorker(IsolatedAsyncioTestCase):
 
             assert mock_file.called
 
-    def test_is_local_testing(self):
+    async def test_is_local_testing(self):
         '''
         Test _is_local_testing
         '''
@@ -83,7 +80,7 @@ class TestWorker(IsolatedAsyncioTestCase):
             assert runpod.serverless.worker._is_local(
                 self.mock_config) is False
 
-    def test_local_api(self):
+    async def test_local_api(self):
         '''
         Test local FastAPI setup.
         '''
@@ -106,7 +103,7 @@ class TestWorker(IsolatedAsyncioTestCase):
 
     @patch('runpod.serverless.log')
     @patch('runpod.serverless.sys.exit')
-    def test_signal_handler(self, mock_exit, mock_logger):
+    async def test_signal_handler(self, mock_exit, mock_logger):
         '''
         Test signal handler.
         '''
@@ -126,7 +123,7 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
 
         self.mock_handler.return_value = "test"
 
-    def test_worker_bad_local(self):
+    async def test_worker_bad_local(self):
         '''
         Test sys args.
         '''
