@@ -108,6 +108,8 @@ async def _send_webhook_async(url: str, payload: Dict[str, Any]) -> None:
             print("Retrying...")
             await asyncio.sleep(1)  # Wait for 1 second before retrying
             success = await attempt_send(session, url, payload)
+        else:
+            return True
 
         print("Failed to send webhook after retry.")
         return False
