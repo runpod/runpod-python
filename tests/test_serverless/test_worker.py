@@ -62,7 +62,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         Test basic start call.
         '''
         with patch("builtins.open", mock_open(read_data='{"input":{"number":1}}')) as mock_file, \
-                patch("runpod.serverless.worker.os") as mock_os, \
+                patch("runpod.serverless.os") as mock_os, \
                 self.assertRaises(SystemExit):
             mock_os.environ.get.return_value = None
             runpod.serverless.start({"handler": self.mock_handler})
