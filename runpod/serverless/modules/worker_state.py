@@ -25,7 +25,14 @@ def get_auth_header():
 
 # ------------------------------- Job Tracking ------------------------------- #
 class Job:
-    """ Represents a job object. """
+    """
+    Represents a job object.
+
+    Args:
+        job_id: The id of the job, a unique string.
+        job_input: The input to the job.
+        webhook: The webhook to send the job output to.
+    """
 
     def __init__(
         self,

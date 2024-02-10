@@ -85,8 +85,9 @@ class TestJobs(unittest.TestCase):
         self.assertNotEqual(job, non_job_object)
 
         self.assertEqual(self.jobs.get_job('123'), None)
+
         self.jobs.add_job('123', 'test_input')
-        self.assertEqual(self.jobs.get_job('123'), 'test_input')
+        self.assertEqual(self.jobs.get_job('123').input, 'test_input')
 
     def test_get_job_list(self):
         '''
