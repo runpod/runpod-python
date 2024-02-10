@@ -54,10 +54,12 @@ class TestFastAPI(unittest.TestCase):
             os.environ.pop("RUNPOD_ENDPOINT_ID")
 
     @pytest.mark.asyncio
-    async def test_webhook_sender(self):
+    def test_webhook_sender(self):
         '''
         Tests the _webhook_sender() method.
         '''
+        loop = asyncio.get_event_loop()
+
         module_location = "runpod.serverless.modules.rp_fastapi.aiohttp.ClientSession"
 
         with patch(f"{module_location}.post", new_callable=MagicMock) as mock_post:
@@ -67,14 +69,16 @@ class TestFastAPI(unittest.TestCase):
             mock_post.return_value.__aexit__.return_value = None  # Mock exit without exception
 
             # First attempt should be successful because of mocked status=200
-            success = await rp_fastapi._send_webhook_async("test_webhook", {"test": "output"})
+            success = asyncio.run(rp_fastapi._send_webhook_async(
+                "test_webhook", {"test": "output"}))
             assert success is True
 
             # Adjust the mock to simulate a failed response for the second attempt
             mock_post.return_value.__aenter__.return_value.status = 404  # Simulate failure response
 
             # Second attempt should fail because of mocked status=404
-            success = await rp_fastapi._send_webhook_async("test_webhook", {"test": "output"})
+            success = asyncio.run(rp_fastapi._send_webhook_async(
+                "test_webhook", {"test": "output"}))
             assert success is False
 
     @pytest.mark.asyncio
@@ -145,6 +149,11 @@ class TestFastAPI(unittest.TestCase):
                 input={"test_input": "test_input"}
             )
 
+            input_object_with_webhook = rp_fastapi.DefaultRequest(
+                input={"test_input": "test_input"},
+                webhook="test_webhook"
+            )
+
             # Test with handler
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
@@ -174,6 +183,11 @@ class TestFastAPI(unittest.TestCase):
             error_runsync_return = asyncio.run(
                 error_worker_api._sim_runsync(default_input_object))
             assert "error" in error_runsync_return
+
+            # Test webhook caller sent
+            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:
+                runsync_return = asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
+                assert mock_send_webhook.called
 
         loop.close()
 
