@@ -139,9 +139,11 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
         known_args.test_output = '{"test": "test"}'
 
         with patch("argparse.ArgumentParser.parse_known_args") as mock_parse_known_args, \
+                patch("runpod.serverless.os") as mock_os, \
                 self.assertRaises(SystemExit):
 
             mock_parse_known_args.return_value = known_args, []
+            mock_os.environ.get.return_value = None
             runpod.serverless.start({"handler": self.mock_handler})
 
             # Confirm that the log level is set to WARN
