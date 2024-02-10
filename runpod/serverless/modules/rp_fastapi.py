@@ -3,12 +3,13 @@
 
 import os
 import uuid
-import asyncio
+import time
+import threading
 from dataclasses import dataclass
 from typing import Union, Optional, Dict, Any
 
-import aiohttp
 import uvicorn
+import requests
 from fastapi import FastAPI, APIRouter
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
@@ -85,31 +86,31 @@ class StreamOutput:
 
 
 # ------------------------------ Webhook Sender ------------------------------ #
-async def _send_webhook_async(url: str, payload: Dict[str, Any]) -> None:
+def _send_webhook(url: str, payload: Dict[str, Any]) -> None:
     """
-    Sends a webhook to the provided URL asynchronously. Retries once if the first attempt fails.
+    Sends a webhook to the provided URL. Retries once if the first attempt fails.
 
     Args:
         url (str): The URL to send the webhook to.
         payload (Dict[str, Any]): The JSON payload to send.
     """
-    async def attempt_send(session, url, payload):
+    def attempt_send(session, url, payload):
         try:
-            async with session.post(url, json=payload, timeout=10) as response:
-                response.raise_for_status()  # Raises exception for 4xx/5xx responses
-                return True
-        except (aiohttp.ClientError, aiohttp.http_exceptions.HttpProcessingError) as err:
+            response = session.post(url, json=payload, timeout=10)
+            response.raise_for_status()  # Raises exception for 4xx/5xx responses
+            return True
+        except requests.RequestException as err:
             print(f"Request to {url} failed: {err}")
             return False
 
-    async with aiohttp.ClientSession() as session:
-        if await attempt_send(session, url, payload):
+    with requests.Session() as session:
+        if attempt_send(session, url, payload):
             return True
 
         print("Retrying...")
-        await asyncio.sleep(1)  # Wait for 1 second before retrying
+        time.sleep(1)  # Wait for 1 second before retrying
 
-        if await attempt_send(session, url, payload):
+        if attempt_send(session, url, payload):
             return True
 
         print("Failed to send webhook after retry.")
@@ -240,7 +241,10 @@ class WorkerAPI:
             })
 
         if job_request.webhook:
-            asyncio.create_task(_send_webhook_async(job_request.webhook, job_output))
+            thread = threading.Thread(
+                target=_send_webhook,
+                args=(job_request.webhook, job_output), daemon=True)
+            thread.start()
 
         return jsonable_encoder({
             "id": job.id,
@@ -276,7 +280,10 @@ class WorkerAPI:
         job_list.remove_job(job.id)
 
         if stashed_job.webhook:
-            asyncio.create_task(_send_webhook_async(stashed_job.webhook, stream_accumulator))
+            thread = threading.Thread(
+                target=_send_webhook,
+                args=(stashed_job.webhook, stream_accumulator), daemon=True)
+            thread.start()
 
         return jsonable_encoder({
             "id": job_id,
@@ -315,7 +322,10 @@ class WorkerAPI:
             })
 
         if stashed_job.webhook:
-            asyncio.create_task(_send_webhook_async(stashed_job.webhook, job_output))
+            thread = threading.Thread(
+                target=_send_webhook,
+                args=(stashed_job.webhook, job_output), daemon=True)
+            thread.start()
 
         return jsonable_encoder({
             "id": job_id,
