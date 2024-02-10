@@ -38,7 +38,10 @@ class TestConstructUserAgent(unittest.TestCase):
             self, mock_python_version, mock_machine, mock_release, mock_system):
         """Test the User-Agent string with an integration method specified."""
         expected_ua = f"RunPod-Python-SDK/{runpod_version} (Linux 5.4; x86_64) Language/Python 3.9.5 Integration/SkyPilot"  # pylint: disable=line-too-long
+
+        os.environ['RUNPOD_UA_INTEGRATION'] = 'SkyPilot'
         self.assertEqual(construct_user_agent(), expected_ua)
+        os.environ.pop('RUNPOD_UA_INTEGRATION')
 
         assert mock_python_version.called
         assert mock_machine.called

@@ -120,7 +120,7 @@ class TestLogger(unittest.TestCase):
             logger.log("test_message", "INFO", job_id)
 
             mock_print.assert_called_once_with(
-                "'INFO   | test_job_id | test_message', flush=True",
+                "'INFO   | test_job_id | test_message'",
                 flush=True
             )
 
