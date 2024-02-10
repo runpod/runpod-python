@@ -189,7 +189,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
     # pylint: disable=too-many-arguments
-    async def test_run_worker(
+    def test_run_worker(
             self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
         '''
         Test run_worker with synchronous handler.
@@ -220,7 +220,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
-    async def test_run_worker_generator_handler(
+    def test_run_worker_generator_handler(
             self, mock_send_result, mock_stream_result, mock_run_job,
             mock_get_job):
         '''
@@ -252,7 +252,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
-    async def test_run_worker_generator_handler_exception(
+    def test_run_worker_generator_handler_exception(
             self, mock_send_result, mock_stream_result, mock_run_job,
             mock_get_job):
         '''
@@ -284,7 +284,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.run_job")
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
-    async def test_run_worker_generator_aggregate_handler(
+    def test_run_worker_generator_aggregate_handler(
             self, mock_send_result, mock_stream_result, mock_run_job,
             mock_get_job):
         '''
@@ -320,7 +320,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
     # pylint: disable=too-many-arguments
-    async def test_run_worker_concurrency(
+    def test_run_worker_concurrency(
             self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
         '''
         Test run_worker with synchronous handler.
@@ -359,7 +359,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
     # pylint: disable=too-many-arguments
-    async def test_run_worker_multi_processing(
+    def test_run_worker_multi_processing(
             self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
         '''
         Test run_worker with multi processing enabled, both async and generator handler.
@@ -418,7 +418,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
-    async def test_run_worker_multi_processing_scaling_up(
+    def test_run_worker_multi_processing_scaling_up(
             self, mock_run_job, mock_get_job):
         '''
         Test run_worker with multi processing enabled, the scale-up and scale-down
@@ -464,7 +464,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             runpod.serverless.start(config)
 
     # Test with sls-core
-    async def test_run_worker_with_sls_core(self):
+    def test_run_worker_with_sls_core(self):
         '''
         Test run_worker with sls-core.
         '''
