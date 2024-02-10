@@ -4,11 +4,11 @@
 import os
 import asyncio
 
-import aiohttp
 import unittest
-from unittest.mock import patch, Mock, MagicMock
+from unittest.mock import patch, Mock, AsyncMock
 import pytest
 
+import aiohttp
 import runpod
 from runpod.serverless.modules import rp_fastapi
 
@@ -55,31 +55,29 @@ class TestFastAPI(unittest.TestCase):
             os.environ.pop("RUNPOD_ENDPOINT_ID")
 
     @pytest.mark.asyncio
-    def test_webhook_sender(self):
-        '''
-        Tests the _webhook_sender() method.
-        '''
-        loop = asyncio.get_event_loop()
-
+    async def test_webhook_sender_success(self):
         module_location = "runpod.serverless.modules.rp_fastapi.aiohttp.ClientSession"
 
-        with patch(f"{module_location}.post", new_callable=MagicMock) as mock_post:
-            mock_post.return_value.__aenter__.return_value = MagicMock(
-                status=200)  # Simulate success response
-            mock_post.return_value.__aexit__.return_value = None
+        with patch(f"{module_location}.post", new_callable=AsyncMock) as mock_post:
+            # Simulate a successful response
+            mock_post.return_value.__aenter__.return_value.status = 200
 
-            success = asyncio.run(rp_fastapi._send_webhook_async(
-                "test_webhook", {"test": "output"}))
+            # Directly await the function
+            success = await rp_fastapi._send_webhook_async("test_webhook", {"test": "output"})
             assert success is True
 
+    @pytest.mark.asyncio
+    async def test_webhook_sender_failure(self):
+        module_location = "runpod.serverless.modules.rp_fastapi.aiohttp.ClientSession"
+
+        with patch(f"{module_location}.post", new_callable=AsyncMock) as mock_post:
+            # Configure the mock to raise an exception to simulate a 500 error
             mock_post.return_value.__aenter__.return_value.raise_for_status.side_effect = aiohttp.ClientResponseError(  # pylint: disable=line-too-long
                 request_info=None, history=None, status=500)
 
-            success = asyncio.run(rp_fastapi._send_webhook_async(
-                "test_webhook", {"test": "output"}))
+            # Directly await the function
+            success = await rp_fastapi_send_webhook_async("test_webhook", {"test": "output"})
             assert success is False
-
-        loop.close()
 
     @pytest.mark.asyncio
     def test_run(self):
@@ -272,6 +270,11 @@ class TestFastAPI(unittest.TestCase):
                 input={"test_input": "test_input"}
             )
 
+            input_object_with_webhook = rp_fastapi.DefaultRequest(
+                input={"test_input": "test_input"},
+                webhook="test_webhook"
+            )
+
             # Add job to job_list
             asyncio.run(worker_api._sim_run(default_input_object))
 
@@ -309,5 +312,10 @@ class TestFastAPI(unittest.TestCase):
             error_status_return = asyncio.run(
                 error_worker_api._sim_status("test-123"))
             assert "error" in error_status_return
+
+            # Test webhook caller sent
+            with patch(f"{module_location}._send_webhook_async", return_value=True) as mock_send_webhook:  # pylint: disable=line-too-long
+                asyncio.run(worker_api._sim_stream(input_object_with_webhook))
+                assert mock_send_webhook.called
 
         loop.close()
