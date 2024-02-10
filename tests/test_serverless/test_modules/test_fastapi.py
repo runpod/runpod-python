@@ -5,7 +5,7 @@ import os
 import asyncio
 
 import unittest
-from unittest.mock import patch, Mock, AsyncMock
+from unittest.mock import patch, Mock, MagicMock
 import pytest
 
 import runpod
@@ -54,20 +54,28 @@ class TestFastAPI(unittest.TestCase):
             os.environ.pop("RUNPOD_ENDPOINT_ID")
 
     @pytest.mark.asyncio
-    def test_webhook_sender(self):
+    async def test_webhook_sender(self):
         '''
         Tests the _webhook_sender() method.
         '''
-        module_location = "runpod.serverless.modules.rp_fastapi"
-        with patch(f"{module_location}.aiohttp.ClientSession.post", new_callable=AsyncMock) as mock_post:  # pylint: disable=line-too-long
-            mock_post.return_value.status = 200
+        module_location = "runpod.serverless.modules.rp_fastapi.aiohttp.ClientSession"
 
-            success = asyncio.run(rp_fastapi._send_webhook_async("test_webhook", "test_output"))
-            assert success is False
+        with patch(f"{module_location}.post", new_callable=MagicMock) as mock_post:
+            # Mock the asynchronous context manager behavior of aiohttp.ClientSession.post
+            mock_post.return_value.__aenter__.return_value = MagicMock(
+                status=200)  # Simulate success response
+            mock_post.return_value.__aexit__.return_value = None  # Mock exit without exception
 
-            mock_post.return_value.status_code = 200
-            success = asyncio.run(rp_fastapi._send_webhook_async("test_webhook", "test_output"))
+            # First attempt should be successful because of mocked status=200
+            success = await rp_fastapi._send_webhook_async("test_webhook", {"test": "output"})
             assert success is True
+
+            # Adjust the mock to simulate a failed response for the second attempt
+            mock_post.return_value.__aenter__.return_value.status = 404  # Simulate failure response
+
+            # Second attempt should fail because of mocked status=404
+            success = await rp_fastapi._send_webhook_async("test_webhook", {"test": "output"})
+            assert success is False
 
     @pytest.mark.asyncio
     def test_run(self):
