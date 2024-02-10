@@ -268,7 +268,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         # Define the mock behaviors
         mock_get_job.return_value = {
-            "id": "generator-123", "input": {"number": 1}}
+            "id": "generator-123-exception", "input": {"number": 1}}
 
         # Test generator handler
         generator_config = {
@@ -301,11 +301,12 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         # Define the mock behaviors
         mock_get_job.return_value = {
-            "id": "generator-123", "input": {"number": 1}}
+            "id": "generator-123-aggregate", "input": {"number": 1}}
 
         # Test generator handler
         generator_config = {
             "handler": generator_handler, "return_aggregate_stream": True, "refresh_worker": True}
+
         runpod.serverless.start(generator_config)
 
         assert mock_send_result.called
