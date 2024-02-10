@@ -50,6 +50,9 @@ class TestFastAPI(unittest.TestCase):
 
             self.assertTrue(mock_uvicorn.run.called)
 
+            os.environ.pop("RUNPOD_REALTIME_PORT")
+            os.environ.pop("RUNPOD_ENDPOINT_ID")
+
     @pytest.mark.asyncio
     def test_run(self):
         '''
