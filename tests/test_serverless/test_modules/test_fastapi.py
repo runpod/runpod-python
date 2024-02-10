@@ -30,13 +30,18 @@ class TestFastAPI(unittest.TestCase):
         with patch(f"{module_location}.Heartbeat.start_ping", Mock()) as mock_ping, \
                 patch(f"{module_location}.FastAPI", Mock()) as mock_fastapi, \
                 patch(f"{module_location}.APIRouter", return_value=Mock()) as mock_router, \
-                patch(f"{module_location}.uvicorn", Mock()) as mock_uvicorn:
+                patch(f"{module_location}.uvicorn", Mock()) as mock_uvicorn, \
+                patch("runpod.serverless.os") as mock_os:
 
             rp_fastapi.RUNPOD_REALTIME_PORT = '1111'
             rp_fastapi.RUNPOD_ENDPOINT_ID = 'test_endpoint_id'
 
-            os.environ["RUNPOD_REALTIME_PORT"] = '1111'
-            os.environ["RUNPOD_ENDPOINT_ID"] = 'test_endpoint_id'
+            # os.environ["RUNPOD_REALTIME_PORT"] = '1111'
+            # mock return value for RUNPOD_REALTIME_PORT only
+            mock_os.environ.get.side_effect = lambda x: '1111' if x == "RUNPOD_REALTIME_PORT" else None  # pylint: disable=line-too-long
+
+            # os.environ["RUNPOD_ENDPOINT_ID"] = 'test_endpoint_id'
+            mock_os.environ.get.side_effect = lambda x: 'test_endpoint_id' if x == "RUNPOD_ENDPOINT_ID" else None  # pylint: disable=line-too-long
 
             runpod.serverless.start({"handler": self.handler})
 
