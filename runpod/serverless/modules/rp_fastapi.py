@@ -103,12 +103,13 @@ async def _send_webhook_async(url: str, payload: Dict[str, Any]) -> None:
             return False
 
     async with aiohttp.ClientSession() as session:
-        success = await attempt_send(session, url, payload)
-        if not success:
-            print("Retrying...")
-            await asyncio.sleep(1)  # Wait for 1 second before retrying
-            success = await attempt_send(session, url, payload)
-        else:
+        if await attempt_send(session, url, payload):
+            return True
+
+        print("Retrying...")
+        await asyncio.sleep(1)  # Wait for 1 second before retrying
+
+        if await attempt_send(session, url, payload):
             return True
 
         print("Failed to send webhook after retry.")
