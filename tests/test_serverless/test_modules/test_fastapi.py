@@ -231,11 +231,6 @@ class TestFastAPI(unittest.TestCase):
                 "error": "Stream not supported, handler must be a generator."
             }
 
-            # Test webhook caller sent
-            asyncio.run(worker_api._sim_run(input_object_with_webhook))
-            asyncio.run(worker_api._sim_stream("test-123"))
-            assert mock_threading.Thread.called
-
             # Test with generator handler
             def generator_handler(job):
                 del job
@@ -249,6 +244,11 @@ class TestFastAPI(unittest.TestCase):
                 "status": "COMPLETED",
                 "stream": [{"output": {"result": "success"}}]
             }
+
+            # Test webhook caller sent
+            asyncio.run(generator_worker_api._sim_run(input_object_with_webhook))
+            asyncio.run(generator_worker_api._sim_stream("test-123"))
+            assert mock_threading.Thread.called
 
         loop.close()
 
