@@ -4,7 +4,7 @@ import os
 import logging
 
 from . import serverless
-from .api.ctl_commands import (  # noqa: F401
+from .api.ctl_commands import (
     create_container_registry_auth,
     create_endpoint,
     create_pod,

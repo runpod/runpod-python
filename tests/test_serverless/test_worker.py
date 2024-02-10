@@ -57,17 +57,17 @@ class TestWorker(IsolatedAsyncioTestCase):
             assert runpod.serverless.worker._is_local(
                 self.mock_config) is False
 
-    # def test_start(self):
-    #     '''
-    #     Test basic start call.
-    #     '''
-    #     with patch("builtins.open", mock_open(read_data='{"input":{"number":1}}')) as mock_file, \
-    #             patch("runpod.serverless.worker.os") as mock_os, \
-    #             self.assertRaises(SystemExit):
-    #         mock_os.environ.get.return_value = None
-    #         runpod.serverless.start({"handler": self.mock_handler})
+    def test_start(self):
+        '''
+        Test basic start call.
+        '''
+        with patch("builtins.open", mock_open(read_data='{"input":{"number":1}}')) as mock_file, \
+                patch("runpod.serverless.worker.os") as mock_os, \
+                self.assertRaises(SystemExit):
+            mock_os.environ.get.return_value = None
+            runpod.serverless.start({"handler": self.mock_handler})
 
-    #         assert mock_file.called
+            assert mock_file.called
 
     async def test_is_local_testing(self):
         '''
@@ -124,29 +124,29 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
 
         self.mock_handler.return_value = "test"
 
-    # def test_worker_bad_local(self):
-    #     '''
-    #     Test sys args.
-    #     '''
-    #     known_args = argparse.Namespace()
-    #     known_args.rp_log_level = "WARN"
-    #     known_args.rp_debugger = True
-    #     known_args.rp_serve_api = None
-    #     known_args.rp_api_port = 8000
-    #     known_args.rp_api_concurrency = 1
-    #     known_args.rp_api_host = "localhost"
-    #     known_args.test_input = '{"test": "test"}'
-    #     known_args.test_output = '{"test": "test"}'
+    def test_worker_bad_local(self):
+        '''
+        Test sys args.
+        '''
+        known_args = argparse.Namespace()
+        known_args.rp_log_level = "WARN"
+        known_args.rp_debugger = True
+        known_args.rp_serve_api = None
+        known_args.rp_api_port = 8000
+        known_args.rp_api_concurrency = 1
+        known_args.rp_api_host = "localhost"
+        known_args.test_input = '{"test": "test"}'
+        known_args.test_output = '{"test": "test"}'
 
-    #     with patch("argparse.ArgumentParser.parse_known_args") as mock_parse_known_args, \
-    #             self.assertRaises(SystemExit):
+        with patch("argparse.ArgumentParser.parse_known_args") as mock_parse_known_args, \
+                self.assertRaises(SystemExit):
 
-    #         mock_parse_known_args.return_value = known_args, []
-    #         runpod.serverless.start({"handler": self.mock_handler})
+            mock_parse_known_args.return_value = known_args, []
+            runpod.serverless.start({"handler": self.mock_handler})
 
-    #         # Confirm that the log level is set to WARN
-    #         log = RunPodLogger()
-    #         assert log.level == "WARN"
+            # Confirm that the log level is set to WARN
+            log = RunPodLogger()
+            assert log.level == "WARN"
 
 
 def generator_handler(job):
