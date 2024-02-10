@@ -72,7 +72,7 @@ class TestFastAPI(unittest.TestCase):
                 input={"test_input": "test_input"}
             )
 
-            default_input_object = rp_fastapi.DefaultInput(
+            default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
             )
 
@@ -117,7 +117,7 @@ class TestFastAPI(unittest.TestCase):
                 patch(f"{module_location}.uvicorn", Mock()), \
                 patch(f"{module_location}.uuid.uuid4", return_value="123"):
 
-            default_input_object = rp_fastapi.DefaultInput(
+            default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
             )
 
@@ -166,7 +166,7 @@ class TestFastAPI(unittest.TestCase):
                 patch(f"{module_location}.uvicorn", Mock()), \
                 patch(f"{module_location}.uuid.uuid4", return_value="123"):
 
-            default_input_object = rp_fastapi.DefaultInput(
+            default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
             )
 
@@ -220,7 +220,7 @@ class TestFastAPI(unittest.TestCase):
 
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
-            default_input_object = rp_fastapi.DefaultInput(
+            default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
             )
 

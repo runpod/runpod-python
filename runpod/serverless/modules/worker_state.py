@@ -27,9 +27,15 @@ def get_auth_header():
 class Job:
     """ Represents a job. """
 
-    def __init__(self, job_id: str, job_input: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(
+        self,
+        job_id: str,
+        job_input: Optional[Dict[str, Any]] = None,
+        webhook: Optional[str] = None,
+    ) -> None:
         self.job_id = job_id
         self.job_input = job_input
+        self.webhook = webhook
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Job):
@@ -55,11 +61,11 @@ class Jobs:
             Jobs._instance.jobs = set()
         return Jobs._instance
 
-    def add_job(self, job_id, job_input=None):
+    def add_job(self, job_id, job_input=None, webhook=None):
         '''
         Adds a job to the list of jobs.
         '''
-        self.jobs.add(Job(job_id, job_input))
+        self.jobs.add(Job(job_id, job_input, webhook))
 
     def remove_job(self, job_id):
         '''
@@ -67,14 +73,14 @@ class Jobs:
         '''
         self.jobs.remove(Job(job_id))
 
-    def get_job_input(self, job_id) -> Optional[Union[dict, list, str, int, float, bool]]:
+    def get_job(self, job_id) -> Optional[Union[dict, list, str, int, float, bool]]:
         '''
         Returns the job with the given id.
         Used within rp_fastapi.py for local testing.
         '''
         for job in self.jobs:
             if job.job_id == job_id:
-                return job.job_input
+                return job.job
 
         return None
 

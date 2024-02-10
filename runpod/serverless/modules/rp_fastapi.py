@@ -3,9 +3,11 @@
 
 import os
 import uuid
+import asyncio
 from dataclasses import dataclass
 from typing import Union, Optional, Dict, Any
 
+import aiohttp
 import uvicorn
 from fastapi import FastAPI, APIRouter
 from fastapi.encoders import jsonable_encoder
@@ -53,12 +55,14 @@ class TestJob:
     '''
     id: Optional[str] = None
     input: Optional[Union[dict, list, str, int, float, bool]] = None
+    webhook: Optional[str] = None
 
 
 @dataclass
-class DefaultInput:
+class DefaultRequest:
     """ Represents a test input. """
     input: Dict[str, Any]
+    webhook: Optional[str] = None
 
 
 # ------------------------------ Output Objects ------------------------------ #
@@ -78,6 +82,35 @@ class StreamOutput:
     status: str = "IN_PROGRESS"
     stream: Optional[Union[dict, list, str, int, float, bool]] = None
     error: Optional[str] = None
+
+
+# ------------------------------ Webhook Sender ------------------------------ #
+async def _send_webhook_async(url: str, payload: Dict[str, Any]) -> None:
+    """
+    Sends a webhook to the provided URL asynchronously. Retries once if the first attempt fails.
+
+    Args:
+        url (str): The URL to send the webhook to.
+        payload (Dict[str, Any]): The JSON payload to send.
+    """
+    async def attempt_send(session, url, payload):
+        try:
+            async with session.post(url, json=payload, timeout=10) as response:
+                response.raise_for_status()  # Raises exception for 4xx/5xx responses
+                return True
+        except (aiohttp.ClientError, aiohttp.http_exceptions.HttpProcessingError) as err:
+            print(f"Request to {url} failed: {err}")
+            return False
+
+    async with aiohttp.ClientSession() as session:
+        success = await attempt_send(session, url, payload)
+        if not success:
+            print("Retrying...")
+            await asyncio.sleep(1)  # Wait for 1 second before retrying
+            success = await attempt_send(session, url, payload)
+
+        if not success:
+            print("Failed to send webhook after retry.")
 
 
 # ---------------------------------------------------------------------------- #
@@ -176,17 +209,17 @@ class WorkerAPI:
     # ---------------------------------------------------------------------------- #
 
     # ------------------------------------ run ----------------------------------- #
-    async def _sim_run(self, job_input: DefaultInput) -> JobOutput:
+    async def _sim_run(self, job_request: DefaultRequest) -> JobOutput:
         """ Development endpoint to simulate run behavior. """
         assigned_job_id = f"test-{uuid.uuid4()}"
-        job_list.add_job(assigned_job_id, job_input.input)
+        job_list.add_job(assigned_job_id, job_request.input, job_request.webhook)
         return jsonable_encoder({"id": assigned_job_id, "status": "IN_PROGRESS"})
 
     # ---------------------------------- runsync --------------------------------- #
-    async def _sim_runsync(self, job_input: DefaultInput) -> JobOutput:
+    async def _sim_runsync(self, job_request: DefaultRequest) -> JobOutput:
         """ Development endpoint to simulate runsync behavior. """
         assigned_job_id = f"test-{uuid.uuid4()}"
-        job = TestJob(id=assigned_job_id, input=job_input.input)
+        job = TestJob(id=assigned_job_id, input=job_request.input)
 
         if is_generator(self.config["handler"]):
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
@@ -203,6 +236,9 @@ class WorkerAPI:
                 "error": job_output['error']
             })
 
+        if job_request.webhook:
+            await _send_webhook_async(job_request.webhook, job_output)
+
         return jsonable_encoder({
             "id": job.id,
             "status": "COMPLETED",
@@ -212,15 +248,15 @@ class WorkerAPI:
     # ---------------------------------- stream ---------------------------------- #
     async def _sim_stream(self, job_id: str) -> StreamOutput:
         """ Development endpoint to simulate stream behavior. """
-        job_input = job_list.get_job_input(job_id)
-        if job_input is None:
+        stashed_job = job_list.get_job(job_id)
+        if stashed_job is None:
             return jsonable_encoder({
                 "id": job_id,
                 "status": "FAILED",
                 "error": "Job ID not found"
             })
 
-        job = TestJob(id=job_id, input=job_input)
+        job = TestJob(id=job_id, input=stashed_job.input)
 
         if is_generator(self.config["handler"]):
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
@@ -236,6 +272,9 @@ class WorkerAPI:
 
         job_list.remove_job(job.id)
 
+        if stashed_job.webhook:
+            await _send_webhook_async(stashed_job.webhook, stream_accumulator)
+
         return jsonable_encoder({
             "id": job_id,
             "status": "COMPLETED",
@@ -245,15 +284,15 @@ class WorkerAPI:
     # ---------------------------------- status ---------------------------------- #
     async def _sim_status(self, job_id: str) -> JobOutput:
         """ Development endpoint to simulate status behavior. """
-        job_input = job_list.get_job_input(job_id)
-        if job_input is None:
+        stashed_job = job_list.get_job(job_id)
+        if stashed_job is None:
             return jsonable_encoder({
                 "id": job_id,
                 "status": "FAILED",
                 "error": "Job ID not found"
             })
 
-        job = TestJob(id=job_id, input=job_input)
+        job = TestJob(id=stashed_job.id, input=stashed_job.input)
 
         if is_generator(self.config["handler"]):
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
@@ -271,6 +310,9 @@ class WorkerAPI:
                 "status": "FAILED",
                 "error": job_output['error']
             })
+
+        if stashed_job.webhook:
+            await _send_webhook_async(stashed_job.webhook, job_output)
 
         return jsonable_encoder({
             "id": job_id,
