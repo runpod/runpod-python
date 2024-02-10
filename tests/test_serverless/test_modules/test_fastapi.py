@@ -54,7 +54,7 @@ class TestFastAPI(unittest.TestCase):
             os.environ.pop("RUNPOD_ENDPOINT_ID")
 
     @pytest.mark.asyncio
-    def test_webhook_sender(self):
+    async def test_webhook_sender(self):
         '''
         Tests the _webhook_sender() method.
         '''
@@ -62,11 +62,11 @@ class TestFastAPI(unittest.TestCase):
         with patch(f"{module_location}.aiohttp.ClientSession.post", AsyncMock()) as mock_post:
             mock_post.return_value.status_code = 404
 
-            success = rp_fastapi._send_webhook_async("test_webhook", "test_output")
+            success = await rp_fastapi._send_webhook_async("test_webhook", "test_output")
             assert success is False
 
             mock_post.return_value.status_code = 200
-            success = rp_fastapi._send_webhook_async("test_webhook", "test_output")
+            success = await rp_fastapi._send_webhook_async("test_webhook", "test_output")
             assert success is True
 
     @pytest.mark.asyncio
