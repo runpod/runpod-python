@@ -54,6 +54,22 @@ class TestFastAPI(unittest.TestCase):
             os.environ.pop("RUNPOD_ENDPOINT_ID")
 
     @pytest.mark.asyncio
+    def test_webhook_sender(self):
+        '''
+        Tests the _webhook_sender() method.
+        '''
+        module_location = "runpod.serverless.modules.rp_fastapi"
+        with patch(f"{module_location}.requests.post", Mock()) as mock_post:
+            mock_post.return_value.status_code = 404
+
+            success = rp_fastapi._send_webhook_async("test_webhook", "test_output")
+            assert success is False
+
+            mock_post.return_value.status_code = 200
+            success = rp_fastapi._send_webhook_async("test_webhook", "test_output")
+            assert success is True
+
+    @pytest.mark.asyncio
     def test_run(self):
         '''
         Tests the _run() method.
