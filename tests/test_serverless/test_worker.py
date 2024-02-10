@@ -28,6 +28,7 @@ class TestWorker(IsolatedAsyncioTestCase):
                 "test_input": None,
             }
         }
+        os.environ["RUNPOD_REALTIME_PORT"] = '0'
 
     async def test_get_auth_header(self):
         '''
@@ -62,9 +63,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         Test basic start call.
         '''
         with patch("builtins.open", mock_open(read_data='{"input":{"number":1}}')) as mock_file, \
-                patch("runpod.serverless.os") as mock_os, \
                 self.assertRaises(SystemExit):
-            mock_os.environ.get.return_value = None
             runpod.serverless.start({"handler": self.mock_handler})
 
             assert mock_file.called
@@ -139,11 +138,9 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
         known_args.test_output = '{"test": "test"}'
 
         with patch("argparse.ArgumentParser.parse_known_args") as mock_parse_known_args, \
-                patch("runpod.serverless.os") as mock_os, \
                 self.assertRaises(SystemExit):
 
             mock_parse_known_args.return_value = known_args, []
-            mock_os.environ.get.return_value = None
             runpod.serverless.start({"handler": self.mock_handler})
 
             # Confirm that the log level is set to WARN
@@ -208,8 +205,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Call the function
-        with patch("runpod.serverless.os", return_value=None):
-            runpod.serverless.start(self.config)
+        runpod.serverless.start(self.config)
 
         # Make assertions about the behaviors
         mock_get_job.assert_called_once()
@@ -242,8 +238,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # Test generator handler
         generator_config = {
             "handler": generator_handler, "refresh_worker": True}
-        with patch("runpod.serverless.os", return_value=None):
-            runpod.serverless.start(generator_config)
+        runpod.serverless.start(generator_config)
 
         assert mock_stream_result.called
         assert not mock_run_job.called
@@ -275,8 +270,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # Test generator handler
         generator_config = {
             "handler": generator_handler_exception, "refresh_worker": True}
-        with patch("runpod.serverless.os", return_value=None):
-            runpod.serverless.start(generator_config)
+        runpod.serverless.start(generator_config)
 
         assert mock_stream_result.call_count == 1
         assert not mock_run_job.called
@@ -309,8 +303,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         # Test generator handler
         generator_config = {
             "handler": generator_handler, "return_aggregate_stream": True, "refresh_worker": True}
-        with patch("runpod.serverless.os", return_value=None):
-            runpod.serverless.start(generator_config)
+        runpod.serverless.start(generator_config)
 
         assert mock_send_result.called
         assert mock_stream_result.called
@@ -349,8 +342,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         config_with_concurrency['concurrency_modifier'] = concurrency_modifier
 
         # Call the function
-        with patch("runpod.serverless.os", return_value=None):
-            runpod.serverless.start(config_with_concurrency)
+        runpod.serverless.start(config_with_concurrency)
 
         # Make assertions about the behaviors
         mock_get_job.assert_called_once()
@@ -384,8 +376,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Call the function
-        with patch("runpod.serverless.os", return_value=None):
-            runpod.serverless.start(self.config)
+        runpod.serverless.start(self.config)
 
         # Make assertions about the behaviors
         mock_get_job.assert_called_once()
@@ -468,8 +459,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             scale_behavior['counter'] += 1
             return res
 
-        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive), \
-                patch("runpod.serverless.os", return_value=None):
+        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
     # Test with sls-core
@@ -479,8 +469,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         os.environ["RUNPOD_USE_CORE"] = "true"
 
-        with patch("runpod.serverless.core.main") as mock_main, \
-                patch("runpod.serverless.os", return_value=None):
+        with patch("runpod.serverless.core.main") as mock_main:
             runpod.serverless.start(self.config)
 
             assert mock_main.called
