@@ -468,7 +468,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             scale_behavior['counter'] += 1
             return res
 
-        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
+        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive), \
+                patch("runpod.serverless.os", return_value=None):
             runpod.serverless.start(config)
 
     # Test with sls-core
@@ -478,7 +479,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         os.environ["RUNPOD_USE_CORE"] = "true"
 
-        with patch("runpod.serverless.core.main") as mock_main:
+        with patch("runpod.serverless.core.main") as mock_main, \
+                patch("runpod.serverless.os", return_value=None):
             runpod.serverless.start(self.config)
 
             assert mock_main.called
