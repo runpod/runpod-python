@@ -63,23 +63,21 @@ class TestFastAPI(unittest.TestCase):
         module_location = "runpod.serverless.modules.rp_fastapi.aiohttp.ClientSession"
 
         with patch(f"{module_location}.post", new_callable=MagicMock) as mock_post:
-            # Mock the asynchronous context manager behavior of aiohttp.ClientSession.post
             mock_post.return_value.__aenter__.return_value = MagicMock(
                 status=200)  # Simulate success response
-            mock_post.return_value.__aexit__.return_value = None  # Mock exit without exception
+            mock_post.return_value.__aexit__.return_value = None
 
-            # First attempt should be successful because of mocked status=200
             success = asyncio.run(rp_fastapi._send_webhook_async(
                 "test_webhook", {"test": "output"}))
             assert success is True
 
-            # Adjust the mock to simulate a failed response for the second attempt
             mock_post.return_value.__aenter__.return_value.status = 404  # Simulate failure response
 
-            # Second attempt should fail because of mocked status=404
             success = asyncio.run(rp_fastapi._send_webhook_async(
                 "test_webhook", {"test": "output"}))
             assert success is False
+
+        loop.close()
 
     @pytest.mark.asyncio
     def test_run(self):
