@@ -64,7 +64,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch("builtins.open", mock_open(read_data='{"input":{"number":1}}')) as mock_file, \
                 self.assertRaises(SystemExit):
 
-            runpod.serverless.start({"handler": self.mock_handler})
+            await runpod.serverless.start({"handler": self.mock_handler})
 
             assert mock_file.called
 
@@ -97,7 +97,7 @@ class TestWorker(IsolatedAsyncioTestCase):
                 patch("runpod.serverless.rp_fastapi") as mock_fastapi:
 
             mock_parse_known_args.return_value = known_args, []
-            runpod.serverless.start({"handler": self.mock_handler})
+            await runpod.serverless.start({"handler": self.mock_handler})
 
             assert mock_fastapi.WorkerAPI.called
 
@@ -141,7 +141,7 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
                 self.assertRaises(SystemExit):
 
             mock_parse_known_args.return_value = known_args, []
-            runpod.serverless.start({"handler": self.mock_handler})
+            await runpod.serverless.start({"handler": self.mock_handler})
 
             # Confirm that the log level is set to WARN
             log = RunPodLogger()
