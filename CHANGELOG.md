@@ -6,7 +6,7 @@
 
 - User-Agent for better analytics tracking.
 - Expose the ability to create container auth.
-- Emulate webhooks for local testing. when using `rp_serve_api` flag.
+- Emulate webhooks for local testing when using `rp_serve_api` flag.
 
 ### Changed
 
