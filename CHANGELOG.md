@@ -1,10 +1,20 @@
 # Change Log
 
-## Release 1.6.1 (TBD)
+## Release 1.6.1 (2/11/24)
 
 ### Added
 
 - User-Agent for better analytics tracking.
+- Expose the ability to create container auth.
+- Emulate webhooks for local testing when using `rp_serve_api` flag.
+
+### Changed
+
+- Updated aiohttp from 3.9.2 to 3.9.3
+- [BREAKING] rename `registry_auth` to `registry_auth_id` for clarity.
+- Added additional details to the FastAPI page.
+
+---
 
 ## Release 1.6.0 (1/29/24)
 
@@ -13,6 +23,8 @@
 - Rust Serverless Core Passing all tests.
 - GitHub Action and Python package updates
 - Changelog date typo
+
+---
 
 ## Release 1.5.3 (1/25/24)
 
@@ -27,6 +39,8 @@
 
 - ReadMe typo *start_pod* -> *resume_pod*
 
+---
+
 ## Release 1.5.2 (1/16/24)
 
 ### Fixed
@@ -40,6 +54,8 @@
 
 - Expanded RunPod Serverless Core testing.
 
+---
+
 ## Release 1.5.1 (1/11/24)
 
 ### Fixed
@@ -51,6 +67,8 @@
 ### Changed
 
 - Updated sls-core to `0.0.2`
+
+---
 
 ## Release 1.5.0 (12/28/23)
 
