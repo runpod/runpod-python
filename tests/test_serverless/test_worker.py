@@ -160,6 +160,7 @@ def generator_handler_exception(job):
     '''
     print(job)
     yield "test1"
+    print("Raise exception")
     raise Exception()  # pylint: disable=broad-exception-raised
 
 
