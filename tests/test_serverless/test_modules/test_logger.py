@@ -127,9 +127,23 @@ class TestLogger(unittest.TestCase):
             # Test with endpoint id set
             os.environ["RUNPOD_ENDPOINT_ID"] = "test_endpoint_id"
             logger.log("test_message", "INFO", job_id)
+            os.environ.pop("RUNPOD_ENDPOINT_ID")
 
             mock_print.assert_called_with(
                 '{"requestId": "test_job_id", "message": "test_message", "level": "INFO"}',
                 flush=True
             )
-            os.environ.pop("RUNPOD_ENDPOINT_ID")
+
+    def test_log_truncate(self):
+        """ Tests that the log method truncates long messages """
+        logger = rp_logger.RunPodLogger()
+        job_id = "test_job_id"
+
+        # Patch print to capture stdout
+        with patch("builtins.print") as mock_print:
+            logger.log("a" * 10000000, "INFO", job_id)
+
+            mock_print.assert_called_once_with(
+                'INFO   | aaaaaaaaaa\n...TRUNCATED...\naaaaaaaaaa',
+                flush=True
+            )

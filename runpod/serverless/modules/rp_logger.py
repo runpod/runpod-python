@@ -15,6 +15,7 @@ import json
 from typing import Optional
 
 
+MAX_MESSAGE_LENGTH = 4096
 LOG_LEVELS = ['NOTSET', 'DEBUG', 'INFO', 'WARN', 'ERROR']
 
 
@@ -72,10 +73,10 @@ class RunPodLogger:
         if level_index > LOG_LEVELS.index(message_level) and message_level != 'TIP':
             return
 
-        # Truncate message over 20MB, remove chunk from the middle
-        if len(message) > 20 * 1024 * 1024:
-            message = message[:10 * 1024 * 1024] + \
-                '\n\n...TRUNCATED...\n\n' + message[-10 * 1024 * 1024:]
+        # Truncate message over 10MB, remove chunk from the middle
+        if len(message) > MAX_MESSAGE_LENGTH:
+            half_max_length = MAX_MESSAGE_LENGTH // 2
+            return message[:half_max_length] + '\n...TRUNCATED...\n' + message[-half_max_length:]
 
         if os.environ.get('RUNPOD_ENDPOINT_ID'):
             log_json = {
