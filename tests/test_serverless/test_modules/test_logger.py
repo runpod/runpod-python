@@ -135,15 +135,18 @@ class TestLogger(unittest.TestCase):
             )
 
     def test_log_truncate(self):
-        """ Tests that the log method truncates long messages """
+        """Tests that the log method truncates long messages."""
         logger = rp_logger.RunPodLogger()
         job_id = "test_job_id"
+        long_message = "a" * (rp_logger.MAX_MESSAGE_LENGTH + 100)  # Exceeds the max length
+        expected_start = "a" * (rp_logger.MAX_MESSAGE_LENGTH // 2)
+        expected_end = "a" * (rp_logger.MAX_MESSAGE_LENGTH // 2)
+        truncated_message = expected_start + '\n...TRUNCATED...\n' + expected_end
 
-        # Patch print to capture stdout
         with patch("builtins.print") as mock_print:
-            logger.log("a" * 5000, "INFO", job_id)
+            logger.log(long_message, "INFO", job_id)
 
-            mock_print.assert_called_once_with(
-                'INFO   | aaaaaaaaaa\n...TRUNCATED...\naaaaaaaaaa',
-                flush=True
-            )
+            # Construct the expected log output
+            expected_log_output = f'INFO    | {job_id} | {truncated_message}'
+
+            mock_print.assert_called_once_with(expected_log_output, flush=True)
