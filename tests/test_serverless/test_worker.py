@@ -274,7 +274,9 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         except KeyError:
             pass
 
-        runpod.serverless.start(generator_config)
+        with patch("os.environ.get") as mock_get:
+            mock_get.return_value = None
+            runpod.serverless.start(generator_config)
 
         assert mock_stream_result.call_count == 1
         assert not mock_run_job.called
