@@ -76,7 +76,9 @@ class RunPodLogger:
         # Truncate message over 10MB, remove chunk from the middle
         if len(message) > MAX_MESSAGE_LENGTH:
             half_max_length = MAX_MESSAGE_LENGTH // 2
-            message = message[:half_max_length] + '\n...TRUNCATED...\n' + message[-half_max_length:]
+            truncated_amount = len(message) - MAX_MESSAGE_LENGTH
+            truncation_note = f'\n...TRUNCATED {truncated_amount} CHARACTERS...\n'
+            message = message[:half_max_length] + truncation_note + message[-half_max_length:]
 
         if os.environ.get('RUNPOD_ENDPOINT_ID'):
             log_json = {
