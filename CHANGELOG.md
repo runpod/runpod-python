@@ -1,5 +1,14 @@
 # Change Log
 
+## Release 1.6.2 (2/12/24)
+
+### Fixed
+
+- Reorder FastAPI endpoints for clarity.
+- Truncate long logs to avoid overloading the server.
+
+---
+
 ## Release 1.6.1 (2/11/24)
 
 ### Added

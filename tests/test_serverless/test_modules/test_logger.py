@@ -147,6 +147,6 @@ class TestLogger(unittest.TestCase):
             logger.log(long_message, "INFO", job_id)
 
             # Construct the expected log output
-            expected_log_output = f'INFO    | {job_id} | {truncated_message}'
+            expected_log_output = f'INFO   | {job_id} | {truncated_message}'
 
             mock_print.assert_called_once_with(expected_log_output, flush=True)
