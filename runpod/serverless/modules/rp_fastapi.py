@@ -187,16 +187,16 @@ class WorkerAPI:
 
         tags_metadata = [
             {
+                "name": "Synchronously Submit Request & Get Job Results",
+                "description": "Endpoints for submitting job requests and getting the results."
+            },
+            {
                 "name": "Submit Job Requests",
                 "description": "Endpoints for submitting job requests."
             },
             {
                 "name": "Check Job Results",
                 "description": "Endpoints for checking the status of a job and getting the results."
-            },
-            {
-                "name": "Synchronously Submit Request & Get Job Results",
-                "description": "Endpoints for submitting job requests and getting the results."
             }
         ]
 

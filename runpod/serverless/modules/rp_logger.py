@@ -72,6 +72,11 @@ class RunPodLogger:
         if level_index > LOG_LEVELS.index(message_level) and message_level != 'TIP':
             return
 
+        # Truncate message over 20MB, remove chunk from the middle
+        if len(message) > 20 * 1024 * 1024:
+            message = message[:10 * 1024 * 1024] + \
+                '\n\n...TRUNCATED...\n\n' + message[-10 * 1024 * 1024:]
+
         if os.environ.get('RUNPOD_ENDPOINT_ID'):
             log_json = {
                 'requestId': job_id,
