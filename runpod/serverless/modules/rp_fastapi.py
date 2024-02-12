@@ -163,7 +163,7 @@ def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
             response.raise_for_status()  # Raises exception for 4xx/5xx responses
             return True
         except requests.RequestException as err:
-            print(f"Request to {url} failed: {err}")
+            print(f"WEBHOOK | Request to {url} failed: {err}")
             return False
 
 
