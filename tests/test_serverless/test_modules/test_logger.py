@@ -141,7 +141,7 @@ class TestLogger(unittest.TestCase):
 
         # Patch print to capture stdout
         with patch("builtins.print") as mock_print:
-            logger.log("a" * 10000000, "INFO", job_id)
+            logger.log("a" * 5000, "INFO", job_id)
 
             mock_print.assert_called_once_with(
                 'INFO   | aaaaaaaaaa\n...TRUNCATED...\naaaaaaaaaa',
