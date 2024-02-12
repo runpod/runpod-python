@@ -269,14 +269,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         generator_config = {
             "handler": generator_handler_exception, "refresh_worker": True}
 
-        try:
-            os.environ.pop("RUNPOD_ENDPOINT_ID")
-        except KeyError:
-            pass
-
-        with patch("runpod.serverless.worker.os") as mock_os:
-            mock_os.environ.get.return_value = None
-            runpod.serverless.start(generator_config)
+        runpod.serverless.start(generator_config)
 
         assert mock_stream_result.call_count == 1
         assert not mock_run_job.called
