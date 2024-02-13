@@ -74,7 +74,7 @@ class RunPodLogger:
             return
 
         # Truncate message over 10MB, remove chunk from the middle
-        if len(message) > MAX_MESSAGE_LENGTH:
+        if len(message) > MAX_MESSAGE_LENGTH and message_level != 'ERROR':
             half_max_length = MAX_MESSAGE_LENGTH // 2
             truncated_amount = len(message) - MAX_MESSAGE_LENGTH
             truncation_note = f'\n...TRUNCATED {truncated_amount} CHARACTERS...\n'
