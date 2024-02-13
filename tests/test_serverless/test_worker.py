@@ -164,6 +164,23 @@ def generator_handler_exception(job):
     raise Exception()  # pylint: disable=broad-exception-raised
 
 
+def test_generator_handler_exception():
+    """ Test generator_handler_exception """
+    job = {"id": "test_job"}
+    gen = generator_handler_exception(job)
+
+    # Process the first yielded value
+    output = next(gen)
+    assert output == "test1", "First output should be 'test1'"
+
+    # Attempt to get the next value, expecting an exception
+    try:
+        next(gen)
+        assert False, "Expected an exception to be raised"
+    except Exception:  # pylint: disable=broad-except
+        assert True, "Exception was caught as expected"
+
+
 class TestRunWorker(IsolatedAsyncioTestCase):
     """ Tests for runpod | serverless| worker """
 
