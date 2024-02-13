@@ -269,9 +269,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         generator_config = {
             "handler": generator_handler_exception, "refresh_worker": True}
 
-        os.environ["RUNPOD_LOG_LEVEL"] = "DEBUG"
+        RunPodLogger().set_level("DEBUG")
         runpod.serverless.start(generator_config)
-        os.environ.pop("RUNPOD_LOG_LEVEL")
 
         assert mock_stream_result.call_count == 1
         assert not mock_run_job.called
