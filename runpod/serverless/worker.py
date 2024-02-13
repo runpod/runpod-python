@@ -50,6 +50,7 @@ async def _process_job(job, session, job_scaler, config):
 
         job_result = {'output': []}
         async for stream_output in generator_output:
+            log.debug(f"Stream output: {stream_output}", job['id'])
             if 'error' in stream_output:
                 job_result = stream_output
                 break
