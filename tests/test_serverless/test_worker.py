@@ -287,8 +287,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             "refresh_worker": True
         })
 
-        assert mock_stream_result.call_count == 1, "Expected `stream_result` to be called exactly once."
-        assert not mock_run_job.called, "`run_job` should not be called for generator-based handlers."
+        assert mock_stream_result.call_count == 1
+        assert not mock_run_job.called
 
         # Since return_aggregate_stream is NOT activated, we should not submit any outputs.
         _, args, _ = mock_send_result.mock_calls[0]
