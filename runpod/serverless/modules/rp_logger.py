@@ -73,6 +73,7 @@ class RunPodLogger:
         if level_index > LOG_LEVELS.index(message_level) and message_level != 'TIP':
             return
 
+        message = str(message)
         # Truncate message over 10MB, remove chunk from the middle
         if len(message) > MAX_MESSAGE_LENGTH:
             half_max_length = MAX_MESSAGE_LENGTH // 2

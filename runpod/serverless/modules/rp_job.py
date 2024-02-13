@@ -200,7 +200,7 @@ async def run_job_generator(
                 yield {"output": output_partial}
 
     except Exception as err:    # pylint: disable=broad-except
-        log.error(str(err), job["id"])
+        log.error(err, job["id"])
         yield {
             "error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"
         }

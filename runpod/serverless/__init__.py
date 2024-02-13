@@ -116,7 +116,6 @@ def start(config: Dict[str, Any]):
     config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
     """
     print(f"--- Starting Serverless Worker |  Version {runpod_version} ---")
-    log.debug(f"Config: {config}")
 
     signal.signal(signal.SIGINT, _signal_handler)
 
