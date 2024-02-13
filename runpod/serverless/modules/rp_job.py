@@ -185,16 +185,18 @@ async def run_job_generator(
     Yields output partials from the generator.
     '''
     is_async_gen = inspect.isasyncgenfunction(handler)
-    log.debug('Async Generator' if is_async_gen else 'Standard Generator', job["id"])
+    log.debug('Using Async Generator' if is_async_gen else 'Using Standard Generator', job["id"])
 
     try:
         job_output = handler(job)
 
         if is_async_gen:
             async for output_partial in job_output:
+                log.debug(f"Async Generator output: {output_partial}", job["id"])
                 yield {"output": output_partial}
         else:
             for output_partial in job_output:
+                log.debug(f"Generator output: {output_partial}", job["id"])
                 yield {"output": output_partial}
 
     except Exception as err:    # pylint: disable=broad-except
