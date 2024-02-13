@@ -163,7 +163,7 @@ def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
             response.raise_for_status()  # Raises exception for 4xx/5xx responses
             return True
         except requests.RequestException as err:
-            print(f"Request to {url} failed: {err}")
+            print(f"WEBHOOK | Request to {url} failed: {err}")
             return False
 
 
@@ -187,16 +187,16 @@ class WorkerAPI:
 
         tags_metadata = [
             {
+                "name": "Synchronously Submit Request & Get Job Results",
+                "description": "Endpoints for submitting job requests and getting the results."
+            },
+            {
                 "name": "Submit Job Requests",
                 "description": "Endpoints for submitting job requests."
             },
             {
                 "name": "Check Job Results",
                 "description": "Endpoints for checking the status of a job and getting the results."
-            },
-            {
-                "name": "Synchronously Submit Request & Get Job Results",
-                "description": "Endpoints for submitting job requests and getting the results."
             }
         ]
 

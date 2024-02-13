@@ -160,7 +160,25 @@ def generator_handler_exception(job):
     '''
     print(job)
     yield "test1"
+    print("Raise exception")
     raise Exception()  # pylint: disable=broad-exception-raised
+
+
+def test_generator_handler_exception():
+    """ Test generator_handler_exception """
+    job = {"id": "test_job"}
+    gen = generator_handler_exception(job)
+
+    # Process the first yielded value
+    output = next(gen)
+    assert output == "test1", "First output should be 'test1'"
+
+    # Attempt to get the next value, expecting an exception
+    try:
+        next(gen)
+        assert False, "Expected an exception to be raised"
+    except Exception:  # pylint: disable=broad-except
+        assert True, "Exception was caught as expected"
 
 
 class TestRunWorker(IsolatedAsyncioTestCase):
@@ -254,27 +272,27 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         Test run_worker with generator handler.
 
-        Args:
-            mock_stream_result (_type_): _description_
-            mock_run_job_generator (_type_): _description_
-            mock_run_job (_type_): _description_
-            mock_get_job (_type_): _description_
+        This test verifies that:
+        - `stream_result` is called exactly once before an exception occurs.
+        - `run_job` is never called since `handler` is a generator function.
+        - An error is correctly reported back via `send_result`.
         '''
-        # Define the mock behaviors
-        mock_get_job.return_value = {
-            "id": "generator-123-exception", "input": {"number": 1}}
+        RunPodLogger().set_level("DEBUG")
 
-        # Test generator handler
-        generator_config = {
-            "handler": generator_handler_exception, "refresh_worker": True}
-        runpod.serverless.start(generator_config)
+        # Setup: Mock `get_job` to return a predefined job.
+        mock_get_job.return_value = {"id": "generator-123-exception", "input": {"number": 1}}
+
+        runpod.serverless.start({
+            "handler": generator_handler_exception,
+            "refresh_worker": True
+        })
 
         assert mock_stream_result.call_count == 1
         assert not mock_run_job.called
 
         # Since return_aggregate_stream is NOT activated, we should not submit any outputs.
         _, args, _ = mock_send_result.mock_calls[0]
-        assert 'error' in args[1]
+        assert 'error' in args[1], "Expected the error to be reported in the results."
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
