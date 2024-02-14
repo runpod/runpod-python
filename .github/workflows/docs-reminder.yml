@@ -14,7 +14,7 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/orgs/runpod/members/${{ github.event.pull_request.user.login }}" \
             -o /dev/null -w '%{http_code}\n' -s)
-
+          echo "$ORG_MEMBER"
           echo "is_member=$(if [ "$ORG_MEMBER" -eq 204 ]; then echo 'true'; else echo 'false'; fi)" >> $GITHUB_OUTPUT
 
         env:
