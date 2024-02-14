@@ -7,29 +7,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check Organization Membership
-        id: check_membership
-        run: |
-          ORG_MEMBER=$(curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/orgs/runpod/members/${{ github.event.pull_request.user.login }}" \
-            -o /dev/null -w '%{http_code}\n' -s)
-          echo "$ORG_MEMBER"
-          echo "is_member=$(if [ "$ORG_MEMBER" -eq 204 ]; then echo 'true'; else echo 'false'; fi)" >> $GITHUB_OUTPUT
-
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Auto Comment if Member
-        if: steps.check_membership.outputs.is_member == 'true'
         uses: wow-actions/auto-comment@v1
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           pullRequestOpened: |
             👋 Hi @{{ author }},
 
-            If your PR contains any user-facing changes please flag it for documentation.
+            To ensure our documentation stays up-to-date, we kindly ask you to take a moment to indicate if your PR introduces user-facing changes.
 
-            Submit a doc request [here](https://linear.app/runpod/team/TW/backlog).
+            **Are you a Community Member?**
+            - Please Submit a doc request [here](https://linear.app/runpod/team/TW/backlog).
 
-            Thanks!
+            Community Member?
+            - Please leave a comment below detailing any user-facing changes that need documentation.
+
+            Thank you for helping us maintain high-quality and accessible documentation for everyone!
