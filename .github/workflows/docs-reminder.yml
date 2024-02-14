@@ -1,13 +1,29 @@
-name: Auto Comment
+name: Docs Reminder Auto Comment
+
 on: [pull_request]
+
 jobs:
-  run:
+  check-and-comment:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: wow-actions/auto-comment@v1
-        with:
+      - name: Check Organization Membership
+        id: check_membership
+        run: |
+          ORG_MEMBER=$(curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/orgs/YOUR_ORG_NAME/members/${{ github.event.pull_request.user.login }}" \
+          -o /dev/null -w '%{http_code}\n' -s)
+          echo "ORG_MEMBER=$ORG_MEMBER" >> $GITHUB_ENV
+          echo "::set-output name=is_member::$(if [ "$ORG_MEMBER" = "204" ]; then echo "true"; else echo "false"; fi)"
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Auto Comment if Member
+        if: steps.check_membership.outputs.is_member == 'true'
+        uses: wow-actions/auto-comment@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           pullRequestOpened: |
             👋 Hi @{{ author }},
             Please ensure any user-facing changes are flagged for documentation.
