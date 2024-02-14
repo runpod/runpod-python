@@ -1,0 +1,20 @@
+name: Auto Comment
+on: [pull_request]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: wow-actions/auto-comment@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          pullRequestOpened: |
+            👋 Hi @{{ author }},
+            Please ensure any user-facing changes are flagged for documentation.
+
+            **Quick Checklist:**
+            - **User-facing?** Submit a doc request [here](https://linear.app/runpod/team/TW/backlog).
+
+            Let's keep our docs as up-to-date as our code. Need help? Tag the doc team or drop a comment here.
+
+            Thanks for helping us maintain great documentation for our users!
