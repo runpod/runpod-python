@@ -1,0 +1,25 @@
+name: Docs Reminder Auto Comment
+
+on: [pull_request]
+
+jobs:
+  check-and-comment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Auto Comment if Member
+        uses: wow-actions/auto-comment@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pullRequestOpened: |
+            👋 Hi @{{ author }},
+
+            To ensure our documentation stays up-to-date, we kindly ask you to take a moment to indicate if your PR introduces user-facing changes.
+
+            **Are you a Community Member?**
+            - Please Submit a doc request [here](https://linear.app/runpod/team/TW/backlog).
+
+            Community Member?
+            - Please leave a comment below detailing any user-facing changes that need documentation.
+
+            Thank you for helping us maintain high-quality and accessible documentation for everyone!
