@@ -106,7 +106,7 @@ def create_pod(
     template_id: Optional[str] = None,
     network_volume_id: Optional[str] = None,
     allowed_cuda_versions: Optional[list] = None,
-    min_download: int | None = None,
+    min_download: Optional[int] = None,
 ) -> dict:
     """
     Create a pod
