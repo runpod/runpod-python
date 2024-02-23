@@ -106,6 +106,8 @@ def create_pod(
     template_id: Optional[str] = None,
     network_volume_id: Optional[str] = None,
     allowed_cuda_versions: Optional[list] = None,
+    min_download: Optional[int] = None,
+    min_upload: Optional[int] = None,
 ) -> dict:
     """
     Create a pod
@@ -124,6 +126,8 @@ def create_pod(
                 for example {EXAMPLE_VAR:"example_value", EXAMPLE_VAR2:"example_value 2"}, will
                 inject EXAMPLE_VAR and EXAMPLE_VAR2 into the pod with the mentioned values
     :param template_id: the id of the template to use for the pod
+    :param min_download: the minimum download speed for the pod
+    :param min_upload: the minimum upload speed for the pod
 
     :example:
 
@@ -166,6 +170,8 @@ def create_pod(
             template_id,
             network_volume_id,
             allowed_cuda_versions,
+            min_download,
+            min_upload,
         )
     )
 
