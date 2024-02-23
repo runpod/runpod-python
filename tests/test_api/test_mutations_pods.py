@@ -32,6 +32,7 @@ class TestPodMutations(unittest.TestCase):
             template_id="abcde",
             allowed_cuda_versions=["11.8", "12.0"],
             min_download=400,
+            min_upload=400,
         )
 
         # Here you should check the correct structure of the result
