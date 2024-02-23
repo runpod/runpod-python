@@ -30,7 +30,8 @@ class TestPodMutations(unittest.TestCase):
             env={"ENV": "test"},
             support_public_ip=True,
             template_id="abcde",
-            allowed_cuda_versions=["11.8", "12.0"]
+            allowed_cuda_versions=["11.8", "12.0"],
+            min_download=400,
         )
 
         # Here you should check the correct structure of the result
