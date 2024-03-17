@@ -1,5 +1,70 @@
 # Change Log
 
+## Release 1.6.2 (2/12/24)
+
+### Fixed
+
+- Reorder FastAPI endpoints for clarity.
+- Truncate long logs to avoid overloading the server.
+
+---
+
+## Release 1.6.1 (2/11/24)
+
+### Added
+
+- User-Agent for better analytics tracking.
+- Expose the ability to create container auth.
+- Emulate webhooks for local testing when using `rp_serve_api` flag.
+
+### Changed
+
+- Updated aiohttp from 3.9.2 to 3.9.3
+- [BREAKING] rename `registry_auth` to `registry_auth_id` for clarity.
+- Added additional details to the FastAPI page.
+
+---
+
+## Release 1.6.0 (1/29/24)
+
+### Fixed
+
+- Rust Serverless Core Passing all tests.
+- GitHub Action and Python package updates
+- Changelog date typo
+
+---
+
+## Release 1.5.3 (1/25/24)
+
+### Added
+
+- Expose cuda selection when creating a pod.
+- Expose `flashboot` when creating a new endpoint.
+- Expose bucket name for rp_upload.
+- Exposed `containerRegistryAuthId` for template creation.
+
+### Fixed
+
+- ReadMe typo *start_pod* -> *resume_pod*
+
+---
+
+## Release 1.5.2 (1/16/24)
+
+### Fixed
+
+- Edge case when using RunPod Serverless Core that return `None` for function output.
+- Missing Job ID for logging.
+- Concurrency modifier not adhering to the maximum concurrency.
+- Improved in progress job tracking and counting.
+
+### Added
+
+- Expanded RunPod Serverless Core testing.
+
+---
+
 ## Release 1.5.1 (1/11/24)
 
 ### Fixed
@@ -11,6 +76,8 @@
 ### Changed
 
 - Updated sls-core to `0.0.2`
+
+---
 
 ## Release 1.5.0 (12/28/23)
 

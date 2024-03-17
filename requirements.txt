@@ -1,4 +1,4 @@
-aiohttp[speedups] == 3.9.1
+aiohttp[speedups] == 3.9.3
 aiohttp-retry >= 2.8.3
 
 backoff >= 2.2.1

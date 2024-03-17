@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 import aiohttp
 
+from runpod.user_agent import USER_AGENT
 from runpod.serverless.modules import (
     rp_logger, rp_local, rp_handler, rp_ping,
     rp_scale
@@ -24,7 +25,10 @@ heartbeat = rp_ping.Heartbeat()
 
 def _get_auth_header() -> Dict[str, str]:
     """ Returns the authorization header with the API key. """
-    return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+    return {
+        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}",
+        "User-Agent": USER_AGENT
+    }
 
 
 def _is_local(config) -> bool:
@@ -42,10 +46,11 @@ async def _process_job(job, session, job_scaler, config):
     if rp_handler.is_generator(config["handler"]):
         is_stream = True
         generator_output = run_job_generator(config["handler"], job)
-        log.debug("Handler is a generator, streaming results.")
+        log.debug("Handler is a generator, streaming results.", job['id'])
 
         job_result = {'output': []}
         async for stream_output in generator_output:
+            log.debug(f"Stream output: {stream_output}", job['id'])
             if 'error' in stream_output:
                 job_result = stream_output
                 break
@@ -54,7 +59,7 @@ async def _process_job(job, session, job_scaler, config):
 
             await stream_result(session, stream_output, job)
     else:
-        is_stream = 0
+        is_stream = False
         job_result = await run_job(config["handler"], job)
 
     # If refresh_worker is set, pod will be reset after job is complete.
@@ -66,13 +71,13 @@ async def _process_job(job, session, job_scaler, config):
     # If rp_debugger is set, debugger output will be returned.
     if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
         job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
-        log.debug("rp_debugger | Flag set, returning debugger output.")
+        log.debug("rp_debugger | Flag set, returning debugger output.", job['id'])
 
         # Calculate ready delay for the debugger output.
         ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
         job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
     else:
-        log.debug("rp_debugger | Flag not set, skipping debugger output.")
+        log.debug("rp_debugger | Flag not set, skipping debugger output.", job['id'])
         rp_debugger.clear_debugger_output()
 
     # Send the job result to SLS

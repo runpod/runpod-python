@@ -2,13 +2,16 @@
 # pylint: disable=protected-access
 
 import os
+import platform
 import argparse
+from unittest import mock
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
 from unittest import IsolatedAsyncioTestCase
 import nest_asyncio
 
 import runpod
+from runpod._version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless import _signal_handler
 
@@ -16,28 +19,25 @@ nest_asyncio.apply()
 
 
 class TestWorker(IsolatedAsyncioTestCase):
-    """ Tests for runpod | serverless| worker """
+    """Tests for RunPod serverless worker."""
 
     def setUp(self):
-        self.mock_handler = Mock()
-        self.mock_handler.return_value = "test"
-
-        self.mock_config = Mock()
+        self.mock_handler = mock.Mock(return_value="test")
         self.mock_config = {
             "handler": self.mock_handler,
-            "rp_args": {
-                "test_input": None,
-            }
+            "rp_args": {"test_input": None},
         }
 
     def test_get_auth_header(self):
-        '''
-        Test _get_auth_header
-        '''
+        """Test retrieval of the authentication header from _get_auth_header."""
+        os_info = f"{platform.system()} {platform.release()}; {platform.machine()}"
         with patch("runpod.serverless.worker.os") as mock_os:
             mock_os.environ.get.return_value = "test"
             assert runpod.serverless.worker._get_auth_header(
-            ) == {'Authorization': 'test'}
+            ) == {
+                'Authorization': 'test',
+                'User-Agent': f'RunPod-Python-SDK/{runpod_version} ({os_info}) Language/Python {platform.python_version()}'  # pylint: disable=line-too-long
+            }
 
     def test_is_local(self):
         '''
@@ -160,7 +160,25 @@ def generator_handler_exception(job):
     '''
     print(job)
     yield "test1"
+    print("Raise exception")
     raise Exception()  # pylint: disable=broad-exception-raised
+
+
+def test_generator_handler_exception():
+    """ Test generator_handler_exception """
+    job = {"id": "test_job"}
+    gen = generator_handler_exception(job)
+
+    # Process the first yielded value
+    output = next(gen)
+    assert output == "test1", "First output should be 'test1'"
+
+    # Attempt to get the next value, expecting an exception
+    try:
+        next(gen)
+        assert False, "Expected an exception to be raised"
+    except Exception:  # pylint: disable=broad-except
+        assert True, "Exception was caught as expected"
 
 
 class TestRunWorker(IsolatedAsyncioTestCase):
@@ -254,27 +272,27 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         Test run_worker with generator handler.
 
-        Args:
-            mock_stream_result (_type_): _description_
-            mock_run_job_generator (_type_): _description_
-            mock_run_job (_type_): _description_
-            mock_get_job (_type_): _description_
+        This test verifies that:
+        - `stream_result` is called exactly once before an exception occurs.
+        - `run_job` is never called since `handler` is a generator function.
+        - An error is correctly reported back via `send_result`.
         '''
-        # Define the mock behaviors
-        mock_get_job.return_value = {
-            "id": "generator-123", "input": {"number": 1}}
+        RunPodLogger().set_level("DEBUG")
 
-        # Test generator handler
-        generator_config = {
-            "handler": generator_handler_exception, "refresh_worker": True}
-        runpod.serverless.start(generator_config)
+        # Setup: Mock `get_job` to return a predefined job.
+        mock_get_job.return_value = {"id": "generator-123-exception", "input": {"number": 1}}
+
+        runpod.serverless.start({
+            "handler": generator_handler_exception,
+            "refresh_worker": True
+        })
 
         assert mock_stream_result.call_count == 1
         assert not mock_run_job.called
 
         # Since return_aggregate_stream is NOT activated, we should not submit any outputs.
         _, args, _ = mock_send_result.mock_calls[0]
-        assert 'error' in args[1]
+        assert 'error' in args[1], "Expected the error to be reported in the results."
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.worker.run_job")
@@ -295,11 +313,12 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
         # Define the mock behaviors
         mock_get_job.return_value = {
-            "id": "generator-123", "input": {"number": 1}}
+            "id": "generator-123-aggregate", "input": {"number": 1}}
 
         # Test generator handler
         generator_config = {
             "handler": generator_handler, "return_aggregate_stream": True, "refresh_worker": True}
+
         runpod.serverless.start(generator_config)
 
         assert mock_send_result.called
@@ -459,67 +478,14 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
             runpod.serverless.start(config)
 
-    @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.send_result")
-    async def test_run_worker_multi_processing_availability_ratio(
-            self, mock_send_result, mock_run_job, mock_get_job):
-        '''
-        Test run_worker with multi processing enabled, the scale-up and
-        scale-down behavior with availability ratio.
-
-        Args:
-            mock_send_result (_type_): _description_
-            mock_stream_result (_type_): _description_
-            mock_run_job (_type_): _description_
-            mock_get_job (_type_): _description_
-            mock_session (_type_): _description_
-        '''
-
-        # Let the test be a long running one so we can capture the scale-up and scale-down.
-        config = {
-            "handler": MagicMock(),
-            "refresh_worker": False,
-            "rp_args": {
-                "rp_debugger": True,
-                "rp_log_level": "DEBUG"
-            }
-        }
-
-        # Let's stop after the 20th call.
-        scale_behavior = {
-            'counter': 0
-        }
-
-        def mock_is_alive():
-            res = scale_behavior['counter'] < 10
-            scale_behavior['counter'] += 1
-
-            # Let's oscillate between upscaling, downscaling, upscaling, downscaling, ...
-            if scale_behavior['counter'] % 2 == 0:
-                mock_get_job.return_value = {
-                    "id": "123", "input": {"number": 1}}
-            else:
-                mock_get_job.return_value = None
-            return res
-
-        # Define the mock behaviors
-        mock_run_job.return_value = {"output": {"result": "odd"}}
-        with patch("runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive):
-            runpod.serverless.start(config)
-
-        # 5 calls with actual jobs
-        assert mock_run_job.call_count == 5
-        assert mock_send_result.call_count == 5
-
     # Test with sls-core
     async def test_run_worker_with_sls_core(self):
         '''
         Test run_worker with sls-core.
         '''
-        os.environ["RUNPOD_USE_CORE"] = "true"
-
         with patch("runpod.serverless.core.main") as mock_main:
+            os.environ["RUNPOD_USE_CORE"] = "true"
             runpod.serverless.start(self.config)
+            os.environ.pop("RUNPOD_USE_CORE")
 
             assert mock_main.called

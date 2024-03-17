@@ -136,7 +136,7 @@ def start(config: Dict[str, Any]):
         )
 
     elif realtime_port:
-        log.info("Starting API server for realtime.")
+        log.info(f"Starting API server for realtime on port {realtime_port}.")
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(

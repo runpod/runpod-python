@@ -5,9 +5,10 @@ import os
 import asyncio
 
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, MagicMock
 import pytest
 
+import requests
 import runpod
 from runpod.serverless.modules import rp_fastapi
 
@@ -50,6 +51,34 @@ class TestFastAPI(unittest.TestCase):
 
             self.assertTrue(mock_uvicorn.run.called)
 
+            os.environ.pop("RUNPOD_REALTIME_PORT")
+            os.environ.pop("RUNPOD_ENDPOINT_ID")
+
+    def test_webhook_sender_success(self):
+        """Test the webhook sender when the request is successful."""
+        module_location = "runpod.serverless.modules.rp_fastapi.requests.Session.post"
+
+        with patch(module_location, new_callable=MagicMock) as mock_post:
+            # Simulate a successful response
+            mock_post.return_value.status_code = 200
+
+            # Call the function
+            success = rp_fastapi._send_webhook("test_webhook", {"test": "output"})
+            assert success is True
+
+    def test_webhook_sender_failure(self):
+        """Test the webhook sender when the request fails."""
+        module_location = "runpod.serverless.modules.rp_fastapi.requests.Session.post"
+
+        with patch(module_location, new_callable=MagicMock) as mock_post:
+            # Configure the mock to simulate a failure (e.g., a 500 status code)
+            mock_post.return_value.raise_for_status.side_effect = requests.HTTPError()
+            mock_post.return_value.status_code = 500
+
+            # Call the function
+            success = rp_fastapi._send_webhook("test_webhook", {"test": "output"})
+            assert success is False
+
     @pytest.mark.asyncio
     def test_run(self):
         '''
@@ -69,7 +98,7 @@ class TestFastAPI(unittest.TestCase):
                 input={"test_input": "test_input"}
             )
 
-            default_input_object = rp_fastapi.DefaultInput(
+            default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
             )
 
@@ -112,10 +141,16 @@ class TestFastAPI(unittest.TestCase):
         with patch(f"{module_location}.FastAPI", Mock()), \
                 patch(f"{module_location}.APIRouter", return_value=Mock()), \
                 patch(f"{module_location}.uvicorn", Mock()), \
-                patch(f"{module_location}.uuid.uuid4", return_value="123"):
+                patch(f"{module_location}.uuid.uuid4", return_value="123"), \
+                patch(f"{module_location}.threading") as mock_threading:
 
-            default_input_object = rp_fastapi.DefaultInput(
+            default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
+            )
+
+            input_object_with_webhook = rp_fastapi.DefaultRequest(
+                input={"test_input": "test_input"},
+                webhook="test_webhook"
             )
 
             # Test with handler
@@ -148,6 +183,10 @@ class TestFastAPI(unittest.TestCase):
                 error_worker_api._sim_runsync(default_input_object))
             assert "error" in error_runsync_return
 
+            # Test webhook caller sent
+            asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
+            assert mock_threading.Thread.called
+
         loop.close()
 
     @pytest.mark.asyncio
@@ -161,10 +200,16 @@ class TestFastAPI(unittest.TestCase):
         with patch(f"{module_location}.FastAPI", Mock()), \
                 patch(f"{module_location}.APIRouter", return_value=Mock()), \
                 patch(f"{module_location}.uvicorn", Mock()), \
-                patch(f"{module_location}.uuid.uuid4", return_value="123"):
+                patch(f"{module_location}.uuid.uuid4", return_value="123"), \
+                patch(f"{module_location}.threading") as mock_threading:
 
-            default_input_object = rp_fastapi.DefaultInput(
+            default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
+            )
+
+            input_object_with_webhook = rp_fastapi.DefaultRequest(
+                input={"test_input": "test_input"},
+                webhook="test_webhook"
             )
 
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
@@ -200,6 +245,11 @@ class TestFastAPI(unittest.TestCase):
                 "stream": [{"output": {"result": "success"}}]
             }
 
+            # Test webhook caller sent
+            asyncio.run(generator_worker_api._sim_run(input_object_with_webhook))
+            asyncio.run(generator_worker_api._sim_stream("test-123"))
+            assert mock_threading.Thread.called
+
         loop.close()
 
     @pytest.mark.asyncio
@@ -213,12 +263,18 @@ class TestFastAPI(unittest.TestCase):
         with patch(f"{module_location}.FastAPI", Mock()), \
                 patch(f"{module_location}.APIRouter", return_value=Mock()), \
                 patch(f"{module_location}.uvicorn", Mock()), \
-                patch(f"{module_location}.uuid.uuid4", return_value="123"):
+                patch(f"{module_location}.uuid.uuid4", return_value="123"), \
+                patch(f"{module_location}.threading") as mock_threading:
 
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
-            default_input_object = rp_fastapi.DefaultInput(
+            default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
+            )
+
+            input_object_with_webhook = rp_fastapi.DefaultRequest(
+                input={"test_input": "test_input"},
+                webhook="test_webhook"
             )
 
             # Add job to job_list
@@ -237,6 +293,11 @@ class TestFastAPI(unittest.TestCase):
                 "status": "COMPLETED",
                 "output": {"result": "success"}
             }
+
+            # Test webhook caller sent
+            asyncio.run(worker_api._sim_run(input_object_with_webhook))
+            asyncio.run(worker_api._sim_status("test-123"))
+            assert mock_threading.Thread.called
 
             # Test with generator handler
             def generator_handler(job):

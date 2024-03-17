@@ -143,8 +143,8 @@ pod = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
 # Stop the pod
 runpod.stop_pod(pod.id)
 
-# Start the pod
-runpod.start_pod(pod.id)
+# Resume the pod
+runpod.resume_pod(pod.id)
 
 # Terminate the pod
 runpod.terminate_pod(pod.id)
