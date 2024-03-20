@@ -46,6 +46,12 @@ parser.add_argument("--rp_api_concurrency", type=int, default=1,
                     help="Number of concurrent FastAPI workers.")
 parser.add_argument("--rp_api_host", type=str, default="localhost",
                     help="Host to start the FastAPI server on.")
+parser.add_argument("--rp_api_prefix", type=str, default=None,
+                    help="Optional prefix for the API routes. "
+                         "This option is mutually exclusive with --rp_endpoint_id.")
+parser.add_argument('--rp_endpoint_id', type=str, default=None,
+                    help="Simuluate an endpoint with a specific ID which will be available under /v2/{endpoint_id}. "
+                         "This option is mutually exclusive with --rp_api_prefix.")
 
 # Test input
 parser.add_argument("--test_input", type=str, default=None,
@@ -74,6 +80,16 @@ def _set_config_args(config) -> dict:
     # Set the log level
     if config["rp_args"]["rp_log_level"]:
         log.set_level(config["rp_args"]["rp_log_level"])
+
+    # Check for validity of arguments
+    if config["rp_args"]["rp_api_prefix"] and config["rp_args"]["rp_endpoint_id"]:
+        raise ValueError("Options --rp_api_prefix and --rp_endpoint_id are mutually exclusive.")
+    
+    if config["rp_args"]["rp_endpoint_id"]:
+        config["api_prefix"] = f"/v2/{config['rp_args']['rp_endpoint_id']}"
+    
+    if config["rp_args"]["rp_api_prefix"]:
+        config["api_prefix"] = config["rp_args"]["rp_api_prefix"].rstrip("/")
 
     return config
 

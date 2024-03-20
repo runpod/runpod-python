@@ -210,7 +210,9 @@ class WorkerAPI:
         )
 
         # Create an APIRouter and add the route for processing jobs.
-        api_router = APIRouter()
+        api_router = APIRouter(
+            prefix=config.get("api_prefix", ""),
+        )
 
         # Docs Redirect /docs -> /
         api_router.add_api_route(
