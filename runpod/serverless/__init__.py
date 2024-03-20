@@ -141,6 +141,11 @@ def start(config: Dict[str, Any]):
     realtime_port = _get_realtime_port()
     realtime_concurrency = _get_realtime_concurrency()
 
+    start_server = config["rp_args"]["rp_serve_api"] or realtime_port
+
+    if start_server:
+        log.info(f"Routes will be prefixed with {config['api_prefix']}")
+
     if config["rp_args"]["rp_serve_api"]:
         log.info("Starting API server.")
         api_server = rp_fastapi.WorkerAPI(config)
