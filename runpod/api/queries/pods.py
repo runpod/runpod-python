@@ -37,6 +37,10 @@ query myPods {
             }
             machine {
                 gpuDisplayName
+                gpuAvailable
+                maintenanceStart
+                maintenanceEnd
+                maintenanceNote
             }
         }
     }
@@ -82,6 +86,10 @@ def generate_pod_query(pod_id):
             }}
             machine {{
                 gpuDisplayName
+                gpuAvailable
+                maintenanceStart
+                maintenanceEnd
+                maintenanceNote
             }}
         }}
     }}
