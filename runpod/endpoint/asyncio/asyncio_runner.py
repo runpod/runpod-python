@@ -21,6 +21,7 @@ class Job:
             "Authorization": f"Bearer {api_key}"
         }
         self.session = session
+        self.session.raise_for_status = True
         self.endpoint_url_base = endpoint_url_base
 
         self.job_status = None
@@ -110,6 +111,7 @@ class Endpoint:
             "Authorization": f"Bearer {api_key}"
         }
         self.session = session
+        self.session.raise_for_status = True
 
     async def run(self, endpoint_input: dict) -> Job:
         """Runs endpoint with specified input
