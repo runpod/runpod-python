@@ -1,7 +1,7 @@
-'''
+"""
 runpod | serverless | rp_local.py
 Provides the local testing functionality for runpod serverless worker.
-'''
+"""
 
 import os
 import sys
@@ -13,14 +13,15 @@ from .rp_job import run_job
 
 log = RunPodLogger()
 
+
 async def run_local(config: Dict[str, Any]) -> None:
-    '''
+    """
     Runs the worker locally.
-    '''
+    """
     # Get the local test job
-    if config['rp_args'].get('test_input', None):
+    if config["rp_args"].get("test_input", None):
         log.info("test_input set, using test_input as job input.")
-        local_job = config['rp_args']['test_input']
+        local_job = config["rp_args"]["test_input"]
     else:
         if not os.path.exists("test_input.json"):
             log.warn("test_input.json not found, exiting.")
@@ -48,9 +49,9 @@ async def run_local(config: Dict[str, Any]) -> None:
     log.info(f"Job result: {job_result}")
 
     # Compare to sample output, if provided
-    if config['rp_args'].get('test_output', None):
+    if config["rp_args"].get("test_output", None):
         log.info("test_output set, comparing output to test_output.")
-        if job_result != config['rp_args']['test_output']:
+        if job_result != config["rp_args"]["test_output"]:
             log.error("Job output does not match test_output.")
             sys.exit(1)
         log.info("Job output matches test_output.")

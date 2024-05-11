@@ -7,10 +7,7 @@ import runpod
 
 try:
 
-    new_template = runpod.create_template(
-        name="test",
-        image_name="runpod/base:0.1.0"
-    )
+    new_template = runpod.create_template(name="test", image_name="runpod/base:0.1.0")
 
     print(new_template)
 

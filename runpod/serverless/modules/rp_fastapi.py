@@ -1,4 +1,5 @@
-''' Used to launch the FastAPI web server when worker is running in API mode. '''
+""" Used to launch the FastAPI web server when worker is running in API mode. """
+
 # pylint: disable=too-few-public-methods, line-too-long
 
 import os
@@ -104,16 +105,18 @@ heartbeat = Heartbeat()
 # ------------------------------- Input Objects ------------------------------ #
 @dataclass
 class Job:
-    ''' Represents a job. '''
+    """Represents a job."""
+
     id: str
     input: Union[dict, list, str, int, float, bool]
 
 
 @dataclass
 class TestJob:
-    ''' Represents a test job.
+    """Represents a test job.
     input can be any type of data.
-    '''
+    """
+
     id: Optional[str] = None
     input: Optional[Union[dict, list, str, int, float, bool]] = None
     webhook: Optional[str] = None
@@ -121,7 +124,8 @@ class TestJob:
 
 @dataclass
 class DefaultRequest:
-    """ Represents a test input. """
+    """Represents a test input."""
+
     input: Dict[str, Any]
     webhook: Optional[str] = None
 
@@ -129,7 +133,8 @@ class DefaultRequest:
 # ------------------------------ Output Objects ------------------------------ #
 @dataclass
 class JobOutput:
-    ''' Represents the output of a job. '''
+    """Represents the output of a job."""
+
     id: str
     status: str
     output: Optional[Union[dict, list, str, int, float, bool]] = None
@@ -138,7 +143,8 @@ class JobOutput:
 
 @dataclass
 class StreamOutput:
-    """ Stream representation of a job. """
+    """Stream representation of a job."""
+
     id: str
     status: str = "IN_PROGRESS"
     stream: Optional[Union[dict, list, str, int, float, bool]] = None
@@ -171,15 +177,15 @@ def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
 #                                  API Worker                                  #
 # ---------------------------------------------------------------------------- #
 class WorkerAPI:
-    ''' Used to launch the FastAPI web server when the worker is running in API mode. '''
+    """Used to launch the FastAPI web server when the worker is running in API mode."""
 
     def __init__(self, config: Dict[str, Any]):
-        '''
+        """
         Initializes the WorkerAPI class.
         1. Starts the heartbeat thread.
         2. Initializes the FastAPI web server.
         3. Sets the handler for processing jobs.
-        '''
+        """
         # Start the heartbeat thread.
         heartbeat.start_ping()
 
@@ -188,16 +194,16 @@ class WorkerAPI:
         tags_metadata = [
             {
                 "name": "Synchronously Submit Request & Get Job Results",
-                "description": "Endpoints for submitting job requests and getting the results."
+                "description": "Endpoints for submitting job requests and getting the results.",
             },
             {
                 "name": "Submit Job Requests",
-                "description": "Endpoints for submitting job requests."
+                "description": "Endpoints for submitting job requests.",
             },
             {
                 "name": "Check Job Results",
-                "description": "Endpoints for checking the status of a job and getting the results."
-            }
+                "description": "Endpoints for checking the status of a job and getting the results.",
+            },
         ]
 
         # Initialize the FastAPI web server.
@@ -206,7 +212,7 @@ class WorkerAPI:
             description=DESCRIPTION,
             version=runpod_version,
             docs_url="/",
-            openapi_tags=tags_metadata
+            openapi_tags=tags_metadata,
         )
 
         # Create an APIRouter and add the route for processing jobs.
@@ -214,63 +220,74 @@ class WorkerAPI:
 
         # Docs Redirect /docs -> /
         api_router.add_api_route(
-            "/docs", lambda: RedirectResponse(url="/"),
-            include_in_schema=False
+            "/docs", lambda: RedirectResponse(url="/"), include_in_schema=False
         )
 
         if RUNPOD_ENDPOINT_ID:
-            api_router.add_api_route(f"/{RUNPOD_ENDPOINT_ID}/realtime",
-                                     self._realtime, methods=["POST"])
+            api_router.add_api_route(
+                f"/{RUNPOD_ENDPOINT_ID}/realtime", self._realtime, methods=["POST"]
+            )
 
         # Simulation endpoints.
         api_router.add_api_route(
-            "/run", self._sim_run, methods=["POST"], response_model_exclude_none=True,
+            "/run",
+            self._sim_run,
+            methods=["POST"],
+            response_model_exclude_none=True,
             summary="Mimics the behavior of the run endpoint.",
             description=RUN_DESCRIPTION,
-            tags=["Submit Job Requests"]
+            tags=["Submit Job Requests"],
         )
         api_router.add_api_route(
-            "/runsync", self._sim_runsync, methods=["POST"],
+            "/runsync",
+            self._sim_runsync,
+            methods=["POST"],
             response_model_exclude_none=True,
             summary="Mimics the behavior of the runsync endpoint.",
             description=RUNSYNC_DESCRIPTION,
-            tags=["Synchronously Submit Request & Get Job Results"]
+            tags=["Synchronously Submit Request & Get Job Results"],
         )
         api_router.add_api_route(
-            "/stream/{job_id}", self._sim_stream, methods=["POST"],
+            "/stream/{job_id}",
+            self._sim_stream,
+            methods=["POST"],
             response_model_exclude_none=True,
             summary="Mimics the behavior of the stream endpoint.",
             description=STREAM_DESCRIPTION,
-            tags=["Check Job Results"]
+            tags=["Check Job Results"],
         )
         api_router.add_api_route(
-            "/status/{job_id}", self._sim_status, methods=["POST"],
+            "/status/{job_id}",
+            self._sim_status,
+            methods=["POST"],
             response_model_exclude_none=True,
             summary="Mimics the behavior of the status endpoint.",
             description=STATUS_DESCRIPTION,
-            tags=["Check Job Results"]
+            tags=["Check Job Results"],
         )
 
         # Include the APIRouter in the FastAPI application.
         self.rp_app.include_router(api_router)
 
-    def start_uvicorn(self, api_host='localhost', api_port=8000, api_concurrency=1):
-        '''
+    def start_uvicorn(self, api_host="localhost", api_port=8000, api_concurrency=1):
+        """
         Starts the Uvicorn server.
-        '''
+        """
         uvicorn.run(
-            self.rp_app, host=api_host,
-            port=int(api_port), workers=int(api_concurrency),
+            self.rp_app,
+            host=api_host,
+            port=int(api_port),
+            workers=int(api_concurrency),
             log_level=os.environ.get("UVICORN_LOG_LEVEL", "info"),
-            access_log=False
+            access_log=False,
         )
 
     # ----------------------------- Realtime Endpoint ---------------------------- #
     async def _realtime(self, job: Job):
-        '''
+        """
         Performs model inference on the input data using the provided handler.
         If handler is not provided, returns an error message.
-        '''
+        """
         job_list.add_job(job.id)
 
         # Process the job using the provided handler, passing in the job input.
@@ -287,14 +304,14 @@ class WorkerAPI:
 
     # ------------------------------------ run ----------------------------------- #
     async def _sim_run(self, job_request: DefaultRequest) -> JobOutput:
-        """ Development endpoint to simulate run behavior. """
+        """Development endpoint to simulate run behavior."""
         assigned_job_id = f"test-{uuid.uuid4()}"
         job_list.add_job(assigned_job_id, job_request.input, job_request.webhook)
         return jsonable_encoder({"id": assigned_job_id, "status": "IN_PROGRESS"})
 
     # ---------------------------------- runsync --------------------------------- #
     async def _sim_runsync(self, job_request: DefaultRequest) -> JobOutput:
-        """ Development endpoint to simulate runsync behavior. """
+        """Development endpoint to simulate runsync behavior."""
         assigned_job_id = f"test-{uuid.uuid4()}"
         job = TestJob(id=assigned_job_id, input=job_request.input)
 
@@ -302,39 +319,35 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
             async for stream_output in generator_output:
-                job_output['output'].append(stream_output["output"])
+                job_output["output"].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
 
-        if job_output.get('error', None):
-            return jsonable_encoder({
-                "id": job.id,
-                "status": "FAILED",
-                "error": job_output['error']
-            })
+        if job_output.get("error", None):
+            return jsonable_encoder(
+                {"id": job.id, "status": "FAILED", "error": job_output["error"]}
+            )
 
         if job_request.webhook:
             thread = threading.Thread(
                 target=_send_webhook,
-                args=(job_request.webhook, job_output), daemon=True)
+                args=(job_request.webhook, job_output),
+                daemon=True,
+            )
             thread.start()
 
-        return jsonable_encoder({
-            "id": job.id,
-            "status": "COMPLETED",
-            "output": job_output['output']
-        })
+        return jsonable_encoder(
+            {"id": job.id, "status": "COMPLETED", "output": job_output["output"]}
+        )
 
     # ---------------------------------- stream ---------------------------------- #
     async def _sim_stream(self, job_id: str) -> StreamOutput:
-        """ Development endpoint to simulate stream behavior. """
+        """Development endpoint to simulate stream behavior."""
         stashed_job = job_list.get_job(job_id)
         if stashed_job is None:
-            return jsonable_encoder({
-                "id": job_id,
-                "status": "FAILED",
-                "error": "Job ID not found"
-            })
+            return jsonable_encoder(
+                {"id": job_id, "status": "FAILED", "error": "Job ID not found"}
+            )
 
         job = TestJob(id=job_id, input=stashed_job.input)
 
@@ -344,36 +357,36 @@ class WorkerAPI:
             async for stream_output in generator_output:
                 stream_accumulator.append({"output": stream_output["output"]})
         else:
-            return jsonable_encoder({
-                "id": job_id,
-                "status": "FAILED",
-                "error": "Stream not supported, handler must be a generator."
-            })
+            return jsonable_encoder(
+                {
+                    "id": job_id,
+                    "status": "FAILED",
+                    "error": "Stream not supported, handler must be a generator.",
+                }
+            )
 
         job_list.remove_job(job.id)
 
         if stashed_job.webhook:
             thread = threading.Thread(
                 target=_send_webhook,
-                args=(stashed_job.webhook, stream_accumulator), daemon=True)
+                args=(stashed_job.webhook, stream_accumulator),
+                daemon=True,
+            )
             thread.start()
 
-        return jsonable_encoder({
-            "id": job_id,
-            "status": "COMPLETED",
-            "stream": stream_accumulator
-        })
+        return jsonable_encoder(
+            {"id": job_id, "status": "COMPLETED", "stream": stream_accumulator}
+        )
 
     # ---------------------------------- status ---------------------------------- #
     async def _sim_status(self, job_id: str) -> JobOutput:
-        """ Development endpoint to simulate status behavior. """
+        """Development endpoint to simulate status behavior."""
         stashed_job = job_list.get_job(job_id)
         if stashed_job is None:
-            return jsonable_encoder({
-                "id": job_id,
-                "status": "FAILED",
-                "error": "Job ID not found"
-            })
+            return jsonable_encoder(
+                {"id": job_id, "status": "FAILED", "error": "Job ID not found"}
+            )
 
         job = TestJob(id=stashed_job.id, input=stashed_job.input)
 
@@ -381,27 +394,25 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
             async for stream_output in generator_output:
-                job_output['output'].append(stream_output["output"])
+                job_output["output"].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
 
         job_list.remove_job(job.id)
 
-        if job_output.get('error', None):
-            return jsonable_encoder({
-                "id": job_id,
-                "status": "FAILED",
-                "error": job_output['error']
-            })
+        if job_output.get("error", None):
+            return jsonable_encoder(
+                {"id": job_id, "status": "FAILED", "error": job_output["error"]}
+            )
 
         if stashed_job.webhook:
             thread = threading.Thread(
                 target=_send_webhook,
-                args=(stashed_job.webhook, job_output), daemon=True)
+                args=(stashed_job.webhook, job_output),
+                daemon=True,
+            )
             thread.start()
 
-        return jsonable_encoder({
-            "id": job_id,
-            "status": "COMPLETED",
-            "output": job_output['output']
-        })
+        return jsonable_encoder(
+            {"id": job_id, "status": "COMPLETED", "output": job_output["output"]}
+        )

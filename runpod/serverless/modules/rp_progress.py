@@ -23,8 +23,7 @@ async def _create_session_async():
     timeout = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
 
     return aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(limit=None),
-        headers=auth_header, timeout=timeout
+        connector=aiohttp.TCPConnector(limit=None), headers=auth_header, timeout=timeout
     )
 
 
@@ -32,10 +31,7 @@ async def _async_progress_update(session, job, progress):
     """
     The actual asynchronous function that sends the update.
     """
-    job_data = {
-        "status": "IN_PROGRESS",
-        "output": progress
-    }
+    job_data = {"status": "IN_PROGRESS", "output": progress}
 
     await send_result(session, job_data, job)
 
@@ -48,6 +44,7 @@ def _thread_target(job: Dict[str, Any], progress: Any):
     asyncio.set_event_loop(loop)
 
     try:
+
         async def main():
             session = await _create_session_async()
             async with session:
