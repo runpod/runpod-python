@@ -138,7 +138,7 @@ pods = runpod.get_pods()
 pod = runpod.get_pod(pod.id)
 
 # Create a pod
-pod = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
+pod = runpod.create_pod("test", "runpod/stack", "NVIDIA RTX A6000")
 
 # Stop the pod
 runpod.stop_pod(pod.id)
