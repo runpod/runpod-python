@@ -173,6 +173,32 @@ def create_pod(
     return cleaned_response
 
 
+def delete_template(template_name: str) -> dict:
+    """
+    Delete a template by its name.
+
+    :param template_name: the name of the template to delete
+    :return: the response data containing the result of the deletion
+    """
+    raw_response = run_graphql_query(f"""
+    mutation {{
+        deleteTemplate(templateName: "{template_name}")
+    }}
+    """)
+    return raw_response["data"]["deleteTemplate"]
+
+def delete_endpoint(endpoint_id: str) -> dict:
+    """
+    Delete an endpoint by its ID.
+
+    :param endpoint_id: the ID of the endpoint to delete
+    :return: the response data containing the deleted endpoint ID
+    """
+    raw_response = run_graphql_query(
+        endpoint_mutations.delete_endpoint_mutation(endpoint_id)
+    )
+    return raw_response["data"]["deleteEndpoint"]
+
 def stop_pod(pod_id: str):
     """
     Stop a pod

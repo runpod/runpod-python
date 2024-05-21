@@ -2,6 +2,13 @@
 
 # pylint: disable=too-many-arguments, too-many-branches
 
+def delete_template(template_name: str) -> str:
+    """Generate a string for a GraphQL mutation to delete a pod template by name."""
+    return f"""
+    mutation {{
+        deleteTemplate(templateName: "{template_name}")
+    }}
+    """
 
 def generate_pod_template(
     name: str,

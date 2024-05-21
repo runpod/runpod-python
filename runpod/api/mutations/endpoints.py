@@ -62,6 +62,15 @@ def generate_endpoint_mutation(
     }}
     """
 
+def delete_endpoint_mutation(endpoint_id: str) -> str:
+    """Generate a string for a GraphQL mutation to delete an endpoint by ID."""
+    return f"""
+    mutation {{
+        deleteEndpoint(input: {{ id: "{endpoint_id}" }}) {{
+            id
+        }}
+    }}
+    """
 
 def update_endpoint_template_mutation(
     endpoint_id: str, template_id: str

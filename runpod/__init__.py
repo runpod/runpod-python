@@ -7,6 +7,8 @@ from . import serverless
 from .api.ctl_commands import (
     create_container_registry_auth,
     create_endpoint,
+    delete_endpoint,
+    delete_template,
     create_pod,
     create_template,
     get_endpoints,
