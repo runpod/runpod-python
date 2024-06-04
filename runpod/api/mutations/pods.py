@@ -51,6 +51,7 @@ def generate_pod_deployment_mutation(
     if min_memory_in_gb is not None:
         input_fields.append(f"minMemoryInGb: {min_memory_in_gb}")
     if docker_args is not None:
+        docker_args = docker_args.replace('"', '\\"')
         input_fields.append(f'dockerArgs: "{docker_args}"')
     if ports is not None:
         ports = ports.replace(" ", "")
