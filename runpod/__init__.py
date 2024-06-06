@@ -26,7 +26,7 @@ from .cli.groups.config.functions import (
     get_credentials,
     set_credentials,
 )
-from .endpoint import AsyncioEndpoint, AsyncioJob, Endpoint
+from .endpoint import AsyncioEndpoint, AsyncioJob, Endpoint, CustomEndpoint
 from .serverless.modules.rp_logger import RunPodLogger
 from .version import __version__
 
