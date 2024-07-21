@@ -8,7 +8,7 @@ from typing import Optional, List
 
 def generate_pod_deployment_mutation(
         name: str, image_name: str, gpu_type_id: str,
-        cloud_type: str = "ALL", support_public_ip: bool = True, start_ssh: bool = True,
+        cloud_type: str = "ALL", support_public_ip: bool = True, start_ssh: bool = True, start_jupyter: bool = False,
         data_center_id=None, country_code=None,
         gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
@@ -26,6 +26,9 @@ def generate_pod_deployment_mutation(
 
     # ------------------------------ Default Fields ------------------------------ #
     input_fields.append(f'cloudType: {cloud_type}')
+
+    if start_jupyter:
+        input_fields.append('startJupyter: true')
 
     if start_ssh:
         input_fields.append('startSsh: true')
