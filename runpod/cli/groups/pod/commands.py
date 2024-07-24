@@ -33,6 +33,11 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip): # pylin
     '''
     Creates a pod.
     '''
+    kwargs = {
+        "gpu_count": gpu_count,
+        "support_public_ip": support_public_ip,
+    }
+
     if not name:
         name = click.prompt('Enter pod name', default='RunPod-CLI-Pod')
 
@@ -40,12 +45,11 @@ def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip): # pylin
     if quick_launch:
         image = 'runpod/base:0.0.0'
         gpu_type = 'NVIDIA GeForce RTX 3090'
-        ports ='22/tcp'
+        kwargs["ports"] ='22/tcp'
 
         click.echo('Launching default pod...')
 
-    new_pod = create_pod(name, image, gpu_type,
-                         gpu_count=gpu_count, support_public_ip=support_public_ip, ports=ports)
+    new_pod = create_pod(name, image, gpu_type, **kwargs)
 
     click.echo(f'Pod {new_pod["id"]} has been created.')
 
