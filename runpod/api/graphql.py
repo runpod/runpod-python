@@ -3,6 +3,7 @@ RunPod | API Wrapper | GraphQL
 """
 
 import json
+import os
 from typing import Any, Dict
 
 import requests
@@ -18,7 +19,8 @@ def run_graphql_query(query: str) -> Dict[str, Any]:
     Run a GraphQL query
     '''
     from runpod import api_key  # pylint: disable=import-outside-toplevel, cyclic-import
-    url = f"https://api.runpod.io/graphql?api_key={api_key}"
+    api_url_base = os.environ.get("RUNPOD_API_BASE_URL", "https://api.runpod.io")
+    url = f"{api_url_base}/graphql?api_key={api_key}"
 
     headers = {
         "Content-Type": "application/json",
