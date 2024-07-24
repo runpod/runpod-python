@@ -55,10 +55,11 @@ test = [
     "asynctest",
     "nest_asyncio",
     "pylint",
-    "pytest",
+    "pytest-asyncio",
     "pytest-cov",
     "pytest-timeout",
-    "pytest-asyncio",
+    "pytest-watch",
+    "pytest",
 ]
 
 [build-system]
