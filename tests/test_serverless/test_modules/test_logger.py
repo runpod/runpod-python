@@ -39,13 +39,16 @@ class TestLogger(unittest.TestCase):
         '''
         logger = rp_logger.RunPodLogger()
 
+        logger.set_level("TRACE")
+        self.assertEqual(logger.level, "TRACE")
+
         logger.set_level("INFO")
         self.assertEqual(logger.level, "INFO")
 
         logger.set_level("WARN")
         self.assertEqual(logger.level, "WARN")
 
-        logger.set_level(2)
+        logger.set_level(3)
         self.assertEqual(logger.level, "INFO")
 
     def test_call_log(self):
@@ -109,6 +112,17 @@ class TestLogger(unittest.TestCase):
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
             self.logger.tip("test_tip")
             mock_log.assert_called_once_with("test_tip", "TIP")
+
+    def test_log_trace(self):
+        '''
+        Tests that the trace method logs a trace.
+        '''
+        with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
+            self.logger.trace("This is a trace message")
+            mock_log.assert_called_once_with("This is a trace message", "TRACE", None)
+
+            self.logger.trace("This is another trace message", "test-request-id")
+            mock_log.assert_called_with("This is another trace message", "TRACE", "test-request-id")
 
     def test_log_job_id(self):
         """ Tests that the log method logs a job id """
