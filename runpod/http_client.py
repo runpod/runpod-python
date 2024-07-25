@@ -3,8 +3,12 @@ HTTP Client abstractions
 """
 
 import os
-import aiohttp
 import requests
+from aiohttp import (
+    ClientSession,
+    ClientTimeout,
+    TCPConnector,
+)
 from .tracer import (
     get_aiohttp_tracer,
     get_request_tracer,
@@ -30,21 +34,20 @@ def get_auth_header():
     }
 
 
-class AsyncClientSession(aiohttp.ClientSession):
+def AsyncClientSession(*args, **kwargs): # pylint: disable=invalid-name
     """
-    Inherits aiohttp.ClientSession and overrides with our preferred params
+    Deprecation from aiohttp.ClientSession forbids inheritance.
+    This is now a factory method
     TODO: use httpx
     """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            connector=aiohttp.TCPConnector(limit=0),
-            headers=get_auth_header(),
-            timeout=aiohttp.ClientTimeout(600, ceil_threshold=400),
-            trace_configs=[get_aiohttp_tracer()],
-            *args,
-            **kwargs,
-        )
+    return ClientSession(
+        connector=TCPConnector(limit=0),
+        headers=get_auth_header(),
+        timeout=ClientTimeout(600, ceil_threshold=400),
+        trace_configs=[get_aiohttp_tracer()],
+        *args,
+        **kwargs,
+    )
 
 
 class SyncClientSession(requests.Session):

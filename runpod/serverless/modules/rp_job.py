@@ -11,7 +11,7 @@ import json
 import asyncio
 import traceback
 
-from runpod.http_client import AsyncClientSession
+from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import WORKER_ID, Jobs
 from .rp_tips import check_return_size
@@ -37,13 +37,13 @@ def _job_get_url():
     return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
 
 
-async def get_job(session: AsyncClientSession, retry=True) -> Optional[Dict[str, Any]]:
+async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
     Will continue trying to get a job until one is available.
 
     Args:
-        session (AsyncClientSession): The async http client to use for the request.
+        session (ClientSession): The async http client to use for the request.
         retry (bool): Whether to retry if no job is available.
 
     Note: Retry True just for ease of, if testing improved this can be removed.
