@@ -229,7 +229,13 @@ class TestCTL(unittest.TestCase):
                                 "vcpuCount": 21,
                                 "volumeInGb": 200,
                                 "volumeMountPath": "/workspace",
-                                "machine": {"gpuDisplayName": "RTX 3090"},
+                                "machine": {
+                                    "gpuDisplayName": "RTX 3090",
+                                    "gpuAvailable": 5,
+                                    "maintenanceStart": None,
+                                    "maintenanceEnd": None,
+                                    "maintenanceNote": None
+                                },
                             }
                         ]
                     }
@@ -269,7 +275,13 @@ class TestCTL(unittest.TestCase):
                         "vcpuCount": 21,
                         "volumeInGb": 200,
                         "volumeMountPath": "/workspace",
-                        "machine": {"gpuDisplayName": "RTX 3090"},
+                        "machine": {
+                            "gpuDisplayName": "RTX 3090",
+                            "gpuAvailable": 5,
+                            "maintenanceStart": None,
+                            "maintenanceEnd": None,
+                            "maintenanceNote": None
+                        },
                     }
                 }
             }
