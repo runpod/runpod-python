@@ -4,9 +4,8 @@
 
 import os
 import json
-import aiohttp
 from aiohttp_retry import RetryClient, ExponentialRetry
-
+from runpod.http_client import AsyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import Jobs, WORKER_ID
 
@@ -20,7 +19,7 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
-async def _transmit(client_session, url, job_data):
+async def _transmit(client_session: AsyncClientSession, url, job_data):
     """
     Wrapper for transmitting results via POST.
     """
@@ -37,7 +36,8 @@ async def _transmit(client_session, url, job_data):
         await client_response.text()
 
 
-async def _handle_result(session, job_data, job, url_template, log_message, is_stream=False): # pylint: disable=too-many-arguments
+# pylint: disable=too-many-arguments, disable=line-too-long
+async def _handle_result(session: AsyncClientSession, job_data, job, url_template, log_message, is_stream=False):
     """
     A helper function to handle the result, either for sending or streaming.
     """
