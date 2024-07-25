@@ -4,7 +4,8 @@
 
 import os
 import json
-from aiohttp_retry import RetryClient, ExponentialRetry
+from aiohttp import ClientError
+from aiohttp_retry import RetryClient, FibonacciRetry
 from runpod.http_client import AsyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import Jobs, WORKER_ID
@@ -23,7 +24,7 @@ async def _transmit(client_session: AsyncClientSession, url, job_data):
     """
     Wrapper for transmitting results via POST.
     """
-    retry_options = ExponentialRetry(attempts=3)
+    retry_options = FibonacciRetry(attempts=3)
     retry_client = RetryClient(client_session=client_session, retry_options=retry_options)
 
     kwargs = {
@@ -52,7 +53,7 @@ async def _handle_result(session: AsyncClientSession, job_data, job, url_templat
         await _transmit(session, url, serialized_job_data)
         log.debug(f"{log_message}", job['id'])
 
-    except aiohttp.ClientError as err:
+    except ClientError as err:
         log.error(f"Failed to return job results. | {err}", job['id'])
 
     except (TypeError, RuntimeError) as err:
