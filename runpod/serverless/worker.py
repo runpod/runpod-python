@@ -6,9 +6,7 @@ import os
 import asyncio
 from typing import Dict, Any
 
-import aiohttp
-
-from runpod.user_agent import USER_AGENT
+from runpod.http_client import AsyncClientSession
 from runpod.serverless.modules import (
     rp_logger, rp_local, rp_handler, rp_ping,
     rp_scale
@@ -21,14 +19,6 @@ from .utils import rp_debugger
 log = rp_logger.RunPodLogger()
 job_list = Jobs()
 heartbeat = rp_ping.Heartbeat()
-
-
-def _get_auth_header() -> Dict[str, str]:
-    """ Returns the authorization header with the API key. """
-    return {
-        "Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}",
-        "User-Agent": USER_AGENT
-    }
 
 
 def _is_local(config) -> bool:
@@ -94,11 +84,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
     """
     heartbeat.start_ping()
 
-    client_session = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(limit=0),
-        headers=_get_auth_header(),
-        timeout=aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
-    )
+    client_session = AsyncClientSession()
 
     async with client_session as session:
         job_scaler = rp_scale.JobScaler(

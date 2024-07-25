@@ -16,13 +16,6 @@ WORKER_ID = os.environ.get('RUNPOD_POD_ID', str(uuid.uuid4()))
 IS_LOCAL_TEST = os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None
 
 
-def get_auth_header():
-    '''
-    Returns the authorization header with the API key.
-    '''
-    return {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
-
-
 # ------------------------------- Job Tracking ------------------------------- #
 class Job:
     """
