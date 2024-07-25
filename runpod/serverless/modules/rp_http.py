@@ -42,6 +42,8 @@ async def _handle_result(session: AsyncClientSession, job_data, job, url_templat
     A helper function to handle the result, either for sending or streaming.
     """
     try:
+        session.headers["X-Request-ID"] = job["id"]
+
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
 
         is_stream = "true" if is_stream else "false"

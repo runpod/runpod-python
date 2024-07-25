@@ -18,7 +18,8 @@ class Job:
         self.job_id = job_id
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
+            "Authorization": f"Bearer {api_key}",
+            "X-Request-ID": job_id,
         }
         self.session = session
         self.endpoint_url_base = endpoint_url_base
