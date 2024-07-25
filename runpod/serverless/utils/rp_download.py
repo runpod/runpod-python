@@ -16,7 +16,9 @@ from email import message_from_string
 from concurrent.futures import ThreadPoolExecutor
 
 import backoff
-import requests
+from requests import RequestException
+from runpod.http_client import SyncClientSession
+
 
 HEADERS = {"User-Agent": "runpod-python/0.0.0 (https://runpod.io; support@runpod.io)"}
 
@@ -42,9 +44,9 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
     download_directory = os.path.abspath(os.path.join('jobs', job_id, 'downloaded_files'))
     os.makedirs(download_directory, exist_ok=True)
 
-    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=3)
+    @backoff.on_exception(backoff.expo, RequestException, max_tries=3)
     def download_file(url: str, path_to_save: str) -> str:
-        with requests.get(url, headers=HEADERS, stream=True, timeout=5) as response:
+        with SyncClientSession().get(url, headers=HEADERS, stream=True, timeout=5) as response:
             response.raise_for_status()
             content_disposition = response.headers.get('Content-Disposition')
             file_extension = ''
@@ -77,7 +79,7 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
 
         try:
             file_extension = download_file(url, output_file_path)
-        except requests.exceptions.RequestException as err:
+        except RequestException as err:
             print(f"Failed to download {url}: {err}")
             return None
 
@@ -105,7 +107,7 @@ def file(file_url: str) -> dict:
     '''
     os.makedirs('job_files', exist_ok=True)
 
-    download_response = requests.get(file_url, headers=HEADERS, timeout=30)
+    download_response = SyncClientSession().get(file_url, headers=HEADERS, timeout=30)
 
     original_file_name = []
     if "Content-Disposition" in download_response.headers.keys():

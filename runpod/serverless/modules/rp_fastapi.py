@@ -18,6 +18,7 @@ from .rp_job import run_job, run_job_generator
 from .worker_state import Jobs
 from .rp_ping import Heartbeat
 from ...version import __version__ as runpod_version
+from ...http_client import SyncClientSession
 
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
@@ -157,7 +158,7 @@ def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
     Returns:
         bool: True if the request was successful, False otherwise.
     """
-    with requests.Session() as session:
+    with SyncClientSession() as session:
         try:
             response = session.post(url, json=payload, timeout=10)
             response.raise_for_status()  # Raises exception for 4xx/5xx responses
