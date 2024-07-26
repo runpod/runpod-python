@@ -6,7 +6,7 @@ import asyncio
 import json
 import types
 from datetime import datetime, timezone
-from time import time
+from time import time, monotonic
 from uuid import uuid4
 from requests import (
     Response,
@@ -56,6 +56,7 @@ def headers_to_context(context: types.SimpleNamespace, headers: dict):
 async def on_request_start(session, context, params: TraceRequestStartParams):
     headers = params.headers if hasattr(params, "headers") else {}
     context = headers_to_context(context, headers)
+    context.start_time = time()
     context.on_request_start = asyncio.get_event_loop().time()
     context.method = params.method
     context.url = params.url.human_repr()
@@ -92,9 +93,9 @@ async def on_response_chunk_received(
 
 
 async def on_request_end(session, context, params: TraceRequestEndParams):
-    context.on_request_end = asyncio.get_event_loop().time()
-    elapsed = context.on_request_end - context.on_request_start
+    elapsed = asyncio.get_event_loop().time() - context.on_request_start
     context.transfer = elapsed - context.connect
+    context.end_time = time()
 
     # log to trace level
     report_trace(context, params, elapsed)
@@ -102,15 +103,17 @@ async def on_request_end(session, context, params: TraceRequestEndParams):
 
 async def on_request_exception(session, context, params: TraceRequestExceptionParams):
     context.exception = str(params.exception)
-    context.on_request_end = asyncio.get_event_loop().time()
-    elapsed = context.on_request_end - context.on_request_start
+    elapsed = asyncio.get_event_loop().time() - context.on_request_start
     context.transfer = elapsed - context.connect
+    context.end_time = time()
 
     # log to error level
     report_trace(context, params, elapsed, log.error)
 
 
 def report_trace(context: types.SimpleNamespace, params, elapsed, logger=log.trace):
+    context.start_time = time_to_iso8601(context.start_time)
+    context.end_time = time_to_iso8601(context.end_time)
     context.total = round(elapsed * 1000, 1)
 
     if hasattr(context, "transfer") and context.transfer:
@@ -120,12 +123,7 @@ def report_trace(context: types.SimpleNamespace, params, elapsed, logger=log.tra
         context.connect = round(context.connect * 1000, 1)
 
     if hasattr(context, "on_request_start"):
-        context.start_time = time_to_iso8601(context.on_request_start)
         delattr(context, "on_request_start")
-
-    if hasattr(context, "on_request_end"):
-        context.end_time = time_to_iso8601(context.on_request_end)
-        delattr(context, "on_request_end")
 
     if hasattr(context, "trace_request_ctx"):
         delattr(context, "trace_request_ctx")
@@ -162,7 +160,8 @@ class TraceRequest:
         self.request_start = None
 
     def __enter__(self):
-        self.request_start = time()
+        self.request_start = monotonic()
+        self.context.start_time = time()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -176,7 +175,8 @@ class TraceRequest:
                 self.context.payload_size_bytes = len(self.request.body)
 
         if self.response is not None:
-            request_end = time() - self.request_start
+            self.context.end_time = time()
+            request_end = monotonic() - self.request_start
             self.context.transfer = self.response.elapsed.total_seconds()
             self.context.connect = request_end - self.context.transfer
 
