@@ -5,6 +5,7 @@
 import asyncio
 import json
 import types
+from datetime import datetime, timezone
 from time import time
 from uuid import uuid4
 from requests import (
@@ -27,6 +28,12 @@ from .serverless.modules.rp_logger import RunPodLogger
 
 
 log = RunPodLogger()
+
+
+def time_to_iso8601(ts: float) -> str:
+    """Convert a Unix timestamp to an ISO 8601 formatted string in UTC."""
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    return dt.isoformat()
 
 
 def headers_to_context(context: types.SimpleNamespace, headers: dict):
@@ -85,16 +92,20 @@ async def on_response_chunk_received(
 
 
 async def on_request_end(session, context, params: TraceRequestEndParams):
-    elapsed = asyncio.get_event_loop().time() - context.on_request_start
+    context.on_request_end = asyncio.get_event_loop().time()
+    elapsed = context.on_request_end - context.on_request_start
     context.transfer = elapsed - context.connect
+
     # log to trace level
     report_trace(context, params, elapsed)
 
 
 async def on_request_exception(session, context, params: TraceRequestExceptionParams):
     context.exception = str(params.exception)
-    elapsed = asyncio.get_event_loop().time() - context.on_request_start
+    context.on_request_end = asyncio.get_event_loop().time()
+    elapsed = context.on_request_end - context.on_request_start
     context.transfer = elapsed - context.connect
+
     # log to error level
     report_trace(context, params, elapsed, log.error)
 
@@ -109,7 +120,12 @@ def report_trace(context: types.SimpleNamespace, params, elapsed, logger=log.tra
         context.connect = round(context.connect * 1000, 1)
 
     if hasattr(context, "on_request_start"):
+        context.start_time = time_to_iso8601(context.on_request_start)
         delattr(context, "on_request_start")
+
+    if hasattr(context, "on_request_end"):
+        context.end_time = time_to_iso8601(context.on_request_end)
+        delattr(context, "on_request_end")
 
     if hasattr(context, "trace_request_ctx"):
         delattr(context, "trace_request_ctx")

@@ -4,7 +4,9 @@
 import asyncio
 import json
 import unittest
-from time import time
+from datetime import datetime, timezone, timedelta
+from requests import PreparedRequest, Response
+from time import time, sleep
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from yarl import URL
@@ -27,6 +29,7 @@ from runpod.tracer import (
     on_request_exception,
     report_trace,
     get_aiohttp_tracer,
+    time_to_iso8601,
 )
 
 
@@ -44,7 +47,7 @@ class TestTracer(unittest.TestCase):
 
     def test_on_request_start(self):
         session = MagicMock()
-        context = SimpleNamespace()
+        context = SimpleNamespace(trace_request_ctx={"current_attempt": 0})
         params = TraceRequestStartParams("GET", URL("http://test.com/"), { "X-Request-ID": "myRequestId" })
 
         self.loop.run_until_complete(on_request_start(session, context, params))
@@ -118,14 +121,19 @@ class TestTracer(unittest.TestCase):
 
     @patch('runpod.tracer.log')
     def test_report_trace(self, mock_log):
+        start_time = time()
+        end_time = time() + 2
+
         context = SimpleNamespace()
         context.trace_id = "test-trace-id"
         context.request_id = "test-request-id"
-        context.on_request_start = time()
+        context.on_request_start = start_time
+        context.on_request_end = end_time
         context.connect = 0.5
         context.payload_size_bytes = 1024
         context.response_size_bytes = 2048
         context.retries = 0
+        context.trace_request_ctx = {"current_attempt": 0}
         context.transfer = 1.0
 
         params = MagicMock()
@@ -140,6 +148,8 @@ class TestTracer(unittest.TestCase):
             "payload_size_bytes": 1024,
             "response_size_bytes": 2048,
             "retries": 0,
+            "start_time": time_to_iso8601(start_time),
+            "end_time": time_to_iso8601(end_time),
             "total": 1500.0,  # 1.5 seconds to milliseconds
             "transfer": 1000.0,  # 1.5 - 0.5 seconds to milliseconds
             "response_status": 200
@@ -151,12 +161,17 @@ class TestTracer(unittest.TestCase):
 
     @patch('runpod.tracer.log')
     def test_report_trace_error_log(self, mock_log):
+        start_time = time()
+        end_time = time() + 2
+
         context = SimpleNamespace()
         context.trace_id = "test-trace-id"
         context.request_id = "test-request-id"
-        context.on_request_start = time()
+        context.on_request_start = start_time
+        context.on_request_end = end_time
         context.connect = 0.5
         context.retries = 3
+        context.trace_request_ctx = {"current_attempt": 3}
         context.exception = str(Exception("Test Exception"))
         context.transfer = 1.0
 
@@ -171,6 +186,8 @@ class TestTracer(unittest.TestCase):
             "connect": 500.0,
             "retries": 3,
             "exception": "Test Exception",
+            "start_time": time_to_iso8601(start_time),
+            "end_time": time_to_iso8601(end_time),
             "total": 1500.0,  # 1.5 seconds to milliseconds
             "transfer": 1000.0,  # 1.5 - 0.5 seconds to milliseconds
             "response_status": 502
