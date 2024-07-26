@@ -121,14 +121,11 @@ class TestTracer(unittest.TestCase):
 
     @patch('runpod.tracer.log')
     def test_report_trace(self, mock_log):
-        start_time = time()
-        end_time = time() + 2
-
         context = SimpleNamespace()
         context.trace_id = "test-trace-id"
         context.request_id = "test-request-id"
-        context.on_request_start = start_time
-        context.on_request_end = end_time
+        context.start_time = time()
+        context.end_time = time() + 2
         context.connect = 0.5
         context.payload_size_bytes = 1024
         context.response_size_bytes = 2048
@@ -148,8 +145,8 @@ class TestTracer(unittest.TestCase):
             "payload_size_bytes": 1024,
             "response_size_bytes": 2048,
             "retries": 0,
-            "start_time": time_to_iso8601(start_time),
-            "end_time": time_to_iso8601(end_time),
+            "start_time": time_to_iso8601(context.start_time),
+            "end_time": time_to_iso8601(context.end_time),
             "total": 1500.0,  # 1.5 seconds to milliseconds
             "transfer": 1000.0,  # 1.5 - 0.5 seconds to milliseconds
             "response_status": 200
@@ -161,14 +158,11 @@ class TestTracer(unittest.TestCase):
 
     @patch('runpod.tracer.log')
     def test_report_trace_error_log(self, mock_log):
-        start_time = time()
-        end_time = time() + 2
-
         context = SimpleNamespace()
         context.trace_id = "test-trace-id"
         context.request_id = "test-request-id"
-        context.on_request_start = start_time
-        context.on_request_end = end_time
+        context.start_time = time()
+        context.end_time = time() + 2
         context.connect = 0.5
         context.retries = 3
         context.trace_request_ctx = {"current_attempt": 3}
@@ -186,8 +180,8 @@ class TestTracer(unittest.TestCase):
             "connect": 500.0,
             "retries": 3,
             "exception": "Test Exception",
-            "start_time": time_to_iso8601(start_time),
-            "end_time": time_to_iso8601(end_time),
+            "start_time": time_to_iso8601(context.start_time),
+            "end_time": time_to_iso8601(context.end_time),
             "total": 1500.0,  # 1.5 seconds to milliseconds
             "transfer": 1000.0,  # 1.5 - 0.5 seconds to milliseconds
             "response_status": 502
