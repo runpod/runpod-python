@@ -34,4 +34,4 @@ jobs:
           pip install '.[test]'
 
       - name: Pylint Source
-        run: find runpod tests -type f -name '*.py' | xargs pylint
+        run: pylint $(git ls-files '*.py')
