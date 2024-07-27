@@ -34,4 +34,4 @@ jobs:
           pip install '.[test]'
 
       - name: Pylint Source
-        run: pylint --ignore-paths='build/*' --ignore='_version.py' $(find . -type f -name '*.py') \
+        run: find runpod tests -type f -name '*.py' | xargs pylint
