@@ -4,15 +4,14 @@
 import asyncio
 import json
 import unittest
-from datetime import datetime, timezone, timedelta
-from requests import PreparedRequest, Response
-from time import time, sleep
+from time import time
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from yarl import URL
 from aiohttp import (
     TraceConfig,
     TraceRequestStartParams,
+    TraceConnectionCreateStartParams,
     TraceConnectionCreateEndParams,
     TraceConnectionReuseconnParams,
     TraceRequestExceptionParams,
@@ -21,6 +20,7 @@ from aiohttp import (
 )
 from runpod.tracer import (
     on_request_start,
+    on_connection_create_start,
     on_connection_create_end,
     on_connection_reuseconn,
     on_request_chunk_sent,
@@ -56,12 +56,23 @@ class TestTracer(unittest.TestCase):
         assert context.method == params.method
         assert context.url == params.url.human_repr()
 
+    def test_on_connection_create_start(self):
+        session = MagicMock()
+        context = SimpleNamespace(on_request_start=self.loop.time())
+        params = TraceConnectionCreateStartParams()
+
+        self.loop.run_until_complete(on_connection_create_start(session, context, params))
+
+        assert context.connect
+
     def test_on_connection_create_end(self):
         session = MagicMock()
         context = SimpleNamespace(on_request_start=self.loop.time())
         params = TraceConnectionCreateEndParams()
 
         self.loop.run_until_complete(on_connection_create_end(session, context, params))
+        
+        assert context.connect
 
     def test_on_connection_reuseconn(self):
         session = MagicMock()
@@ -69,6 +80,8 @@ class TestTracer(unittest.TestCase):
         params = TraceConnectionReuseconnParams()
 
         self.loop.run_until_complete(on_connection_reuseconn(session, context, params))
+
+        assert context.connect
 
     def test_on_request_chunk_sent(self):
         session = MagicMock()

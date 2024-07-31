@@ -17,6 +17,7 @@ from aiohttp import (
     ClientSession,
     TraceConfig,
     TraceRequestStartParams,
+    TraceConnectionCreateStartParams,
     TraceConnectionCreateEndParams,
     TraceConnectionReuseconnParams,
     TraceRequestEndParams,
@@ -71,6 +72,15 @@ async def on_request_start(
 
     if hasattr(context, "trace_request_ctx") and context.trace_request_ctx:
         context.retries = context.trace_request_ctx["current_attempt"]
+
+
+async def on_connection_create_start(
+    session: ClientSession,
+    context: SimpleNamespace,
+    params: TraceConnectionCreateStartParams,
+):
+    """Handle the event when a connection is started."""
+    context.connect = asyncio.get_event_loop().time() - context.on_request_start
 
 
 async def on_connection_create_end(
@@ -192,6 +202,7 @@ def create_aiohttp_tracer() -> TraceConfig:
     trace_config = TraceConfig()
 
     trace_config.on_request_start.append(on_request_start)
+    trace_config.on_connection_create_start.append(on_connection_create_start)
     trace_config.on_connection_create_end.append(on_connection_create_end)
     trace_config.on_connection_reuseconn.append(on_connection_reuseconn)
     trace_config.on_request_chunk_sent.append(on_request_chunk_sent)
