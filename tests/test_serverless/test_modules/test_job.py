@@ -40,7 +40,7 @@ class TestJob(IsolatedAsyncioTestCase):
                 patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             mock_session.get.return_value.__aenter__.side_effect = responses
-            
+
             start_time = time.time()
 
             job = await rp_job.get_job(mock_session, retry=True)
