@@ -28,7 +28,7 @@ from runpod.tracer import (
     on_request_end,
     on_request_exception,
     report_trace,
-    get_aiohttp_tracer,
+    create_aiohttp_tracer,
     time_to_iso8601,
 )
 
@@ -43,7 +43,7 @@ class TestTracer(unittest.TestCase):
         self.loop.close()
 
     def test_get_aiohttp_tracer(self):
-        assert isinstance(get_aiohttp_tracer(), TraceConfig)
+        assert isinstance(create_aiohttp_tracer(), TraceConfig)
 
     def test_on_request_start(self):
         session = MagicMock()

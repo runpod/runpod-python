@@ -10,8 +10,8 @@ from aiohttp import (
     TCPConnector,
 )
 from .tracer import (
-    get_aiohttp_tracer,
-    get_request_tracer,
+    create_aiohttp_tracer,
+    create_request_tracer,
 )
 from .cli.groups.config.functions import get_credentials
 from .user_agent import USER_AGENT
@@ -23,13 +23,13 @@ def get_auth_header():
     credentials.get("api_key") OR os.getenv('RUNPOD_AI_API_KEY')
     """
     if credentials := get_credentials():
-        auth = credentials.get("api_key")
+        auth = credentials.get("api_key", "")
     else:
-        auth = os.getenv("RUNPOD_AI_API_KEY")
+        auth = os.getenv("RUNPOD_AI_API_KEY", "")
 
     return {
         "Content-Type": "application/json",
-        "Authorization": f"{auth}",
+        "Authorization": auth,
         "User-Agent": USER_AGENT,
     }
 
@@ -44,7 +44,7 @@ def AsyncClientSession(*args, **kwargs): # pylint: disable=invalid-name
         connector=TCPConnector(limit=0),
         headers=get_auth_header(),
         timeout=ClientTimeout(600, ceil_threshold=400),
-        trace_configs=[get_aiohttp_tracer()],
+        trace_configs=[create_aiohttp_tracer()],
         *args,
         **kwargs,
     )
@@ -61,13 +61,16 @@ class SyncClientSession(requests.Session):
         Override for tracing. Not using super().request()
         to capture metrics for connection and transfer times
         """
-        with get_request_tracer() as tracer:
+        with create_request_tracer() as tracer:
             # Separate out the kwargs that are not applicable to `requests.Request`
             request_kwargs = {
                 k: v
                 for k, v in kwargs.items()
+                # `requests.Request.__init__.__code__.co_varnames` contains the names of the arguments
                 if k in requests.Request.__init__.__code__.co_varnames
             }
+
+            # Separate out the kwargs that are applicable to `requests.Request`
             send_kwargs = {k: v for k, v in kwargs.items() if k not in request_kwargs}
 
             # Create a PreparedRequest object to hold the request details

@@ -4,7 +4,7 @@
 
 import asyncio
 import json
-import types
+from types import SimpleNamespace
 from datetime import datetime, timezone
 from time import time, monotonic
 from uuid import uuid4
@@ -14,6 +14,7 @@ from requests import (
     structures,
 )
 from aiohttp import (
+    ClientSession,
     TraceConfig,
     TraceRequestStartParams,
     TraceConnectionCreateEndParams,
@@ -36,7 +37,8 @@ def time_to_iso8601(ts: float) -> str:
     return dt.isoformat()
 
 
-def headers_to_context(context: types.SimpleNamespace, headers: dict):
+def headers_to_context(context: SimpleNamespace, headers: dict):
+    """Generate a context object based on the provided headers."""
     context.trace_id = str(uuid4())
     context.request_id = None
     context.user_agent = None
@@ -53,7 +55,12 @@ def headers_to_context(context: types.SimpleNamespace, headers: dict):
 # Tracer for aiohttp
 
 
-async def on_request_start(session, context, params: TraceRequestStartParams):
+async def on_request_start(
+    session: ClientSession,
+    context: SimpleNamespace,
+    params: TraceRequestStartParams,
+):
+    """Handle the start of a request."""
     headers = params.headers if hasattr(params, "headers") else {}
     context = headers_to_context(context, headers)
     context.start_time = time()
@@ -67,32 +74,51 @@ async def on_request_start(session, context, params: TraceRequestStartParams):
 
 
 async def on_connection_create_end(
-    session, context, params: TraceConnectionCreateEndParams
+    session: ClientSession,
+    context: SimpleNamespace,
+    params: TraceConnectionCreateEndParams,
 ):
+    """Handle the event when a connection is created."""
     context.connect = asyncio.get_event_loop().time() - context.on_request_start
 
 
 async def on_connection_reuseconn(
-    session, context, params: TraceConnectionReuseconnParams
+    session: ClientSession,
+    context: SimpleNamespace,
+    params: TraceConnectionReuseconnParams,
 ):
+    """Handle the event when a connection is reused."""
     context.connect = asyncio.get_event_loop().time() - context.on_request_start
 
 
-async def on_request_chunk_sent(session, context, params: TraceRequestChunkSentParams):
+async def on_request_chunk_sent(
+    session: ClientSession,
+    context: SimpleNamespace,
+    params: TraceRequestChunkSentParams,
+):
+    """Handle the event when a request chunk is sent."""
     if not hasattr(context, "payload_size_bytes"):
         context.payload_size_bytes = 0
     context.payload_size_bytes += len(params.chunk)
 
 
 async def on_response_chunk_received(
-    session, context, params: TraceResponseChunkReceivedParams
+    session: ClientSession,
+    context: SimpleNamespace,
+    params: TraceResponseChunkReceivedParams,
 ):
+    """Handle the event when a response chunk is received."""
     if not hasattr(context, "response_size_bytes"):
         context.response_size_bytes = 0
     context.response_size_bytes += len(params.chunk)
 
 
-async def on_request_end(session, context, params: TraceRequestEndParams):
+async def on_request_end(
+    session: ClientSession,
+    context: SimpleNamespace,
+    params: TraceRequestEndParams,
+):
+    """Handle the end of a request."""
     elapsed = asyncio.get_event_loop().time() - context.on_request_start
     context.transfer = elapsed - context.connect
     context.end_time = time()
@@ -101,7 +127,12 @@ async def on_request_end(session, context, params: TraceRequestEndParams):
     report_trace(context, params, elapsed)
 
 
-async def on_request_exception(session, context, params: TraceRequestExceptionParams):
+async def on_request_exception(
+    session: ClientSession,
+    context: SimpleNamespace,
+    params: TraceRequestExceptionParams,
+):
+    """Handle the exception that occurred during the request."""
     context.exception = str(params.exception)
     elapsed = asyncio.get_event_loop().time() - context.on_request_start
     context.transfer = elapsed - context.connect
@@ -111,7 +142,19 @@ async def on_request_exception(session, context, params: TraceRequestExceptionPa
     report_trace(context, params, elapsed, log.error)
 
 
-def report_trace(context: types.SimpleNamespace, params, elapsed, logger=log.trace):
+def report_trace(
+    context: SimpleNamespace, params: object, elapsed: float, logger=log.trace
+):
+    """
+    Report the trace of a request.
+    The logger function is called with the JSON representation of the context object and the request ID.
+
+    Args:
+        context (SimpleNamespace): The context object containing trace information.
+        params: The parameters of the request.
+        elapsed (float): The elapsed time of the request.
+        logger (function, optional): The logger function to use. Defaults to log.trace.
+    """
     context.start_time = time_to_iso8601(context.start_time)
     context.end_time = time_to_iso8601(context.end_time)
     context.total = round(elapsed * 1000, 1)
@@ -134,7 +177,17 @@ def report_trace(context: types.SimpleNamespace, params, elapsed, logger=log.tra
     logger(json.dumps(vars(context)), context.request_id)
 
 
-def get_aiohttp_tracer() -> TraceConfig:
+def create_aiohttp_tracer() -> TraceConfig:
+    """
+    Creates a TraceConfig object for aiohttp tracing.
+
+    This function initializes a TraceConfig object with event handlers for various tracing events.
+    The TraceConfig object is used to configure and customize the tracing behavior of aiohttp.
+
+    Returns:
+        TraceConfig: The initialized TraceConfig object.
+
+    """
     # https://docs.aiohttp.org/en/stable/tracing_reference.html
     trace_config = TraceConfig()
 
@@ -153,18 +206,46 @@ def get_aiohttp_tracer() -> TraceConfig:
 
 
 class TraceRequest:
+    """
+    Context manager for tracing requests.
+
+    This class is used to trace requests made by the `requests` library.
+    It stores the request and response objects in the `request` and `response`
+    attributes respectively. It also provides a context manager interface
+    allowing the tracing of requests, including the connection and transfer
+    times.
+
+    When the context manager is entered, the request start time is recorded.
+    When the context manager is exited, the trace is reported.
+
+    Attributes:
+        context (SimpleNamespace): The context object used to store
+            trace information.
+        request (PreparedRequest): The request object.
+        response (Response): The response object.
+        request_start (float): The start time of the request.
+    """
+
     def __init__(self):
-        self.context = types.SimpleNamespace()
+        self.context = SimpleNamespace()
         self.request: PreparedRequest = None
         self.response: Response = None
         self.request_start = None
 
     def __enter__(self):
-        self.request_start = monotonic()
-        self.context.start_time = time()
+        """
+        Enter the context manager and record the start time of the request.
+        """
+        self.request_start = (
+            monotonic()
+        )  # consistency with asyncio.get_event_loop().time()
+        self.context.start_time = time()  # reported timestamp
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the context manager and report the trace.
+        """
         if self.request is not None:
             self.context = headers_to_context(self.context, self.request.headers)
             self.context.method = self.request.method
@@ -190,5 +271,17 @@ class TraceRequest:
             report_trace(self.context, {}, request_end, logger)
 
 
-def get_request_tracer():
+def create_request_tracer():
+    """
+    This function creates and returns a new instance of the `TraceRequest` class.
+    The `TraceRequest` class is used to trace the execution of a request in a context manager.
+
+    Returns:
+        TraceRequest: An instance of the `TraceRequest` class.
+
+    Example:
+        >>> with get_request_tracer() as tracer:
+        ...     result = requests.get("https://example.com")
+        ...     tracer.response = result.response
+    """
     return TraceRequest()
