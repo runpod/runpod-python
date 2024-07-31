@@ -66,7 +66,7 @@ class SyncClientSession(requests.Session):
             request_kwargs = {
                 k: v
                 for k, v in kwargs.items()
-                # `requests.Request.__init__.__code__.co_varnames` contains the names of the arguments
+                # contains the names of the arguments
                 if k in requests.Request.__init__.__code__.co_varnames
             }
 
