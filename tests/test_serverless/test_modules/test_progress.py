@@ -11,10 +11,9 @@ from runpod.serverless.modules.rp_progress import progress_update, _thread_targe
 class TestProgressUpdate(unittest.TestCase):
     """ Tests for the progress_update function. """
 
-    @patch("runpod.serverless.modules.rp_progress.os.environ.get")
     @patch("runpod.serverless.modules.rp_progress.send_result")
     @patch("runpod.serverless.modules.rp_progress._thread_target")
-    def test_progress_update(self, mock_thread_target, mock_result, mock_os_get):
+    def test_progress_update(self, mock_thread_target, mock_result):
         """
         Tests that the progress_update function.
         """
@@ -32,9 +31,6 @@ class TestProgressUpdate(unittest.TestCase):
 
         mock_thread_target.side_effect = mock_thread_function
 
-        # Set mock values
-        mock_os_get.return_value = "fake_api_key"
-
         # Call the function
         job = {"id": "fake_job"}
         progress = "50%"
@@ -47,7 +43,6 @@ class TestProgressUpdate(unittest.TestCase):
         assert thread_event.wait(timeout=30), "Thread did not complete within expected time"
 
         # Assertions
-        mock_os_get.assert_called_with('RUNPOD_AI_API_KEY')
         expected_job_data = {
             "status": "IN_PROGRESS",
             "output": progress

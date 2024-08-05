@@ -9,6 +9,7 @@ import threading
 import requests
 from urllib3.util.retry import Retry
 
+from runpod.http_client import SyncClientSession
 from runpod.version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless.modules.worker_state import Jobs, WORKER_ID
@@ -31,7 +32,7 @@ class Heartbeat:
         '''
         Initializes the Heartbeat class.
         '''
-        self._session = requests.Session()
+        self._session = SyncClientSession()
         self._session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
 
         retry_strategy = Retry(

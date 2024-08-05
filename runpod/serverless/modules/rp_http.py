@@ -4,9 +4,9 @@
 
 import os
 import json
-import aiohttp
-from aiohttp_retry import RetryClient, ExponentialRetry
-
+from aiohttp import ClientError
+from aiohttp_retry import RetryClient, FibonacciRetry
+from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import Jobs, WORKER_ID
 
@@ -20,11 +20,11 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
-async def _transmit(client_session, url, job_data):
+async def _transmit(client_session: ClientSession, url, job_data):
     """
     Wrapper for transmitting results via POST.
     """
-    retry_options = ExponentialRetry(attempts=3)
+    retry_options = FibonacciRetry(attempts=3)
     retry_client = RetryClient(client_session=client_session, retry_options=retry_options)
 
     kwargs = {
@@ -37,11 +37,14 @@ async def _transmit(client_session, url, job_data):
         await client_response.text()
 
 
-async def _handle_result(session, job_data, job, url_template, log_message, is_stream=False): # pylint: disable=too-many-arguments
+# pylint: disable=too-many-arguments, disable=line-too-long
+async def _handle_result(session: ClientSession, job_data, job, url_template, log_message, is_stream=False):
     """
     A helper function to handle the result, either for sending or streaming.
     """
     try:
+        session.headers["X-Request-ID"] = job["id"]
+
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
 
         is_stream = "true" if is_stream else "false"
@@ -50,7 +53,7 @@ async def _handle_result(session, job_data, job, url_template, log_message, is_s
         await _transmit(session, url, serialized_job_data)
         log.debug(f"{log_message}", job['id'])
 
-    except aiohttp.ClientError as err:
+    except ClientError as err:
         log.error(f"Failed to return job results. | {err}", job['id'])
 
     except (TypeError, RuntimeError) as err:

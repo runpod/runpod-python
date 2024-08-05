@@ -3,6 +3,7 @@ Test Serverless Job Module
 '''
 
 import asyncio
+import time
 from unittest.mock import Mock, patch
 
 from unittest import IsolatedAsyncioTestCase
@@ -14,6 +15,46 @@ from runpod.serverless.modules import rp_job
 
 class TestJob(IsolatedAsyncioTestCase):
     ''' Tests the Job class. '''
+
+    async def test_get_job_retries(self):
+        '''
+        Tests the get_job function with a 204, 400, and 200 response with retries
+        '''
+        # Mocked responses
+        response_204 = Mock()
+        response_204.status = 204
+        response_204.json = make_mocked_coro(return_value=None)
+
+        response_400 = Mock()
+        response_400.status = 400
+        response_400.json = make_mocked_coro(return_value=None)
+
+        response_200 = Mock()
+        response_200.status = 200
+        response_200.json = make_mocked_coro(return_value={"id": "123", "input": {"number": 1}})
+
+        # Create a list of responses: 204, 400, then a 200
+        responses = [response_204] * 98 + [response_400] + [response_200]
+
+        with patch("aiohttp.ClientSession") as mock_session, \
+                patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
+
+            mock_session.get.return_value.__aenter__.side_effect = responses
+
+            start_time = time.time()
+
+            job = await rp_job.get_job(mock_session, retry=True)
+
+            end_time = time.time()
+
+            # Assert the job was retrieved correctly
+            assert job == {"id": "123", "input": {"number": 1}}
+
+            assert mock_session.get.call_count == 100
+
+            # Assert that retries happened with at least 1 second delay each
+            total_time_taken = end_time - start_time
+            assert total_time_taken >= 1
 
     async def test_get_job_200(self):
         '''

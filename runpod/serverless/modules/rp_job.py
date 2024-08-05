@@ -10,8 +10,8 @@ import os
 import json
 import asyncio
 import traceback
-from aiohttp import ClientSession
 
+from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .worker_state import WORKER_ID, Jobs
 from .rp_tips import check_return_size
@@ -43,10 +43,8 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
     Will continue trying to get a job until one is available.
 
     Args:
-        session (ClientSession): The aiohttp ClientSession to use for the request.
+        session (ClientSession): The async http client to use for the request.
         retry (bool): Whether to retry if no job is available.
-
-    Note: Retry True just for ease of, if testing improved this can be removed.
     """
     next_job = None
 
@@ -106,7 +104,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             if retry is False:
                 break
 
-        await asyncio.sleep(0)
+        await asyncio.sleep(1)
     else:
         job_list.add_job(next_job["id"])
         log.debug("Request ID added.", next_job['id'])

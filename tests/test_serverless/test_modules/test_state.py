@@ -4,7 +4,7 @@ import os
 import unittest
 
 from runpod.serverless.modules.worker_state import (
-    Job, Jobs, IS_LOCAL_TEST, WORKER_ID, get_auth_header
+    Job, Jobs, IS_LOCAL_TEST, WORKER_ID
 )
 
 
@@ -32,12 +32,6 @@ class TestEnvVars(unittest.TestCase):
         os.environ["RUNPOD_POD_ID"] = WORKER_ID
 
         self.assertEqual(WORKER_ID, os.environ.get('RUNPOD_POD_ID'))
-
-    def test_get_auth_header(self):
-        '''
-        Tests if get_auth_header() function works as expected
-        '''
-        self.assertEqual(get_auth_header(), {'Authorization': self.test_api_key})
 
 
 class TestJobs(unittest.TestCase):

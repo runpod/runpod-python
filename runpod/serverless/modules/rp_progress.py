@@ -2,30 +2,15 @@
 RunPod Progress Module
 """
 
-import os
 import asyncio
 import threading
 from typing import Dict, Any
 
-import aiohttp
-
+from runpod.http_client import AsyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .rp_http import send_result
 
 log = RunPodLogger()
-
-
-async def _create_session_async():
-    """
-    Creates an aiohttp session.
-    """
-    auth_header = {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
-    timeout = aiohttp.ClientTimeout(total=300, connect=2, sock_connect=2)
-
-    return aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(limit=None),
-        headers=auth_header, timeout=timeout
-    )
 
 
 async def _async_progress_update(session, job, progress):
@@ -49,7 +34,7 @@ def _thread_target(job: Dict[str, Any], progress: Any):
 
     try:
         async def main():
-            session = await _create_session_async()
+            session = AsyncClientSession()
             async with session:
                 await _async_progress_update(session, job, progress)
 

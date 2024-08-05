@@ -16,7 +16,7 @@ from typing import Optional
 
 
 MAX_MESSAGE_LENGTH = 4096
-LOG_LEVELS = ['NOTSET', 'DEBUG', 'INFO', 'WARN', 'ERROR']
+LOG_LEVELS = ['NOTSET', 'DEBUG', 'TRACE', 'INFO', 'WARN', 'ERROR']
 
 
 def _validate_log_level(log_level):
@@ -32,7 +32,7 @@ def _validate_log_level(log_level):
         return log_level
 
     if isinstance(log_level, int):
-        if log_level < 0 or log_level > 4:
+        if log_level < 0 or log_level >= len(LOG_LEVELS):
             raise ValueError(f'Invalid debug level: {log_level}')
 
         return LOG_LEVELS[log_level]
@@ -134,3 +134,9 @@ class RunPodLogger:
         tip log
         '''
         self.log(message, 'TIP')
+
+    def trace(self, message, request_id: Optional[str] = None):
+        '''
+        trace log (buffered until flushed)
+        '''
+        self.log(message, 'TRACE', request_id)

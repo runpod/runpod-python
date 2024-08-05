@@ -3,22 +3,23 @@
 
 from typing import Any, Dict
 import asyncio
-import aiohttp
 
+from runpod.http_client import ClientSession
 from runpod.endpoint.helpers import FINAL_STATES, is_completed
 
 
 class Job:
     """Class representing a job for an asynchronous endpoint"""
 
-    def __init__(self, endpoint_id: str, job_id: str, session: aiohttp.ClientSession):
+    def __init__(self, endpoint_id: str, job_id: str, session: ClientSession):
         from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel,cyclic-import
 
         self.endpoint_id = endpoint_id
         self.job_id = job_id
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
+            "Authorization": f"Bearer {api_key}",
+            "X-Request-ID": job_id,
         }
         self.session = session
         self.endpoint_url_base = endpoint_url_base
@@ -100,7 +101,7 @@ class Job:
 class Endpoint:
     """Class for running endpoint"""
 
-    def __init__(self, endpoint_id: str, session: aiohttp.ClientSession):
+    def __init__(self, endpoint_id: str, session: ClientSession):
         from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel
 
         self.endpoint_id = endpoint_id

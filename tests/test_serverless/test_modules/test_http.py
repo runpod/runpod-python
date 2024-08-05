@@ -111,7 +111,9 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             mock_dumps.side_effect = TypeError("Forced exception")
 
             mock_jobs.return_value = set(['test_id'])
-            send_return_local = await rp_http.send_result("No Session", self.job_data, self.job)
+            send_return_local = await rp_http.send_result(
+                aiohttp.ClientSession(), self.job_data, self.job
+            )
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 0

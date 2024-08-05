@@ -1,6 +1,7 @@
 """ Test functions in runpod.cli.groups.project.functions module. """
 
 import os
+import shutil
 import unittest
 from unittest.mock import patch, mock_open
 
@@ -12,6 +13,10 @@ from runpod.cli.groups.project.functions import (
 
 class TestCreateNewProject(unittest.TestCase):
     """ Test the create_new_project function."""
+    def tearDown(self):
+        toml_file_location = os.path.join(os.getcwd(), "test_project")
+        if os.path.exists(toml_file_location):
+            shutil.rmtree(toml_file_location)
 
     @patch("os.makedirs")
     @patch("os.path.exists", return_value=False)

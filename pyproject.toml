@@ -54,11 +54,12 @@ runpod = "runpod.cli.entry:runpod_cli"
 test = [
     "asynctest",
     "nest_asyncio",
-    "pylint",
-    "pytest",
+    "pylint==3.2.5",
+    "pytest-asyncio",
     "pytest-cov",
     "pytest-timeout",
-    "pytest-asyncio",
+    "pytest-watch",
+    "pytest",
 ]
 
 [build-system]

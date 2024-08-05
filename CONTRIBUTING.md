@@ -35,7 +35,7 @@ Here is a quick guide on how to contribute code to this project:
 6. Run tests to ensure that your changes do not break any existing functionality. You can run tests using the following command:
 
     ```bash
-    pip install .[test]
+    pip install '.[test]'
     pytest
     ```
 
