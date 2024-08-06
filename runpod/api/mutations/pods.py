@@ -4,11 +4,39 @@ RunPod | API Wrapper | Mutations | Pods
 # pylint: disable=too-many-arguments, too-many-locals, too-many-branches
 
 from typing import Optional, List
+import re
 
+def ensure_jupyter_port(ports: str | None) -> str:
+    """
+    Ensures that the Jupyter port (8888) is included in the ports string, and if not, appends it.
+    
+    Args:
+    ports (str | None): A string of comma-separated ports, or None.
+    
+    Returns:
+    str: A string of comma-separated ports including the Jupyter port.
+    """
+    jupyter_port = "8888"
+    if ports is None:
+        return f"{jupyter_port}/http"
+    
+    # Split the ports string into a list of individual port specifications
+    port_list = [p.strip() for p in ports.split(',')]
+    
+    # Function to check if a port specification matches the Jupyter port
+    def is_jupyter_port(port_spec):
+        return re.match(f'^{jupyter_port}(/[a-z]+)?$', port_spec) is not None
+    
+    # Check if Jupyter port is already in the list
+    if not any(is_jupyter_port(port) for port in port_list):
+        port_list.append(f"{jupyter_port}/http")
+    
+    # Join the port list back into a string
+    return ', '.join(port_list)
 
 def generate_pod_deployment_mutation(
         name: str, image_name: str, gpu_type_id: str,
-        cloud_type: str = "ALL", support_public_ip: bool = True, start_ssh: bool = True,
+        cloud_type: str = "ALL", support_public_ip: bool = True, start_ssh: bool = True, start_jupyter: bool = False,
         data_center_id=None, country_code=None,
         gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
         min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
@@ -26,6 +54,10 @@ def generate_pod_deployment_mutation(
 
     # ------------------------------ Default Fields ------------------------------ #
     input_fields.append(f'cloudType: {cloud_type}')
+
+    if start_jupyter:
+        input_fields.append('startJupyter: true')
+        ports = ensure_jupyter_port(ports)
 
     if start_ssh:
         input_fields.append('startSsh: true')
