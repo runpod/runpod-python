@@ -111,7 +111,6 @@ def start(config: Dict[str, Any]):
     config (Dict[str, Any]): Configuration parameters for the worker.
 
     config["handler"] (Callable): The handler function to run.
-    config["concurrency_modifier"] (Callable): Concurrency modifier function to run.
 
     config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
     """

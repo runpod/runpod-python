@@ -322,45 +322,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.worker.stream_result")
     @patch("runpod.serverless.worker.send_result")
     # pylint: disable=too-many-arguments
-    async def test_run_worker_concurrency(
-            self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
-        '''
-        Test run_worker with synchronous handler.
-
-        Args:
-            mock_send_result (_type_): _description_
-            mock_stream_result (_type_): _description_
-            mock_run_job (_type_): _description_
-            mock_get_job (_type_): _description_
-            mock_session (_type_): _description_
-        '''
-        # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
-        mock_run_job.return_value = {"output": {"result": "odd"}}
-
-        def concurrency_modifier(current_concurrency):
-            return current_concurrency + 1
-
-        config_with_concurrency = self.config.copy()
-        config_with_concurrency['concurrency_modifier'] = concurrency_modifier
-
-        # Call the function
-        runpod.serverless.start(config_with_concurrency)
-
-        # Make assertions about the behaviors
-        mock_get_job.assert_called_once()
-        mock_run_job.assert_called_once()
-        mock_send_result.assert_called_once()
-
-        assert mock_stream_result.called is False
-        assert mock_session.called
-
-    @patch("runpod.serverless.worker.AsyncClientSession")
-    @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.stream_result")
-    @patch("runpod.serverless.worker.send_result")
-    # pylint: disable=too-many-arguments
     async def test_run_worker_multi_processing(
             self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job, mock_session):
         '''
