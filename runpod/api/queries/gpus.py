@@ -14,9 +14,9 @@ query GpuTypes {
 
 
 def generate_gpu_query(gpu_id, gpu_count=1):
-    '''
+    """
     Generate a query for a specific GPU type
-    '''
+    """
 
     return f"""
     query GpuTypes {{

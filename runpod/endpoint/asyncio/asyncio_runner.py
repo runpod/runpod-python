@@ -1,4 +1,4 @@
-""" Module for running endpoints asynchronously. """
+"""Module for running endpoints asynchronously."""
 # pylint: disable=too-few-public-methods,R0801
 
 from typing import Any, Dict
@@ -28,12 +28,14 @@ class Job:
         self.job_output = None
 
     async def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
-        """ Returns the raw json of the status, reaises an exception if invalid.
+        """Returns the raw json of the status, reaises an exception if invalid.
 
         Args:
             source: The URL source path of the job status.
         """
-        status_url = f"{self.endpoint_url_base}/{self.endpoint_id}/{source}/{self.job_id}"
+        status_url = (
+            f"{self.endpoint_url_base}/{self.endpoint_id}/{source}/{self.job_id}"
+        )
         job_state = await self.session.get(status_url, headers=self.headers)
         job_state = await job_state.json()
 
@@ -79,7 +81,7 @@ class Job:
         return job_data.get("output", None)
 
     async def stream(self) -> Any:
-        """ Returns a generator that yields the output of the job request. """
+        """Returns a generator that yields the output of the job request."""
         while True:
             await asyncio.sleep(1)
             stream_partial = await self._fetch_job(source="stream")
@@ -108,7 +110,7 @@ class Endpoint:
         self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
+            "Authorization": f"Bearer {api_key}",
         }
         self.session = session
 
@@ -134,7 +136,9 @@ class Endpoint:
         Returns:
             Health of endpoint
         """
-        async with self.session.get(f"{self.endpoint_id}/health", headers=self.headers) as resp:
+        async with self.session.get(
+            f"{self.endpoint_id}/health", headers=self.headers
+        ) as resp:
             return await resp.json()
 
     async def purge_queue(self) -> dict:
@@ -143,5 +147,7 @@ class Endpoint:
         Returns:
             Purge status
         """
-        async with self.session.post(f"{self.endpoint_id}/purge", headers=self.headers) as resp:
+        async with self.session.post(
+            f"{self.endpoint_id}/purge", headers=self.headers
+        ) as resp:
             return await resp.json()

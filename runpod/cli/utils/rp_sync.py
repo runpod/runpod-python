@@ -11,6 +11,7 @@ from watchdog.events import FileSystemEventHandler
 from runpod.cli import STOP_EVENT
 from .rp_runpodignore import get_ignore_list, should_ignore
 
+
 class WatcherHandler(FileSystemEventHandler):
     """Watches a directory for changes and syncs them to a remote directory."""
 
@@ -22,7 +23,7 @@ class WatcherHandler(FileSystemEventHandler):
         self.debouncer = None
 
     def on_any_event(self, event):
-        """ Called on any event. """
+        """Called on any event."""
         if event.is_directory or should_ignore(event.src_path, self.ignore_list):
             return
 
@@ -32,6 +33,7 @@ class WatcherHandler(FileSystemEventHandler):
         # Start a new timer that will call the action function after 1 second
         self.debouncer = threading.Timer(0.5, self.action_function)
         self.debouncer.start()
+
 
 def start_watcher(action_function, local_path):
     """
@@ -49,14 +51,16 @@ def start_watcher(action_function, local_path):
         observer.stop()
         observer.join()
 
+
 def sync_directory(ssh_client, local_path, remote_path):
     """
     Syncs a local directory to a remote directory.
     """
+
     def sync():
         print("Syncing files...")
         ssh_client.rsync(local_path, remote_path, quiet=True)
 
     threading.Thread(target=start_watcher, daemon=True, args=(sync, local_path)).start()
 
-    return sync # For testing purposes
+    return sync  # For testing purposes

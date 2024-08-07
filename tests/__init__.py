@@ -1,5 +1,5 @@
-''' Allows tests to be imported as a module.'''
+"""Allows tests to be imported as a module."""
 
 import sys
 
-sys.path.append('src')
+sys.path.append("src")

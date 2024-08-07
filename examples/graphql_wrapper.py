@@ -1,6 +1,6 @@
-''''
+"""'
 GraphQL wrapper for the RunPod API
-'''
+"""
 
 import time
 import runpod

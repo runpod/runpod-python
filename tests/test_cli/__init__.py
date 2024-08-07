@@ -1,1 +1,1 @@
-''' Allows tests to be imported. '''
+"""Allows tests to be imported."""

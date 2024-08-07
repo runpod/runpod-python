@@ -34,7 +34,7 @@ def get_auth_header():
     }
 
 
-def AsyncClientSession(*args, **kwargs): # pylint: disable=invalid-name
+def AsyncClientSession(*args, **kwargs):  # pylint: disable=invalid-name
     """
     Deprecation from aiohttp.ClientSession forbids inheritance.
     This is now a factory method

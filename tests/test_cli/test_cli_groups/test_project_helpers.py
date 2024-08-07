@@ -12,7 +12,7 @@ from runpod.cli.groups.project.helpers import (
     get_project_endpoint,
     copy_template_files,
     attempt_pod_launch,
-    load_project_config
+    load_project_config,
 )
 
 
@@ -89,7 +89,7 @@ class TestHelpers(unittest.TestCase):
                 "ports": "ports",
                 "storage_id": "storage_id",
                 "volume_mount_path": "volume_mount_path",
-                "container_disk_size_gb": "1"
+                "container_disk_size_gb": "1",
             }
         }
         environment_variables = {"key": "value"}
@@ -108,6 +108,7 @@ class TestHelpers(unittest.TestCase):
         assert mock_exists.called
         assert mock_file.called
 
-        with patch("os.path.exists", return_value=False), \
-                self.assertRaises(FileNotFoundError):
+        with patch("os.path.exists", return_value=False), self.assertRaises(
+            FileNotFoundError
+        ):
             load_project_config()

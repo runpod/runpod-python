@@ -27,29 +27,53 @@ log = RunPodLogger()
 # ---------------------------------------------------------------------------- #
 # Arguments will be passed in with the config under the key "rp_args"
 parser = argparse.ArgumentParser(
-    prog="runpod",
-    description="Runpod Serverless Worker Arguments."
+    prog="runpod", description="Runpod Serverless Worker Arguments."
 )
-parser.add_argument("--rp_log_level", type=str, default=None,
-                    help="""Controls what level of logs are printed to the console.
-                    Options: ERROR, WARN, INFO, and DEBUG.""")
+parser.add_argument(
+    "--rp_log_level",
+    type=str,
+    default=None,
+    help="""Controls what level of logs are printed to the console.
+                    Options: ERROR, WARN, INFO, and DEBUG.""",
+)
 
-parser.add_argument("--rp_debugger", action="store_true", default=None,
-                    help="Flag to enable the Debugger.")
+parser.add_argument(
+    "--rp_debugger",
+    action="store_true",
+    default=None,
+    help="Flag to enable the Debugger.",
+)
 
 # Hosted API
-parser.add_argument("--rp_serve_api", action="store_true", default=None,
-                    help="Flag to start the API server.")
-parser.add_argument("--rp_api_port", type=int, default=8000,
-                    help="Port to start the FastAPI server on.")
-parser.add_argument("--rp_api_concurrency", type=int, default=1,
-                    help="Number of concurrent FastAPI workers.")
-parser.add_argument("--rp_api_host", type=str, default="localhost",
-                    help="Host to start the FastAPI server on.")
+parser.add_argument(
+    "--rp_serve_api",
+    action="store_true",
+    default=None,
+    help="Flag to start the API server.",
+)
+parser.add_argument(
+    "--rp_api_port", type=int, default=8000, help="Port to start the FastAPI server on."
+)
+parser.add_argument(
+    "--rp_api_concurrency",
+    type=int,
+    default=1,
+    help="Number of concurrent FastAPI workers.",
+)
+parser.add_argument(
+    "--rp_api_host",
+    type=str,
+    default="localhost",
+    help="Host to start the FastAPI server on.",
+)
 
 # Test input
-parser.add_argument("--test_input", type=str, default=None,
-                    help="Test input for the worker, formatted as JSON.")
+parser.add_argument(
+    "--test_input",
+    type=str,
+    default=None,
+    help="Test input for the worker, formatted as JSON.",
+)
 
 
 def _set_config_args(config) -> dict:
@@ -129,9 +153,9 @@ def start(config: Dict[str, Any]):
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(
-            api_host=config['rp_args']['rp_api_host'],
-            api_port=config['rp_args']['rp_api_port'],
-            api_concurrency=config['rp_args']['rp_api_concurrency']
+            api_host=config["rp_args"]["rp_api_host"],
+            api_port=config["rp_args"]["rp_api_port"],
+            api_concurrency=config["rp_args"]["rp_api_concurrency"],
         )
 
     elif realtime_port:
@@ -139,13 +163,15 @@ def start(config: Dict[str, Any]):
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(
-            api_host='0.0.0.0',
+            api_host="0.0.0.0",
             api_port=realtime_port,
-            api_concurrency=realtime_concurrency
+            api_concurrency=realtime_concurrency,
         )
 
     # --------------------------------- SLS-Core --------------------------------- #
-    elif os.environ.get("RUNPOD_USE_CORE", None) or os.environ.get("RUNPOD_CORE_PATH", None):
+    elif os.environ.get("RUNPOD_USE_CORE", None) or os.environ.get(
+        "RUNPOD_CORE_PATH", None
+    ):
         log.info("Starting worker with SLS-Core.")
         core.main(config)
 

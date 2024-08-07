@@ -1,4 +1,4 @@
-""" Test suite for the generate_container_registry_auth function. """
+"""Test suite for the generate_container_registry_auth function."""
 
 import unittest
 
@@ -8,7 +8,7 @@ from runpod.api.mutations.container_register_auth import (
 
 
 class TestGenerateContainerRegistryAuth(unittest.TestCase):
-    """ Test suite for the generate_container_registry_auth function. """
+    """Test suite for the generate_container_registry_auth function."""
 
     def test_generate_container_registry_auth(self):
         """
