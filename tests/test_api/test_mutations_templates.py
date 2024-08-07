@@ -1,4 +1,4 @@
-""" Unit tests for the function generate_pod_template in the file api_wrapper.py """
+"""Unit tests for the function generate_pod_template in the file api_wrapper.py"""
 
 import unittest
 

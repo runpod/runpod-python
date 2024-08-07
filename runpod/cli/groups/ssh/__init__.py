@@ -1,3 +1,3 @@
-''' CLI functions for SSH. '''
+"""CLI functions for SSH."""
 
 from . import functions

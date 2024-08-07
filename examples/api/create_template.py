@@ -1,4 +1,4 @@
-""" Example of creating a template with the Runpod API. """
+"""Example of creating a template with the Runpod API."""
 
 import runpod
 
@@ -6,11 +6,7 @@ import runpod
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
 
 try:
-
-    new_template = runpod.create_template(
-        name="test",
-        image_name="runpod/base:0.1.0"
-    )
+    new_template = runpod.create_template(name="test", image_name="runpod/base:0.1.0")
 
     print(new_template)
 

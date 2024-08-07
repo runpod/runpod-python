@@ -1,4 +1,4 @@
-""" Example of getting the health of an endpoint. """
+"""Example of getting the health of an endpoint."""
 
 import runpod
 

@@ -2,15 +2,13 @@
 runpod | serverless | worker_loop.py
 Called to convert a container into a worker pod for the runpod serverless platform.
 """
+
 import os
 import asyncio
 from typing import Dict, Any
 
 from runpod.http_client import AsyncClientSession
-from runpod.serverless.modules import (
-    rp_logger, rp_local, rp_handler, rp_ping,
-    rp_scale
-)
+from runpod.serverless.modules import rp_logger, rp_local, rp_handler, rp_ping, rp_scale
 from .modules.rp_job import run_job, run_job_generator
 from .modules.rp_http import send_result, stream_result
 from .modules.worker_state import REF_COUNT_ZERO, Jobs
@@ -22,8 +20,8 @@ heartbeat = rp_ping.Heartbeat()
 
 
 def _is_local(config) -> bool:
-    """ Returns True if the worker is running locally, False otherwise. """
-    if config['rp_args'].get('test_input', None):
+    """Returns True if the worker is running locally, False otherwise."""
+    if config["rp_args"].get("test_input", None):
         return True
 
     if os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None:
@@ -36,16 +34,16 @@ async def _process_job(job, session, job_scaler, config):
     if rp_handler.is_generator(config["handler"]):
         is_stream = True
         generator_output = run_job_generator(config["handler"], job)
-        log.debug("Handler is a generator, streaming results.", job['id'])
+        log.debug("Handler is a generator, streaming results.", job["id"])
 
-        job_result = {'output': []}
+        job_result = {"output": []}
         async for stream_output in generator_output:
-            log.debug(f"Stream output: {stream_output}", job['id'])
-            if 'error' in stream_output:
+            log.debug(f"Stream output: {stream_output}", job["id"])
+            if "error" in stream_output:
                 job_result = stream_output
                 break
-            if config.get('return_aggregate_stream', False):
-                job_result['output'].append(stream_output['output'])
+            if config.get("return_aggregate_stream", False):
+                job_result["output"].append(stream_output["output"])
 
             await stream_result(session, stream_output, job)
     else:
@@ -54,20 +52,20 @@ async def _process_job(job, session, job_scaler, config):
 
     # If refresh_worker is set, pod will be reset after job is complete.
     if config.get("refresh_worker", False):
-        log.info("refresh_worker flag set, stopping pod after job.", job['id'])
+        log.info("refresh_worker flag set, stopping pod after job.", job["id"])
         job_result["stopPod"] = True
         job_scaler.kill_worker()
 
     # If rp_debugger is set, debugger output will be returned.
     if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
         job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
-        log.debug("rp_debugger | Flag set, returning debugger output.", job['id'])
+        log.debug("rp_debugger | Flag set, returning debugger output.", job["id"])
 
         # Calculate ready delay for the debugger output.
         ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
         job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
     else:
-        log.debug("rp_debugger | Flag not set, skipping debugger output.", job['id'])
+        log.debug("rp_debugger | Flag not set, skipping debugger output.", job["id"])
         rp_debugger.clear_debugger_output()
 
     # Send the job result to SLS
@@ -90,7 +88,6 @@ async def run_worker(config: Dict[str, Any]) -> None:
         job_scaler = rp_scale.JobScaler()
 
         while job_scaler.is_alive():
-
             async for job in job_scaler.get_jobs(session):
                 # Process the job here
                 asyncio.create_task(_process_job(job, session, job_scaler, config))

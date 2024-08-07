@@ -1,4 +1,4 @@
-''' Test API Wrapper Pod Mutations '''
+"""Test API Wrapper Pod Mutations"""
 
 import unittest
 
@@ -6,12 +6,12 @@ from runpod.api.mutations import pods
 
 
 class TestPodMutations(unittest.TestCase):
-    ''' Test API Wrapper Pod Mutations '''
+    """Test API Wrapper Pod Mutations"""
 
     def test_generate_pod_deployment_mutation(self):
-        '''
+        """
         Test generate_pod_deployment_mutation
-        '''
+        """
         result = pods.generate_pod_deployment_mutation(
             name="test",
             image_name="test_image",
@@ -30,32 +30,32 @@ class TestPodMutations(unittest.TestCase):
             env={"ENV": "test"},
             support_public_ip=True,
             template_id="abcde",
-            allowed_cuda_versions=["11.8", "12.0"]
+            allowed_cuda_versions=["11.8", "12.0"],
         )
 
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
 
     def test_generate_pod_stop_mutation(self):
-        '''
+        """
         Test generate_pod_stop_mutation
-        '''
+        """
         result = pods.generate_pod_stop_mutation("pod_id")
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
 
     def test_generate_pod_resume_mutation(self):
-        '''
+        """
         Test generate_pod_resume_mutation
-        '''
+        """
         result = pods.generate_pod_resume_mutation("pod_id", 1)
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
 
     def test_generate_pod_terminate_mutation(self):
-        '''
+        """
         Test generate_pod_terminate_mutation
-        '''
+        """
         result = pods.generate_pod_terminate_mutation("pod_id")
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
