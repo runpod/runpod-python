@@ -37,7 +37,7 @@ def _job_get_url():
     return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
 
 
-async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
+async def get_job(session: ClientSession, retry: bool = True) -> Optional[Dict[str, Any]]:
     """
     Get the job from the queue.
     Will continue trying to get a job until one is available.
@@ -46,70 +46,49 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
         session (ClientSession): The async http client to use for the request.
         retry (bool): Whether to retry if no job is available.
     """
-    next_job = None
-    return next_job
-    while next_job is None:
+    while True:
+        if retry:
+            await asyncio.sleep(1)
+
         try:
             async with session.get(_job_get_url()) as response:
                 if response.status == 204:
                     log.debug("No content, no job to process.")
-                    if retry is False:
+                    if not retry:
                         break
                     continue
 
                 if response.status == 400:
                     log.debug("Received 400 status, expected when FlashBoot is enabled.")
-                    if retry is False:
+                    if not retry:
                         break
                     continue
 
                 if response.status != 200:
                     log.error(f"Failed to get job, status code: {response.status}")
-                    if retry is False:
+                    if not retry:
                         break
                     continue
 
-                received_request = await response.json()
-                log.debug(f"Request Received | {received_request}")
+                job = await response.json()
+                log.debug(f"Request Received | {job}")
+                if not isinstance(job, dict) or "id" not in job or "input" not in job:
+                    log.error("Job has missing fields: id or input.")
+                    if not retry:
+                        break
+                    continue
 
-                # Check if the job is valid
-                job_id = received_request.get("id", None)
-                job_input = received_request.get("input", None)
-
-                if None in [job_id, job_input]:
-                    missing_fields = []
-                    if job_id is None:
-                        missing_fields.append("id")
-                    if job_input is None:
-                        missing_fields.append("input")
-
-                    log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
-                else:
-                    next_job = received_request
+                job_list.add_job(job["id"])
+                return job
 
         except asyncio.TimeoutError:
-            log.debug("Timeout error, retrying.")
-            if retry is False:
-                break
+            pass
 
-        except Exception as err:  # pylint: disable=broad-except
-            err_type = type(err).__name__
-            err_message = str(err)
-            err_traceback = traceback.format_exc()
-            log.error(f"Failed to get job. | Error Type: {err_type} | Error Message: {err_message}")
-            log.error(f"Traceback: {err_traceback}")
+        except Exception as error:  # pylint: disable=broad-except
+            log.error(f"Failed to get job: {type(error).__name__} - {str(error)}")
 
-        if next_job is None:
-            log.debug("No job available, waiting for the next one.")
-            if retry is False:
-                break
-
-        await asyncio.sleep(1)
-    else:
-        job_list.add_job(next_job["id"])
-        log.debug("Request ID added.", next_job['id'])
-
-        return next_job
+        if not retry:
+            break
 
     return None
 
