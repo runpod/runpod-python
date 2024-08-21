@@ -47,7 +47,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
         retry (bool): Whether to retry if no job is available.
     """
     next_job = None
-
+    return next_job
     while next_job is None:
         try:
             async with session.get(_job_get_url()) as response:
