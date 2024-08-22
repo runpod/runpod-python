@@ -48,7 +48,7 @@ async def get_job(session: ClientSession, retry: bool = True) -> Optional[Dict[s
     """
     while True:
         if retry:
-            await asyncio.sleep(1)
+            await asyncio.sleep(10)
 
         try:
             async with session.get(_job_get_url()) as response:
