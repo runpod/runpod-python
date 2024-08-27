@@ -33,7 +33,7 @@ def _job_get_url():
     Returns:
         str: The prepared URL for the 'get' request to the serverless API.
     """
-    job_in_progress = '1' if job_list.get_job_list() else '0'
+    job_in_progress = '1' if job_list.get_job_count() else '0'
     return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
 
 
