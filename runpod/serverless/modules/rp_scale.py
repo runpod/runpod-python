@@ -37,6 +37,7 @@ class JobScaler():
             self.concurrency_modifier = concurrency_modifier
 
         self.current_concurrency = 1
+        self._is_alive = True
 
     def is_alive(self):
         """
