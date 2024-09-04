@@ -53,5 +53,5 @@ class JobScaler():
 
             for job in await acquire_jobs:
                 yield job
-            
+
             await asyncio.sleep(0)

@@ -43,7 +43,7 @@ def _job_get_url(batch_size: int = 1):
     return job_take_url + f"&job_in_progress={job_in_progress}"
 
 
-async def get_job(session: ClientSession, jobs_needed=1, retry=True) -> Optional[List[Dict[str, Any]]]:
+async def get_job(session: ClientSession, jobs_needed=1, retry=True) -> Optional[List[Dict[str, Any]]]:  # pylint: disable=line-too-long, too-many-statements
     """
     Get the job from the queue.
     Will continue trying to get a job until one is available.

@@ -3,7 +3,6 @@ Test Serverless Job Module
 '''
 
 import asyncio
-import time
 from unittest.mock import Mock, patch
 
 from unittest import IsolatedAsyncioTestCase
