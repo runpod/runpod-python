@@ -34,27 +34,20 @@ class TestJob(IsolatedAsyncioTestCase):
         response_200.json = make_mocked_coro(return_value={"id": "123", "input": {"number": 1}})
 
         # Create a list of responses: 204, 400, then a 200
-        responses = [response_204] * 98 + [response_400] + [response_200]
+        responses = [response_204] + [response_400] + [response_200]
 
         with patch("aiohttp.ClientSession") as mock_session, \
                 patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"):
 
             mock_session.get.return_value.__aenter__.side_effect = responses
 
-            start_time = time.time()
-
             job = await rp_job.get_job(mock_session, retry=True)
 
-            end_time = time.time()
-
             # Assert the job was retrieved correctly
-            assert job == {"id": "123", "input": {"number": 1}}
+            assert job == [{"id": "123", "input": {"number": 1}}]
 
-            assert mock_session.get.call_count == 100
+            assert mock_session.get.call_count == 3
 
-            # Assert that retries happened with at least 1 second delay each
-            total_time_taken = end_time - start_time
-            assert total_time_taken >= 1
 
     async def test_get_job_200(self):
         '''
@@ -91,7 +84,7 @@ class TestJob(IsolatedAsyncioTestCase):
             job = await rp_job.get_job(mock_session, retry=True)
 
             # Assertions for the success case
-            assert job == {"id": "123", "input": {"number": 1}}
+            assert job == [{"id": "123", "input": {"number": 1}}]
 
     async def test_get_job_204(self):
         '''

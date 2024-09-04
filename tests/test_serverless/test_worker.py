@@ -203,7 +203,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_session (_type_): _description_
         '''
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "123", "input": {"number": 1}}]
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Call the function
@@ -234,8 +234,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
         '''
         # Define the mock behaviors
-        mock_get_job.return_value = {
-            "id": "generator-123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "generator-123", "input": {"number": 1}}]
 
         # Test generator handler
         generator_config = {
@@ -267,7 +266,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         RunPodLogger().set_level("DEBUG")
 
         # Setup: Mock `get_job` to return a predefined job.
-        mock_get_job.return_value = {"id": "generator-123-exception", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "generator-123-exception", "input": {"number": 1}}]
 
         runpod.serverless.start({
             "handler": generator_handler_exception,
@@ -299,8 +298,8 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_session (_type_): _description_
         '''
         # Define the mock behaviors
-        mock_get_job.return_value = {
-            "id": "generator-123-aggregate", "input": {"number": 1}}
+        mock_get_job.return_value = [{
+            "id": "generator-123-aggregate", "input": {"number": 1}}]
 
         # Test generator handler
         generator_config = {
@@ -334,7 +333,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_session (_type_): _description_
         '''
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "123", "input": {"number": 1}}]
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         def concurrency_modifier(current_concurrency):
@@ -374,7 +373,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         '''
 
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "123", "input": {"number": 1}}]
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Call the function
@@ -433,7 +432,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_session (_type_): _description_
         '''
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "123", "input": {"number": 1}}]
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Include multi-processing inside config
