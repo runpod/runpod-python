@@ -49,9 +49,10 @@ class JobScaler():
 
             jobs_needed = self.current_concurrency - job_list.get_job_count()
 
-            acquire_jobs = asyncio.create_task(get_job(session, jobs_needed, retry=False))
+            acquire_jobs = await asyncio.create_task(get_job(session, jobs_needed, retry=False))
 
-            for job in await acquire_jobs:
-                yield job
+            if acquire_jobs:
+                for job in acquire_jobs:
+                    yield job
 
             await asyncio.sleep(0)
