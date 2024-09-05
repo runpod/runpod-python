@@ -1,11 +1,6 @@
 name: CI | Unit Tests
 
 on:
-  push:
-    branches-ignore:
-      - main-ci
-      - release
-
   pull_request:
     branches:
       - main
