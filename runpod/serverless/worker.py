@@ -91,16 +91,10 @@ async def run_worker(config: Dict[str, Any]) -> None:
             concurrency_modifier=config.get('concurrency_modifier', None)
         )
 
-        while job_scaler.is_alive():
+        # Create a task that will run the get_jobs method in the background.
+        # This task will fetch jobs from RunPod and add them to the queue.
+        jobtake_task = asyncio.create_task(job_scaler.get_jobs(session))
 
-            async for job in job_scaler.get_jobs(session):
-                # Process the job here
-                asyncio.create_task(_process_job(job, session, job_scaler, config))
-
-                # Allow job processing
-                await asyncio.sleep(0)
-
-            await asyncio.sleep(0)
 
         # Stops the worker loop if the kill_worker flag is set.
         asyncio.get_event_loop().stop()
