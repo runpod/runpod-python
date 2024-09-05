@@ -6,10 +6,10 @@ Provides the functionality for scaling the runpod serverless worker.
 import asyncio
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from .rp_job import get_job
-from .worker_state import Jobs
+from .worker_state import JobsQueue, REF_COUNT_ZERO
 
 log = RunPodLogger()
-job_list = Jobs()
+job_list = JobsQueue()
 
 
 class JobScaler():

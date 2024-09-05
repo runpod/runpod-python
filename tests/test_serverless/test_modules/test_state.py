@@ -4,7 +4,7 @@ import os
 import unittest
 
 from runpod.serverless.modules.worker_state import (
-    Job, Jobs, IS_LOCAL_TEST, WORKER_ID
+    Job, JobsQueue, IS_LOCAL_TEST, WORKER_ID
 )
 
 
@@ -34,39 +34,42 @@ class TestEnvVars(unittest.TestCase):
         self.assertEqual(WORKER_ID, os.environ.get('RUNPOD_POD_ID'))
 
 
-class TestJobs(unittest.TestCase):
+class TestJobsQueue(unittest.IsolatedAsyncioTestCase):
     ''' Tests for Jobs class '''
 
     def setUp(self):
         '''
         Set up test variables
         '''
-        self.jobs = Jobs()
-        self.jobs.jobs.clear()  # clear jobs before each test
+        self.jobs = JobsQueue()
+
+    async def asyncTearDown(self):
+        await self.jobs.clear()  # clear jobs before each test
 
     def test_singleton(self):
         '''
         Tests if Jobs is a singleton class
         '''
-        jobs2 = Jobs()
+        jobs2 = JobsQueue()
         self.assertEqual(self.jobs, jobs2)
 
-    def test_add_job(self):
+    async def test_add_job(self):
         '''
         Tests if add_job() method works as expected
         '''
-        self.jobs.add_job('123')
-        self.assertIn(Job('123'), self.jobs.jobs)
+        await self.jobs.add_job('123')
+        job = await self.jobs.get()
+        assert job == Job('123')
 
-    def test_remove_job(self):
+    async def test_remove_job(self):
         '''
-        Tests if remove_job() method works as expected
+        Tests if get_job() method removes the job from the queue
         '''
         self.jobs.add_job('123')
-        self.jobs.remove_job('123')
-        self.assertNotIn(Job('123'), self.jobs.jobs)
+        self.jobs.get()
+        self.assertNotIn(Job('123'), list(self.jobs))
 
-    def test_get_job_input(self):
+    async def test_get_job_input(self):
         '''
         Tests if get_job_input() method works as expected
         '''
@@ -78,21 +81,21 @@ class TestJobs(unittest.TestCase):
         non_job_object = "some_string"
         self.assertNotEqual(job, non_job_object)
 
-        self.assertEqual(self.jobs.get_job('123'), None)
+        self.assertNotEqual(self.jobs.get(), None)
 
-        self.jobs.add_job('123', 'test_input')
-        self.assertEqual(self.jobs.get_job('123').input, 'test_input')
+        await self.jobs.add_job('123', 'test_input')
+        self.assertEqual((await self.jobs.get()).input, 'test_input')
 
-    def test_get_job_list(self):
+    async def test_get_job_list(self):
         '''
         Tests if get_job_list() method works as expected
         '''
         self.assertTrue(self.jobs.get_job_list() is None)
 
-        self.jobs.add_job('123')
-        self.jobs.add_job('456')
-        self.assertEqual(len(self.jobs.jobs), 2)
-        self.assertTrue(Job('123') in self.jobs.jobs)
-        self.assertTrue(Job('456') in self.jobs.jobs)
+        await self.jobs.add_job('123')
+        await self.jobs.add_job('456')
+        self.assertEqual(self.jobs.get_job_count(), 2)
+        self.assertTrue(Job('123') in self.jobs)
+        self.assertTrue(Job('456') in self.jobs)
 
         self.assertTrue(self.jobs.get_job_list() in ['123,456', '456,123'])

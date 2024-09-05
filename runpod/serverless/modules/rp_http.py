@@ -17,7 +17,7 @@ JOB_STREAM_URL_TEMPLATE = str(os.environ.get('RUNPOD_WEBHOOK_POST_STREAM', 'JOB_
 JOB_STREAM_URL = JOB_STREAM_URL_TEMPLATE.replace('$RUNPOD_POD_ID', WORKER_ID)
 
 log = RunPodLogger()
-job_list = Jobs()
+job_list = Jobs()  # only used for local development
 
 
 async def _transmit(client_session: ClientSession, url, job_data):

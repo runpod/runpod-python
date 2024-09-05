@@ -12,11 +12,11 @@ from urllib3.util.retry import Retry
 from runpod.http_client import SyncClientSession
 from runpod.version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from runpod.serverless.modules.worker_state import Jobs, WORKER_ID
+from runpod.serverless.modules.worker_state import JobsQueue, WORKER_ID
 
 
 log = RunPodLogger()
-jobs = Jobs()  # Contains the list of jobs that are currently running.
+jobs = JobsQueue()  # Contains the list of jobs that are currently running.
 
 
 class Heartbeat:

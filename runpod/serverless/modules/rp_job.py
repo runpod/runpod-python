@@ -13,14 +13,14 @@ import traceback
 
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import WORKER_ID, Jobs
+from .worker_state import WORKER_ID, JobsQueue
 from .rp_tips import check_return_size
 from ...version import __version__ as runpod_version
 
 JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
 
 log = RunPodLogger()
-job_list = Jobs()
+job_list = JobsQueue()
 
 
 def _job_get_url(batch_size: int = 1):
