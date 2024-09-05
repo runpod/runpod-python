@@ -4,10 +4,11 @@ RunPod Progress Module
 
 import asyncio
 import threading
-from typing import Dict, Any
+from typing import Any, Dict
 
 from runpod.http_client import AsyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
+
 from .rp_http import send_result
 
 log = RunPodLogger()
@@ -17,10 +18,7 @@ async def _async_progress_update(session, job, progress):
     """
     The actual asynchronous function that sends the update.
     """
-    job_data = {
-        "status": "IN_PROGRESS",
-        "output": progress
-    }
+    job_data = {"status": "IN_PROGRESS", "output": progress}
 
     await send_result(session, job_data, job)
 
@@ -33,6 +31,7 @@ def _thread_target(job: Dict[str, Any], progress: Any):
     asyncio.set_event_loop(loop)
 
     try:
+
         async def main():
             session = AsyncClientSession()
             async with session:

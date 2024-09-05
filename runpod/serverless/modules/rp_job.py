@@ -1,23 +1,24 @@
 """
 Job related helpers.
 """
+
 # pylint: disable=too-many-branches
 
-import inspect
-from typing import Any, Callable, Dict, Optional, Union, AsyncGenerator
-
-import os
-import json
 import asyncio
+import inspect
+import json
+import os
 import traceback
+from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union
 
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import WORKER_ID, Jobs
-from .rp_tips import check_return_size
-from ...version import __version__ as runpod_version
 
-JOB_GET_URL = str(os.environ.get('RUNPOD_WEBHOOK_GET_JOB')).replace('$ID', WORKER_ID)
+from ...version import __version__ as runpod_version
+from .rp_tips import check_return_size
+from .worker_state import WORKER_ID, Jobs
+
+JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 
 log = RunPodLogger()
 job_list = Jobs()
@@ -33,7 +34,7 @@ def _job_get_url():
     Returns:
         str: The prepared URL for the 'get' request to the serverless API.
     """
-    job_in_progress = '1' if job_list.get_job_list() else '0'
+    job_in_progress = "1" if job_list.get_job_list() else "0"
     return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
 
 
@@ -58,7 +59,9 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
                     continue
 
                 if response.status == 400:
-                    log.debug("Received 400 status, expected when FlashBoot is enabled.")
+                    log.debug(
+                        "Received 400 status, expected when FlashBoot is enabled."
+                    )
                     if retry is False:
                         break
                     continue
@@ -96,7 +99,9 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
             err_type = type(err).__name__
             err_message = str(err)
             err_traceback = traceback.format_exc()
-            log.error(f"Failed to get job. | Error Type: {err_type} | Error Message: {err_message}")
+            log.error(
+                f"Failed to get job. | Error Type: {err_type} | Error Message: {err_message}"
+            )
             log.error(f"Traceback: {err_traceback}")
 
         if next_job is None:
@@ -107,7 +112,7 @@ async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]
         await asyncio.sleep(1)
     else:
         job_list.add_job(next_job["id"])
-        log.debug("Request ID added.", next_job['id'])
+        log.debug("Request ID added.", next_job["id"])
 
         return next_job
 
@@ -125,19 +130,23 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The result of running the job.
     """
-    log.info('Started.', job["id"])
+    log.info("Started.", job["id"])
     run_result = {}
 
     try:
         handler_return = handler(job)
-        job_output = await handler_return if inspect.isawaitable(handler_return) else handler_return
+        job_output = (
+            await handler_return
+            if inspect.isawaitable(handler_return)
+            else handler_return
+        )
 
-        log.debug(f'Handler output: {job_output}', job["id"])
+        log.debug(f"Handler output: {job_output}", job["id"])
 
         if isinstance(job_output, dict):
             error_msg = job_output.pop("error", None)
             refresh_worker = job_output.pop("refresh_worker", None)
-            run_result['output'] = job_output
+            run_result["output"] = job_output
 
             if error_msg:
                 run_result["error"] = error_msg
@@ -155,35 +164,38 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
         check_return_size(run_result)  # Checks the size of the return body.
 
-    except Exception as err:    # pylint: disable=broad-except
+    except Exception as err:  # pylint: disable=broad-except
         error_info = {
             "error_type": str(type(err)),
             "error_message": str(err),
             "error_traceback": traceback.format_exc(),
             "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
             "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
-            "runpod_version": runpod_version
+            "runpod_version": runpod_version,
         }
 
-        log.error('Captured Handler Exception', job["id"])
+        log.error("Captured Handler Exception", job["id"])
         log.error(json.dumps(error_info, indent=4))
         run_result = {"error": json.dumps(error_info)}
 
     finally:
-        log.debug(f'run_job return: {run_result}', job["id"])
+        log.debug(f"run_job return: {run_result}", job["id"])
 
     return run_result
 
 
 async def run_job_generator(
-        handler: Callable,
-        job: Dict[str, Any]) -> AsyncGenerator[Dict[str, Union[str, Any]], None]:
-    '''
+    handler: Callable, job: Dict[str, Any]
+) -> AsyncGenerator[Dict[str, Union[str, Any]], None]:
+    """
     Run generator job used to stream output.
     Yields output partials from the generator.
-    '''
+    """
     is_async_gen = inspect.isasyncgenfunction(handler)
-    log.debug('Using Async Generator' if is_async_gen else 'Using Standard Generator', job["id"])
+    log.debug(
+        "Using Async Generator" if is_async_gen else "Using Standard Generator",
+        job["id"],
+    )
 
     try:
         job_output = handler(job)
@@ -197,10 +209,8 @@ async def run_job_generator(
                 log.debug(f"Generator output: {output_partial}", job["id"])
                 yield {"output": output_partial}
 
-    except Exception as err:    # pylint: disable=broad-except
+    except Exception as err:  # pylint: disable=broad-except
         log.error(err, job["id"])
-        yield {
-            "error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"
-        }
+        yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
-        log.info('Finished running generator.', job["id"])
+        log.info("Finished running generator.", job["id"])

@@ -1,7 +1,7 @@
 """ Allows runpod to be imported as a module. """
 
-import os
 import logging
+import os
 
 from . import serverless
 from .api.ctl_commands import (
@@ -42,7 +42,9 @@ if _credentials is not None:
 else:
     api_key = None  # pylint: disable=invalid-name
 
-endpoint_url_base = os.environ.get("RUNPOD_ENDPOINT_BASE_URL", "https://api.runpod.ai/v2")  # pylint: disable=invalid-name
+endpoint_url_base = os.environ.get(
+    "RUNPOD_ENDPOINT_BASE_URL", "https://api.runpod.ai/v2"
+)  # pylint: disable=invalid-name
 
 
 # --------------------------- Force Logging Levels --------------------------- #
