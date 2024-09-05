@@ -60,7 +60,7 @@ class JobScaler():
                 for job in acquired_jobs:
                     await job_list.add_job(job)
 
-            await asyncio.sleep(0)  # yield control back to the event loop
+            await asyncio.sleep(5)  # yield control back to the event loop
 
     async def run_jobs(self, session: ClientSession, config: Dict[str, Any]):
         """
