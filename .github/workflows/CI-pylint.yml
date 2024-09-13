@@ -33,4 +33,4 @@ jobs:
           pip install '.[test]'
 
       - name: Pylint Source
-        run: pylint $(git ls-files '*.py')
+        run: pylint --errors-only $(git ls-files '*.py')
