@@ -8,9 +8,7 @@ import runpod
 try:
 
     new_template = runpod.create_template(
-        name="test",
-        image_name="runpod/base:0.4.4",
-        is_serverless=True
+        name="test", image_name="runpod/base:0.4.4", is_serverless=True
     )
 
     print(new_template)
@@ -21,7 +19,7 @@ try:
         gpu_ids="AMPERE_16",
         workers_min=0,
         workers_max=1,
-        flashboot=True
+        flashboot=True,
     )
 
     print(new_endpoint)

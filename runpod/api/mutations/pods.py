@@ -1,22 +1,37 @@
 """
 RunPod | API Wrapper | Mutations | Pods
 """
+
 # pylint: disable=too-many-arguments, too-many-locals, too-many-branches
 
 from typing import Optional, List
 
 
 def generate_pod_deployment_mutation(
-        name: str, image_name: str, gpu_type_id: str,
-        cloud_type: str = "ALL", support_public_ip: bool = True, start_ssh: bool = True,
-        data_center_id=None, country_code=None,
-        gpu_count=None, volume_in_gb=None, container_disk_in_gb=None, min_vcpu_count=None,
-        min_memory_in_gb=None, docker_args=None, ports=None, volume_mount_path=None,
-        env: dict = None, template_id=None, network_volume_id=None,
-        allowed_cuda_versions: Optional[List[str]] = None):
-    '''
+    name: str,
+    image_name: str,
+    gpu_type_id: str,
+    cloud_type: str = "ALL",
+    support_public_ip: bool = True,
+    start_ssh: bool = True,
+    data_center_id=None,
+    country_code=None,
+    gpu_count=None,
+    volume_in_gb=None,
+    container_disk_in_gb=None,
+    min_vcpu_count=None,
+    min_memory_in_gb=None,
+    docker_args=None,
+    ports=None,
+    volume_mount_path=None,
+    env: dict = None,
+    template_id=None,
+    network_volume_id=None,
+    allowed_cuda_versions: Optional[List[str]] = None,
+):
+    """
     Generates a mutation to deploy a pod on demand.
-    '''
+    """
     input_fields = []
 
     # ------------------------------ Required Fields ----------------------------- #
@@ -25,15 +40,15 @@ def generate_pod_deployment_mutation(
     input_fields.append(f'gpuTypeId: "{gpu_type_id}"')
 
     # ------------------------------ Default Fields ------------------------------ #
-    input_fields.append(f'cloudType: {cloud_type}')
+    input_fields.append(f"cloudType: {cloud_type}")
 
     if start_ssh:
-        input_fields.append('startSsh: true')
+        input_fields.append("startSsh: true")
 
     if support_public_ip:
-        input_fields.append('supportPublicIp: true')
+        input_fields.append("supportPublicIp: true")
     else:
-        input_fields.append('supportPublicIp: false')
+        input_fields.append("supportPublicIp: false")
 
     # ------------------------------ Optional Fields ----------------------------- #
     if data_center_id is not None:
@@ -59,7 +74,8 @@ def generate_pod_deployment_mutation(
         input_fields.append(f'volumeMountPath: "{volume_mount_path}"')
     if env is not None:
         env_string = ", ".join(
-            [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()])
+            [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()]
+        )
         input_fields.append(f"env: [{env_string}]")
     if template_id is not None:
         input_fields.append(f'templateId: "{template_id}"')
@@ -69,8 +85,9 @@ def generate_pod_deployment_mutation(
 
     if allowed_cuda_versions is not None:
         allowed_cuda_versions_string = ", ".join(
-            [f'"{version}"' for version in allowed_cuda_versions])
-        input_fields.append(f'allowedCudaVersions: [{allowed_cuda_versions_string}]')
+            [f'"{version}"' for version in allowed_cuda_versions]
+        )
+        input_fields.append(f"allowedCudaVersions: [{allowed_cuda_versions_string}]")
 
     # Format input fields
     input_string = ", ".join(input_fields)
@@ -96,9 +113,9 @@ def generate_pod_deployment_mutation(
 
 
 def generate_pod_stop_mutation(pod_id: str) -> str:
-    '''
+    """
     Generates a mutation to stop a pod.
-    '''
+    """
     return f"""
     mutation {{
         podStop(input: {{ podId: "{pod_id}" }}) {{
@@ -110,9 +127,9 @@ def generate_pod_stop_mutation(pod_id: str) -> str:
 
 
 def generate_pod_resume_mutation(pod_id: str, gpu_count: int) -> str:
-    '''
+    """
     Generates a mutation to resume a pod.
-    '''
+    """
     return f"""
     mutation {{
         podResume(input: {{ podId: "{pod_id}", gpuCount: {gpu_count} }}) {{
@@ -130,9 +147,9 @@ def generate_pod_resume_mutation(pod_id: str, gpu_count: int) -> str:
 
 
 def generate_pod_terminate_mutation(pod_id: str) -> str:
-    '''
+    """
     Generates a mutation to terminate a pod.
-    '''
+    """
     return f"""
     mutation {{
         podTerminate(input: {{ podId: "{pod_id}" }})
