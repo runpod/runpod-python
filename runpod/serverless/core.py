@@ -8,6 +8,7 @@ import pathlib
 import asyncio
 from ctypes import CDLL, byref, c_char_p, c_int
 from typing import Any, Callable,  List, Dict, Optional
+import typing
 
 from runpod.version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -31,28 +32,35 @@ class CGetJobResult(ctypes.Structure):  # pylint: disable=too-few-public-methods
         return f"CGetJobResult(res_len={self.res_len}, status_code={self.status_code})"
 
 
+def notregistered():
+    """ Function to raise NotImplementedError """
+    raise RuntimeError("This function is not registered with the SLS Core.")
 class Hook:  # pylint: disable=too-many-instance-attributes
     """ Singleton class for interacting with sls_core.so"""
 
     _instance = None
 
+
     # C function pointers
-    _get_jobs: Callable = None
-    _progress_update: Callable = None
-    _stream_output: Callable = None
-    _post_output: Callable = None
-    _finish_stream: Callable = None
+    _get_jobs: Callable = notregistered
+    _progress_update: Callable = notregistered
+    _stream_output: Callable = notregistered
+    _post_output: Callable = notregistered
+    _finish_stream: Callable = notregistered
 
     def __new__(cls):
         if Hook._instance is None:
             log.debug("SLS Core | Initializing Hook.")
             Hook._instance = object.__new__(cls)
             Hook._initialized = False
+        
         return Hook._instance
 
     def __init__(self, rust_so_path: Optional[str] = None) -> None:
+        
         if self._initialized:
             return
+        
 
         if rust_so_path is None:
             default_path = os.path.join(
@@ -169,8 +177,6 @@ class Hook:  # pylint: disable=too-many-instance-attributes
         return bool(self._finish_stream(
             c_char_p(id_bytes), c_int(len(id_bytes))
         ))
-
-
 # -------------------------------- Process Job ------------------------------- #
 async def _process_job(config: Dict[str, Any], job: Dict[str, Any], hook) -> Dict[str, Any]:
     """ Process a single job. """
@@ -181,7 +187,7 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any], hook) -> Dic
         if inspect.isgeneratorfunction(handler) or inspect.isasyncgenfunction(handler):
             log.debug("SLS Core | Running job as a generator.")
             generator_output = rp_job.run_job_generator(handler, job)
-            aggregated_output = {'output': []}
+            aggregated_output: dict[str, typing.Any] = {'output': []}
 
             async for part in generator_output:
                 log.debug(f"SLS Core | Streaming output: {part}", job['id'])
@@ -210,6 +216,7 @@ async def _process_job(config: Dict[str, Any], job: Dict[str, Any], hook) -> Dic
     finally:
         log.debug(f"SLS Core | Posting output: {result}", job['id'])
         hook.post_output(job['id'], result)
+        return result
 
 
 # ---------------------------------------------------------------------------- #
