@@ -1,12 +1,12 @@
 """ Tests for runpod.serverless.modules.rp_ping """
 
-import os
 import importlib
-
+import os
 import unittest
 from unittest.mock import patch
 
 import requests
+
 from runpod.serverless.modules import rp_ping
 
 

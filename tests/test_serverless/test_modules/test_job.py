@@ -4,9 +4,9 @@ Test Serverless Job Module
 
 import asyncio
 import time
+from unittest import IsolatedAsyncioTestCase
 from unittest.mock import Mock, patch
 
-from unittest import IsolatedAsyncioTestCase
 from aiohttp import ClientResponse
 from aiohttp.test_utils import make_mocked_coro
 

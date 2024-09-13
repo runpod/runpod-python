@@ -1,18 +1,18 @@
 """ Core functionality for the runpod serverless worker. """
 
+import asyncio
 import ctypes
 import inspect
 import json
 import os
 import pathlib
-import asyncio
-from ctypes import CDLL, byref, c_char_p, c_int
-from typing import Any, Callable, List, Dict, Optional
 import typing
+from ctypes import CDLL, byref, c_char_p, c_int
+from typing import Any, Callable, Dict, List, Optional
 
-from runpod.version import __version__ as runpod_version
-from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless.modules import rp_job
+from runpod.serverless.modules.rp_logger import RunPodLogger
+from runpod.version import __version__ as runpod_version
 
 log = RunPodLogger()
 

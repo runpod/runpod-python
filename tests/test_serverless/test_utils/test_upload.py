@@ -1,15 +1,18 @@
 """ Tests for my_module | bucket utilities """
 
-import os
-import io
-import time
 import importlib
+import io
+import os
+import time
 import unittest
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, Mock, patch
 
-from runpod.serverless.utils import rp_upload
+from runpod.serverless.utils import (
+    rp_upload,
+    upload_file_to_bucket,
+    upload_in_memory_object,
+)
 from runpod.serverless.utils.rp_upload import get_boto_client
-from runpod.serverless.utils import upload_file_to_bucket, upload_in_memory_object
 
 BUCKET_CREDENTIALS = {
     "endpointUrl": "https://your-bucket-endpoint-url.com",

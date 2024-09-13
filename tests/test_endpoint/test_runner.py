@@ -3,12 +3,13 @@ Tests for runpod | endpoint | modules | endpoint.py
 """
 
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
+
 import requests
 
 import runpod
 from runpod.endpoint import runner
-from runpod.endpoint.runner import RunPodClient, Job, Endpoint
+from runpod.endpoint.runner import Endpoint, Job, RunPodClient
 
 
 class TestRunPodClient(unittest.TestCase):

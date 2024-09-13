@@ -3,12 +3,13 @@ runpod | serverless | rp_local.py
 Provides the local testing functionality for runpod serverless worker.
 """
 
+import json
 import os
 import sys
-import json
-from typing import Dict, Any
+from typing import Any, Dict
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
+
 from .rp_job import run_job
 
 log = RunPodLogger()

@@ -3,14 +3,15 @@ runpod | serverless | worker_loop.py
 Called to convert a container into a worker pod for the runpod serverless platform.
 """
 
-import os
 import asyncio
-from typing import Dict, Any
+import os
+from typing import Any, Dict
 
 from runpod.http_client import AsyncClientSession
-from runpod.serverless.modules import rp_logger, rp_local, rp_handler, rp_ping, rp_scale
-from .modules.rp_job import run_job, run_job_generator
+from runpod.serverless.modules import rp_handler, rp_local, rp_logger, rp_ping, rp_scale
+
 from .modules.rp_http import send_result, stream_result
+from .modules.rp_job import run_job, run_job_generator
 from .modules.worker_state import REF_COUNT_ZERO, Jobs
 from .utils import rp_debugger
 

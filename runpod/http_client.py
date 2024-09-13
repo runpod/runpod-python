@@ -3,17 +3,12 @@ HTTP Client abstractions
 """
 
 import os
+
 import requests
-from aiohttp import (
-    ClientSession,
-    ClientTimeout,
-    TCPConnector,
-)
-from .tracer import (
-    create_aiohttp_tracer,
-    create_request_tracer,
-)
+from aiohttp import ClientSession, ClientTimeout, TCPConnector
+
 from .cli.groups.config.functions import get_credentials
+from .tracer import create_aiohttp_tracer, create_request_tracer
 from .user_agent import USER_AGENT
 
 

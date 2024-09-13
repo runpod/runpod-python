@@ -2,14 +2,14 @@
 
 # pylint: disable=protected-access
 
-import os
 import asyncio
-
+import os
 import unittest
-from unittest.mock import patch, Mock, MagicMock
-import pytest
+from unittest.mock import MagicMock, Mock, patch
 
+import pytest
 import requests
+
 import runpod
 from runpod.serverless.modules import rp_fastapi
 

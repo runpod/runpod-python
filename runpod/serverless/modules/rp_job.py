@@ -4,19 +4,19 @@ Job related helpers.
 
 # pylint: disable=too-many-branches
 
-import inspect
-from typing import Any, Callable, Dict, Optional, Union, AsyncGenerator
-
-import os
-import json
 import asyncio
+import inspect
+import json
+import os
 import traceback
+from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union
 
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import WORKER_ID, Jobs
-from .rp_tips import check_return_size
+
 from ...version import __version__ as runpod_version
+from .rp_tips import check_return_size
+from .worker_state import WORKER_ID, Jobs
 
 JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 

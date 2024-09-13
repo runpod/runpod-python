@@ -7,7 +7,8 @@ Test rp_http.py module.
 import gc
 import json
 import unittest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
+
 import aiohttp
 
 from runpod.serverless.modules import rp_http

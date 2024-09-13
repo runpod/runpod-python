@@ -3,7 +3,7 @@
 import unittest
 
 # Assuming the error classes are in a file named 'error.py'
-from runpod.error import RunPodError, AuthenticationError, QueryError
+from runpod.error import AuthenticationError, QueryError, RunPodError
 
 
 class TestErrorClasses(unittest.TestCase):

@@ -8,25 +8,26 @@ import uuid
 from datetime import datetime
 
 import tomlkit
-from tomlkit import document, comment, table, nl
+from tomlkit import comment, document, nl, table
 
 from runpod import (
     __version__,
-    get_pod,
-    create_template,
     create_endpoint,
+    create_template,
+    get_pod,
     update_endpoint_template,
 )
-from runpod.cli import BASE_DOCKER_IMAGE, GPU_TYPES, ENV_VARS
+from runpod.cli import BASE_DOCKER_IMAGE, ENV_VARS, GPU_TYPES
 from runpod.cli.utils.ssh_cmd import SSHConnection
-from .helpers import (
-    get_project_pod,
-    copy_template_files,
-    attempt_pod_launch,
-    load_project_config,
-    get_project_endpoint,
-)
+
 from ...utils.rp_sync import sync_directory
+from .helpers import (
+    attempt_pod_launch,
+    copy_template_files,
+    get_project_endpoint,
+    get_project_pod,
+    load_project_config,
+)
 
 STARTER_TEMPLATES = os.path.join(os.path.dirname(__file__), "starter_templates")
 

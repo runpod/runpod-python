@@ -2,9 +2,11 @@
 
 # pylint: skip-file
 
-import runpod
 import inspect
+
 from transformers import HfApi
+
+import runpod
 
 SELECTED_MODEL = "<<MODEL_NAME>>"
 

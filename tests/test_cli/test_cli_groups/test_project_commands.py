@@ -6,10 +6,11 @@ import unittest
 from unittest.mock import patch
 
 from click.testing import CliRunner
+
 from runpod.cli.groups.project.commands import (
+    deploy_project,
     new_project_wizard,
     start_project_pod,
-    deploy_project,
 )
 
 
