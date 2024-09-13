@@ -2,9 +2,8 @@ name: CI | Code Quality
 
 on:
   push:
-    branches-ignore:
-      - "main-ci"
-      - "release"
+    branches:
+      - main
 
   pull_request:
     branches:
