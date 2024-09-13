@@ -10,10 +10,9 @@ WARN - 3 - An indication that something unexpected happened.
 ERROR - 4 - Serious problem, the software has not been able to perform some function.
 """
 
-import os
 import json
+import os
 from typing import Optional
-
 
 MAX_MESSAGE_LENGTH = 4096
 LOG_LEVELS = ["NOTSET", "DEBUG", "TRACE", "INFO", "WARN", "ERROR"]

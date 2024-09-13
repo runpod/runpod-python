@@ -6,29 +6,31 @@ import json
 import unittest
 from time import time
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
-from yarl import URL
+from unittest.mock import MagicMock, patch
+
 from aiohttp import (
     TraceConfig,
-    TraceRequestStartParams,
-    TraceConnectionCreateStartParams,
     TraceConnectionCreateEndParams,
+    TraceConnectionCreateStartParams,
     TraceConnectionReuseconnParams,
-    TraceRequestExceptionParams,
     TraceRequestChunkSentParams,
+    TraceRequestExceptionParams,
+    TraceRequestStartParams,
     TraceResponseChunkReceivedParams,
 )
+from yarl import URL
+
 from runpod.tracer import (
-    on_request_start,
-    on_connection_create_start,
+    create_aiohttp_tracer,
     on_connection_create_end,
+    on_connection_create_start,
     on_connection_reuseconn,
     on_request_chunk_sent,
-    on_response_chunk_received,
     on_request_end,
     on_request_exception,
+    on_request_start,
+    on_response_chunk_received,
     report_trace,
-    create_aiohttp_tracer,
     time_to_iso8601,
 )
 

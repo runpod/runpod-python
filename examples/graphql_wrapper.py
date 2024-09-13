@@ -3,8 +3,8 @@ GraphQL wrapper for the RunPod API
 """
 
 import time
-import runpod
 
+import runpod
 
 runpod.api_key = "YOUR_RUNPOD_API_KEY"
 

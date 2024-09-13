@@ -3,7 +3,7 @@ runpod-python | setup.py
 Called to setup the runpod-python package.
 """
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 # README.md > long_description
 with open("README.md", encoding="utf-8") as long_description_file:

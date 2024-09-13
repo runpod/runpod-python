@@ -4,17 +4,19 @@ RunPod | CLI | Utils | SSH Command
 Connect and run commands over SSH.
 """
 
-import sys
 import signal
-import threading
 import subprocess
+import sys
+import threading
+
 import colorama
 import paramiko
 
 from runpod.cli import STOP_EVENT
+
 from .rp_info import get_pod_ssh_ip_port
-from .rp_userspace import find_ssh_key_file
 from .rp_runpodignore import get_ignore_list
+from .rp_userspace import find_ssh_key_file
 
 colorama.init(autoreset=True)  # Initialize colorama
 

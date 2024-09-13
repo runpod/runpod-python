@@ -3,13 +3,13 @@
 import os
 import shutil
 import unittest
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
 
 from runpod.cli.groups.project.functions import (
     STARTER_TEMPLATES,
     create_new_project,
-    start_project,
     create_project_endpoint,
+    start_project,
 )
 
 

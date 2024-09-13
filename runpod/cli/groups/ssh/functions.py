@@ -2,9 +2,10 @@
 RunPod | CLI | SSH | Functions
 """
 
-import os
 import base64
 import hashlib
+import os
+
 import paramiko
 
 from runpod.api.ctl_commands import get_user, update_user_settings

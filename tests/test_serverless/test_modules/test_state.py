@@ -3,7 +3,7 @@
 import os
 import unittest
 
-from runpod.serverless.modules.worker_state import Job, Jobs, IS_LOCAL_TEST, WORKER_ID
+from runpod.serverless.modules.worker_state import IS_LOCAL_TEST, WORKER_ID, Job, Jobs
 
 
 class TestEnvVars(unittest.TestCase):

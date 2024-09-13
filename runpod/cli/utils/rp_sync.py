@@ -2,13 +2,14 @@
 Watches a directory for changes and syncs them to a remote directory.
 """
 
-import time
 import threading
+import time
 
-from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers.polling import PollingObserver as Observer
 
 from runpod.cli import STOP_EVENT
+
 from .rp_runpodignore import get_ignore_list, should_ignore
 
 

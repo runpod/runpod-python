@@ -4,8 +4,10 @@
 
 import os
 import unittest
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import MagicMock, mock_open, patch
+
 from requests import RequestException
+
 from runpod.serverless.utils.rp_download import (
     calculate_chunk_size,
     download_files_from_urls,

@@ -5,7 +5,7 @@ RunPod | CLI | Pod | Commands
 import click
 from prettytable import PrettyTable
 
-from runpod import get_pods, create_pod
+from runpod import create_pod, get_pods
 
 from ...utils import ssh_cmd
 

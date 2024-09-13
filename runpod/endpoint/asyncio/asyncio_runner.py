@@ -2,21 +2,21 @@
 
 # pylint: disable=too-few-public-methods,R0801
 
-from typing import Any, Dict
 import asyncio
+from typing import Any, Dict
 
-from runpod.http_client import ClientSession
 from runpod.endpoint.helpers import FINAL_STATES, is_completed
+from runpod.http_client import ClientSession
 
 
 class Job:
     """Class representing a job for an asynchronous endpoint"""
 
     def __init__(self, endpoint_id: str, job_id: str, session: ClientSession):
-        from runpod import (
+        from runpod import (  # pylint: disable=import-outside-toplevel,cyclic-import
             api_key,
             endpoint_url_base,
-        )  # pylint: disable=import-outside-toplevel,cyclic-import
+        )
 
         self.endpoint_id = endpoint_id
         self.job_id = job_id
@@ -109,9 +109,9 @@ class Endpoint:
 
     def __init__(self, endpoint_id: str, session: ClientSession):
         from runpod import (
-            api_key,
+            api_key,  # pylint: disable=import-outside-toplevel
             endpoint_url_base,
-        )  # pylint: disable=import-outside-toplevel
+        )
 
         self.endpoint_id = endpoint_id
         self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"

@@ -2,12 +2,13 @@
 
 import base64
 import unittest
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
+
 from runpod.cli.groups.ssh.functions import (
+    add_ssh_key,
+    generate_ssh_key_pair,
     get_ssh_key_fingerprint,
     get_user_pub_keys,
-    generate_ssh_key_pair,
-    add_ssh_key,
 )
 
 

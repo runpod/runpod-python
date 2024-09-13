@@ -3,9 +3,9 @@ Handles getting stuff from environment variables and updating the global state l
 """
 
 import os
-import uuid
 import time
-from typing import Optional, Dict, Any, Union
+import uuid
+from typing import Any, Dict, Optional, Union
 
 REF_COUNT_ZERO = time.perf_counter()  # Used for benchmarking with the debugger.
 

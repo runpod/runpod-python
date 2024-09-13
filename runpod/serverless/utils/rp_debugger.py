@@ -4,11 +4,11 @@ runpod | serverless | rp_debugger.py
 A collection of functions to help with debugging.
 """
 
-import time
 import datetime
 import platform
-import cpuinfo
+import time
 
+import cpuinfo
 
 # ---------------------------------------------------------------------------- #
 #                                  System Info                                 #

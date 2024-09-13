@@ -4,7 +4,7 @@
 
 import os
 import unittest
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
 
 from runpod.cli.utils.rp_runpodignore import get_ignore_list, should_ignore
 

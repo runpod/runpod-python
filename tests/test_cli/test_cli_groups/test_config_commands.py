@@ -4,6 +4,7 @@ RunPod | Tests | CLI | Commands
 
 import unittest
 from unittest.mock import patch
+
 from click.testing import CliRunner
 
 from runpod.cli.entry import runpod_cli

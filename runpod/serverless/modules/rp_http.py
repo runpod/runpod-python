@@ -2,13 +2,16 @@
     This module is used to handle HTTP requests.
 """
 
-import os
 import json
+import os
+
 from aiohttp import ClientError
-from aiohttp_retry import RetryClient, FibonacciRetry
+from aiohttp_retry import FibonacciRetry, RetryClient
+
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import Jobs, WORKER_ID
+
+from .worker_state import WORKER_ID, Jobs
 
 JOB_DONE_URL_TEMPLATE = str(
     os.environ.get("RUNPOD_WEBHOOK_POST_OUTPUT", "JOB_DONE_URL")
