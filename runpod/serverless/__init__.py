@@ -150,7 +150,7 @@ def start(config: Dict[str, Any]):
         return
 
     # --------------------------------- SLS-Core --------------------------------- #
-    if os.getenv("RUNPOD_SLS_CORE", "false").lower() in ("1", 't', 'T', 'TRUE', 'true', 'True', '0', 'f', 'F', 'FALSE', 'false', 'False'):
+    if os.getenv("RUNPOD_SLS_CORE", "false").lower() in ("1", 't', 'T', 'TRUE', 'true', 'True'):
         core.main(config)
         return
 
