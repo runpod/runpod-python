@@ -1,7 +1,7 @@
-'''
+"""
 runpod | serverless | rp_scale.py
 Provides the functionality for scaling the runpod serverless worker.
-'''
+"""
 
 import asyncio
 import warnings
@@ -13,19 +13,19 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
-class JobScaler():
+class JobScaler:
     """
     Job Scaler. This class is responsible for scaling the number of concurrent requests.
     """
 
-    def __init__(self, concurrency_modifier = None):
+    def __init__(self, concurrency_modifier=None):
         if concurrency_modifier:
             warnings.warn(
                 "JobScaler(concurrency_modifier) is deprecated ",
                 "and will be removed in a future version. "
                 "Please remove `concurrency_modifier` parameter.",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
         self._is_alive = True
 
@@ -51,9 +51,7 @@ class JobScaler():
         while self.is_alive():
             log.debug(f"Jobs in progress: {job_list.get_job_count()}")
 
-            tasks = [
-                asyncio.create_task(get_job(session, retry=False))
-            ]
+            tasks = [asyncio.create_task(get_job(session, retry=False))]
 
             for job_future in asyncio.as_completed(tasks):
                 if job := await job_future:

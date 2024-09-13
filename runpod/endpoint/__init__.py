@@ -1,4 +1,4 @@
-''' Allows endpoints to be imported as a module. '''
+""" Allows endpoints to be imported as a module. """
 
 from .runner import Endpoint, Job
 from .asyncio.asyncio_runner import Endpoint as AsyncioEndpoint

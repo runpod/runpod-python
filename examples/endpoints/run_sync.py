@@ -1,6 +1,6 @@
-'''
+"""
 Example of calling an endpoint using the RunPod Python Language Library.
-'''
+"""
 
 import runpod
 
@@ -12,12 +12,8 @@ endpoint = runpod.Endpoint("sdxl")  # Where "sdxl" is the endpoint ID
 try:
     # Run the endpoint synchronously, blocking until the endpoint run is complete.
     run_request = endpoint.run_sync(
-        {
-            "input": {
-                "prompt": "a photo of a horse the size of a Boeing 787"
-            }
-        },
-        timeout=60  # Seconds
+        {"input": {"prompt": "a photo of a horse the size of a Boeing 787"}},
+        timeout=60,  # Seconds
     )
 
     print(run_request)

@@ -1,4 +1,4 @@
-''' Tests for runpod.serverless.modules.rp_ping '''
+""" Tests for runpod.serverless.modules.rp_ping """
 
 import os
 import importlib
@@ -9,23 +9,27 @@ from unittest.mock import patch
 import requests
 from runpod.serverless.modules import rp_ping
 
-class MockResponse: # pylint: disable=too-few-public-methods
-    ''' Mock response for aiohttp '''
+
+class MockResponse:  # pylint: disable=too-few-public-methods
+    """Mock response for aiohttp"""
+
     status_code = 200
 
-def mock_get(*args, **kwargs): # pylint: disable=unused-argument
-    '''
+
+def mock_get(*args, **kwargs):  # pylint: disable=unused-argument
+    """
     Mock get function for aiohttp
-    '''
+    """
     return MockResponse()
 
+
 class TestPing(unittest.TestCase):
-    ''' Tests for rp_ping '''
+    """Tests for rp_ping"""
 
     def test_variables(self):
-        '''
+        """
         Tests that the variables are set correctly
-        '''
+        """
         os.environ["RUNPOD_WEBHOOK_PING"] = "PING_NOT_SET"
 
         importlib.reload(rp_ping)
@@ -41,11 +45,13 @@ class TestPing(unittest.TestCase):
         self.assertEqual(rp_ping.Heartbeat.PING_URL, "https://test.com/ping")
         self.assertEqual(rp_ping.Heartbeat.PING_INTERVAL, 20)
 
-    @patch("runpod.serverless.modules.rp_ping.SyncClientSession.get", side_effect=mock_get)
+    @patch(
+        "runpod.serverless.modules.rp_ping.SyncClientSession.get", side_effect=mock_get
+    )
     def test_start_ping(self, mock_get_return):
-        '''
+        """
         Tests that the start_ping function works correctly
-        '''
+        """
         # No RUNPOD_AI_API_KEY case
         with patch("threading.Thread.start") as mock_thread_start:
             rp_ping.Heartbeat().start_ping(test=True)

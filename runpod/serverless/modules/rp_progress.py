@@ -17,10 +17,7 @@ async def _async_progress_update(session, job, progress):
     """
     The actual asynchronous function that sends the update.
     """
-    job_data = {
-        "status": "IN_PROGRESS",
-        "output": progress
-    }
+    job_data = {"status": "IN_PROGRESS", "output": progress}
 
     await send_result(session, job_data, job)
 
@@ -33,6 +30,7 @@ def _thread_target(job: Dict[str, Any], progress: Any):
     asyncio.set_event_loop(loop)
 
     try:
+
         async def main():
             session = AsyncClientSession()
             async with session:
