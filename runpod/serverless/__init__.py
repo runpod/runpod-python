@@ -179,7 +179,7 @@ def start(config: Dict[str, Any]):
             core.main(config)
             return
 
-        case x if x.lower() in ["1", "t", "T", "TRUE", "true", "True"]:
+        case x if x.lower() in ["1", "t", "true"]:
             core.main(config)
             return
 
