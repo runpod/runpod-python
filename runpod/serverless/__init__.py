@@ -172,16 +172,16 @@ def start(config: Dict[str, Any]):
         return
 
     # --------------------------------- SLS-Core --------------------------------- #
-    if os.getenv("RUNPOD_SLS_CORE", "false").lower() in (
-        "1",
-        "t",
-        "T",
-        "TRUE",
-        "true",
-        "True",
-    ):
-        core.main(config)
-        return
+
+    match os.getenv("RUNPOD_SLS_CORE"):
+        case None if os.getenv("RUNPOD_USE_CORE") is not None:
+            log.warn("RUNPOD_USE_CORE is deprecated. Please use RUNPOD_SLS_CORE instead.")
+            core.main(config)
+            return
+
+        case x if x.lower() in ["1", "t", "T", "TRUE", "true", "True"]:
+            core.main(config)
+            return
 
     # --------------------------------- Standard --------------------------------- #
     worker.main(config)
