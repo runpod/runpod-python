@@ -11,7 +11,7 @@ from aiohttp_retry import FibonacciRetry, RetryClient
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
-from .worker_state import WORKER_ID, Jobs
+from .worker_state import WORKER_ID
 
 JOB_DONE_URL_TEMPLATE = str(
     os.environ.get("RUNPOD_WEBHOOK_POST_OUTPUT", "JOB_DONE_URL")
@@ -24,7 +24,6 @@ JOB_STREAM_URL_TEMPLATE = str(
 JOB_STREAM_URL = JOB_STREAM_URL_TEMPLATE.replace("$RUNPOD_POD_ID", WORKER_ID)
 
 log = RunPodLogger()
-job_list = Jobs()
 
 
 async def _transmit(client_session: ClientSession, url, job_data):
@@ -79,7 +78,6 @@ async def _handle_result(
             url_template == JOB_DONE_URL
             and job_data.get("status", None) != "IN_PROGRESS"
         ):
-            job_list.remove_job(job["id"])
             log.info("Finished.", job["id"])
 
 

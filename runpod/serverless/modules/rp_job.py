@@ -16,12 +16,12 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
 from .rp_tips import check_return_size
-from .worker_state import WORKER_ID, Jobs
+from .worker_state import WORKER_ID, JobsQueue
 
 JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 
 log = RunPodLogger()
-job_list = Jobs()
+job_list = JobsQueue()
 
 
 def _job_get_url():
@@ -34,8 +34,8 @@ def _job_get_url():
     Returns:
         str: The prepared URL for the 'get' request to the serverless API.
     """
-    job_in_progress = "1" if job_list.get_job_list() else "0"
     return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
+    job_in_progress = "1" if job_list.get_job_count() else "0"
 
 
 async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
