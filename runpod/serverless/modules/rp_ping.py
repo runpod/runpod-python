@@ -96,7 +96,7 @@ class Heartbeat:
             )
 
             log.debug(
-                f"Heartbeat Sent | URL: {self.PING_URL} | Status: {result.status_code}"
+                f"Heartbeat Sent | URL: {result.url} | Status: {result.status_code}"
             )
 
         except requests.RequestException as err:

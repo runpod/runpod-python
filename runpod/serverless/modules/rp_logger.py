@@ -15,7 +15,7 @@ import os
 from typing import Optional
 
 MAX_MESSAGE_LENGTH = 4096
-LOG_LEVELS = ["NOTSET", "DEBUG", "TRACE", "INFO", "WARN", "ERROR"]
+LOG_LEVELS = ["NOTSET", "TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
 
 
 def _validate_log_level(log_level):

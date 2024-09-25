@@ -2,8 +2,6 @@
 Job related helpers.
 """
 
-# pylint: disable=too-many-branches
-
 import asyncio
 import inspect
 import json
@@ -143,7 +141,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
         check_return_size(run_result)  # Checks the size of the return body.
 
-    except Exception as err:  # pylint: disable=broad-except
+    except Exception as err:
         error_info = {
             "error_type": str(type(err)),
             "error_message": str(err),
@@ -188,7 +186,7 @@ async def run_job_generator(
                 log.debug(f"Generator output: {output_partial}", job["id"])
                 yield {"output": output_partial}
 
-    except Exception as err:  # pylint: disable=broad-except
+    except Exception as err:
         log.error(err, job["id"])
         yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:
