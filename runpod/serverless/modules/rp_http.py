@@ -48,7 +48,6 @@ async def _transmit(client_session: ClientSession, url, job_data):
         await client_response.text()
 
 
-# pylint: disable=too-many-arguments, disable=line-too-long
 async def _handle_result(
     session: ClientSession, job_data, job, url_template, log_message, is_stream=False
 ):
