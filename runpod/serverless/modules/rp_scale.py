@@ -15,20 +15,33 @@ log = RunPodLogger()
 job_list = Jobs()
 
 
+def _default_concurrency_modifier(current_concurrency: int) -> int:
+    """
+    Default concurrency modifier.
+
+    This function returns the current concurrency without any modification.
+
+    Args:
+        current_concurrency (int): The current concurrency.
+
+    Returns:
+        int: The current concurrency.
+    """
+    return current_concurrency
+
+
 class JobScaler:
     """
     Job Scaler. This class is responsible for scaling the number of concurrent requests.
     """
 
-    def __init__(self, concurrency_modifier=None):
-        if concurrency_modifier:
-            warnings.warn(
-                "JobScaler(concurrency_modifier) is deprecated ",
-                "and will be removed in a future version. "
-                "Please remove `concurrency_modifier` parameter.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+    def __init__(self, concurrency_modifier: Any):
+        if concurrency_modifier is None:
+            self.concurrency_modifier = _default_concurrency_modifier
+        else:
+            self.concurrency_modifier = concurrency_modifier
+
+        self.current_concurrency = 1
         self._is_alive = True
 
     def is_alive(self):
