@@ -3,7 +3,12 @@
 import os
 import unittest
 
-from runpod.serverless.modules.worker_state import IS_LOCAL_TEST, WORKER_ID, Job, Jobs
+from runpod.serverless.modules.worker_state import (
+    Job,
+    JobsQueue,
+    IS_LOCAL_TEST,
+    WORKER_ID,
+)
 
 
 class TestEnvVars(unittest.TestCase):
@@ -32,65 +37,76 @@ class TestEnvVars(unittest.TestCase):
         self.assertEqual(WORKER_ID, os.environ.get("RUNPOD_POD_ID"))
 
 
-class TestJobs(unittest.TestCase):
+class TestJobsQueue(unittest.IsolatedAsyncioTestCase):
     """Tests for Jobs class"""
 
     def setUp(self):
         """
         Set up test variables
         """
-        self.jobs = Jobs()
-        self.jobs.jobs.clear()  # clear jobs before each test
+        self.jobs = JobsQueue()
+
+    async def asyncTearDown(self):
+        await self.jobs.clear()  # clear jobs before each test
 
     def test_singleton(self):
         """
         Tests if Jobs is a singleton class
         """
-        jobs2 = Jobs()
+        jobs2 = JobsQueue()
         self.assertEqual(self.jobs, jobs2)
 
-    def test_add_job(self):
+    async def test_add_job(self):
         """
         Tests if add_job() method works as expected
         """
-        self.jobs.add_job("123")
-        self.assertIn(Job("123"), self.jobs.jobs)
+        assert not self.jobs.get_job_count()
 
-    def test_remove_job(self):
+        job_input = {"id": "123"}
+        await self.jobs.add_job(job_input)
+
+        assert self.jobs.get_job_count() == 1
+
+    async def test_remove_job(self):
         """
-        Tests if remove_job() method works as expected
+        Tests if get_job() method removes the job from the queue
         """
-        self.jobs.add_job("123")
-        self.jobs.remove_job("123")
-        self.assertNotIn(Job("123"), self.jobs.jobs)
+        job = {"id": "123"}
+        await self.jobs.add_job(job)
+        await self.jobs.get_job()
+        assert job not in self.jobs
 
-    def test_get_job_input(self):
+    async def test_get_job(self):
         """
-        Tests if get_job_input() method works as expected
+        Tests if get_job() is FIFO
         """
-        job1 = Job(job_id="id1")
-        job2 = Job(job_id="id2")
-        self.assertNotEqual(job1, job2)
+        job1 = {"id": "123"}
+        await self.jobs.add_job(job1)
 
-        job = Job(job_id="id1")
-        non_job_object = "some_string"
-        self.assertNotEqual(job, non_job_object)
+        job2 = {"id": "456"}
+        await self.jobs.add_job(job2)
 
-        self.assertEqual(self.jobs.get_job("123"), None)
+        next_job = await self.jobs.get_job()
+        assert next_job not in self.jobs
+        assert next_job == job1
 
-        self.jobs.add_job("123", "test_input")
-        self.assertEqual(self.jobs.get_job("123").input, "test_input")
+        next_job = await self.jobs.get_job()
+        assert next_job not in self.jobs
+        assert next_job == job2
 
-    def test_get_job_list(self):
+    async def test_get_job_list(self):
         """
-        Tests if get_job_list() method works as expected
+        Tests if get_job_list() returns comma-separated IDs
         """
         self.assertTrue(self.jobs.get_job_list() is None)
 
-        self.jobs.add_job("123")
-        self.jobs.add_job("456")
-        self.assertEqual(len(self.jobs.jobs), 2)
-        self.assertTrue(Job("123") in self.jobs.jobs)
-        self.assertTrue(Job("456") in self.jobs.jobs)
+        job1 = {"id": "123"}
+        await self.jobs.add_job(job1)
 
-        self.assertTrue(self.jobs.get_job_list() in ["123,456", "456,123"])
+        job2 = {"id": "456"}
+        await self.jobs.add_job(job2)
+
+        assert self.jobs.get_job_count() == 2
+        assert job1 in self.jobs
+        assert job2 in self.jobs
+        assert self.jobs.get_job_list() in ["123,456", "456,123"]

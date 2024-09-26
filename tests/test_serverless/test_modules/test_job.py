@@ -3,10 +3,9 @@ Test Serverless Job Module
 """
 
 import asyncio
-import time
-from unittest import IsolatedAsyncioTestCase
 from unittest.mock import Mock, patch
 
+from unittest import IsolatedAsyncioTestCase
 from aiohttp import ClientResponse
 from aiohttp.test_utils import make_mocked_coro
 
@@ -16,68 +15,10 @@ from runpod.serverless.modules import rp_job
 class TestJob(IsolatedAsyncioTestCase):
     """Tests the Job class."""
 
-    async def test_get_job_retries(self):
-        """
-        Tests the get_job function with a 204, 400, and 200 response with retries
-        """
-        # Mocked responses
-        response_204 = Mock()
-        response_204.status = 204
-        response_204.json = make_mocked_coro(return_value=None)
-
-        response_400 = Mock()
-        response_400.status = 400
-        response_400.json = make_mocked_coro(return_value=None)
-
-        response_200 = Mock()
-        response_200.status = 200
-        response_200.json = make_mocked_coro(
-            return_value={"id": "123", "input": {"number": 1}}
-        )
-
-        # Create a list of responses: 204, 400, then a 200
-        responses = [response_204] * 98 + [response_400] + [response_200]
-
-        with patch("aiohttp.ClientSession") as mock_session, patch(
-            "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
-        ):
-
-            mock_session.get.return_value.__aenter__.side_effect = responses
-
-            start_time = time.time()
-
-            job = await rp_job.get_job(mock_session, retry=True)
-
-            end_time = time.time()
-
-            # Assert the job was retrieved correctly
-            assert job == {"id": "123", "input": {"number": 1}}
-
-            assert mock_session.get.call_count == 100
-
-            # Assert that retries happened with at least 1 second delay each
-            total_time_taken = end_time - start_time
-            assert total_time_taken >= 1
-
     async def test_get_job_200(self):
         """
         Tests the get_job function
         """
-        # Mock the non-200 response
-        response1 = Mock()
-        response1.status = 500
-        response1.json = make_mocked_coro(return_value=None)
-
-        # Mock the non-200 response
-        response2 = Mock()
-        response2.status = 400
-        response2.json = make_mocked_coro(return_value=None)
-
-        # Mock the non-200 response
-        response3 = Mock()
-        response3.status = 204
-        response3.json = make_mocked_coro(return_value=None)
-
         # Mock the 200 response
         response4 = Mock()
         response4.status = 200
@@ -90,17 +31,12 @@ class TestJob(IsolatedAsyncioTestCase):
         ):
 
             # Set side_effect to a list of mock responses
-            mock_session.get.return_value.__aenter__.side_effect = [
-                response1,
-                response2,
-                response3,
-                response4,
-            ]
+            mock_session.get.return_value.__aenter__.side_effect = [response4]
 
-            job = await rp_job.get_job(mock_session, retry=True)
+            job = await rp_job.get_job(mock_session)
 
             # Assertions for the success case
-            assert job == {"id": "123", "input": {"number": 1}}
+            assert job == [{"id": "123", "input": {"number": 1}}]
 
     async def test_get_job_204(self):
         """
@@ -116,7 +52,7 @@ class TestJob(IsolatedAsyncioTestCase):
         ):
 
             mock_session_204.get.return_value.__aenter__.return_value = response_204
-            job = await rp_job.get_job(mock_session_204, retry=False)
+            job = await rp_job.get_job(mock_session_204)
 
             assert job is None
             assert mock_session_204.get.call_count == 1
@@ -134,7 +70,7 @@ class TestJob(IsolatedAsyncioTestCase):
         ):
 
             mock_session_400.get.return_value.__aenter__.return_value = response_400
-            job = await rp_job.get_job(mock_session_400, retry=False)
+            job = await rp_job.get_job(mock_session_400)
 
             assert job is None
 
@@ -151,7 +87,7 @@ class TestJob(IsolatedAsyncioTestCase):
         ):
 
             mock_session_500.get.return_value.__aenter__.return_value = response_500
-            job = await rp_job.get_job(mock_session_500, retry=False)
+            job = await rp_job.get_job(mock_session_500)
 
             assert job is None
 
@@ -171,9 +107,9 @@ class TestJob(IsolatedAsyncioTestCase):
 
             mock_session.get.return_value.__aenter__.return_value = response
 
-            job = await rp_job.get_job(mock_session, retry=False)
+            job = await rp_job.get_job(mock_session)
 
-            assert job is None
+            assert job == []
             assert mock_log.error.call_count == 1
 
     async def test_get_job_no_input(self):
@@ -192,9 +128,9 @@ class TestJob(IsolatedAsyncioTestCase):
 
             mock_session.get.return_value.__aenter__.return_value = response
 
-            job = await rp_job.get_job(mock_session, retry=False)
+            job = await rp_job.get_job(mock_session)
 
-            assert job is None
+            assert job == []
             assert mock_log.error.call_count == 1
 
     async def test_get_job_no_timeout(self):
@@ -212,9 +148,9 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_session_timeout.get.return_value.__aenter__.side_effect = (
                 asyncio.TimeoutError
             )
-            job = await rp_job.get_job(mock_session_timeout, retry=False)
+            job = await rp_job.get_job(mock_session_timeout)
 
-            assert job is None
+            assert job == []
             assert mock_log.error.call_count == 0
 
     async def test_get_job_exception(self):
@@ -232,10 +168,10 @@ class TestJob(IsolatedAsyncioTestCase):
         ):
 
             mock_session_exception.get.return_value.__aenter__.side_effect = Exception
-            job = await rp_job.get_job(mock_session_exception, retry=False)
+            job = await rp_job.get_job(mock_session_exception)
 
-            assert job is None
-            assert mock_log.error.call_count == 2
+            assert job == []
+            assert mock_log.error.call_count == 1
 
 
 class TestRunJob(IsolatedAsyncioTestCase):
