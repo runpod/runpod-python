@@ -1,1 +1,1 @@
-''' Allows for the testing of the endpoint module. '''
+""" Allows for the testing of the endpoint module. """

@@ -15,10 +15,11 @@ HTTP_STATUS_UNAUTHORIZED = 401
 
 
 def run_graphql_query(query: str) -> Dict[str, Any]:
-    '''
+    """
     Run a GraphQL query
-    '''
+    """
     from runpod import api_key  # pylint: disable=import-outside-toplevel, cyclic-import
+
     api_url_base = os.environ.get("RUNPOD_API_BASE_URL", "https://api.runpod.io")
     url = f"{api_url_base}/graphql?api_key={api_key}"
 
@@ -31,12 +32,11 @@ def run_graphql_query(query: str) -> Dict[str, Any]:
     response = requests.post(url, headers=headers, data=data, timeout=30)
 
     if response.status_code == HTTP_STATUS_UNAUTHORIZED:
-        raise error.AuthenticationError("Unauthorized request, please check your API key.")
+        raise error.AuthenticationError(
+            "Unauthorized request, please check your API key."
+        )
 
     if "errors" in response.json():
-        raise error.QueryError(
-            response.json()["errors"][0]["message"],
-            query
-        )
+        raise error.QueryError(response.json()["errors"][0]["message"], query)
 
     return response.json()

@@ -1,6 +1,7 @@
 """
 RunPod | API Wrapper | CTL Commands
 """
+
 # pylint: disable=too-many-arguments,too-many-locals
 
 from typing import Optional
@@ -370,3 +371,38 @@ def create_container_registry_auth(name: str, username: str, password: str):
         )
     )
     return raw_response["data"]["saveRegistryAuth"]
+
+
+def update_container_registry_auth(registry_auth_id: str, username: str, password: str):
+    """
+    Update a container registry authentication.
+
+    Args:
+        registry_auth_id (str): The id of the container registry authentication
+        username (str): The username for authentication.
+        password (str): The password for authentication.
+
+    Returns:
+        dict: The response data containing the updated container registry authentication.
+    """
+    raw_response = run_graphql_query(
+        container_register_auth_mutations.update_container_registry_auth(
+            registry_auth_id, username, password
+        )
+    )
+    return raw_response["data"]["updateRegistryAuth"]
+
+
+def delete_container_registry_auth(registry_auth_id: str):
+    """
+    Delete a container registry authentication.
+
+    Args:
+        registry_auth_id (str): The id of the container registry authentication
+    """
+    raw_response = run_graphql_query(
+        container_register_auth_mutations.delete_container_registry_auth(
+            registry_auth_id
+        )
+    )
+    return raw_response["data"]["deleteRegistryAuth"]

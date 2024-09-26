@@ -2,10 +2,11 @@
 
 import time
 import unittest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import ANY, MagicMock, patch
 
 from runpod.cli import STOP_EVENT
 from runpod.cli.utils.rp_sync import WatcherHandler, start_watcher, sync_directory
+
 
 class TestWatcherHandler(unittest.TestCase):
     """Tests for the WatcherHandler class."""
@@ -36,7 +37,7 @@ class TestWatcherHandler(unittest.TestCase):
         event_mock.src_path = "some_path/not_ignored_file.txt"
 
         handler.on_any_event(event_mock)
-        handler.on_any_event(event_mock) # Call it twice to test the debouncer
+        handler.on_any_event(event_mock)  # Call it twice to test the debouncer
         time.sleep(2)
         mock_action_function.assert_called_once()
 
@@ -52,6 +53,7 @@ class TestWatcherHandler(unittest.TestCase):
         time.sleep(2)
         mock_action_function.assert_not_called()
 
+
 class TestSyncDirectory(unittest.TestCase):
     """Tests for the sync_directory function."""
 
@@ -66,7 +68,7 @@ class TestSyncDirectory(unittest.TestCase):
 
         sync_directory(mock_ssh_client, local_path, remote_path)
 
-        target_function = mock_thread_class.call_args[1]['target']
+        target_function = mock_thread_class.call_args[1]["target"]
         target_function()
 
         mock_start_watcher.assert_called_once()
@@ -83,28 +85,33 @@ class TestSyncDirectory(unittest.TestCase):
         sync_function = sync_directory(mock_ssh_client, local_path, remote_path)
         sync_function()
 
-        mock_ssh_client.rsync.assert_called_once_with(local_path, remote_path, quiet=True)
+        mock_ssh_client.rsync.assert_called_once_with(
+            local_path, remote_path, quiet=True
+        )
 
         mock_thread_class.assert_called_once()
         mock_thread_class.assert_called_with(
-            target=mock_start_watcher, daemon=True, args=(ANY, local_path))
+            target=mock_start_watcher, daemon=True, args=(ANY, local_path)
+        )
 
         assert mock_start_watcher.called is False
+
 
 class TestStartWatcher(unittest.TestCase):
     """Tests for the start_watcher function."""
 
-    @patch('runpod.cli.utils.rp_sync.Observer')
-    @patch('runpod.cli.utils.rp_sync.WatcherHandler')
+    @patch("runpod.cli.utils.rp_sync.Observer")
+    @patch("runpod.cli.utils.rp_sync.WatcherHandler")
     def test_start_watcher(self, mock_watch_handler, mock_observer_class):
         """Test that the start_watcher function starts the watcher correctly."""
         fake_action = MagicMock()
-        local_path = '/path/to/watch'
+        local_path = "/path/to/watch"
 
         mock_observer_instance = mock_observer_class.return_value
 
         STOP_EVENT.clear()
-        with patch('runpod.cli.utils.rp_sync.time.sleep') as mock_sleep:
+        with patch("runpod.cli.utils.rp_sync.time.sleep") as mock_sleep:
+
             def side_effect(*args, **kwargs):
                 del args, kwargs
                 STOP_EVENT.set()
@@ -115,9 +122,7 @@ class TestStartWatcher(unittest.TestCase):
         mock_watch_handler.assert_called_once_with(fake_action, local_path)
 
         mock_observer_instance.schedule.assert_called_once_with(
-            mock_watch_handler.return_value,
-            local_path,
-            recursive=True
+            mock_watch_handler.return_value, local_path, recursive=True
         )
 
         mock_observer_instance.start.assert_called_once()
