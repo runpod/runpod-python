@@ -42,8 +42,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test send_result function.
         """
         with patch("runpod.serverless.modules.rp_http.log") as mock_log, patch(
-            "runpod.serverless.modules.rp_http.job_list.jobs"
-        ) as mock_jobs, patch(
             "runpod.serverless.modules.rp_http.RetryClient"
         ) as mock_retry:
 
@@ -52,7 +50,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 "response text"  # pylint: disable=line-too-long
             )
 
-            mock_jobs.return_value = set(["test_id"])
             send_return_local = await rp_http.send_result(
                 AsyncMock(), self.job_data, self.job
             )
@@ -88,8 +85,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
             self.real_url = "http://test_url"
 
         with patch("runpod.serverless.modules.rp_http.log") as mock_log, patch(
-            "runpod.serverless.modules.rp_http.job_list.jobs"
-        ) as mock_jobs, patch(
             "runpod.serverless.modules.rp_http.RetryClient"
         ) as mock_retry, patch.object(
             aiohttp.RequestInfo, "__init__", mock_request_info_init
@@ -102,7 +97,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 message="Error message",
             )
 
-            mock_jobs.return_value = set(["test_id"])
             send_return_local = await rp_http.send_result(
                 AsyncMock(), self.job_data, self.job
             )
@@ -117,8 +111,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test send_result function with TypeError.
         """
         with patch("runpod.serverless.modules.rp_http.log") as mock_log, patch(
-            "runpod.serverless.modules.rp_http.job_list.jobs"
-        ) as mock_jobs, patch(
             "runpod.serverless.modules.rp_http.json.dumps"
         ) as mock_dumps, patch(
             "runpod.serverless.modules.rp_http.RetryClient"
@@ -126,7 +118,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
             mock_dumps.side_effect = TypeError("Forced exception")
 
-            mock_jobs.return_value = set(["test_id"])
             send_return_local = await rp_http.send_result(
                 aiohttp.ClientSession(), self.job_data, self.job
             )
@@ -145,8 +136,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         Test stream_result function.
         """
         with patch("runpod.serverless.modules.rp_http.log") as mock_log, patch(
-            "runpod.serverless.modules.rp_http.job_list.jobs"
-        ) as mock_jobs, patch(
             "runpod.serverless.modules.rp_http.RetryClient"
         ) as mock_retry:
 
@@ -155,7 +144,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 "response text"  # pylint: disable=line-too-long
             )
 
-            mock_jobs.return_value = set(["test_id"])
             send_return_local = await rp_http.stream_result(
                 AsyncMock(), self.job_data, self.job
             )
