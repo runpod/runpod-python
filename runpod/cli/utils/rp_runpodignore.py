@@ -1,7 +1,7 @@
 """Reads the .runpodignore file and returns a list of files to ignore."""
 
-import os
 import fnmatch
+import os
 
 EXCLUDE_PATTERNS = [
     "__pycache__/",

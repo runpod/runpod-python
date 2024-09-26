@@ -1,8 +1,9 @@
-"""Tests for runpod | serverless| worker"""
+""" Tests for runpod | serverless| worker """
+
 # pylint: disable=protected-access
 
-import os
 import argparse
+import os
 from unittest import mock
 from unittest.mock import patch, mock_open, Mock, MagicMock
 
@@ -50,6 +51,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch(
             "builtins.open", mock_open(read_data='{"input":{"number":1}}')
         ) as mock_file, self.assertRaises(SystemExit):
+
             runpod.serverless.start({"handler": self.mock_handler})
 
             assert mock_file.called
@@ -82,6 +84,7 @@ class TestWorker(IsolatedAsyncioTestCase):
         ) as mock_parse_known_args, patch(
             "runpod.serverless.rp_fastapi"
         ) as mock_fastapi:
+
             mock_parse_known_args.return_value = known_args, []
             runpod.serverless.start({"handler": self.mock_handler})
 
@@ -126,6 +129,7 @@ class TestWorkerTestInput(IsolatedAsyncioTestCase):
         with patch(
             "argparse.ArgumentParser.parse_known_args"
         ) as mock_parse_known_args, self.assertRaises(SystemExit):
+
             mock_parse_known_args.return_value = known_args, []
             runpod.serverless.start({"handler": self.mock_handler})
 
@@ -185,9 +189,9 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
     @patch("runpod.serverless.worker.AsyncClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.stream_result")
-    @patch("runpod.serverless.worker.send_result")
+    @patch("runpod.serverless.modules.rp_scale.run_job")
+    @patch("runpod.serverless.modules.rp_scale.stream_result")
+    @patch("runpod.serverless.modules.rp_scale.send_result")
     # pylint: disable=too-many-arguments
     async def test_run_worker(
         self,
@@ -208,7 +212,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_session (_type_): _description_
         """
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "123", "input": {"number": 1}}]
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Call the function
@@ -223,9 +227,9 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert mock_session.called
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.stream_result")
-    @patch("runpod.serverless.worker.send_result")
+    @patch("runpod.serverless.modules.rp_scale.run_job")
+    @patch("runpod.serverless.modules.rp_scale.stream_result")
+    @patch("runpod.serverless.modules.rp_scale.send_result")
     async def test_run_worker_generator_handler(
         self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job
     ):
@@ -239,7 +243,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_get_job (_type_): _description_
         """
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "generator-123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "generator-123", "input": {"number": 1}}]
 
         # Test generator handler
         generator_config = {"handler": generator_handler, "refresh_worker": True}
@@ -253,9 +257,9 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert args[1] == {"output": [], "stopPod": True}
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.stream_result")
-    @patch("runpod.serverless.worker.send_result")
+    @patch("runpod.serverless.modules.rp_scale.run_job")
+    @patch("runpod.serverless.modules.rp_scale.stream_result")
+    @patch("runpod.serverless.modules.rp_scale.send_result")
     async def test_run_worker_generator_handler_exception(
         self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job
     ):
@@ -270,10 +274,9 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         RunPodLogger().set_level("DEBUG")
 
         # Setup: Mock `get_job` to return a predefined job.
-        mock_get_job.return_value = {
-            "id": "generator-123-exception",
-            "input": {"number": 1},
-        }
+        mock_get_job.return_value = [
+            {"id": "generator-123-exception", "input": {"number": 1}}
+        ]
 
         runpod.serverless.start(
             {"handler": generator_handler_exception, "refresh_worker": True}
@@ -287,9 +290,9 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert "error" in args[1], "Expected the error to be reported in the results."
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.stream_result")
-    @patch("runpod.serverless.worker.send_result")
+    @patch("runpod.serverless.modules.rp_scale.run_job")
+    @patch("runpod.serverless.modules.rp_scale.stream_result")
+    @patch("runpod.serverless.modules.rp_scale.send_result")
     async def test_run_worker_generator_aggregate_handler(
         self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job
     ):
@@ -304,10 +307,9 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_session (_type_): _description_
         """
         # Define the mock behaviors
-        mock_get_job.return_value = {
-            "id": "generator-123-aggregate",
-            "input": {"number": 1},
-        }
+        mock_get_job.return_value = [
+            {"id": "generator-123-aggregate", "input": {"number": 1}}
+        ]
 
         # Test generator handler
         generator_config = {
@@ -328,9 +330,53 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
     @patch("runpod.serverless.worker.AsyncClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
-    @patch("runpod.serverless.worker.stream_result")
-    @patch("runpod.serverless.worker.send_result")
+    @patch("runpod.serverless.modules.rp_scale.run_job")
+    @patch("runpod.serverless.modules.rp_scale.stream_result")
+    @patch("runpod.serverless.modules.rp_scale.send_result")
+    # pylint: disable=too-many-arguments
+    async def test_run_worker_concurrency(
+        self,
+        mock_send_result,
+        mock_stream_result,
+        mock_run_job,
+        mock_get_job,
+        mock_session,
+    ):
+        """
+        Test run_worker with synchronous handler.
+        Args:
+            mock_send_result (_type_): _description_
+            mock_stream_result (_type_): _description_
+            mock_run_job (_type_): _description_
+            mock_get_job (_type_): _description_
+            mock_session (_type_): _description_
+        """
+        # Define the mock behaviors
+        mock_get_job.return_value = [{"id": "123", "input": {"number": 1}}]
+        mock_run_job.return_value = {"output": {"result": "odd"}}
+
+        def concurrency_modifier(current_concurrency):
+            return current_concurrency
+
+        config_with_concurrency = self.config.copy()
+        config_with_concurrency["concurrency_modifier"] = concurrency_modifier
+
+        # Call the function
+        runpod.serverless.start(config_with_concurrency)
+
+        # Make assertions about the behaviors
+        mock_get_job.assert_called_once()
+        mock_run_job.assert_called_once()
+        mock_send_result.assert_called_once()
+
+        assert mock_stream_result.called is False
+        assert mock_session.called
+
+    @patch("runpod.serverless.worker.AsyncClientSession")
+    @patch("runpod.serverless.modules.rp_scale.get_job")
+    @patch("runpod.serverless.modules.rp_scale.run_job")
+    @patch("runpod.serverless.modules.rp_scale.stream_result")
+    @patch("runpod.serverless.modules.rp_scale.send_result")
     # pylint: disable=too-many-arguments
     async def test_run_worker_multi_processing(
         self,
@@ -352,7 +398,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         """
 
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "123", "input": {"number": 1}}]
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Call the function
@@ -392,7 +438,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             assert mock_set_config_args.called
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
-    @patch("runpod.serverless.worker.run_job")
+    @patch("runpod.serverless.modules.rp_scale.run_job")
     async def test_run_worker_multi_processing_scaling_up(
         self, mock_run_job, mock_get_job
     ):
@@ -408,7 +454,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             mock_session (_type_): _description_
         """
         # Define the mock behaviors
-        mock_get_job.return_value = {"id": "123", "input": {"number": 1}}
+        mock_get_job.return_value = [{"id": "123", "input": {"number": 1}}]
         mock_run_job.return_value = {"output": {"result": "odd"}}
 
         # Include multi-processing inside config

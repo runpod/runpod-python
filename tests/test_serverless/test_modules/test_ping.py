@@ -1,18 +1,18 @@
-"""Tests for runpod.serverless.modules.rp_ping"""
+""" Tests for runpod.serverless.modules.rp_ping """
 
-import os
 import importlib
-
+import os
 import unittest
 from unittest.mock import patch
 
 import requests
+
 from runpod.serverless.modules import rp_ping
 
 
 class MockResponse:  # pylint: disable=too-few-public-methods
     """Mock response for aiohttp"""
-
+    url = ""
     status_code = 200
 
 

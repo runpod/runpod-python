@@ -2,13 +2,16 @@
 This module is used to handle HTTP requests.
 """
 
-import os
 import json
+import os
+
 from aiohttp import ClientError
-from aiohttp_retry import RetryClient, FibonacciRetry
+from aiohttp_retry import FibonacciRetry, RetryClient
+
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from .worker_state import Jobs, WORKER_ID
+
+from .worker_state import WORKER_ID
 
 JOB_DONE_URL_TEMPLATE = str(
     os.environ.get("RUNPOD_WEBHOOK_POST_OUTPUT", "JOB_DONE_URL")
@@ -21,7 +24,6 @@ JOB_STREAM_URL_TEMPLATE = str(
 JOB_STREAM_URL = JOB_STREAM_URL_TEMPLATE.replace("$RUNPOD_POD_ID", WORKER_ID)
 
 log = RunPodLogger()
-job_list = Jobs()
 
 
 async def _transmit(client_session: ClientSession, url, job_data):
@@ -46,7 +48,6 @@ async def _transmit(client_session: ClientSession, url, job_data):
         await client_response.text()
 
 
-# pylint: disable=too-many-arguments, disable=line-too-long
 async def _handle_result(
     session: ClientSession, job_data, job, url_template, log_message, is_stream=False
 ):
@@ -76,7 +77,6 @@ async def _handle_result(
             url_template == JOB_DONE_URL
             and job_data.get("status", None) != "IN_PROGRESS"
         ):
-            job_list.remove_job(job["id"])
             log.info("Finished.", job["id"])
 
 

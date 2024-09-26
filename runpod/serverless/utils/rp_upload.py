@@ -1,23 +1,23 @@
-"""PodWorker | modules | upload.py"""
+""" PodWorker | modules | upload.py """
+
 # pylint: disable=too-many-arguments
 
-import os
 import io
+import logging
+import multiprocessing
+import os
+import shutil
+import threading
 import time
 import uuid
-import shutil
-import logging
-import threading
-import multiprocessing
-from urllib.parse import urlparse
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 import boto3
 from boto3 import session
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from tqdm_loggable.auto import tqdm
-
 
 logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"

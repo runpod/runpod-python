@@ -10,15 +10,15 @@ import os
 import re
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
+from email import message_from_string
 from typing import List, Union
 from urllib.parse import urlparse
-from email import message_from_string
-from concurrent.futures import ThreadPoolExecutor
 
 import backoff
 from requests import RequestException
-from runpod.http_client import SyncClientSession
 
+from runpod.http_client import SyncClientSession
 
 HEADERS = {"User-Agent": "runpod-python/0.0.0 (https://runpod.io; support@runpod.io)"}
 

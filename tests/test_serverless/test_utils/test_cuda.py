@@ -3,6 +3,7 @@ Unit tests for the rp_cuda module
 """
 
 from unittest.mock import patch
+
 from runpod.serverless.utils import rp_cuda
 
 

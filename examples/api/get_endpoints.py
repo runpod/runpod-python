@@ -1,4 +1,4 @@
-"""Get all endpoints from the API"""
+""" Get all endpoints from the API """
 
 import runpod
 

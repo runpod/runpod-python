@@ -2,15 +2,16 @@
 RunPod | Python | Endpoint Runner
 """
 
-from typing import Any, Optional, Dict
 import time
+from typing import Any, Dict, Optional
+
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
 from runpod.endpoint.helpers import (
+    API_KEY_NOT_SET_MSG,
     FINAL_STATES,
     UNAUTHORIZED_MSG,
-    API_KEY_NOT_SET_MSG,
     is_completed,
 )
 
@@ -28,7 +29,10 @@ class RunPodClient:
         Raises:
             RuntimeError: If the API key has not been initialized.
         """
-        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel, cyclic-import
+        from runpod import (  # pylint: disable=import-outside-toplevel, cyclic-import
+            api_key,
+            endpoint_url_base,
+        )
 
         if api_key is None:
             raise RuntimeError(API_KEY_NOT_SET_MSG)

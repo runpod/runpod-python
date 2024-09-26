@@ -1,25 +1,23 @@
-"""Used to launch the FastAPI web server when worker is running in API mode."""
-# pylint: disable=too-few-public-methods, line-too-long
+""" Used to launch the FastAPI web server when worker is running in API mode. """
 
 import os
-import uuid
 import threading
+import uuid
 from dataclasses import dataclass
-from typing import Union, Optional, Dict, Any
+from typing import Any, Dict, Optional, Union
 
-import uvicorn
 import requests
-from fastapi import FastAPI, APIRouter
+import uvicorn
+from fastapi import APIRouter, FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 
+from ...http_client import SyncClientSession
+from ...version import __version__ as runpod_version
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
-from .worker_state import Jobs
 from .rp_ping import Heartbeat
-from ...version import __version__ as runpod_version
-from ...http_client import SyncClientSession
-
+from .worker_state import Jobs
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 

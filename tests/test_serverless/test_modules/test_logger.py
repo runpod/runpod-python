@@ -1,4 +1,4 @@
-"""Tests for runpod.serverless.modules.rp_logger"""
+""" Tests for runpod.serverless.modules.rp_logger """
 
 import os
 import unittest
@@ -66,6 +66,7 @@ class TestLogger(unittest.TestCase):
         with patch(
             "runpod.serverless.modules.rp_logger.RunPodLogger.log"
         ) as mock_log, patch("builtins.print") as mock_print:
+
             log.debug("Test log message")
 
             mock_log.assert_called_once_with("Test log message", "DEBUG", None)

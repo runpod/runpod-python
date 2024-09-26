@@ -2,10 +2,10 @@
 Test shared functions related to authentication
 """
 
-import unittest
 import importlib
+import unittest
+from unittest.mock import mock_open, patch
 
-from unittest.mock import patch, mock_open
 
 
 class TestAPIKey(unittest.TestCase):

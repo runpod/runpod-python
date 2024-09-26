@@ -4,10 +4,11 @@ RunPod Progress Module
 
 import asyncio
 import threading
-from typing import Dict, Any
+from typing import Any, Dict
 
 from runpod.http_client import AsyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
+
 from .rp_http import send_result
 
 log = RunPodLogger()

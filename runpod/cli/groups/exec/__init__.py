@@ -1,1 +1,1 @@
-"""A collection of CLI execution tools"""
+""" A collection of CLI execution tools """

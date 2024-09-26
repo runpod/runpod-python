@@ -6,10 +6,11 @@ import unittest
 from unittest.mock import patch
 
 from click.testing import CliRunner
+
 from runpod.cli.groups.project.commands import (
+    deploy_project,
     new_project_wizard,
     start_project_pod,
-    deploy_project,
 )
 
 
@@ -89,7 +90,9 @@ class TestProjectCLI(unittest.TestCase):
             "runpod.cli.groups.project.commands.get_user"
         ) as mock_get_user, patch(
             "runpod.cli.groups.project.commands.cli_select"
-        ) as mock_select, patch("os.getcwd") as mock_getcwd:
+        ) as mock_select, patch(
+            "os.getcwd"
+        ) as mock_getcwd:
             mock_get_user.return_value = {
                 "networkVolumes": [
                     {

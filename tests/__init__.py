@@ -1,4 +1,4 @@
-"""Allows tests to be imported as a module."""
+""" Allows tests to be imported as a module."""
 
 import sys
 

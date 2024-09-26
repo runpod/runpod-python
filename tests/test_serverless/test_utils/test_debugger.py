@@ -2,18 +2,18 @@
 Unit tests for the debugger utility functions.
 """
 
+import importlib
 import time
 import unittest
-import importlib
 from unittest.mock import patch
 
 from runpod.serverless.utils import rp_debugger
 from runpod.serverless.utils.rp_debugger import (
     Checkpoints,
-    LineTimer,
     FunctionTimer,
-    get_debugger_output,
+    LineTimer,
     clear_debugger_output,
+    get_debugger_output,
 )
 
 

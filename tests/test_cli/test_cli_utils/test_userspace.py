@@ -4,7 +4,6 @@ import os
 import unittest
 from unittest.mock import patch
 
-
 from runpod.cli.utils.rp_userspace import find_ssh_key_file
 
 

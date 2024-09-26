@@ -1,8 +1,8 @@
 """Tests for the user_agent module."""
 
+import os
 import unittest
 from unittest.mock import patch
-import os
 
 from runpod import __version__ as runpod_version
 from runpod.user_agent import construct_user_agent

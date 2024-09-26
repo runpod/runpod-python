@@ -1,13 +1,14 @@
-"""Unit tests for the asyncio_runner module."""
+""" Unit tests for the asyncio_runner module. """
+
 # pylint: disable=too-few-public-methods
 
-import tracemalloc
 import asyncio
+import tracemalloc
 import unittest
-from unittest.mock import patch, MagicMock, AsyncMock
 from unittest import IsolatedAsyncioTestCase
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from runpod.endpoint.asyncio.asyncio_runner import Job, Endpoint
+from runpod.endpoint.asyncio.asyncio_runner import Endpoint, Job
 
 tracemalloc.start()
 

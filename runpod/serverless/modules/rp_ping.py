@@ -4,20 +4,19 @@ The heartbeat is responsible for sending periodic pings to the Runpod server.
 """
 
 import os
-import time
 import threading
+import time
 
 import requests
 from urllib3.util.retry import Retry
 
 from runpod.http_client import SyncClientSession
-from runpod.version import __version__ as runpod_version
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from runpod.serverless.modules.worker_state import Jobs, WORKER_ID
-
+from runpod.serverless.modules.worker_state import WORKER_ID, JobsQueue
+from runpod.version import __version__ as runpod_version
 
 log = RunPodLogger()
-jobs = Jobs()  # Contains the list of jobs that are currently running.
+jobs = JobsQueue()  # Contains the list of jobs that are currently running.
 
 
 class Heartbeat:
@@ -97,7 +96,7 @@ class Heartbeat:
             )
 
             log.debug(
-                f"Heartbeat Sent | URL: {self.PING_URL} | Status: {result.status_code}"
+                f"Heartbeat Sent | URL: {result.url} | Status: {result.status_code}"
             )
 
         except requests.RequestException as err:

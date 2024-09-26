@@ -1,4 +1,4 @@
-"""Allows the CLI to be imported as a module."""
+""" Allows the CLI to be imported as a module. """
 
 import threading
 

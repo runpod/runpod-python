@@ -1,6 +1,7 @@
-"""runpod-python version"""
+""" runpod-python version """
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
+
 
 
 def get_version():

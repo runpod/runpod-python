@@ -1,1 +1,1 @@
-"""Allows project import"""
+""" Allows project import """

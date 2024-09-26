@@ -1,14 +1,15 @@
-"""Tests for runpod.serverless.modules.rp_fastapi.py"""
+""" Tests for runpod.serverless.modules.rp_fastapi.py """
+
 # pylint: disable=protected-access
 
-import os
 import asyncio
-
+import os
 import unittest
-from unittest.mock import patch, Mock, MagicMock
-import pytest
+from unittest.mock import MagicMock, Mock, patch
 
+import pytest
 import requests
+
 import runpod
 from runpod.serverless.modules import rp_fastapi
 
@@ -34,7 +35,10 @@ class TestFastAPI(unittest.TestCase):
             f"{module_location}.FastAPI", Mock()
         ) as mock_fastapi, patch(
             f"{module_location}.APIRouter", return_value=Mock()
-        ) as mock_router, patch(f"{module_location}.uvicorn", Mock()) as mock_uvicorn:
+        ) as mock_router, patch(
+            f"{module_location}.uvicorn", Mock()
+        ) as mock_uvicorn:
+
             rp_fastapi.RUNPOD_REALTIME_PORT = "1111"
             rp_fastapi.RUNPOD_ENDPOINT_ID = "test_endpoint_id"
 
@@ -93,9 +97,12 @@ class TestFastAPI(unittest.TestCase):
             f"{module_location}.Heartbeat.start_ping", Mock()
         ) as mock_ping, patch(f"{module_location}.FastAPI", Mock()), patch(
             f"{module_location}.APIRouter", return_value=Mock()
-        ), patch(f"{module_location}.uvicorn", Mock()), patch(
+        ), patch(
+            f"{module_location}.uvicorn", Mock()
+        ), patch(
             f"{module_location}.uuid.uuid4", return_value="123"
         ):
+
             job_object = rp_fastapi.Job(
                 id="test_job_id", input={"test_input": "test_input"}
             )
@@ -140,7 +147,10 @@ class TestFastAPI(unittest.TestCase):
             f"{module_location}.APIRouter", return_value=Mock()
         ), patch(f"{module_location}.uvicorn", Mock()), patch(
             f"{module_location}.uuid.uuid4", return_value="123"
-        ), patch(f"{module_location}.threading") as mock_threading:
+        ), patch(
+            f"{module_location}.threading"
+        ) as mock_threading:
+
             default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
             )
@@ -199,7 +209,10 @@ class TestFastAPI(unittest.TestCase):
             f"{module_location}.APIRouter", return_value=Mock()
         ), patch(f"{module_location}.uvicorn", Mock()), patch(
             f"{module_location}.uuid.uuid4", return_value="123"
-        ), patch(f"{module_location}.threading") as mock_threading:
+        ), patch(
+            f"{module_location}.threading"
+        ) as mock_threading:
+
             default_input_object = rp_fastapi.DefaultRequest(
                 input={"test_input": "test_input"}
             )
@@ -261,7 +274,10 @@ class TestFastAPI(unittest.TestCase):
             f"{module_location}.APIRouter", return_value=Mock()
         ), patch(f"{module_location}.uvicorn", Mock()), patch(
             f"{module_location}.uuid.uuid4", return_value="123"
-        ), patch(f"{module_location}.threading") as mock_threading:
+        ), patch(
+            f"{module_location}.threading"
+        ) as mock_threading:
+
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
             default_input_object = rp_fastapi.DefaultRequest(

@@ -2,7 +2,7 @@
 
 import time
 import unittest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import ANY, MagicMock, patch
 
 from runpod.cli import STOP_EVENT
 from runpod.cli.utils.rp_sync import WatcherHandler, start_watcher, sync_directory

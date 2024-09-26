@@ -1,7 +1,7 @@
-"""Tests for rp_local.py"""
+""" Tests for rp_local.py """
 
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
 
 from runpod.serverless.modules import rp_local
 

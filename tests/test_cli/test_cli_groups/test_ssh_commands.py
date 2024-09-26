@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from runpod.cli.groups.ssh.commands import list_keys, add_key
+from runpod.cli.groups.ssh.commands import add_key, list_keys
+
 
 
 class TestSSHCommands(unittest.TestCase):

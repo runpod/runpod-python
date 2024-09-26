@@ -1,7 +1,8 @@
-"""Tests for runpod.serverless.utils.validate"""
+""" Tests for runpod.serverless.utils.validate """
 
 import unittest
 from unittest.mock import Mock
+
 from runpod.serverless.utils import rp_validator
 
 

@@ -1,7 +1,7 @@
 """Allows runpod to be imported as a module."""
 
-import os
 import logging
+import os
 
 from . import serverless
 from .api.ctl_commands import (
@@ -9,6 +9,7 @@ from .api.ctl_commands import (
     create_endpoint,
     create_pod,
     create_template,
+    delete_container_registry_auth,
     get_endpoints,
     get_gpu,
     get_gpus,
@@ -18,6 +19,7 @@ from .api.ctl_commands import (
     resume_pod,
     stop_pod,
     terminate_pod,
+    update_container_registry_auth,
     update_endpoint_template,
     update_user_settings,
 )

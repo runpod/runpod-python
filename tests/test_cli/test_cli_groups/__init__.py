@@ -1,1 +1,1 @@
-"""Allow CLI groups to be tested."""
+""" Allow CLI groups to be tested. """

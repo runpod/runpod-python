@@ -4,21 +4,22 @@ Contains the main entrypoint for the RunPod Serverless Worker.
 Arguments can be passed in when the worker is started, and will be passed to the worker.
 """
 
-import os
-import sys
-import json
-import time
-import signal
 import argparse
-from typing import Dict, Any
+import json
+import os
+import signal
+import sys
+import time
+import typing
+from typing import Any, Dict
 
 from runpod.serverless import core
+
+from ..version import __version__ as runpod_version
 from . import worker
 from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
 from .modules.rp_progress import progress_update
-from ..version import __version__ as runpod_version
-
 
 log = RunPodLogger()
 
@@ -157,8 +158,9 @@ def start(config: Dict[str, Any]):
             api_port=config["rp_args"]["rp_api_port"],
             api_concurrency=config["rp_args"]["rp_api_concurrency"],
         )
+        return
 
-    elif realtime_port:
+    if realtime_port:
         log.info(f"Starting API server for realtime on port {realtime_port}.")
         api_server = rp_fastapi.WorkerAPI(config)
 
@@ -167,14 +169,19 @@ def start(config: Dict[str, Any]):
             api_port=realtime_port,
             api_concurrency=realtime_concurrency,
         )
+        return
 
     # --------------------------------- SLS-Core --------------------------------- #
-    elif os.environ.get("RUNPOD_USE_CORE", None) or os.environ.get(
-        "RUNPOD_CORE_PATH", None
-    ):
-        log.info("Starting worker with SLS-Core.")
-        core.main(config)
+
+    if os.getenv("RUNPOD_SLS_CORE") is None and os.getenv("RUNPOD_USE_CORE") is not None:
+            log.warn("RUNPOD_USE_CORE is deprecated. Please use RUNPOD_SLS_CORE instead.")
+            core.main(config)
+            return
+
+    elif os.getenv("RUNPOD_SLS_CORE","false").lower() in ["1", "t", "true"]:
+            core.main(config)
+            return
 
     # --------------------------------- Standard --------------------------------- #
-    else:
-        worker.main(config)
+    worker.main(config)
+    return

@@ -5,7 +5,7 @@ RunPod | CLI | Pod | Commands
 import click
 from prettytable import PrettyTable
 
-from runpod import get_pods, create_pod
+from runpod import create_pod, get_pods
 
 from ...utils import ssh_cmd
 
@@ -35,7 +35,9 @@ def list_pods():
 @click.option(
     "--support-public-ip", default=True, help="Whether or not to support a public IP."
 )
-def create_new_pod(name, image, gpu_type, gpu_count, support_public_ip):  # pylint: disable=too-many-arguments
+def create_new_pod(
+    name, image, gpu_type, gpu_count, support_public_ip
+):  # pylint: disable=too-many-arguments
     """
     Creates a pod.
     """

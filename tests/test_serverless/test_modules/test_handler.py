@@ -1,4 +1,5 @@
-"""Unit tests for the handler module."""
+""" Unit tests for the handler module.
+"""
 
 import unittest
 

@@ -1,9 +1,12 @@
-"""A template for a Llama2 handler file."""
+""" A template for a Llama2 handler file. """
+
 # pylint: skip-file
 
-import runpod
 import inspect
+
 from transformers import HfApi
+
+import runpod
 
 SELECTED_MODEL = "<<MODEL_NAME>>"
 

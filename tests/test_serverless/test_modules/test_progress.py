@@ -3,10 +3,11 @@ Tests for the rp_progress.py module.
 """
 
 import unittest
-from unittest.mock import ANY, patch
 from threading import Event
+from unittest.mock import ANY, patch
 
-from runpod.serverless.modules.rp_progress import progress_update, _thread_target
+from runpod.serverless.modules.rp_progress import _thread_target, progress_update
+
 
 
 class TestProgressUpdate(unittest.TestCase):

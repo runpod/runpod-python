@@ -1,7 +1,7 @@
-"""Tests for CLI group `exec functions`"""
+""" Tests for CLI group `exec functions` """
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from runpod.cli.groups.exec import functions
 

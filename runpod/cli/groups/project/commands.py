@@ -4,11 +4,13 @@ RunPod | CLI | Project | Commands
 
 import os
 import sys
+
 import click
 from InquirerPy import prompt as cli_select
 
 from runpod import get_user
-from .functions import create_new_project, start_project, create_project_endpoint
+
+from .functions import create_new_project, create_project_endpoint, start_project
 from .helpers import validate_project_name
 
 

@@ -1,18 +1,18 @@
 """Tests for the project helpers."""
 
 import unittest
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
 
 import click
 
 from runpod import error as rp_error
 from runpod.cli.groups.project.helpers import (
-    validate_project_name,
-    get_project_pod,
-    get_project_endpoint,
-    copy_template_files,
     attempt_pod_launch,
+    copy_template_files,
+    get_project_endpoint,
+    get_project_pod,
     load_project_config,
+    validate_project_name,
 )
 
 

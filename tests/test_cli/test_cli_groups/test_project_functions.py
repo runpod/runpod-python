@@ -3,13 +3,13 @@
 import os
 import shutil
 import unittest
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
 
 from runpod.cli.groups.project.functions import (
     STARTER_TEMPLATES,
     create_new_project,
-    start_project,
     create_project_endpoint,
+    start_project,
 )
 
 
@@ -86,7 +86,9 @@ class TestCreateNewProject(unittest.TestCase):
         new_callable=mock_open,
         read_data="data with <<MODEL_NAME>> placeholder",
     )  # pylint: disable=line-too-long
-    def test_replace_placeholders_in_handler(self, mock_open_file, mock_exists):  # pylint: disable=line-too-long
+    def test_replace_placeholders_in_handler(
+        self, mock_open_file, mock_exists
+    ):  # pylint: disable=line-too-long
         """Test that placeholders in handler.py are replaced if model_name is given."""
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project(
@@ -102,7 +104,9 @@ class TestCreateNewProject(unittest.TestCase):
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project("test_project", "volume_id", "11.8.0", "3.8")
         toml_file_location = os.path.join(os.getcwd(), "test_project", "runpod.toml")
-        mock_open_file.assert_called_with(toml_file_location, "w", encoding="UTF-8")  # pylint: disable=line-too-long
+        mock_open_file.assert_called_with(
+            toml_file_location, "w", encoding="UTF-8"
+        )  # pylint: disable=line-too-long
         assert mock_exists.called
 
     @patch("os.path.exists", return_value=True)

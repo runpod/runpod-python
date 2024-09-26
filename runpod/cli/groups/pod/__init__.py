@@ -1,1 +1,1 @@
-"""A collection of commands for managing pods."""
+""" A collection of commands for managing pods. """

@@ -1,1 +1,1 @@
-"""Allows queries to be imported as a module."""
+""" Allows queries to be imported as a module."""

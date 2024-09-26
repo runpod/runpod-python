@@ -1,6 +1,7 @@
 """Unit testing for runpod.cli.utils.rp_info.py"""
 
 from unittest.mock import patch
+
 import pytest
 
 from runpod.cli.utils.rp_info import get_pod_ssh_ip_port

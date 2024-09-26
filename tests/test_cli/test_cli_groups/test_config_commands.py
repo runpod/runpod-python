@@ -4,6 +4,7 @@ RunPod | Tests | CLI | Commands
 
 import unittest
 from unittest.mock import patch
+
 from click.testing import CliRunner
 
 from runpod.cli.entry import runpod_cli
@@ -23,7 +24,10 @@ class TestCommands(unittest.TestCase):
             "runpod.cli.groups.config.commands.check_credentials"
         ) as mock_check_creds, patch(
             "click.confirm", return_value=True
-        ) as mock_confirm, patch("click.prompt", return_value="KEY") as mock_prompt:
+        ) as mock_confirm, patch(
+            "click.prompt", return_value="KEY"
+        ) as mock_prompt:
+
             # Assuming credentials aren't set (doesn't prompt for overwrite)
             mock_check_creds.return_value = (False, None)
 
