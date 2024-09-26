@@ -1,14 +1,14 @@
-'''
+"""
 runpod | serverless | rp_debugger.py
 
 A collection of functions to help with debugging.
-'''
+"""
 
-import time
 import datetime
 import platform
-import cpuinfo
+import time
 
+import cpuinfo
 
 # ---------------------------------------------------------------------------- #
 #                                  System Info                                 #
@@ -16,15 +16,15 @@ import cpuinfo
 OS_INFO = f"{platform.system()} {platform.release()}"
 
 try:
-    PROCESSOR = cpuinfo.get_cpu_info()['brand_raw']
+    PROCESSOR = cpuinfo.get_cpu_info()["brand_raw"]
 except KeyError:
-    PROCESSOR = 'Unable to get processor info.'
+    PROCESSOR = "Unable to get processor info."
 
 PYTHON_VERSION = platform.python_version()
 
 
 class Checkpoints:
-    '''
+    """
     A singleton class to store checkpoint times.
 
     Format:
@@ -50,7 +50,8 @@ class Checkpoints:
 
     # Stop a checkpoint
     checkpoints.stop('checkpoint_name')
-    '''
+    """
+
     __instance = None
     checkpoints = []
     name_lookup = {}
@@ -63,78 +64,80 @@ class Checkpoints:
         return Checkpoints.__instance
 
     def add(self, name):
-        '''
+        """
         Add a checkpoint.
         Returns the index of the checkpoint.
-        '''
+        """
         if name in self.name_lookup:
             raise KeyError(f'Checkpoint name "{name}" already exists.')
 
-        self.checkpoints.append({
-            'name': name
-        })
+        self.checkpoints.append({"name": name})
 
         index = len(self.checkpoints) - 1
         self.name_lookup[name] = index
 
     def start(self, name):
-        '''
+        """
         Start a checkpoint.
-        '''
+        """
         if name not in self.name_lookup:
             raise KeyError(f"Checkpoint name '{name}' does not exist.")
 
         index = self.name_lookup[name]
-        self.checkpoints[index]['start'] = time.perf_counter()
-        self.checkpoints[index]['start_utc'] = datetime.datetime.utcnow().isoformat() + 'Z'
+        self.checkpoints[index]["start"] = time.perf_counter()
+        self.checkpoints[index]["start_utc"] = (
+            datetime.datetime.utcnow().isoformat() + "Z"
+        )
 
     def stop(self, name):
-        '''
+        """
         Stop a checkpoint.
-        '''
+        """
         if name not in self.name_lookup:
             raise KeyError(f"Checkpoint name '{name}' does not exist.")
 
         index = self.name_lookup[name]
 
-        if 'start' not in self.checkpoints[index]:
-            raise KeyError('Checkpoint has not been started.')
+        if "start" not in self.checkpoints[index]:
+            raise KeyError("Checkpoint has not been started.")
 
-        self.checkpoints[index]['end'] = time.perf_counter()
-        self.checkpoints[index]['stop_utc'] = datetime.datetime.utcnow().isoformat() + 'Z'
+        self.checkpoints[index]["end"] = time.perf_counter()
+        self.checkpoints[index]["stop_utc"] = (
+            datetime.datetime.utcnow().isoformat() + "Z"
+        )
 
     def get_checkpoints(self):
-        '''
+        """
         Get the results of the checkpoints.
-        '''
+        """
         results = []
         for checkpoint in self.checkpoints:
-            if 'start' not in checkpoint or 'end' not in checkpoint:
+            if "start" not in checkpoint or "end" not in checkpoint:
                 continue
-            start_time = checkpoint['start']
-            end_time = checkpoint['end']
-            checkpoint['duration_ms'] = (end_time - start_time) * 1000
+            start_time = checkpoint["start"]
+            end_time = checkpoint["end"]
+            checkpoint["duration_ms"] = (end_time - start_time) * 1000
 
-            checkpoint.pop('start')
-            checkpoint.pop('end')
+            checkpoint.pop("start")
+            checkpoint.pop("end")
 
             results.append(checkpoint)
 
         return results
 
     def clear(self):
-        '''
+        """
         Clear the checkpoints.
-        '''
+        """
         self.checkpoints = []
         self.name_lookup = {}
 
 
 class LineTimer:
-    '''
+    """
     A utility that can be used to time code execution using the with statement.
     When used the times should be added to the checkpoints object.
-    '''
+    """
 
     def __init__(self, name):
         self.checkpoints = Checkpoints()
@@ -149,9 +152,9 @@ class LineTimer:
 
 
 class FunctionTimer:  # pylint: disable=too-few-public-methods
-    '''
+    """
     A class-based decorator to benchmark a function.
-    '''
+    """
 
     def __init__(self, function):
         self.function = function
@@ -172,38 +175,38 @@ class FunctionTimer:  # pylint: disable=too-few-public-methods
 
 
 def get_debugger_output():
-    '''
+    """
     Return the debugger output.
-    '''
-    print('Getting debugger output...')
+    """
+    print("Getting debugger output...")
     import runpod  # pylint: disable=import-outside-toplevel, cyclic-import
 
-    print('Getting checkpoints...')
+    print("Getting checkpoints...")
 
     checkpoints = Checkpoints()
     ckpt_results = checkpoints.get_checkpoints()
     checkpoints.clear()
 
-    print('Getting system info...')
+    print("Getting system info...")
 
     system_info = {
-        'os': OS_INFO,
-        'processor': PROCESSOR,
-        'python_version': PYTHON_VERSION,
-        'runpod': runpod.__version__,
+        "os": OS_INFO,
+        "processor": PROCESSOR,
+        "python_version": PYTHON_VERSION,
+        "runpod": runpod.__version__,
     }
 
-    print('Debugger output complete.')
+    print("Debugger output complete.")
 
     return {
-        'system_info': system_info,
-        'timestamps': ckpt_results,
+        "system_info": system_info,
+        "timestamps": ckpt_results,
     }
 
 
 def clear_debugger_output():
-    '''
+    """
     Clear the debugger output.
-    '''
+    """
     checkpoints = Checkpoints()
     checkpoints.clear()

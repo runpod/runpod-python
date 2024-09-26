@@ -1,23 +1,26 @@
 """Helper functions for project group commands."""
 
-import re
 import os
+import re
 import shutil
 
 import click
 import tomlkit
 
-from runpod import get_pods, create_pod, get_endpoints
+from runpod import create_pod
 from runpod import error as rp_error
+from runpod import get_endpoints, get_pods
 
 
 def validate_project_name(name):
-    '''
+    """
     Validate the project name.
-    '''
+    """
     match = re.search(r"[<>:\"/\\|?*\s]", name)
     if match:
-        raise click.BadParameter(f"Project name contains an invalid character: '{match.group()}'.")
+        raise click.BadParameter(
+            f"Project name contains an invalid character: '{match.group()}'."
+        )
     return name
 
 
@@ -26,8 +29,8 @@ def get_project_pod(project_id: str):
     Return the pod_id if it exists, else return None.
     """
     for pod in get_pods():
-        if project_id in pod['name']:
-            return pod['id']
+        if project_id in pod["name"]:
+            return pod["id"]
 
     return None
 
@@ -37,7 +40,7 @@ def get_project_endpoint(project_id: str):
     Return the endpoint if it exists, else return None.
     """
     for endpoint in get_endpoints():
-        if project_id in endpoint['name']:
+        if project_id in endpoint["name"]:
             return endpoint
 
     return None
@@ -56,20 +59,20 @@ def copy_template_files(template_dir, destination):
 
 def attempt_pod_launch(config, environment_variables):
     """Attempt to launch a pod with the given configuration."""
-    for gpu_type in config['project'].get('gpu_types', []):
+    for gpu_type in config["project"].get("gpu_types", []):
         print(f"Trying to get a pod with {gpu_type}... ", end="")
         try:
             created_pod = create_pod(
                 f'{config["project"]["name"]}-dev ({config["project"]["uuid"]})',
-                config['project']['base_image'],
+                config["project"]["base_image"],
                 gpu_type,
-                gpu_count=int(config['project']['gpu_count']),
+                gpu_count=int(config["project"]["gpu_count"]),
                 support_public_ip=True,
                 ports=f'{config["project"]["ports"]}',
                 network_volume_id=f'{config["project"]["storage_id"]}',
                 volume_mount_path=f'{config["project"]["volume_mount_path"]}',
                 container_disk_in_gb=int(config["project"]["container_disk_size_gb"]),
-                env=environment_variables
+                env=environment_variables,
             )
             print("Success!")
             return created_pod
@@ -80,8 +83,8 @@ def attempt_pod_launch(config, environment_variables):
 
 def load_project_config():
     """Load the project config file."""
-    project_config_file = os.path.join(os.getcwd(), 'runpod.toml')
+    project_config_file = os.path.join(os.getcwd(), "runpod.toml")
     if not os.path.exists(project_config_file):
         raise FileNotFoundError("runpod.toml not found in the current directory.")
-    with open(project_config_file, 'r', encoding="UTF-8") as config_file:
+    with open(project_config_file, "r", encoding="UTF-8") as config_file:
         return tomlkit.load(config_file)

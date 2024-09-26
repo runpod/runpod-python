@@ -3,6 +3,7 @@ This module contains unit tests for the 'whatever' module, specifically the is_e
 """
 
 import unittest
+
 from .whatever import is_even
 
 

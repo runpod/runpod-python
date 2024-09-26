@@ -4,30 +4,26 @@
 
 import asyncio
 import json
-from types import SimpleNamespace
 from datetime import datetime, timezone
-from time import time, monotonic
+from time import monotonic, time
+from types import SimpleNamespace
 from uuid import uuid4
-from requests import (
-    Response,
-    PreparedRequest,
-    structures,
-)
+
 from aiohttp import (
     ClientSession,
     TraceConfig,
-    TraceRequestStartParams,
-    TraceConnectionCreateStartParams,
     TraceConnectionCreateEndParams,
+    TraceConnectionCreateStartParams,
     TraceConnectionReuseconnParams,
+    TraceRequestChunkSentParams,
     TraceRequestEndParams,
     TraceRequestExceptionParams,
-    TraceRequestChunkSentParams,
+    TraceRequestStartParams,
     TraceResponseChunkReceivedParams,
 )
+from requests import PreparedRequest, Response, structures
 
 from .serverless.modules.rp_logger import RunPodLogger
-
 
 log = RunPodLogger()
 

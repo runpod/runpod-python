@@ -1,13 +1,18 @@
-'''
+"""
 RunPod | Python | Endpoint Runner
-'''
-from typing import Any, Optional, Dict
+"""
+
 import time
+from typing import Any, Dict, Optional
+
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
 from runpod.endpoint.helpers import (
-    FINAL_STATES, UNAUTHORIZED_MSG, API_KEY_NOT_SET_MSG, is_completed
+    API_KEY_NOT_SET_MSG,
+    FINAL_STATES,
+    UNAUTHORIZED_MSG,
+    is_completed,
 )
 
 
@@ -24,24 +29,28 @@ class RunPodClient:
         Raises:
             RuntimeError: If the API key has not been initialized.
         """
-        from runpod import api_key, endpoint_url_base  # pylint: disable=import-outside-toplevel, cyclic-import
+        from runpod import (  # pylint: disable=import-outside-toplevel, cyclic-import
+            api_key,
+            endpoint_url_base,
+        )
 
         if api_key is None:
             raise RuntimeError(API_KEY_NOT_SET_MSG)
 
         self.rp_session = requests.Session()
         retries = Retry(total=5, backoff_factor=1, status_forcelist=[408, 429])
-        self.rp_session.mount('http://', HTTPAdapter(max_retries=retries))
+        self.rp_session.mount("http://", HTTPAdapter(max_retries=retries))
 
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
+            "Authorization": f"Bearer {api_key}",
         }
 
         self.endpoint_url_base = endpoint_url_base
 
-    def _request(self,
-                 method: str, endpoint: str, data: Optional[dict] = None, timeout: int = 10):
+    def _request(
+        self, method: str, endpoint: str, data: Optional[dict] = None, timeout: int = 10
+    ):
         """
         Make a request to the specified endpoint using the given HTTP method.
 
@@ -60,7 +69,8 @@ class RunPodClient:
         """
         url = f"{self.endpoint_url_base}/{endpoint}"
         response = self.rp_session.request(
-            method, url, headers=self.headers, json=data, timeout=timeout)
+            method, url, headers=self.headers, json=data, timeout=timeout
+        )
 
         if response.status_code == 401:
             raise RuntimeError(UNAUTHORIZED_MSG)
@@ -69,12 +79,12 @@ class RunPodClient:
         return response.json()
 
     def post(self, endpoint: str, data: dict, timeout: int = 10):
-        """ Post to the endpoint. """
-        return self._request('POST', endpoint, data, timeout)
+        """Post to the endpoint."""
+        return self._request("POST", endpoint, data, timeout)
 
     def get(self, endpoint: str, timeout: int = 10):
-        """ Get from the endpoint. """
-        return self._request('GET', endpoint, timeout=timeout)
+        """Get from the endpoint."""
+        return self._request("GET", endpoint, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------- #
@@ -100,7 +110,7 @@ class Job:
         self.job_output = None
 
     def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
-        """ Returns the raw json of the status, raises an exception if invalid """
+        """Returns the raw json of the status, raises an exception if invalid"""
         status_url = f"{self.endpoint_id}/{source}/{self.job_id}"
         job_state = self.rp_client.get(endpoint=status_url)
 
@@ -111,7 +121,7 @@ class Job:
         return job_state
 
     def status(self):
-        """ Returns the status of the job request. """
+        """Returns the status of the job request."""
         if self.job_status is not None:
             return self.job_status
 
@@ -137,11 +147,14 @@ class Job:
         return self._fetch_job().get("output", None)
 
     def stream(self) -> Any:
-        """ Returns a generator that yields the output of the job request. """
+        """Returns a generator that yields the output of the job request."""
         while True:
             time.sleep(1)
             stream_partial = self._fetch_job(source="stream")
-            if stream_partial["status"] not in FINAL_STATES or len(stream_partial["stream"]) > 0:
+            if (
+                stream_partial["status"] not in FINAL_STATES
+                or len(stream_partial["stream"]) > 0
+            ):
                 for chunk in stream_partial.get("stream", []):
                     yield chunk["output"]
             elif stream_partial["status"] in FINAL_STATES:
@@ -154,8 +167,9 @@ class Job:
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
-        return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}",
-                                   data=None, timeout=timeout)
+        return self.rp_client.post(
+            f"{self.endpoint_id}/cancel/{self.job_id}", data=None, timeout=timeout
+        )
 
 
 # ---------------------------------------------------------------------------- #
@@ -196,7 +210,9 @@ class Endpoint:
         job_request = self.rp_client.post(f"{self.endpoint_id}/run", request_input)
         return Job(self.endpoint_id, job_request["id"], self.rp_client)
 
-    def run_sync(self, request_input: Dict[str, Any], timeout: int = 86400) -> Dict[str, Any]:
+    def run_sync(
+        self, request_input: Dict[str, Any], timeout: int = 86400
+    ) -> Dict[str, Any]:
         """
         Run the endpoint with the given input synchronously.
 
@@ -207,12 +223,15 @@ class Endpoint:
             request_input = {"input": request_input}
 
         job_request = self.rp_client.post(
-            f"{self.endpoint_id}/runsync", request_input, timeout=timeout)
+            f"{self.endpoint_id}/runsync", request_input, timeout=timeout
+        )
 
         if job_request["status"] in FINAL_STATES:
             return job_request.get("output", None)
 
-        return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
+        return Job(self.endpoint_id, job_request["id"], self.rp_client).output(
+            timeout=timeout
+        )
 
     def health(self, timeout: int = 3) -> Dict[str, Any]:
         """
@@ -230,4 +249,6 @@ class Endpoint:
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
-        return self.rp_client.post(f"{self.endpoint_id}/purge-queue", data=None, timeout=timeout)
+        return self.rp_client.post(
+            f"{self.endpoint_id}/purge-queue", data=None, timeout=timeout
+        )
