@@ -8,6 +8,7 @@ test_logging.py
 /example_project
 IGNORE.py
 /quick-test
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

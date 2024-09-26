@@ -2,29 +2,27 @@
 Job related helpers.
 """
 
-# pylint: disable=too-many-branches
-
 import asyncio
 import inspect
 import json
 import os
 import traceback
-from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union
+from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union, List
 
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
 from .rp_tips import check_return_size
-from .worker_state import WORKER_ID, Jobs
+from .worker_state import WORKER_ID, JobsQueue
 
 JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 
 log = RunPodLogger()
-job_list = Jobs()
+job_list = JobsQueue()
 
 
-def _job_get_url():
+def _job_get_url(batch_size: int = 1):
     """
     Prepare the URL for making a 'get' request to the serverless API (sls).
 
@@ -34,89 +32,68 @@ def _job_get_url():
     Returns:
         str: The prepared URL for the 'get' request to the serverless API.
     """
-    job_in_progress = "1" if job_list.get_job_list() else "0"
-    return JOB_GET_URL + f"&job_in_progress={job_in_progress}"
+    job_in_progress = "1" if job_list.get_job_count() else "0"
+
+    if batch_size > 1:
+        job_take_url = JOB_GET_URL.replace("/job-take/", "/job-take-batch/")
+        job_take_url += f"&batch_size={batch_size}&batch_strategy=LMove"
+    else:
+        job_take_url = JOB_GET_URL
+
+    return job_take_url + f"&job_in_progress={job_in_progress}"
 
 
-async def get_job(session: ClientSession, retry=True) -> Optional[Dict[str, Any]]:
+async def get_job(
+    session: ClientSession, num_jobs: int = 1
+) -> Optional[List[Dict[str, Any]]]:
     """
-    Get the job from the queue.
-    Will continue trying to get a job until one is available.
+    Get a job from the job-take API.
+
+    `num_jobs = 1` will query the legacy singular job-take API.
+
+    `num_jobs > 1` will query the batch job-take API.
 
     Args:
-        session (ClientSession): The async http client to use for the request.
-        retry (bool): Whether to retry if no job is available.
+        session (ClientSession): The aiohttp ClientSession to use for the request.
+        num_jobs (int): The number of jobs to get.
     """
-    next_job = None
+    try:
+        async with session.get(_job_get_url(num_jobs)) as response:
+            if response.status == 204:
+                log.debug("No content, no job to process.")
+                return
 
-    while next_job is None:
-        try:
-            async with session.get(_job_get_url()) as response:
-                if response.status == 204:
-                    log.debug("No content, no job to process.")
-                    if retry is False:
-                        break
-                    continue
+            if response.status == 400:
+                log.debug("Received 400 status, expected when FlashBoot is enabled.")
+                return
 
-                if response.status == 400:
-                    log.debug(
-                        "Received 400 status, expected when FlashBoot is enabled."
-                    )
-                    if retry is False:
-                        break
-                    continue
+            if response.status != 200:
+                log.error(f"Failed to get job, status code: {response.status}")
+                return
 
-                if response.status != 200:
-                    log.error(f"Failed to get job, status code: {response.status}")
-                    if retry is False:
-                        break
-                    continue
+            jobs = await response.json()
+            log.debug(f"Request Received | {jobs}")
 
-                received_request = await response.json()
-                log.debug(f"Request Received | {received_request}")
+            # legacy job-take API
+            if isinstance(jobs, dict):
+                if "id" not in jobs or "input" not in jobs:
+                    raise Exception("Job has missing field(s): id or input.")
+                return [jobs]
 
-                # Check if the job is valid
-                job_id = received_request.get("id", None)
-                job_input = received_request.get("input", None)
+            # batch job-take API
+            if isinstance(jobs, list):
+                return jobs
 
-                if None in [job_id, job_input]:
-                    missing_fields = []
-                    if job_id is None:
-                        missing_fields.append("id")
-                    if job_input is None:
-                        missing_fields.append("input")
+    except asyncio.TimeoutError:
+        log.debug("Timeout error, retrying.")
 
-                    log.error(f"Job has missing field(s): {', '.join(missing_fields)}.")
-                else:
-                    next_job = received_request
+    except Exception as error:
+        log.error(
+            f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}"
+        )
 
-        except asyncio.TimeoutError:
-            log.debug("Timeout error, retrying.")
-            if retry is False:
-                break
-
-        except Exception as err:  # pylint: disable=broad-except
-            err_type = type(err).__name__
-            err_message = str(err)
-            err_traceback = traceback.format_exc()
-            log.error(
-                f"Failed to get job. | Error Type: {err_type} | Error Message: {err_message}"
-            )
-            log.error(f"Traceback: {err_traceback}")
-
-        if next_job is None:
-            log.debug("No job available, waiting for the next one.")
-            if retry is False:
-                break
-
-        await asyncio.sleep(1)
-    else:
-        job_list.add_job(next_job["id"])
-        log.debug("Request ID added.", next_job["id"])
-
-        return next_job
-
-    return None
+    # empty
+    return []
 
 
 async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,7 +141,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
         check_return_size(run_result)  # Checks the size of the return body.
 
-    except Exception as err:  # pylint: disable=broad-except
+    except Exception as err:
         error_info = {
             "error_type": str(type(err)),
             "error_message": str(err),
@@ -209,7 +186,7 @@ async def run_job_generator(
                 log.debug(f"Generator output: {output_partial}", job["id"])
                 yield {"output": output_partial}
 
-    except Exception as err:  # pylint: disable=broad-except
+    except Exception as err:
         log.error(err, job["id"])
         yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
     finally:

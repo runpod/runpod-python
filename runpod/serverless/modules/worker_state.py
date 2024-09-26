@@ -6,6 +6,7 @@ import os
 import time
 import uuid
 from typing import Any, Dict, Optional, Union
+from asyncio import Queue
 
 REF_COUNT_ZERO = time.perf_counter()  # Used for benchmarking with the debugger.
 
@@ -98,3 +99,59 @@ class Jobs:
         Returns the number of jobs.
         """
         return len(self.jobs)
+
+
+class JobsQueue(Queue):
+    """Central Jobs Queue for job take and job processing"""
+
+    _instance = None
+
+    def __new__(cls):
+        if JobsQueue._instance is None:
+            JobsQueue._instance = object.__new__(cls)
+        return JobsQueue._instance
+
+    def __iter__(self):
+        return iter(list(self._queue))
+
+    async def add_job(self, job: dict):
+        """
+        Adds a job to the queue.
+
+        If the queue is full, wait until a free
+        slot is available before adding item.
+        """
+        return await self.put(job)
+
+    async def get_job(self) -> dict:
+        """
+        Remove and return the next job from the queue.
+
+        If queue is empty, wait until a job is available.
+
+        Note: make sure to call `.task_done()` when processing the job is finished.
+        """
+        return await self.get()
+
+    def get_job_list(self) -> Optional[str]:
+        """
+        Returns the comma-separated list of jobs as a string. (read-only)
+        """
+        if self.empty():
+            return None
+
+        return ",".join(job.get("id") for job in self)
+
+    def get_job_count(self) -> int:
+        """
+        Returns the number of jobs.
+        """
+        return self.qsize()
+
+    async def clear(self):
+        """
+        Empties the Queue by getting each item.
+        """
+        while not self.empty():
+            await self.get()
+            self.task_done()
