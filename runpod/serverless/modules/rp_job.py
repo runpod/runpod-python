@@ -36,7 +36,7 @@ def _job_get_url(batch_size: int = 1):
 
     if batch_size > 1:
         job_take_url = JOB_GET_URL.replace("/job-take/", "/job-take-batch/")
-        job_take_url += f"&batch_size={batch_size}&batch_strategy=LMove"
+        job_take_url += f"&batch_size={batch_size}"
     else:
         job_take_url = JOB_GET_URL
 
