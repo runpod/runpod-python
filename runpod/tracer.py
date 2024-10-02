@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from aiohttp import (
     ClientSession,
+    TCPConnector,
     TraceConfig,
     TraceConnectionCreateEndParams,
     TraceConnectionCreateStartParams,
@@ -32,7 +33,6 @@ def time_to_iso8601(ts: float) -> str:
     """Convert a Unix timestamp to an ISO 8601 formatted string in UTC."""
     dt = datetime.fromtimestamp(ts, tz=timezone.utc)
     return dt.isoformat()
-
 
 def headers_to_context(context: SimpleNamespace, headers: dict):
     """Generate a context object based on the provided headers."""
@@ -68,6 +68,12 @@ async def on_request_start(
 
     if hasattr(context, "trace_request_ctx") and context.trace_request_ctx:
         context.retries = context.trace_request_ctx["current_attempt"]
+
+    connector = session.connector
+    if isinstance(connector, TCPConnector):
+        # Log connection stats directly from the connector
+        context.total_connections = len(connector._conns)
+        context.acquired_connections = len(connector._acquired)
 
 
 async def on_connection_create_start(
