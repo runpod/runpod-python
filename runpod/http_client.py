@@ -33,36 +33,33 @@ def AsyncClientSession(*args, **kwargs):
     """
     Deprecation from aiohttp.ClientSession forbids inheritance.
     This is now a factory method
-    TODO: use httpx
     """
     connector = TCPConnector(
-        # Total number of simultaneous connections
-        limit=100,
+        # Total number of simultaneous connections (0 means no limit)
+        limit=0,
         # Limit connections per host to avoid overwhelming a single server
-        limit_per_host=10,
+        # limit_per_host=10,
         # Enable DNS caching to reduce DNS lookup overhead
         use_dns_cache=True,
-        # Cache DNS entries for 10 seconds
-        ttl_dns_cache=10,
-        # Keep connections alive for 15 seconds
-        keepalive_timeout=15,
+        # Cache DNS entries (seconds)
+        ttl_dns_cache=30,
+        # Keep connections alive (seconds)
+        # keepalive_timeout=15,
         # Do not force close connections after each request
-        force_close=False,
+        # force_close=False,
         # Ceiling threshold to avoid last-second timeouts
-        timeout_ceil_threshold=5,
+        # timeout_ceil_threshold=5,
     )
 
     timeout = ClientTimeout(
-        # Allow a slightly longer total timeout
-        total=80,
-        # Time to establish a connection
-        connect=10,
-        # Time to wait for a response from the server
-        sock_read=30,
+        # Allow a slightly longer total timeout (seconds)
+        total=600,
+        # Time to establish a connection (seconds)
+        connect=5,
         # Time to open a connection to a socket
-        sock_connect=10,
+        # sock_connect=10,
         # Buffer to avoid timing out at the very last second
-        ceil_threshold=5,
+        ceil_threshold=400,
     )
 
     return ClientSession(
