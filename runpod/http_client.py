@@ -68,6 +68,8 @@ def AsyncClientSession(*args, **kwargs):
     return ClientSession(
         connector=connector,
         timeout=timeout,
+        headers=get_auth_header(),
+        trace_configs=[create_aiohttp_tracer()],
         *args,
         **kwargs,
     )
