@@ -29,7 +29,7 @@ def get_auth_header():
     }
 
 
-def AsyncClientSession(*args, **kwargs):  # pylint: disable=invalid-name
+def AsyncClientSession(*args, **kwargs):
     """
     Deprecation from aiohttp.ClientSession forbids inheritance.
     This is now a factory method
@@ -51,7 +51,7 @@ class SyncClientSession(requests.Session):
     TODO: use httpx
     """
 
-    def request(self, method, url, **kwargs):  # pylint: disable=arguments-differ
+    def request(self, method, url, **kwargs):
         """
         Override for tracing. Not using super().request()
         to capture metrics for connection and transfer times
