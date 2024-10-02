@@ -155,7 +155,7 @@ async def on_request_exception(
 
 
 def report_trace(
-    context: SimpleNamespace, params: object, elapsed: float, logger=log.trace
+    context: SimpleNamespace, params: object, elapsed: float, logger=log.info
 ):
     """
     Report the trace of a request.
