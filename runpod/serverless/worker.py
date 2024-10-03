@@ -7,7 +7,7 @@ import asyncio
 import os
 from typing import Any, Dict
 
-from runpod.http_client import AsyncClientSession
+from runpod.http2_client import AsyncClientSession
 from runpod.serverless.modules import rp_logger, rp_local, rp_ping, rp_scale
 
 log = rp_logger.RunPodLogger()

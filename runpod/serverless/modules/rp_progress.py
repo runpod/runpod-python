@@ -6,7 +6,7 @@ import asyncio
 import threading
 from typing import Any, Dict
 
-from runpod.http_client import AsyncClientSession
+from runpod.http2_client import AsyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from .rp_http import send_result
