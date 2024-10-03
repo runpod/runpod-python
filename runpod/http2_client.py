@@ -44,7 +44,7 @@ def setup_tracing():
     trace.set_tracer_provider(provider)
 
     # Create a custom span processor with the logging span exporter
-    logging_span_processor = SimpleSpanProcessor(LoggingSpanExporter())
+    logging_span_processor = SimpleSpanProcessor(JSONLoggingSpanExporter())
     provider.add_span_processor(logging_span_processor)
 
 
