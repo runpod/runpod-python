@@ -6,7 +6,7 @@ click >= 8.1.7
 colorama >= 0.2.5, < 0.4.7
 cryptography < 44.0.0
 fastapi[all] >= 0.94.0
-httpx == 0.27.0
+httpx[http2] == 0.27.0
 inquirerpy == 0.3.4
 opentelemetry-api == 1.26.0
 opentelemetry-instrumentation-aiohttp-client
