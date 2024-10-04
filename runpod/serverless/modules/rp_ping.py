@@ -22,16 +22,16 @@ jobs = JobsProgress()  # Contains the list of jobs that are currently running.
 class Heartbeat:
     """Sends heartbeats to the Runpod server."""
 
-    PING_URL = os.environ.get("RUNPOD_WEBHOOK_PING", "PING_NOT_SET")
-    PING_URL = PING_URL.replace("$RUNPOD_POD_ID", WORKER_ID)
-    PING_INTERVAL = int(os.environ.get("RUNPOD_PING_INTERVAL", 10000)) // 1000
-
     _thread_started = False
 
     def __init__(self, pool_connections=10, retries=3) -> None:
         """
         Initializes the Heartbeat class.
         """
+        self.PING_URL = os.environ.get("RUNPOD_WEBHOOK_PING", "PING_NOT_SET")
+        self.PING_URL = self.PING_URL.replace("$RUNPOD_POD_ID", WORKER_ID)
+        self.PING_INTERVAL = int(os.environ.get("RUNPOD_PING_INTERVAL", 10000)) // 1000
+
         self._session = SyncClientSession()
         self._session.headers.update(
             {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
@@ -56,15 +56,15 @@ class Heartbeat:
         """
         Sends heartbeat pings to the Runpod server.
         """
-        if os.environ.get("RUNPOD_AI_API_KEY") is None:
+        if not os.environ.get("RUNPOD_AI_API_KEY"):
             log.debug("Not deployed on RunPod serverless, pings will not be sent.")
             return
 
-        if os.environ.get("RUNPOD_POD_ID") is None:
+        if not os.environ.get("RUNPOD_POD_ID"):
             log.info("Not running on RunPod, pings will not be sent.")
             return
 
-        if self.PING_URL in ["PING_NOT_SET", None]:
+        if (not self.PING_URL) or self.PING_URL == "PING_NOT_SET":
             log.error("Ping URL not set, cannot start ping.")
             return
 
