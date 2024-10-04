@@ -33,10 +33,14 @@ class Job:
         id: str,
         input: Optional[Dict[str, Any]] = None,
         webhook: Optional[str] = None,
+        **kwargs
     ) -> None:
         self.id = id
         self.input = input
         self.webhook = webhook
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Job):

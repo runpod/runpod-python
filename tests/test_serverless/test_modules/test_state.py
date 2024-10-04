@@ -37,6 +37,105 @@ class TestEnvVars(unittest.TestCase):
         self.assertEqual(WORKER_ID, os.environ.get("RUNPOD_POD_ID"))
 
 
+import unittest
+from typing import Dict, Any, Optional
+
+# Assuming the Job class is defined as follows:
+class Job:
+    """
+    Represents a job object.
+
+    Args:
+        job_id: The id of the job, a unique string.
+        job_input: The input to the job.
+        webhook: The webhook to send the job output to.
+    """
+
+    def __init__(
+        self,
+        id: str,
+        input: Optional[Dict[str, Any]] = None,
+        webhook: Optional[str] = None,
+        **kwargs
+    ) -> None:
+        self.id = id
+        self.input = input
+        self.webhook = webhook
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Job):
+            return self.id == other.id
+        return False
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __str__(self) -> str:
+        return self.id
+
+
+class TestJob(unittest.TestCase):
+
+    def test_initialization_with_basic_attributes(self):
+        """Test basic initialization of Job object."""
+        job = Job(id="job_123", input={"task": "data_process"}, webhook="http://example.com/webhook")
+        self.assertEqual(job.id, "job_123")
+        self.assertEqual(job.input, {"task": "data_process"})
+        self.assertEqual(job.webhook, "http://example.com/webhook")
+
+    def test_initialization_with_additional_kwargs(self):
+        """Test initialization with extra kwargs dynamically creating attributes."""
+        job = Job(id="job_456", status="pending", priority=5)
+        self.assertEqual(job.id, "job_456")
+        self.assertEqual(job.status, "pending")
+        self.assertEqual(job.priority, 5)
+
+    def test_equality(self):
+        """Test equality between two Job objects based on the job ID."""
+        job1 = Job(id="job_123")
+        job2 = Job(id="job_123")
+        job3 = Job(id="job_456")
+        
+        self.assertEqual(job1, job2)
+        self.assertNotEqual(job1, job3)
+
+    def test_hashing(self):
+        """Test hashing of Job object based on the job ID."""
+        job1 = Job(id="job_123")
+        job2 = Job(id="job_123")
+        job3 = Job(id="job_456")
+        
+        self.assertEqual(hash(job1), hash(job2))
+        self.assertNotEqual(hash(job1), hash(job3))
+
+    def test_string_representation(self):
+        """Test the string representation of the Job object."""
+        job = Job(id="job_123")
+        self.assertEqual(str(job), "job_123")
+
+    def test_none_input(self):
+        """Test initialization with None values."""
+        job = Job(id="job_123", input=None, webhook=None)
+        self.assertEqual(job.id, "job_123")
+        self.assertIsNone(job.input)
+        self.assertIsNone(job.webhook)
+
+    def test_dynamic_kwargs_assignment(self):
+        """Test if kwargs are dynamically assigned as attributes."""
+        job = Job(id="job_789", foo="bar", custom_attr=42)
+        self.assertEqual(job.foo, "bar")
+        self.assertEqual(job.custom_attr, 42)
+
+    def test_missing_attributes(self):
+        """Test that accessing non-existent attributes raises AttributeError."""
+        job = Job(id="job_123")
+        with self.assertRaises(AttributeError):
+            _ = job.non_existent_attr
+
+
 class TestJobsQueue(unittest.IsolatedAsyncioTestCase):
     """Tests for JobsQueue class"""
 
