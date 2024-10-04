@@ -4,7 +4,7 @@ import os
 import unittest
 
 from runpod.serverless.modules.worker_state import (
-    Job,
+    JobsProgress,
     JobsQueue,
     IS_LOCAL_TEST,
     WORKER_ID,
@@ -38,7 +38,7 @@ class TestEnvVars(unittest.TestCase):
 
 
 class TestJobsQueue(unittest.IsolatedAsyncioTestCase):
-    """Tests for Jobs class"""
+    """Tests for JobsQueue class"""
 
     def setUp(self):
         """
@@ -109,4 +109,67 @@ class TestJobsQueue(unittest.IsolatedAsyncioTestCase):
         assert self.jobs.get_job_count() == 2
         assert job1 in self.jobs
         assert job2 in self.jobs
+        assert self.jobs.get_job_list() in ["123,456", "456,123"]
+
+
+class TestJobsProgress(unittest.TestCase):
+    """Tests for JobsProgress class"""
+
+    def setUp(self):
+        """
+        Set up test variables
+        """
+        self.jobs = JobsProgress()
+
+    def asyncTearDown(self):
+        self.jobs.clear()  # clear jobs before each test
+
+    def test_singleton(self):
+        jobs2 = JobsProgress()
+        self.assertEqual(self.jobs, jobs2)
+
+    def test_add_job(self):
+        assert not self.jobs.get_job_count()
+
+        id = "123"
+        self.jobs.add({"id": id})
+        assert self.jobs.get_job_count() == 1
+
+        job1 = self.jobs.get(id)
+        assert job1 in self.jobs
+
+        id = "234"
+        self.jobs.add(id)
+        assert self.jobs.get_job_count() == 2
+
+        job2 = self.jobs.get(id)
+        assert job2 in self.jobs
+
+    def test_remove_job(self):
+        assert not self.jobs.get_job_count()
+
+        job = {"id": "123"}
+        self.jobs.add(job)
+        assert self.jobs.get_job_count()
+
+        self.jobs.remove("123")
+        assert not self.jobs.get_job_count()
+
+    def test_get_job(self):
+        for id in ["123", "234", "345"]:
+            self.jobs.add({"id": id})
+
+        job1 = self.jobs.get(id)
+        assert job1 in self.jobs
+
+    def test_get_job_list(self):
+        self.assertTrue(self.jobs.get_job_list() is None)
+
+        job1 = {"id": "123"}
+        self.jobs.add(job1)
+
+        job2 = {"id": "456"}
+        self.jobs.add(job2)
+
+        assert self.jobs.get_job_count() == 2
         assert self.jobs.get_job_list() in ["123,456", "456,123"]

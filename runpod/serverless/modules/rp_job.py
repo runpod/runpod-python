@@ -14,12 +14,12 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
 from .rp_tips import check_return_size
-from .worker_state import WORKER_ID, JobsQueue
+from .worker_state import WORKER_ID, REF_COUNT_ZERO, JobsProgress
 
 JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 
 log = RunPodLogger()
-job_list = JobsQueue()
+job_progress = JobsProgress()
 
 
 def _job_get_url(batch_size: int = 1):
@@ -32,7 +32,7 @@ def _job_get_url(batch_size: int = 1):
     Returns:
         str: The prepared URL for the 'get' request to the serverless API.
     """
-    job_in_progress = "1" if job_list.get_job_count() else "0"
+    job_in_progress = "1" if job_progress.get_job_count() else "0"
 
     if batch_size > 1:
         job_take_url = JOB_GET_URL.replace("/job-take/", "/job-take-batch/")
