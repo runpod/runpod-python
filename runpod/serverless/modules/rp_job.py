@@ -13,6 +13,9 @@ from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
+from ..utils import rp_debugger
+from .rp_handler import is_generator
+from .rp_http import send_result, stream_result
 from .rp_tips import check_return_size
 from .worker_state import WORKER_ID, REF_COUNT_ZERO, JobsProgress
 
@@ -94,6 +97,47 @@ async def get_job(
 
     # empty
     return []
+
+
+async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dict:
+    if is_generator(config["handler"]):
+        is_stream = True
+        generator_output = run_job_generator(config["handler"], job)
+        log.debug("Handler is a generator, streaming results.", job["id"])
+
+        job_result = {"output": []}
+        async for stream_output in generator_output:
+            log.debug(f"Stream output: {stream_output}", job["id"])
+            if "error" in stream_output:
+                job_result = stream_output
+                break
+            if config.get("return_aggregate_stream", False):
+                job_result["output"].append(stream_output["output"])
+
+            await stream_result(session, stream_output, job)
+    else:
+        is_stream = False
+        job_result = await run_job(config["handler"], job)
+
+    # If refresh_worker is set, pod will be reset after job is complete.
+    if config.get("refresh_worker", False):
+        log.info("refresh_worker flag set, stopping pod after job.", job["id"])
+        job_result["stopPod"] = True
+
+    # If rp_debugger is set, debugger output will be returned.
+    if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
+        job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
+        log.debug("rp_debugger | Flag set, returning debugger output.", job["id"])
+
+        # Calculate ready delay for the debugger output.
+        ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
+        job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
+    else:
+        log.debug("rp_debugger | Flag not set, skipping debugger output.", job["id"])
+        rp_debugger.clear_debugger_output()
+
+    # Send the job result back to JOB_DONE_URL
+    await send_result(session, job_result, job, is_stream=is_stream)
 
 
 async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:

@@ -7,12 +7,9 @@ import asyncio
 from typing import Any, Dict
 
 from ...http_client import ClientSession
-from ..utils import rp_debugger
-from .rp_handler import is_generator
-from .rp_http import send_result, stream_result
-from .rp_job import get_job, run_job, run_job_generator
+from .rp_job import get_job, handle_job
 from .rp_logger import RunPodLogger
-from .worker_state import JobsQueue, REF_COUNT_ZERO
+from .worker_state import JobsQueue, JobsProgress
 
 log = RunPodLogger()
 job_list = JobsQueue()
@@ -133,51 +130,17 @@ class JobScaler:
         # Ensure all remaining tasks finish before stopping
         await asyncio.gather(*tasks)
 
-    async def process_job(self, session: ClientSession, config: Dict[str, Any], job):
+    async def handle_job(self, session: ClientSession, config: Dict[str, Any], job):
         """
         Process an individual job. This function is run concurrently for multiple jobs.
         """
         log.debug(f"Processing job: {job}")
 
-        if is_generator(config["handler"]):
-            is_stream = True
-            generator_output = run_job_generator(config["handler"], job)
-            log.debug("Handler is a generator, streaming results.", job["id"])
+        try:
+            await handle_job(session, config, job)
 
-            job_result = {"output": []}
-            async for stream_output in generator_output:
-                log.debug(f"Stream output: {stream_output}", job["id"])
-                if "error" in stream_output:
-                    job_result = stream_output
-                    break
-                if config.get("return_aggregate_stream", False):
-                    job_result["output"].append(stream_output["output"])
-
-                await stream_result(session, stream_output, job)
-        else:
-            is_stream = False
-            job_result = await run_job(config["handler"], job)
-
-        # If refresh_worker is set, pod will be reset after job is complete.
-        if config.get("refresh_worker", False):
-            log.info("refresh_worker flag set, stopping pod after job.", job["id"])
-            job_result["stopPod"] = True
-            self.kill_worker()
-
-        # If rp_debugger is set, debugger output will be returned.
-        if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
-            job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
-            log.debug("rp_debugger | Flag set, returning debugger output.", job["id"])
-
-            # Calculate ready delay for the debugger output.
-            ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
-            job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
-        else:
-            log.debug("rp_debugger | Flag not set, skipping debugger output.", job["id"])
-            rp_debugger.clear_debugger_output()
-
-        # Send the job result back to JOB_DONE_URL
-        await send_result(session, job_result, job, is_stream=is_stream)
-
-        # Inform JobsQueue of a task completion
-        job_list.task_done()
+            if config.get("refresh_worker", False):
+                self.kill_worker()
+        finally:
+            # Inform JobsQueue of a task completion
+            job_list.task_done()
