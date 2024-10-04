@@ -13,6 +13,7 @@ from .worker_state import JobsQueue, JobsProgress
 
 log = RunPodLogger()
 job_list = JobsQueue()
+job_progress = JobsProgress()
 
 
 def _default_concurrency_modifier(current_concurrency: int) -> int:
@@ -65,7 +66,7 @@ class JobScaler:
         Adds jobs to the JobsQueue
         """
         while self.is_alive():
-            log.debug(f"Jobs in progress: {job_list.get_job_count()}")
+            log.debug(f"Jobs in progress: {job_progress.get_job_count()}")
 
             try:
                 self.current_concurrency = self.concurrency_modifier(
@@ -73,7 +74,7 @@ class JobScaler:
                 )
                 log.debug(f"Concurrency set to: {self.current_concurrency}")
 
-                jobs_needed = self.current_concurrency - job_list.get_job_count()
+                jobs_needed = self.current_concurrency - job_progress.get_job_count()
                 if not jobs_needed:  # zero or less
                     log.debug("Queue is full. Retrying soon.")
                     continue
@@ -110,7 +111,7 @@ class JobScaler:
                 job = await job_list.get_job()
 
                 # Create a new task for each job and add it to the task list
-                task = asyncio.create_task(self.process_job(session, config, job))
+                task = asyncio.create_task(self.handle_job(session, config, job))
                 tasks.append(task)
 
             # Wait for any job to finish
@@ -135,6 +136,7 @@ class JobScaler:
         Process an individual job. This function is run concurrently for multiple jobs.
         """
         log.debug(f"Processing job: {job}")
+        job_progress.add(job)
 
         try:
             await handle_job(session, config, job)
@@ -144,3 +146,6 @@ class JobScaler:
         finally:
             # Inform JobsQueue of a task completion
             job_list.task_done()
+
+            # Job is no longer in progress
+            job_progress.remove(job["id"])
