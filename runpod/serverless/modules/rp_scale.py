@@ -143,6 +143,11 @@ class JobScaler:
 
             if config.get("refresh_worker", False):
                 self.kill_worker()
+        
+        except Exception as err:
+            log.error(f"Error handling job: {err}", job["id"])
+            raise err
+
         finally:
             # Inform JobsQueue of a task completion
             job_list.task_done()
