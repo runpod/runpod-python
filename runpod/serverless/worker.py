@@ -47,16 +47,21 @@ async def run_worker(config: Dict[str, Any]) -> None:
             concurrency_modifier=config.get("concurrency_modifier", None)
         )
 
-        # Create a task that will run the get_jobs method in the background.
-        # This task will fetch jobs from RunPod and add them to the queue.
+        # Create tasks for getting and running jobs.
         jobtake_task = asyncio.create_task(job_scaler.get_jobs(session))
-
-        # Create a task that will run the run_jobs method in the background.
-        # This task will process jobs from the queue.
         jobrun_task = asyncio.create_task(job_scaler.run_jobs(session, config))
 
-        # Concurrently run both tasks and wait for both to finish.
-        await asyncio.gather(jobtake_task, jobrun_task)
+        tasks = [jobtake_task, jobrun_task]
+
+        try:
+            # Concurrently run both tasks and wait for both to finish.
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError: # worker is killed
+            # Handle the task cancellation gracefully
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            log.debug("Worker tasks cancelled.")
 
 
 def main(config: Dict[str, Any]) -> None:
