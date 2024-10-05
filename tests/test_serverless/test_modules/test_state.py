@@ -4,6 +4,7 @@ import os
 import unittest
 
 from runpod.serverless.modules.worker_state import (
+    Job,
     JobsProgress,
     JobsQueue,
     IS_LOCAL_TEST,
@@ -35,46 +36,6 @@ class TestEnvVars(unittest.TestCase):
         os.environ["RUNPOD_POD_ID"] = WORKER_ID
 
         self.assertEqual(WORKER_ID, os.environ.get("RUNPOD_POD_ID"))
-
-
-import unittest
-from typing import Dict, Any, Optional
-
-# Assuming the Job class is defined as follows:
-class Job:
-    """
-    Represents a job object.
-
-    Args:
-        job_id: The id of the job, a unique string.
-        job_input: The input to the job.
-        webhook: The webhook to send the job output to.
-    """
-
-    def __init__(
-        self,
-        id: str,
-        input: Optional[Dict[str, Any]] = None,
-        webhook: Optional[str] = None,
-        **kwargs
-    ) -> None:
-        self.id = id
-        self.input = input
-        self.webhook = webhook
-
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, Job):
-            return self.id == other.id
-        return False
-
-    def __hash__(self) -> int:
-        return hash(self.id)
-
-    def __str__(self) -> str:
-        return self.id
 
 
 class TestJob(unittest.TestCase):
