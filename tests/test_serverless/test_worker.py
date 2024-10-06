@@ -418,7 +418,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert mock_stream_result.called
 
         with patch("runpod.serverless._set_config_args") as mock_set_config_args:
-
             limited_config = {
                 "handler": Mock(),
                 "refresh_worker": True,

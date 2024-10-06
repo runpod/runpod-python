@@ -6,6 +6,7 @@ import unittest
 from runpod.error import AuthenticationError, QueryError, RunPodError
 
 
+
 class TestErrorClasses(unittest.TestCase):
     """Unit tests for the error classes in the runpod.error module."""
 

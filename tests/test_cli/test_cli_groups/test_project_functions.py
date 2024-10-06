@@ -1,4 +1,4 @@
-""" Test functions in runpod.cli.groups.project.functions module. """
+"""Test functions in runpod.cli.groups.project.functions module."""
 
 import os
 import shutil
@@ -206,7 +206,6 @@ class TestStartProject(unittest.TestCase):
         with patch("builtins.print") as mock_print, patch(
             "runpod.cli.groups.project.functions.load_project_config"
         ):
-
             start_project()
             mock_print.assert_called_with(
                 "Selected GPU types unavailable, try again later or use a different type."

@@ -2,7 +2,6 @@
 runpod | serverless | utils | validator.py
 Provides a function to validate the input to the model.
 """
-
 # pylint: disable=too-many-branches
 
 import json
