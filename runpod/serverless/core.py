@@ -41,6 +41,8 @@ def notregistered():
     """Function to raise NotImplementedError"""
     raise RuntimeError("This function is not registered with the SLS Core.")
 
+class SlsCoreError(Exception):
+    pass
 
 class Hook:  # pylint: disable=too-many-instance-attributes
     """Singleton class for interacting with sls_core.so"""
@@ -161,9 +163,9 @@ class Hook:  # pylint: disable=too-many-instance-attributes
                 b = "<failed to decode buffer>"
             if b == "":
                 b = "<unknown error or buffer too small>"
-            raise ValueError(f"_runpod_sls_get_jobs: status code 2: error from server: {b}")
+            raise SlsCoreError(f"_runpod_sls_get_jobs: status code 2: error from server: {b}")
         elif code == ERROR_BUFFER_TOO_SMALL:  # buffer too small
-            raise ValueError("_runpod_sls_get_jobs: status code 3: buffer too small")
+            raise SlsCoreError("_runpod_sls_get_jobs: status code 3: buffer too small")
         else:
             raise ValueError(f"_runpod_sls_get_jobs: unknown status code {code}")
 
@@ -236,7 +238,7 @@ async def _process_job(
             aggregated_output: dict[str, typing.Any] = {"output": []}
 
             async for part in generator_output:
-                log.debug(f"SLS Core | Streaming output: {part}", job["id"])
+                log.trace(f"SLS Core | Streaming output: {part}", job["id"])
 
                 if "error" in part:
                     aggregated_output = part
@@ -282,7 +284,7 @@ async def run(config: Dict[str, Any]) -> None:
     while True:
         try:
             jobs = serverless_hook.get_jobs(max_concurrency, max_jobs)
-        except RuntimeError as err:
+        except SlsCoreError as err:
             log.error(f"SLS Core | Error getting jobs: {err}")
             await asyncio.sleep(0.2) # sleep for a bit before trying again
             continue
