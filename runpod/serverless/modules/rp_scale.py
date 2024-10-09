@@ -66,25 +66,26 @@ class JobScaler:
         Adds jobs to the JobsQueue
         """
         while self.is_alive():
-            log.debug(f"Jobs in progress: {job_progress.get_job_count()}")
+            log.debug(f"JobScaler.get_jobs | Jobs in progress: {job_progress.get_job_count()}")
 
             self.current_concurrency = self.concurrency_modifier(
                 self.current_concurrency
             )
-            log.debug(f"Concurrency set to: {self.current_concurrency}")
+            log.debug(f"JobScaler.get_jobs | Concurrency set to: {self.current_concurrency}")
 
             jobs_needed = self.current_concurrency - job_progress.get_job_count()
             if jobs_needed <= 0:
-                log.debug("Queue is full. Retrying soon.")
+                log.debug("JobScaler.get_jobs | Queue is full. Retrying soon.")
                 await asyncio.sleep(1)
                 continue
 
             try:
+                # 
                 acquired_jobs = await asyncio.wait_for(
                     get_job(session, jobs_needed), timeout=60
                 )
             except asyncio.TimeoutError:
-                log.debug("Job acquisition timed out. Retrying soon.")
+                log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying soon.")
                 await asyncio.sleep(0)
                 continue
             except Exception as error:
@@ -94,13 +95,14 @@ class JobScaler:
                 continue
 
             if not acquired_jobs:
-                log.debug("No jobs acquired.")
+                log.debug("JobScaler.get_jobs | No jobs acquired.")
                 await asyncio.sleep(1)
                 continue
 
             for job in acquired_jobs:
                 await job_list.add_job(job)
 
+            log.debug(f"JobScaler.get_jobs | Jobs taken: {len(acquired_jobs)}")
             log.info(f"Jobs in queue: {job_list.get_job_count()}")
 
     async def run_jobs(self, session: ClientSession, config: Dict[str, Any]):
