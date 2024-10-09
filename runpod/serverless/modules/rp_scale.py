@@ -85,7 +85,7 @@ class JobScaler:
                 )
             except asyncio.TimeoutError:
                 log.debug("Job acquisition timed out. Retrying soon.")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0)
                 continue
             except Exception as error:
                 log.error(
