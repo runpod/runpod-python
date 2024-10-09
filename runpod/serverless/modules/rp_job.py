@@ -60,43 +60,31 @@ async def get_job(
         session (ClientSession): The aiohttp ClientSession to use for the request.
         num_jobs (int): The number of jobs to get.
     """
-    try:
-        async with session.get(_job_get_url(num_jobs)) as response:
-            if response.status == 204:
-                log.debug("No content, no job to process.")
-                return
+    async with session.get(_job_get_url(num_jobs)) as response:
+        if response.status == 204:
+            log.debug("No content, no job to process.")
+            return
 
-            if response.status == 400:
-                log.debug("Received 400 status, expected when FlashBoot is enabled.")
-                return
+        if response.status == 400:
+            log.debug("Received 400 status, expected when FlashBoot is enabled.")
+            return
 
-            if response.status != 200:
-                log.error(f"Failed to get job, status code: {response.status}")
-                return
+        if response.status != 200:
+            log.error(f"Failed to get job, status code: {response.status}")
+            return
 
-            jobs = await response.json()
-            log.debug(f"Request Received | {jobs}")
+        jobs = await response.json()
+        log.debug(f"Request Received | {jobs}")
 
-            # legacy job-take API
-            if isinstance(jobs, dict):
-                if "id" not in jobs or "input" not in jobs:
-                    raise Exception("Job has missing field(s): id or input.")
-                return [jobs]
+        # legacy job-take API
+        if isinstance(jobs, dict):
+            if "id" not in jobs or "input" not in jobs:
+                raise Exception("Job has missing field(s): id or input.")
+            return [jobs]
 
-            # batch job-take API
-            if isinstance(jobs, list):
-                return jobs
-
-    except asyncio.TimeoutError:
-        log.debug("Timeout error, retrying.")
-
-    except Exception as error:
-        log.error(
-            f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}"
-        )
-
-    # empty
-    return []
+        # batch job-take API
+        if isinstance(jobs, list):
+            return jobs
 
 
 async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dict:
