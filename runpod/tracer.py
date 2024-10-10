@@ -139,13 +139,13 @@ async def on_request_exception(
     params: TraceRequestExceptionParams,
 ):
     """Handle the exception that occurred during the request."""
-    context.exception = str(params.exception)
+    context.exception = params.exception
     elapsed = asyncio.get_event_loop().time() - context.on_request_start
     context.transfer = elapsed - context.connect
     context.end_time = time()
 
     # log to error level
-    report_trace(context, params, elapsed, log.error)
+    report_trace(context, params, elapsed, log.trace)
 
 
 def report_trace(
