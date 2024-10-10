@@ -187,7 +187,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             "rp_args": {"rp_debugger": True, "rp_log_level": "DEBUG"},
         }
 
-    @patch("runpod.serverless.worker.AsyncClientSession")
+    @patch("runpod.serverless.modules.rp_scale.AsyncClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
@@ -328,7 +328,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         _, args, _ = mock_send_result.mock_calls[0]
         assert args[1] == {"output": ["test1", "test2"], "stopPod": True}
 
-    @patch("runpod.serverless.worker.AsyncClientSession")
+    @patch("runpod.serverless.modules.rp_scale.AsyncClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
@@ -372,7 +372,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert mock_stream_result.called is False
         assert mock_session.called
 
-    @patch("runpod.serverless.worker.AsyncClientSession")
+    @patch("runpod.serverless.modules.rp_scale.AsyncClientSession")
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
