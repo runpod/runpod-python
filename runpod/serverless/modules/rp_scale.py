@@ -4,9 +4,10 @@ Provides the functionality for scaling the runpod serverless worker.
 """
 
 import asyncio
+import signal
 from typing import Any, Dict
 
-from ...http_client import ClientSession
+from ...http_client import AsyncClientSession, ClientSession
 from .rp_job import get_job, handle_job
 from .rp_logger import RunPodLogger
 from .worker_state import JobsQueue, JobsProgress
@@ -36,26 +37,91 @@ class JobScaler:
     Job Scaler. This class is responsible for scaling the number of concurrent requests.
     """
 
-    def __init__(self, concurrency_modifier: Any):
+    def __init__(self, config: Dict[str, Any]):
+        concurrency_modifier = config.get("concurrency_modifier")
         if concurrency_modifier is None:
             self.concurrency_modifier = _default_concurrency_modifier
         else:
             self.concurrency_modifier = concurrency_modifier
 
+        self._shutdown_event = asyncio.Event()
         self.current_concurrency = 1
-        self._is_alive = True
+        self.config = config
+
+    def start(self):
+        """
+        This is required for the worker to be able to shut down gracefully
+        when the user sends a SIGTERM or SIGINT signal. This is typically
+        the case when the worker is running in a container.
+        """
+        try:
+            # Register signal handlers for graceful shutdown
+            signal.signal(signal.SIGTERM, self.handle_shutdown)
+            signal.signal(signal.SIGINT, self.handle_shutdown)
+        except ValueError:
+            log.warning("Signal handling is only supported in the main thread.")
+
+        # Start the main loop
+        # Run forever until the worker is signalled to shut down.
+        asyncio.run(self.run())
+
+    def handle_shutdown(self, signum, frame):
+        """
+        Called when the worker is signalled to shut down.
+
+        This function is called when the worker receives a signal to shut down, such as
+        SIGTERM or SIGINT. It sets the shutdown event, which will cause the worker to
+        exit its main loop and shut down gracefully.
+
+        Args:
+            signum: The signal number that was received.
+            frame: The current stack frame.
+        """
+        log.debug(f"Received shutdown signal: {signum}.")
+        self.kill_worker()
+
+    async def run(self):
+        # Create an async session that will be closed when the worker is killed.
+
+        async with AsyncClientSession() as session:
+            # Create tasks for getting and running jobs.
+            jobtake_task = asyncio.create_task(self.get_jobs(session))
+            jobrun_task = asyncio.create_task(self.run_jobs(session))
+
+            tasks = [jobtake_task, jobrun_task]
+
+            try:
+                # Concurrently run both tasks and wait for both to finish.
+                await asyncio.gather(*tasks)
+            except asyncio.CancelledError:  # worker is killed
+                log.debug("Worker tasks cancelled.")
+                self.kill_worker()
+            finally:
+                # Handle the task cancellation gracefully
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                await self.cleanup()  # Ensure resources are cleaned up
+
+    async def cleanup(self):
+        # Perform any necessary cleanup here, such as closing connections
+        log.debug("Cleaning up resources before shutdown.")
+        # TODO: stop heartbeat or close any open connections
+        await asyncio.sleep(0)  # Give a chance for other tasks to run (optional)
+        log.debug("Cleanup complete.")
 
     def is_alive(self):
         """
         Return whether the worker is alive or not.
         """
-        return self._is_alive
+        return not self._shutdown_event.is_set()
 
     def kill_worker(self):
         """
         Whether to kill the worker.
         """
-        self._is_alive = False
+        self._shutdown_event.set()
 
     async def get_jobs(self, session: ClientSession):
         """
@@ -80,12 +146,12 @@ class JobScaler:
                 continue
 
             try:
-                # 
+                # Keep the connection to the blocking call up to 30 seconds
                 acquired_jobs = await asyncio.wait_for(
-                    get_job(session, jobs_needed), timeout=60
+                    get_job(session, jobs_needed), timeout=30
                 )
             except asyncio.TimeoutError:
-                log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying soon.")
+                log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying.")
                 await asyncio.sleep(0)
                 continue
             except Exception as error:
@@ -105,7 +171,7 @@ class JobScaler:
             log.debug(f"JobScaler.get_jobs | Jobs taken: {len(acquired_jobs)}")
             log.info(f"Jobs in queue: {job_list.get_job_count()}")
 
-    async def run_jobs(self, session: ClientSession, config: Dict[str, Any]):
+    async def run_jobs(self, session: ClientSession):
         """
         Retrieve jobs from the jobs queue and process them concurrently.
 
@@ -119,7 +185,7 @@ class JobScaler:
                 job = await job_list.get_job()
 
                 # Create a new task for each job and add it to the task list
-                task = asyncio.create_task(self.handle_job(session, config, job))
+                task = asyncio.create_task(self.handle_job(session, job))
                 tasks.append(task)
 
             # Wait for any job to finish
@@ -139,7 +205,7 @@ class JobScaler:
         # Ensure all remaining tasks finish before stopping
         await asyncio.gather(*tasks)
 
-    async def handle_job(self, session: ClientSession, config: Dict[str, Any], job):
+    async def handle_job(self, session: ClientSession, job: dict):
         """
         Process an individual job. This function is run concurrently for multiple jobs.
         """
@@ -147,9 +213,9 @@ class JobScaler:
         job_progress.add(job)
 
         try:
-            await handle_job(session, config, job)
+            await handle_job(session, self.config, job)
 
-            if config.get("refresh_worker", False):
+            if self.config.get("refresh_worker", False):
                 self.kill_worker()
 
         except Exception as err:
