@@ -62,19 +62,19 @@ async def get_job(
     """
     async with session.get(_job_get_url(num_jobs)) as response:
         if response.status == 204:
-            log.debug("No content, no job to process.")
+            log.debug("- No content, no job to process.")
             return
 
         if response.status == 400:
-            log.debug("Received 400 status, expected when FlashBoot is enabled.")
+            log.debug("- Received 400 status, expected when FlashBoot is enabled.")
             return
 
         if response.status != 200:
-            log.error(f"Failed to get job, status code: {response.status}")
+            log.error(f"- Failed to get job, status code: {response.status}")
             return
 
         jobs = await response.json()
-        log.debug(f"Request Received | {jobs}")
+        log.debug(f"- Job(s) Received")
 
         # legacy job-take API
         if isinstance(jobs, dict):
