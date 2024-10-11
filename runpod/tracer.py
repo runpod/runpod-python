@@ -259,8 +259,8 @@ class TraceRequest:
             self.context.url = self.request.url
             self.context.mode = "sync"
 
-            if isinstance(self.request.body, bytes):
-                self.context.payload_size_bytes = len(self.request.body)
+            if payload_size := len(self.request.body) and isinstance(self.request.body, bytes):
+                self.context.payload_size_bytes = payload_size
 
         if self.response is not None:
             self.context.end_time = time()
