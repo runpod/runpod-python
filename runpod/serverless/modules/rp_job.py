@@ -77,15 +77,18 @@ async def get_job(
             log.error(f"- Failed to get job, status code: {response.status}")
             return
 
-        try:
-            jobs = await response.json()
-            log.debug(f"- Job(s) Received")
-        except TypeError as err:
-            log.debug(f"- {response} | {err}")
-            raise response
-        except Exception as err:
-            log.debug(f"- {response} | {err}")
-            raise err
+        # Verify if the content type is JSON
+        if response.content_type != "application/json":
+            log.error(f"- Unexpected content type: {response.content_type}")
+            return
+
+        # Check if there is a non-empty content to parse
+        if response.content_length == 0:
+            log.debug("- No content to parse.")
+            return
+
+        jobs = await response.json()
+        log.debug(f"- Received Job(s)")
 
         # legacy job-take API
         if isinstance(jobs, dict):

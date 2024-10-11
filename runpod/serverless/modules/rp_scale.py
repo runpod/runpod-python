@@ -150,11 +150,14 @@ class JobScaler:
                 acquired_jobs = await asyncio.wait_for(
                     get_job(session, jobs_needed), timeout=30
                 )
+            except asyncio.CancelledError:
+                log.debug("JobScaler.get_jobs | Request was cancelled.")
+                continue
             except TimeoutError:
                 log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying.")
                 continue
             except TypeError as error:
-                log.debug(f"Unexpected error: {error}. acquired_jobs={acquired_jobs}")
+                log.debug(f"JobScaler.get_jobs | Unexpected error: {error}.")
                 continue
             except Exception as error:
                 log.error(
