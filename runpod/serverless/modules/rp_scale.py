@@ -162,7 +162,7 @@ class JobScaler:
 
             if not acquired_jobs:
                 log.debug("JobScaler.get_jobs | No jobs acquired.")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0)
                 continue
 
             for job in acquired_jobs:
