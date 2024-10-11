@@ -71,12 +71,21 @@ async def get_job(
             log.debug("- Received 400 status, expected when FlashBoot is enabled.")
             return
 
-        if response.status != 200:
+        try:
+            response.raise_for_status()
+        except Exception:
             log.error(f"- Failed to get job, status code: {response.status}")
             return
 
-        jobs = await response.json()
-        log.debug(f"- Job(s) Received")
+        try:
+            jobs = await response.json()
+            log.debug(f"- Job(s) Received")
+        except TypeError as err:
+            log.debug(f"- {response} | {err}")
+            raise response
+        except Exception as err:
+            log.debug(f"- {response} | {err}")
+            raise err
 
         # legacy job-take API
         if isinstance(jobs, dict):
