@@ -61,6 +61,8 @@ async def get_job(
         num_jobs (int): The number of jobs to get.
     """
     async with session.get(_job_get_url(num_jobs)) as response:
+        log.debug(f"- Response: {type(response).__name__} {response.status}")
+
         if response.status == 204:
             log.debug("- No content, no job to process.")
             return

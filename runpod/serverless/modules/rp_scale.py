@@ -150,7 +150,7 @@ class JobScaler:
                 acquired_jobs = await asyncio.wait_for(
                     get_job(session, jobs_needed), timeout=30
                 )
-            except asyncio.TimeoutError:
+            except (TimeoutError, asyncio.TimeoutError):
                 log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying.")
                 await asyncio.sleep(0)
                 continue
