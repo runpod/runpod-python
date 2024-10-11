@@ -2,7 +2,6 @@
 Job related helpers.
 """
 
-import asyncio
 import inspect
 import json
 import os
