@@ -142,7 +142,7 @@ class JobScaler:
             jobs_needed = self.current_concurrency - job_progress.get_job_count()
             if jobs_needed <= 0:
                 log.debug("JobScaler.get_jobs | Queue is full. Retrying soon.")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)  # don't go rapidly
                 continue
 
             try:
@@ -150,9 +150,11 @@ class JobScaler:
                 acquired_jobs = await asyncio.wait_for(
                     get_job(session, jobs_needed), timeout=30
                 )
-            except (TimeoutError, asyncio.TimeoutError):
+            except TimeoutError:
                 log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying.")
-                await asyncio.sleep(0)
+                continue
+            except TypeError as error:
+                log.debug(f"Unexpected error: {error}. acquired_jobs={acquired_jobs}")
                 continue
             except Exception as error:
                 log.error(
