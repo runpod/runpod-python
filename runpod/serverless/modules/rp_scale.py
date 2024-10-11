@@ -168,7 +168,6 @@ class JobScaler:
             for job in acquired_jobs:
                 await job_list.add_job(job)
 
-            log.debug(f"JobScaler.get_jobs | Jobs taken: {len(acquired_jobs)}")
             log.info(f"Jobs in queue: {job_list.get_job_count()}")
 
     async def run_jobs(self, session: ClientSession):
@@ -209,7 +208,7 @@ class JobScaler:
         """
         Process an individual job. This function is run concurrently for multiple jobs.
         """
-        log.debug(f"Processing job: {job}")
+        log.debug(f"JobScaler.handle_job | {job}")
         job_progress.add(job)
 
         try:
