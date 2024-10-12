@@ -8,6 +8,11 @@ import uuid
 from typing import Any, Dict, Optional
 from asyncio import Queue
 
+from .rp_logger import RunPodLogger
+
+
+log = RunPodLogger()
+
 REF_COUNT_ZERO = time.perf_counter()  # Used for benchmarking with the debugger.
 
 WORKER_ID = os.environ.get("RUNPOD_POD_ID", str(uuid.uuid4()))
@@ -87,6 +92,7 @@ class JobsProgress(set):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
+        log.debug(f"JobsProgress.add | {element}")
         return super().add(element)
 
     def remove(self, element: Any):
@@ -106,6 +112,7 @@ class JobsProgress(set):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
+        log.debug(f"JobsProgress.remove | {element}")
         return super().remove(element)
 
     def get(self, element: Any) -> Job:
@@ -155,6 +162,7 @@ class JobsQueue(Queue):
         If the queue is full, wait until a free
         slot is available before adding item.
         """
+        log.debug(f"JobsQueue.add_job | {job}")
         return await self.put(job)
 
     async def get_job(self) -> dict:

@@ -2,7 +2,6 @@
 Job related helpers.
 """
 
-import asyncio
 import inspect
 import json
 import os
@@ -60,43 +59,45 @@ async def get_job(
         session (ClientSession): The aiohttp ClientSession to use for the request.
         num_jobs (int): The number of jobs to get.
     """
-    try:
-        async with session.get(_job_get_url(num_jobs)) as response:
-            if response.status == 204:
-                log.debug("No content, no job to process.")
-                return
+    async with session.get(_job_get_url(num_jobs)) as response:
+        log.debug(f"- Response: {type(response).__name__} {response.status}")
 
-            if response.status == 400:
-                log.debug("Received 400 status, expected when FlashBoot is enabled.")
-                return
+        if response.status == 204:
+            log.debug("- No content, no job to process.")
+            return
 
-            if response.status != 200:
-                log.error(f"Failed to get job, status code: {response.status}")
-                return
+        if response.status == 400:
+            log.debug("- Received 400 status, expected when FlashBoot is enabled.")
+            return
 
-            jobs = await response.json()
-            log.debug(f"Request Received | {jobs}")
+        try:
+            response.raise_for_status()
+        except Exception:
+            log.error(f"- Failed to get job, status code: {response.status}")
+            return
 
-            # legacy job-take API
-            if isinstance(jobs, dict):
-                if "id" not in jobs or "input" not in jobs:
-                    raise Exception("Job has missing field(s): id or input.")
-                return [jobs]
+        # Verify if the content type is JSON
+        if response.content_type != "application/json":
+            log.error(f"- Unexpected content type: {response.content_type}")
+            return
 
-            # batch job-take API
-            if isinstance(jobs, list):
-                return jobs
+        # Check if there is a non-empty content to parse
+        if response.content_length == 0:
+            log.debug("- No content to parse.")
+            return
 
-    except asyncio.TimeoutError:
-        log.debug("Timeout error, retrying.")
+        jobs = await response.json()
+        log.debug(f"- Received Job(s)")
 
-    except Exception as error:
-        log.error(
-            f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}"
-        )
+        # legacy job-take API
+        if isinstance(jobs, dict):
+            if "id" not in jobs or "input" not in jobs:
+                raise Exception("Job has missing field(s): id or input.")
+            return [jobs]
 
-    # empty
-    return []
+        # batch job-take API
+        if isinstance(jobs, list):
+            return jobs
 
 
 async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dict:
