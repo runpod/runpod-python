@@ -1,4 +1,4 @@
-""" Unit tests for the runpodignore module in the cli.utils package. """
+"""Unit tests for the runpodignore module in the cli.utils package."""
 
 # pylint: disable=duplicate-code
 

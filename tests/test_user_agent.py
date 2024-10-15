@@ -1,4 +1,4 @@
-""" Tests for the user_agent module. """
+"""Tests for the user_agent module."""
 
 import os
 import unittest

@@ -9,6 +9,7 @@ from unittest.mock import ANY, patch
 from runpod.serverless.modules.rp_progress import _thread_target, progress_update
 
 
+
 class TestProgressUpdate(unittest.TestCase):
     """Tests for the progress_update function."""
 

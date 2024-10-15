@@ -1,4 +1,4 @@
-""" Tests for the SSH functions """
+"""Tests for the SSH functions"""
 
 import base64
 import unittest

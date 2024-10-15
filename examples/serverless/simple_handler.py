@@ -1,4 +1,4 @@
-""" Simple Handler
+"""Simple Handler
 
 To setup a local API server, run the following command:
 python simple_handler.py --rp_serve_api

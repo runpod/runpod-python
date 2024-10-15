@@ -1,4 +1,4 @@
-""" RunPod | API Wrapper | Mutations | Templates """
+"""RunPod | API Wrapper | Mutations | Templates"""
 
 # pylint: disable=too-many-arguments, too-many-branches
 
