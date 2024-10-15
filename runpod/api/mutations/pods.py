@@ -28,6 +28,8 @@ def generate_pod_deployment_mutation(
     template_id=None,
     network_volume_id=None,
     allowed_cuda_versions: Optional[List[str]] = None,
+    min_download=None,
+    min_upload=None,
 ):
     """
     Generates a mutation to deploy a pod on demand.
@@ -89,9 +91,14 @@ def generate_pod_deployment_mutation(
         )
         input_fields.append(f"allowedCudaVersions: [{allowed_cuda_versions_string}]")
 
+    if min_download is not None:
+        input_fields.append(f'minDownload: {min_download}')
+
+    if min_upload is not None:
+        input_fields.append(f'minUpload: {min_upload}')
+
     # Format input fields
     input_string = ", ".join(input_fields)
-
     return f"""
     mutation {{
       podFindAndDeployOnDemand(
