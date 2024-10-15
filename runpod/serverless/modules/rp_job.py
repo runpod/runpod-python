@@ -8,7 +8,7 @@ import os
 import traceback
 from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union, List
 
-from runpod.http_client import ClientSession
+from runpod.http_client import ClientSession, TooManyRequests
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
@@ -70,15 +70,20 @@ async def get_job(
             log.debug("- Received 400 status, expected when FlashBoot is enabled.")
             return
 
-        try:
-            response.raise_for_status()
-        except Exception:
-            log.error(f"- Failed to get job, status code: {response.status}")
-            return
+        if response.status == 429:
+            raise TooManyRequests(
+                response.request_info,
+                response.history,
+                status=response.status,
+                message=response.reason
+            )
+
+        # All other errors should raise an exception
+        response.raise_for_status()
 
         # Verify if the content type is JSON
         if response.content_type != "application/json":
-            log.error(f"- Unexpected content type: {response.content_type}")
+            log.debug(f"- Unexpected content type: {response.content_type}")
             return
 
         # Check if there is a non-empty content to parse
