@@ -7,7 +7,7 @@ import asyncio
 import signal
 from typing import Any, Dict
 
-from ...http_client import AsyncClientSession, ClientSession
+from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
 from .rp_job import get_job, handle_job
 from .rp_logger import RunPodLogger
 from .worker_state import JobsQueue, JobsProgress
@@ -150,6 +150,10 @@ class JobScaler:
                 acquired_jobs = await asyncio.wait_for(
                     get_job(session, jobs_needed), timeout=30
                 )
+            except TooManyRequests:
+                log.debug(f"JobScaler.get_jobs | Too many requests. Debounce for 5 seconds.")
+                await asyncio.sleep(5)  # debounce for 5 seconds
+                continue
             except asyncio.CancelledError:
                 log.debug("JobScaler.get_jobs | Request was cancelled.")
                 continue

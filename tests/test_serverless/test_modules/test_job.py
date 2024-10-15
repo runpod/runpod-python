@@ -2,13 +2,13 @@
 Test Serverless Job Module
 """
 
-import asyncio
 from unittest.mock import Mock, patch
 
 from unittest import IsolatedAsyncioTestCase
-from aiohttp import ClientResponse
+from aiohttp import ClientResponse, ClientResponseError
 from aiohttp.test_utils import make_mocked_coro
 
+from runpod.http_client import TooManyRequests
 from runpod.serverless.modules import rp_job
 
 
@@ -62,6 +62,38 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_session.get.return_value.__aenter__.return_value = response
             job = await rp_job.get_job(mock_session)
             self.assertIsNone(job)
+
+    async def test_get_job_429(self):
+        """Tests the get_job function with a 429 response."""
+        response = Mock(ClientResponse)
+        response.raise_for_status.side_effect = TooManyRequests(
+            request_info=None,
+            history=(),
+            status=429,
+        )
+
+        with patch("aiohttp.ClientSession") as mock_session, patch(
+            "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
+        ):
+            mock_session.get.return_value.__aenter__.return_value = response
+            with self.assertRaises(ClientResponseError):
+                await rp_job.get_job(mock_session)
+
+    async def test_get_job_500(self):
+        """Tests the get_job function with a 500 response."""
+        # Mock 500 response
+        response = Mock(ClientResponse)
+        response.raise_for_status.side_effect = TooManyRequests(
+            request_info=None,  # Not needed for the test
+            history=(),  # Not needed for the test
+            status=500, 
+        )
+        with patch("aiohttp.ClientSession") as mock_session, patch(
+            "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
+        ):
+            mock_session.get.return_value.__aenter__.return_value = response
+            with self.assertRaises(Exception):
+                await rp_job.get_job(mock_session)
 
     async def test_get_job_no_id(self):
         """Tests the get_job function with a 200 response but no 'id' field."""
