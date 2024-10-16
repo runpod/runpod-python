@@ -9,9 +9,7 @@ import runpod
 
 endpoint = runpod.Endpoint("sdxl")  # Where "sdxl" is the endpoint ID
 
-run_request = endpoint.run(
-    {"input": {"prompt": "a photo of a horse the size of a Boeing 787"}}
-)
+run_request = endpoint.run({"input": {"prompt": "a photo of a horse the size of a Boeing 787"}})
 
 # Check the status of the run request
 print(run_request.status())

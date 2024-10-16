@@ -1,1 +1,1 @@
-""" Allows api_wrapper to be imported as a module."""
+"""Allows api_wrapper to be imported as a module."""

@@ -1,1 +1,1 @@
-""" Config related CLI functions. """
+"""Config related CLI functions."""

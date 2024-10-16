@@ -40,9 +40,7 @@ class TestProgressUpdate(unittest.TestCase):
 
         assert mock_thread_target.called, "Thread function was not started"
         mock_thread_target.assert_called_once_with(job, progress)
-        assert thread_event.wait(
-            timeout=30
-        ), "Thread did not complete within expected time"
+        assert thread_event.wait(timeout=30), "Thread did not complete within expected time"
 
         # Assertions
         expected_job_data = {"status": "IN_PROGRESS", "output": progress}

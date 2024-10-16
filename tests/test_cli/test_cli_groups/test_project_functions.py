@@ -1,4 +1,4 @@
-""" Test functions in runpod.cli.groups.project.functions module. """
+"""Test functions in runpod.cli.groups.project.functions module."""
 
 import os
 import shutil
@@ -25,9 +25,7 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("os.path.exists", return_value=False)
     @patch("os.getcwd", return_value="/current/path")
     @patch("runpod.cli.groups.project.functions.copy_template_files")
-    def test_create_project_folder(
-        self, mock_copy_template_files, mock_getcwd, mock_exists, mock_makedirs
-    ):  # pylint: disable=line-too-long
+    def test_create_project_folder(self, mock_copy_template_files, mock_getcwd, mock_exists, mock_makedirs):  # pylint: disable=line-too-long
         """Test that a new project folder is created if init_current_dir is False."""
         with patch("builtins.open", new_callable=mock_open):
             create_new_project("test_project", "volume_id", "11.1.1", "3.8")
@@ -40,9 +38,7 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("os.path.exists", return_value=False)
     @patch("os.getcwd", return_value="/tmp/testdir")
     @patch("builtins.open", new_callable=mock_open)
-    def test_create_new_project_init_current_dir(
-        self, mock_file_open, mock_getcwd, mock_path_exists, mock_makedirs
-    ):  # pylint: disable=line-too-long
+    def test_create_new_project_init_current_dir(self, mock_file_open, mock_getcwd, mock_path_exists, mock_makedirs):  # pylint: disable=line-too-long
         """Test that a new project folder is not created if init_current_dir is True."""
         project_name = "test_project"
         runpod_volume_id = "12345"
@@ -57,9 +53,7 @@ class TestCreateNewProject(unittest.TestCase):
             init_current_dir=True,
         )
         mock_makedirs.assert_not_called()
-        mock_file_open.assert_called_with(
-            "/tmp/testdir/runpod.toml", "w", encoding="UTF-8"
-        )
+        mock_file_open.assert_called_with("/tmp/testdir/runpod.toml", "w", encoding="UTF-8")
         assert mock_getcwd.called
         assert mock_path_exists.called is False
 
@@ -67,15 +61,11 @@ class TestCreateNewProject(unittest.TestCase):
     @patch("os.path.exists", return_value=False)
     @patch("os.getcwd", return_value="/current/path")
     @patch("runpod.cli.groups.project.functions.copy_template_files")
-    def test_copy_template_files(
-        self, mock_copy_template_files, mock_getcwd, mock_exists, mock_makedirs
-    ):  # pylint: disable=line-too-long
+    def test_copy_template_files(self, mock_copy_template_files, mock_getcwd, mock_exists, mock_makedirs):  # pylint: disable=line-too-long
         """Test that template files are copied to the new project folder."""
         with patch("builtins.open", new_callable=mock_open):
             create_new_project("test_project", "volume_id", "11.1.1", "3.8")
-        mock_copy_template_files.assert_called_once_with(
-            STARTER_TEMPLATES + "/default", "/current/path/test_project"
-        )  # pylint: disable=line-too-long
+        mock_copy_template_files.assert_called_once_with(STARTER_TEMPLATES + "/default", "/current/path/test_project")  # pylint: disable=line-too-long
         assert mock_getcwd.called
         assert mock_exists.called
         assert mock_makedirs.called
@@ -86,14 +76,10 @@ class TestCreateNewProject(unittest.TestCase):
         new_callable=mock_open,
         read_data="data with <<MODEL_NAME>> placeholder",
     )  # pylint: disable=line-too-long
-    def test_replace_placeholders_in_handler(
-        self, mock_open_file, mock_exists
-    ):  # pylint: disable=line-too-long
+    def test_replace_placeholders_in_handler(self, mock_open_file, mock_exists):  # pylint: disable=line-too-long
         """Test that placeholders in handler.py are replaced if model_name is given."""
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
-            create_new_project(
-                "test_project", "volume_id", "11.8.0", "3.8", model_name="my_model"
-            )
+            create_new_project("test_project", "volume_id", "11.8.0", "3.8", model_name="my_model")
         assert mock_open_file.called
         assert mock_exists.called
 
@@ -104,9 +90,7 @@ class TestCreateNewProject(unittest.TestCase):
         with patch("runpod.cli.groups.project.functions.copy_template_files"):
             create_new_project("test_project", "volume_id", "11.8.0", "3.8")
         toml_file_location = os.path.join(os.getcwd(), "test_project", "runpod.toml")
-        mock_open_file.assert_called_with(
-            toml_file_location, "w", encoding="UTF-8"
-        )  # pylint: disable=line-too-long
+        mock_open_file.assert_called_with(toml_file_location, "w", encoding="UTF-8")  # pylint: disable=line-too-long
         assert mock_exists.called
 
     @patch("os.path.exists", return_value=True)
@@ -184,9 +168,7 @@ class TestStartProject(unittest.TestCase):
         mock_ssh_instance.__enter__.return_value = mock_ssh_instance
         mock_ssh_instance.run_commands.return_value = None
 
-        with patch(
-            "runpod.cli.groups.project.functions.sync_directory"
-        ) as mock_sync_directory:
+        with patch("runpod.cli.groups.project.functions.sync_directory") as mock_sync_directory:
             start_project()
 
         mock_attempt_pod_launch.assert_called()
@@ -203,14 +185,9 @@ class TestStartProject(unittest.TestCase):
         mock_attempt_pod.return_value = None
         mock_get_pod.return_value = None
 
-        with patch("builtins.print") as mock_print, patch(
-            "runpod.cli.groups.project.functions.load_project_config"
-        ):
-
+        with patch("builtins.print") as mock_print, patch("runpod.cli.groups.project.functions.load_project_config"):
             start_project()
-            mock_print.assert_called_with(
-                "Selected GPU types unavailable, try again later or use a different type."
-            )  # pylint: disable=line-too-long
+            mock_print.assert_called_with("Selected GPU types unavailable, try again later or use a different type.")  # pylint: disable=line-too-long
 
 
 class TestStartProjectAPI(unittest.TestCase):
@@ -253,9 +230,7 @@ class TestStartProjectAPI(unittest.TestCase):
 
         mock_get_project_pod.assert_called_with("123456")
         mock_ssh_connection.assert_called_with({"id": "pod_id"})
-        mock_sync_directory.assert_called_with(
-            mock_ssh_instance, "/current/path", "/mount/path/123456/dev"
-        )
+        mock_sync_directory.assert_called_with(mock_ssh_instance, "/current/path", "/mount/path/123456/dev")
         mock_ssh_instance.run_commands.assert_called()
         assert mock_getcwd.called
 
@@ -284,9 +259,7 @@ class TestCreateProjectEndpoint(unittest.TestCase):
         mock_get_project_endpoint.return_value = False
 
         mock_get_project_pod.return_value = None
-        with patch(
-            "runpod.cli.groups.project.functions._launch_dev_pod"
-        ) as mock_launch_dev_pod:
+        with patch("runpod.cli.groups.project.functions._launch_dev_pod") as mock_launch_dev_pod:
             mock_launch_dev_pod.return_value = None
             assert create_project_endpoint() is None
 

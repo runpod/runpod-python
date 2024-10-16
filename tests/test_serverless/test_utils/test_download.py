@@ -1,4 +1,4 @@
-""" Tests for runpod | serverless | modules | download.py """
+"""Tests for runpod | serverless | modules | download.py"""
 
 # pylint: disable=R0903,W0613
 
@@ -75,9 +75,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         self.assertEqual(calculate_chunk_size(1024), 1024)
         self.assertEqual(calculate_chunk_size(1024 * 1024), 1024)
         self.assertEqual(calculate_chunk_size(1024 * 1024 * 1024), 1024 * 1024)
-        self.assertEqual(
-            calculate_chunk_size(1024 * 1024 * 1024 * 10), 1024 * 1024 * 10
-        )
+        self.assertEqual(calculate_chunk_size(1024 * 1024 * 1024 * 10), 1024 * 1024 * 10)
 
     @patch("os.makedirs", return_value=None)
     @patch("runpod.http_client.SyncClientSession.get", side_effect=mock_requests_get)
@@ -102,13 +100,9 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         self.assertTrue(downloaded_files[0].endswith(".jpg"))
 
         mock_open_file.assert_called_once_with(downloaded_files[0], "wb")
-        mock_makedirs.assert_called_once_with(
-            os.path.abspath(f"jobs/{JOB_ID}/downloaded_files"), exist_ok=True
-        )
+        mock_makedirs.assert_called_once_with(os.path.abspath(f"jobs/{JOB_ID}/downloaded_files"), exist_ok=True)
 
-        string_download_file = download_files_from_urls(
-            JOB_ID, "https://example.com/picture.jpg"
-        )
+        string_download_file = download_files_from_urls(JOB_ID, "https://example.com/picture.jpg")
         self.assertTrue(string_download_file[0].endswith(".jpg"))
 
         # Check if None is returned when url is None
@@ -124,9 +118,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
     @patch("os.makedirs", return_value=None)
     @patch("runpod.http_client.SyncClientSession.get", side_effect=mock_requests_get)
     @patch("builtins.open", new_callable=mock_open)
-    def test_download_files_from_urls_signed(
-        self, mock_open_file, mock_get, mock_makedirs
-    ):
+    def test_download_files_from_urls_signed(self, mock_open_file, mock_get, mock_makedirs):
         """
         Tests download_files_from_urls with signed urls
         """
@@ -147,9 +139,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         self.assertTrue(downloaded_files[0].endswith(".jpg"))
 
         mock_open_file.assert_called_once_with(downloaded_files[0], "wb")
-        mock_makedirs.assert_called_once_with(
-            os.path.abspath(f"jobs/{JOB_ID}/downloaded_files"), exist_ok=True
-        )
+        mock_makedirs.assert_called_once_with(os.path.abspath(f"jobs/{JOB_ID}/downloaded_files"), exist_ok=True)
 
 
 class FileDownloaderTestCase(unittest.TestCase):

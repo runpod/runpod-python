@@ -1,4 +1,4 @@
-""" A template for a handler file. """
+"""A template for a handler file."""
 
 import runpod
 

@@ -1,4 +1,4 @@
-""" Tests for the user_agent module. """
+"""Tests for the user_agent module."""
 
 import os
 import unittest
@@ -15,9 +15,7 @@ class TestConstructUserAgent(unittest.TestCase):
     @patch("runpod.user_agent.platform.release", return_value="10")
     @patch("runpod.user_agent.platform.machine", return_value="AMD64")
     @patch("runpod.user_agent.platform.python_version", return_value="3.8.10")
-    def test_user_agent_without_integration(
-        self, mock_python_version, mock_machine, mock_release, mock_system
-    ):
+    def test_user_agent_without_integration(self, mock_python_version, mock_machine, mock_release, mock_system):
         """Test the User-Agent string without specifying an integration method."""
         if "RUNPOD_UA_INTEGRATION" in os.environ:
             del os.environ["RUNPOD_UA_INTEGRATION"]
@@ -35,11 +33,11 @@ class TestConstructUserAgent(unittest.TestCase):
     @patch("runpod.user_agent.platform.machine", return_value="x86_64")
     @patch("runpod.user_agent.platform.python_version", return_value="3.9.5")
     @patch.dict(os.environ, {"RUNPOD_UA_INTEGRATION": "SkyPilot"})
-    def test_user_agent_with_integration(
-        self, mock_python_version, mock_machine, mock_release, mock_system
-    ):
+    def test_user_agent_with_integration(self, mock_python_version, mock_machine, mock_release, mock_system):
         """Test the User-Agent string with an integration method specified."""
-        expected_ua = f"RunPod-Python-SDK/{runpod_version} (Linux 5.4; x86_64) Language/Python 3.9.5 Integration/SkyPilot"  # pylint: disable=line-too-long
+        expected_ua = (
+            f"RunPod-Python-SDK/{runpod_version} (Linux 5.4; x86_64) Language/Python 3.9.5 Integration/SkyPilot"  # pylint: disable=line-too-long
+        )
 
         os.environ["RUNPOD_UA_INTEGRATION"] = "SkyPilot"
         self.assertEqual(construct_user_agent(), expected_ua)

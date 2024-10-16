@@ -17,9 +17,7 @@ def validate_project_name(name):
     """
     match = re.search(r"[<>:\"/\\|?*\s]", name)
     if match:
-        raise click.BadParameter(
-            f"Project name contains an invalid character: '{match.group()}'."
-        )
+        raise click.BadParameter(f"Project name contains an invalid character: '{match.group()}'.")
     return name
 
 

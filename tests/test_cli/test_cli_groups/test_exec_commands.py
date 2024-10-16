@@ -49,9 +49,7 @@ class TestExecCommands(unittest.TestCase):
             "runpod.cli.groups.exec.commands.python_over_ssh"
         ) as mock_python_over_ssh, patch(
             "runpod.cli.groups.exec.commands.get_session_pod",
-            side_effect=lambda: click.prompt(
-                "Please provide the pod ID", "prompted_pod_id"
-            ),
+            side_effect=lambda: click.prompt("Please provide the pod ID", "prompted_pod_id"),
         ) as mock_get_pod_id:  # pylint: disable=line-too-long
             mock_python_over_ssh.return_value = None
             result = self.runner.invoke(runpod_cli, ["exec", "python", temp_file.name])

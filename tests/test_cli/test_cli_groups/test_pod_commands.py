@@ -1,4 +1,4 @@
-""" Test CLI pod commands """
+"""Test CLI pod commands"""
 
 import unittest
 from unittest.mock import MagicMock, patch
@@ -50,9 +50,7 @@ class TestPodCommands(unittest.TestCase):
     @patch("runpod.cli.groups.pod.commands.click.confirm")
     @patch("runpod.cli.groups.pod.commands.click.echo")
     @patch("runpod.cli.groups.pod.commands.create_pod")
-    def test_create_new_pod(
-        self, mock_create_pod, mock_echo, mock_confirm, mock_prompt
-    ):  # pylint: disable=too-many-arguments,line-too-long
+    def test_create_new_pod(self, mock_create_pod, mock_echo, mock_confirm, mock_prompt):  # pylint: disable=too-many-arguments,line-too-long
         """
         Test create_new_pod
         """

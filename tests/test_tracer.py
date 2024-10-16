@@ -36,7 +36,6 @@ from runpod.tracer import (
 
 
 class TestTracer(unittest.TestCase):
-
     def setUp(self):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
@@ -50,9 +49,7 @@ class TestTracer(unittest.TestCase):
     def test_on_request_start(self):
         session = MagicMock()
         context = SimpleNamespace(trace_request_ctx={"current_attempt": 0})
-        params = TraceRequestStartParams(
-            "GET", URL("http://test.com/"), {"X-Request-ID": "myRequestId"}
-        )
+        params = TraceRequestStartParams("GET", URL("http://test.com/"), {"X-Request-ID": "myRequestId"})
 
         self.loop.run_until_complete(on_request_start(session, context, params))
         assert hasattr(context, "on_request_start")
@@ -65,9 +62,7 @@ class TestTracer(unittest.TestCase):
         context = SimpleNamespace(on_request_start=self.loop.time())
         params = TraceConnectionCreateStartParams()
 
-        self.loop.run_until_complete(
-            on_connection_create_start(session, context, params)
-        )
+        self.loop.run_until_complete(on_connection_create_start(session, context, params))
 
         assert context.connect
 
@@ -92,18 +87,14 @@ class TestTracer(unittest.TestCase):
     def test_on_request_chunk_sent(self):
         session = MagicMock()
         context = SimpleNamespace(on_request_start=self.loop.time())
-        params = TraceRequestChunkSentParams(
-            "GET", URL("http://test.com/"), chunk=b"test data"
-        )
+        params = TraceRequestChunkSentParams("GET", URL("http://test.com/"), chunk=b"test data")
 
         # Initial call to on_request_start to initialize context
         self.loop.run_until_complete(on_request_start(session, context, params))
 
         # Call on_request_chunk_sent multiple times to simulate multiple chunks being sent
         for _ in range(3):
-            self.loop.run_until_complete(
-                on_request_chunk_sent(session, context, params)
-            )
+            self.loop.run_until_complete(on_request_chunk_sent(session, context, params))
 
         # Verify that payload_size_bytes has accumulated
         assert context.payload_size_bytes == len(params.chunk) * 3
@@ -111,18 +102,14 @@ class TestTracer(unittest.TestCase):
     def test_on_response_chunk_received(self):
         session = MagicMock()
         context = SimpleNamespace(on_request_start=self.loop.time())
-        params = TraceResponseChunkReceivedParams(
-            "GET", URL("http://test.com/"), chunk=b"received data"
-        )
+        params = TraceResponseChunkReceivedParams("GET", URL("http://test.com/"), chunk=b"received data")
 
         # Initial call to on_request_start to initialize context
         self.loop.run_until_complete(on_request_start(session, context, params))
 
         # Call on_response_chunk_received multiple times to simulate multiple chunks being received
         for _ in range(3):
-            self.loop.run_until_complete(
-                on_response_chunk_received(session, context, params)
-            )
+            self.loop.run_until_complete(on_response_chunk_received(session, context, params))
 
         # Verify that payload_size_bytes has accumulated
         assert context.response_size_bytes == len(params.chunk) * 3

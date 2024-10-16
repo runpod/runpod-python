@@ -1,4 +1,4 @@
-""" Tests for runpod.serverless.modules.rp_logger """
+"""Tests for runpod.serverless.modules.rp_logger"""
 
 import os
 import unittest
@@ -58,16 +58,14 @@ class TestLogger(unittest.TestCase):
         log = rp_logger.RunPodLogger()
 
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
-
             log.warn("Test log message")
 
             mock_log.assert_called_once_with("Test log message", "WARN", None)
 
         log.set_level(0)
-        with patch(
-            "runpod.serverless.modules.rp_logger.RunPodLogger.log"
-        ) as mock_log, patch("builtins.print") as mock_print:
-
+        with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log, patch(
+            "builtins.print"
+        ) as mock_print:
             log.debug("Test log message")
 
             mock_log.assert_called_once_with("Test log message", "DEBUG", None)
@@ -104,9 +102,7 @@ class TestLogger(unittest.TestCase):
         """
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
             self.logger.secret("test_secret", "test_secret_value")
-            mock_log.assert_called_once_with(
-                "test_secret: t***************e", "INFO", None
-            )
+            mock_log.assert_called_once_with("test_secret: t***************e", "INFO", None)
 
     def test_log_tip(self):
         """
@@ -125,9 +121,7 @@ class TestLogger(unittest.TestCase):
             mock_log.assert_called_once_with("This is a trace message", "TRACE", None)
 
             self.logger.trace("This is another trace message", "test-request-id")
-            mock_log.assert_called_with(
-                "This is another trace message", "TRACE", "test-request-id"
-            )
+            mock_log.assert_called_with("This is another trace message", "TRACE", "test-request-id")
 
     def test_log_job_id(self):
         """Tests that the log method logs a job id"""
@@ -138,9 +132,7 @@ class TestLogger(unittest.TestCase):
         with patch("builtins.print") as mock_print:
             logger.log("test_message", "INFO", job_id)
 
-            mock_print.assert_called_once_with(
-                "INFO   | test_job_id | test_message", flush=True
-            )
+            mock_print.assert_called_once_with("INFO   | test_job_id | test_message", flush=True)
 
             # Test with endpoint id set
             os.environ["RUNPOD_ENDPOINT_ID"] = "test_endpoint_id"

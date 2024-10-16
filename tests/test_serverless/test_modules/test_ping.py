@@ -1,4 +1,4 @@
-""" Tests for runpod.serverless.modules.rp_ping """
+"""Tests for runpod.serverless.modules.rp_ping"""
 
 import importlib
 import os
@@ -14,6 +14,7 @@ from runpod.serverless.modules.worker_state import JobsProgress
 
 class MockResponse:
     """Mock response for aiohttp"""
+
     url = ""
     status_code = 200
 
@@ -49,9 +50,7 @@ class TestPing(unittest.TestCase):
         assert heartbeat.PING_INTERVAL == 1
 
     @patch.dict(os.environ, {"RUNPOD_PING_INTERVAL": "1000"})
-    @patch(
-        "runpod.serverless.modules.rp_ping.SyncClientSession.get", side_effect=mock_get
-    )
+    @patch("runpod.serverless.modules.rp_ping.SyncClientSession.get", side_effect=mock_get)
     def test_start_ping(self, mock_get_return):
         """
         Tests that the start_ping function works correctly
@@ -99,16 +98,13 @@ class TestPing(unittest.TestCase):
 
 @patch.dict(os.environ, {"RUNPOD_PING_INTERVAL": "1000"})
 class TestHeartbeat(unittest.TestCase):
-
     @patch.dict(os.environ, {"RUNPOD_AI_API_KEY": ""})
     @patch("runpod.serverless.modules.rp_ping.log")
     def test_start_ping_no_api_key(self, mock_logger):
         """Test start_ping method when RUNPOD_AI_API_KEY is missing."""
         heartbeat = Heartbeat()
         heartbeat.start_ping()
-        mock_logger.debug.assert_called_once_with(
-            "Not deployed on RunPod serverless, pings will not be sent."
-        )
+        mock_logger.debug.assert_called_once_with("Not deployed on RunPod serverless, pings will not be sent.")
 
     @patch.dict(os.environ, {"RUNPOD_POD_ID": ""})
     @patch("runpod.serverless.modules.rp_ping.log")
@@ -116,9 +112,7 @@ class TestHeartbeat(unittest.TestCase):
         """Test start_ping method when RUNPOD_POD_ID is missing."""
         heartbeat = Heartbeat()
         heartbeat.start_ping()
-        mock_logger.info.assert_called_once_with(
-            "Not running on RunPod, pings will not be sent."
-        )
+        mock_logger.info.assert_called_once_with("Not running on RunPod, pings will not be sent.")
 
     @patch("runpod.serverless.modules.rp_ping.Heartbeat._send_ping")
     def test_ping_loop(self, mock_send_ping):
@@ -148,9 +142,9 @@ class TestHeartbeat(unittest.TestCase):
         _, kwargs = mock_get.call_args
 
         # Check that job_id is correct in params, ignoring other params
-        assert 'params' in kwargs
-        assert 'job_id' in kwargs['params']
-        assert kwargs['params']['job_id'] in ["job1,job2", "job2,job1"]
+        assert "params" in kwargs
+        assert "job_id" in kwargs["params"]
+        assert kwargs["params"]["job_id"] in ["job1,job2", "job2,job1"]
 
     @patch("runpod.serverless.modules.rp_ping.log")
     def test_send_ping_exception(self, mock_logger):
@@ -164,6 +158,4 @@ class TestHeartbeat(unittest.TestCase):
         ):
             heartbeat._send_ping()
 
-            mock_logger.error.assert_called_once_with(
-                "Ping Request Error: Error, attempting to restart ping."
-            )
+            mock_logger.error.assert_called_once_with("Ping Request Error: Error, attempting to restart ping.")

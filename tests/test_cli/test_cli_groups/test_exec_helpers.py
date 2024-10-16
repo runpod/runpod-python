@@ -1,4 +1,4 @@
-""" Unit tests for the runpod.cli.groups.exec.helpers module. """
+"""Unit tests for the runpod.cli.groups.exec.helpers module."""
 
 import unittest
 from unittest.mock import mock_open, patch
@@ -59,9 +59,7 @@ class TestGetSessionPod(unittest.TestCase):
 
     @patch("os.path.exists")
     @patch("runpod.cli.groups.exec.helpers.get_pod")
-    def test_pod_id_file_written_to_when_invalid_pod_id_in_file(
-        self, mock_get_pod, mock_exists
-    ):
+    def test_pod_id_file_written_to_when_invalid_pod_id_in_file(self, mock_get_pod, mock_exists):
         """Test get_session_pod when the pod_id file exists and the pod_id is invalid"""
         mock_exists.return_value = True
         mock_get_pod.return_value = None

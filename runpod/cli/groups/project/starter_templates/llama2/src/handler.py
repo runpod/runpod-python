@@ -1,7 +1,6 @@
-""" A template for a Llama2 handler file. """
+"""A template for a Llama2 handler file."""
 
 # pylint: skip-file
-
 
 from transformers import HfApi
 

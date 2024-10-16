@@ -1,4 +1,4 @@
-""" Tests for the SSH functions """
+"""Tests for the SSH functions"""
 
 import base64
 import unittest
@@ -35,9 +35,7 @@ class TestSSHFunctions(unittest.TestCase):
         dummy_data1 = base64.b64encode("test data 1".encode("utf-8")).decode("utf-8")
         dummy_data2 = base64.b64encode("test data 2".encode("utf-8")).decode("utf-8")
 
-        mock_get_user.return_value = {
-            "pubKey": f"ssh-rsa {dummy_data1} key1\nssh-rsa {dummy_data2} key2\n1"
-        }
+        mock_get_user.return_value = {"pubKey": f"ssh-rsa {dummy_data1} key1\nssh-rsa {dummy_data2} key2\n1"}
 
         keys = get_user_pub_keys()
 
@@ -49,9 +47,7 @@ class TestSSHFunctions(unittest.TestCase):
         """Test the add_ssh_key function when the key already exists"""
         mock_get_user.return_value = {"pubKey": "ssh-rsa ABCDE12345 key1"}
         key = "ssh-rsa AAAAB3Nza...base64data...Q== user@host"
-        with patch(
-            "runpod.cli.groups.ssh.functions.update_user_settings"
-        ) as mock_update_settings:
+        with patch("runpod.cli.groups.ssh.functions.update_user_settings") as mock_update_settings:
             mock_update_settings.return_value = None
             self.assertIsNone(add_ssh_key(key))
             assert mock_update_settings.called
@@ -64,13 +60,9 @@ class TestSSHFunctions(unittest.TestCase):
         mock_generate.return_value.get_base64.return_value = "ABCDE12345"
         mock_path_join.return_value = "/path/to/private_key"
 
-        with patch("os.mkdir") as mock_mkdir, patch(
-            "builtins.open", mock_open()
-        ) as mock_file, patch(
+        with patch("os.mkdir") as mock_mkdir, patch("builtins.open", mock_open()) as mock_file, patch(
             "runpod.cli.groups.ssh.functions.os.chmod"
-        ) as mock_chmod, patch(
-            "runpod.cli.groups.ssh.functions.add_ssh_key"
-        ) as mock_add_key:
+        ) as mock_chmod, patch("runpod.cli.groups.ssh.functions.add_ssh_key") as mock_add_key:
             mock_mkdir.return_value = None
             mock_file.return_value.write.return_value = None
             private_key, public_key = generate_ssh_key_pair("test_key")

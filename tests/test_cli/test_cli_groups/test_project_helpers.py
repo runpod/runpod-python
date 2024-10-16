@@ -108,7 +108,5 @@ class TestHelpers(unittest.TestCase):
         assert mock_exists.called
         assert mock_file.called
 
-        with patch("os.path.exists", return_value=False), self.assertRaises(
-            FileNotFoundError
-        ):
+        with patch("os.path.exists", return_value=False), self.assertRaises(FileNotFoundError):
             load_project_config()

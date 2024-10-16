@@ -1,4 +1,4 @@
-""" Test suite for the generate_container_registry_auth function. """
+"""Test suite for the generate_container_registry_auth function."""
 
 import unittest
 
@@ -23,9 +23,7 @@ class TestGenerateContainerRegistryAuth(unittest.TestCase):
         password = "testPass"
 
         # Generate the actual mutation string
-        actual_mutation = generate_container_registry_auth(
-            name, username, password
-        ).strip()
+        actual_mutation = generate_container_registry_auth(name, username, password).strip()
 
         # Verify key components of the mutation string
         self.assertIn("mutation SaveRegistryAuth", actual_mutation)
@@ -47,9 +45,7 @@ class TestGenerateContainerRegistryAuth(unittest.TestCase):
         password = "testPass"
 
         # Generate the actual mutation string
-        actual_mutation = update_container_registry_auth(
-            registry_auth_id, username, password
-        ).strip()
+        actual_mutation = update_container_registry_auth(registry_auth_id, username, password).strip()
 
         # Verify key components of the mutation string
         self.assertIn("mutation UpdateRegistryAuth", actual_mutation)
@@ -69,9 +65,7 @@ class TestGenerateContainerRegistryAuth(unittest.TestCase):
         registry_auth_id = "testAuthId"
 
         # Generate the actual mutation string
-        actual_mutation = delete_container_registry_auth(
-            registry_auth_id
-        ).strip()
+        actual_mutation = delete_container_registry_auth(registry_auth_id).strip()
 
         # Verify key components of the mutation string
         self.assertIn("mutation DeleteRegistryAuth", actual_mutation)

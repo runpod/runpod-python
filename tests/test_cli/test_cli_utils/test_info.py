@@ -1,4 +1,4 @@
-""" Unit testing for runpod.cli.utils.rp_info.py """
+"""Unit testing for runpod.cli.utils.rp_info.py"""
 
 from unittest.mock import patch
 
@@ -15,11 +15,7 @@ class TestGetPodSSHIpPort:
         with patch("runpod.cli.utils.rp_info.get_pod") as mock_get_pod:
             mock_get_pod.return_value = {
                 "desiredStatus": "RUNNING",
-                "runtime": {
-                    "ports": [
-                        {"privatePort": 22, "ip": "127.0.0.1", "publicPort": 2222}
-                    ]
-                },
+                "runtime": {"ports": [{"privatePort": 22, "ip": "127.0.0.1", "publicPort": 2222}]},
             }
 
             ip, port = get_pod_ssh_ip_port("pod_id")

@@ -27,9 +27,7 @@ log = RunPodLogger()
 #                              Run Time Arguments                              #
 # ---------------------------------------------------------------------------- #
 # Arguments will be passed in with the config under the key "rp_args"
-parser = argparse.ArgumentParser(
-    prog="runpod", description="Runpod Serverless Worker Arguments."
-)
+parser = argparse.ArgumentParser(prog="runpod", description="Runpod Serverless Worker Arguments.")
 parser.add_argument(
     "--rp_log_level",
     type=str,
@@ -52,9 +50,7 @@ parser.add_argument(
     default=None,
     help="Flag to start the API server.",
 )
-parser.add_argument(
-    "--rp_api_port", type=int, default=8000, help="Port to start the FastAPI server on."
-)
+parser.add_argument("--rp_api_port", type=int, default=8000, help="Port to start the FastAPI server on.")
 parser.add_argument(
     "--rp_api_concurrency",
     type=int,
@@ -174,13 +170,13 @@ def start(config: Dict[str, Any]):
     # --------------------------------- SLS-Core --------------------------------- #
 
     if os.getenv("RUNPOD_SLS_CORE") is None and os.getenv("RUNPOD_USE_CORE") is not None:
-            log.warn("RUNPOD_USE_CORE is deprecated. Please use RUNPOD_SLS_CORE instead.")
-            core.main(config)
-            return
+        log.warn("RUNPOD_USE_CORE is deprecated. Please use RUNPOD_SLS_CORE instead.")
+        core.main(config)
+        return
 
-    elif os.getenv("RUNPOD_SLS_CORE","false").lower() in ["1", "t", "true"]:
-            core.main(config)
-            return
+    elif os.getenv("RUNPOD_SLS_CORE", "false").lower() in ["1", "t", "true"]:
+        core.main(config)
+        return
 
     # --------------------------------- Standard --------------------------------- #
     worker.main(config)

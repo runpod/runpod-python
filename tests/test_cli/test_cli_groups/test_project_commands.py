@@ -36,13 +36,9 @@ class TestProjectCLI(unittest.TestCase):
         """
         Tests the new_project_wizard command.
         """
-        with patch("click.prompt") as mock_prompt, patch(
-            "click.confirm", return_value=True
-        ) as mock_confirm, patch(
+        with patch("click.prompt") as mock_prompt, patch("click.confirm", return_value=True) as mock_confirm, patch(
             "runpod.cli.groups.project.commands.create_new_project"
-        ) as mock_create, patch(
-            "runpod.cli.groups.project.commands.get_user"
-        ) as mock_get_user, patch(
+        ) as mock_create, patch("runpod.cli.groups.project.commands.get_user") as mock_get_user, patch(
             "runpod.cli.groups.project.commands.cli_select"
         ) as mock_select:
             mock_get_user.return_value = {
@@ -82,17 +78,11 @@ class TestProjectCLI(unittest.TestCase):
         """
         Tests the new_project_wizard command with the --init flag.
         """
-        with patch("click.prompt") as mock_prompt, patch(
-            "click.confirm", return_value=True
-        ) as mock_confirm, patch(
+        with patch("click.prompt") as mock_prompt, patch("click.confirm", return_value=True) as mock_confirm, patch(
             "runpod.cli.groups.project.commands.create_new_project"
-        ) as mock_create, patch(
-            "runpod.cli.groups.project.commands.get_user"
-        ) as mock_get_user, patch(
+        ) as mock_create, patch("runpod.cli.groups.project.commands.get_user") as mock_get_user, patch(
             "runpod.cli.groups.project.commands.cli_select"
-        ) as mock_select, patch(
-            "os.getcwd"
-        ) as mock_getcwd:
+        ) as mock_select, patch("os.getcwd") as mock_getcwd:
             mock_get_user.return_value = {
                 "networkVolumes": [
                     {
@@ -149,14 +139,8 @@ class TestProjectCLI(unittest.TestCase):
 
         mock_click_echo.assert_any_call("Deploying project...")
         mock_click_echo.assert_any_call("The following urls are available:")
-        mock_click_echo.assert_any_call(
-            "    - https://api.runpod.ai/v2/test_endpoint_id/runsync"
-        )
-        mock_click_echo.assert_any_call(
-            "    - https://api.runpod.ai/v2/test_endpoint_id/run"
-        )
-        mock_click_echo.assert_any_call(
-            "    - https://api.runpod.ai/v2/test_endpoint_id/health"
-        )
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/runsync")
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/run")
+        mock_click_echo.assert_any_call("    - https://api.runpod.ai/v2/test_endpoint_id/health")
 
         self.assertEqual(result.exit_code, 0)

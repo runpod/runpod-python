@@ -85,9 +85,7 @@ class Checkpoints:
 
         index = self.name_lookup[name]
         self.checkpoints[index]["start"] = time.perf_counter()
-        self.checkpoints[index]["start_utc"] = (
-            datetime.datetime.utcnow().isoformat() + "Z"
-        )
+        self.checkpoints[index]["start_utc"] = datetime.datetime.utcnow().isoformat() + "Z"
 
     def stop(self, name):
         """
@@ -102,9 +100,7 @@ class Checkpoints:
             raise KeyError("Checkpoint has not been started.")
 
         self.checkpoints[index]["end"] = time.perf_counter()
-        self.checkpoints[index]["stop_utc"] = (
-            datetime.datetime.utcnow().isoformat() + "Z"
-        )
+        self.checkpoints[index]["stop_utc"] = datetime.datetime.utcnow().isoformat() + "Z"
 
     def get_checkpoints(self):
         """

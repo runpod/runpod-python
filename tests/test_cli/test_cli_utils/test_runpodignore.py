@@ -1,4 +1,4 @@
-""" Unit tests for the runpodignore module in the cli.utils package. """
+"""Unit tests for the runpodignore module in the cli.utils package."""
 
 # pylint: disable=duplicate-code
 
@@ -16,9 +16,7 @@ class TestGetIgnoreList(unittest.TestCase):
     def test_no_ignore_file(self, mock_isfile):
         """Test that the default ignore list is returned when no ignore file is present."""
         result = get_ignore_list()
-        self.assertEqual(
-            result, ["__pycache__/", "*.pyc", ".*.swp", ".git/", "*.tmp", "*.log"]
-        )
+        self.assertEqual(result, ["__pycache__/", "*.pyc", ".*.swp", ".git/", "*.tmp", "*.log"])
         assert mock_isfile.called
 
     @patch("os.path.isfile", return_value=True)
@@ -53,9 +51,7 @@ class TestGetIgnoreList(unittest.TestCase):
     def test_empty_ignore_file(self, mock_file, mock_isfile):
         """Test that the default ignore list is returned when no ignore file is present."""
         result = get_ignore_list()
-        self.assertEqual(
-            result, ["__pycache__/", "*.pyc", ".*.swp", ".git/", "*.tmp", "*.log"]
-        )
+        self.assertEqual(result, ["__pycache__/", "*.pyc", ".*.swp", ".git/", "*.tmp", "*.log"])
         assert mock_file.called
         assert mock_isfile.called
 

@@ -27,9 +27,7 @@ def list_keys():
 
 @ssh_cli.command("add-key")
 @click.option("--key", default=None, help="The public key to add.")
-@click.option(
-    "--key-file", default=None, help="The file containing the public key to add."
-)
+@click.option("--key-file", default=None, help="The file containing the public key to add.")
 def add_key(key, key_file):
     """
     Adds an SSH key to the current user account.
@@ -37,9 +35,7 @@ def add_key(key, key_file):
     """
     if not key and not key_file:
         click.confirm("Would you like to add an SSH key to your account?", abort=True)
-        key_name = click.prompt(
-            "Please enter a name for this key", default="RunPod-Key", type=str
-        )
+        key_name = click.prompt("Please enter a name for this key", default="RunPod-Key", type=str)
         key_name = key_name.replace(" ", "-")
         generate_ssh_key_pair(key_name)
 

@@ -69,9 +69,7 @@ class JobScaler:
             log.debug(f"Jobs in progress: {job_progress.get_job_count()}")
 
             try:
-                self.current_concurrency = self.concurrency_modifier(
-                    self.current_concurrency
-                )
+                self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
                 log.debug(f"Concurrency set to: {self.current_concurrency}")
 
                 jobs_needed = self.current_concurrency - job_progress.get_job_count()
@@ -90,9 +88,7 @@ class JobScaler:
                 log.info(f"Jobs in queue: {job_list.get_job_count()}")
 
             except Exception as error:
-                log.error(
-                    f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}"
-                )
+                log.error(f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}")
 
             finally:
                 await asyncio.sleep(5)  # yield control back to the event loop
@@ -118,9 +114,7 @@ class JobScaler:
             if tasks:
                 log.info(f"Jobs in progress: {len(tasks)}")
 
-                done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
-                )
+                done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
                 # Remove completed tasks from the list
                 tasks = [t for t in tasks if t not in done]
@@ -143,7 +137,7 @@ class JobScaler:
 
             if config.get("refresh_worker", False):
                 self.kill_worker()
-        
+
         except Exception as err:
             log.error(f"Error handling job: {err}", job["id"])
             raise err

@@ -66,12 +66,8 @@ class TestConfig(unittest.TestCase):
 
     @patch("os.path.exists", return_value=True)
     @patch("runpod.cli.groups.config.functions.toml.load")
-    @patch(
-        "builtins.open", new_callable=mock_open, read_data='[default]\nkey = "value"'
-    )
-    def test_get_credentials_existing_profile(
-        self, mock_open_call, mock_toml_load, mock_exists
-    ):
+    @patch("builtins.open", new_callable=mock_open, read_data='[default]\nkey = "value"')
+    def test_get_credentials_existing_profile(self, mock_open_call, mock_toml_load, mock_exists):
         """
         Tests the get_credentials function.
         """
@@ -83,12 +79,8 @@ class TestConfig(unittest.TestCase):
 
     @patch("os.path.exists", return_value=True)
     @patch("runpod.cli.groups.config.functions.toml.load")
-    @patch(
-        "builtins.open", new_callable=mock_open, read_data='[default]\nkey = "value"'
-    )
-    def test_get_credentials_non_existent_profile(
-        self, mock_open_call, mock_toml_load, mock_exists
-    ):  # pylint: disable=line-too-long
+    @patch("builtins.open", new_callable=mock_open, read_data='[default]\nkey = "value"')
+    def test_get_credentials_non_existent_profile(self, mock_open_call, mock_toml_load, mock_exists):  # pylint: disable=line-too-long
         """
         Tests the get_credentials function.
         """

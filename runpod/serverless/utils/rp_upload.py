@@ -1,4 +1,4 @@
-""" PodWorker | modules | upload.py """
+"""PodWorker | modules | upload.py"""
 
 # pylint: disable=too-many-arguments
 
@@ -43,17 +43,13 @@ def extract_region_from_url(endpoint_url):
 # --------------------------- S3 Bucket Connection --------------------------- #
 def get_boto_client(
     bucket_creds: Optional[dict] = None,
-) -> Tuple[
-    boto3.client, TransferConfig
-]:  # pragma: no cover # pylint: disable=line-too-long
+) -> Tuple[boto3.client, TransferConfig]:  # pragma: no cover # pylint: disable=line-too-long
     """
     Returns a boto3 client and transfer config for the bucket.
     """
     bucket_session = session.Session()
 
-    boto_config = Config(
-        signature_version="s3v4", retries={"max_attempts": 3, "mode": "standard"}
-    )
+    boto_config = Config(signature_version="s3v4", retries={"max_attempts": 3, "mode": "standard"})
 
     transfer_config = TransferConfig(
         multipart_threshold=1024 * 25,
@@ -114,9 +110,7 @@ def upload_image(
         # Save the output to a file
         print("No bucket endpoint set, saving to disk folder 'simulated_uploaded'")
         print("If this is a live endpoint, please reference the following:")
-        print(
-            "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
-        )  # pylint: disable=line-too-long
+        print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md")  # pylint: disable=line-too-long
 
         os.makedirs("simulated_uploaded", exist_ok=True)
         sim_upload_location = f"simulated_uploaded/{image_name}{file_extension}"
@@ -161,9 +155,7 @@ def files(job_id, file_list):  # pragma: no cover
     file_urls = [None] * len(file_list)  # Resulting list of URLs for each file
 
     for index, selected_file in enumerate(file_list):
-        new_upload = threading.Thread(
-            target=upload_image, args=(job_id, selected_file, index, file_urls)
-        )
+        new_upload = threading.Thread(target=upload_image, args=(job_id, selected_file, index, file_urls))
 
         new_upload.start()
         upload_progress.append(new_upload)
@@ -182,9 +174,7 @@ def bucket_upload(job_id, file_list, bucket_creds):  # pragma: no cover
     """
     temp_bucket_session = session.Session()
 
-    temp_boto_config = Config(
-        signature_version="s3v4", retries={"max_attempts": 3, "mode": "standard"}
-    )
+    temp_boto_config = Config(signature_version="s3v4", retries={"max_attempts": 3, "mode": "standard"})
 
     temp_boto_client = temp_bucket_session.client(
         "s3",
@@ -204,9 +194,7 @@ def bucket_upload(job_id, file_list, bucket_creds):  # pragma: no cover
                 Body=file_data,
             )
 
-        bucket_urls.append(
-            f"{bucket_creds['endpointUrl']}/{bucket_creds['bucketName']}/{job_id}/{selected_file}"
-        )
+        bucket_urls.append(f"{bucket_creds['endpointUrl']}/{bucket_creds['bucketName']}/{job_id}/{selected_file}")
 
     return bucket_urls
 
@@ -233,9 +221,7 @@ def upload_file_to_bucket(
     if boto_client is None:
         print("No bucket endpoint set, saving to disk folder 'local_upload'")
         print("If this is a live endpoint, please reference the following:")
-        print(
-            "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
-        )  # pylint: disable=line-too-long
+        print("https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md")  # pylint: disable=line-too-long
 
         os.makedirs("local_upload", exist_ok=True)
         local_upload_location = f"local_upload/{file_name}"
@@ -244,9 +230,7 @@ def upload_file_to_bucket(
         return local_upload_location
 
     file_size = os.path.getsize(file_location)
-    with tqdm(
-        total=file_size, unit="B", unit_scale=True, desc=file_name
-    ) as progress_bar:
+    with tqdm(total=file_size, unit="B", unit_scale=True, desc=file_name) as progress_bar:
         upload_file_args = {
             "Filename": file_location,
             "Bucket": bucket_name,
@@ -286,9 +270,7 @@ def upload_in_memory_object(
     key = f"{prefix}/{file_name}" if prefix else file_name
 
     file_size = len(file_data)
-    with tqdm(
-        total=file_size, unit="B", unit_scale=True, desc=file_name
-    ) as progress_bar:
+    with tqdm(total=file_size, unit="B", unit_scale=True, desc=file_name) as progress_bar:
         boto_client.upload_fileobj(
             io.BytesIO(file_data),
             bucket_name,

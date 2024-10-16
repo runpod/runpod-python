@@ -1,4 +1,4 @@
-""" Module for running endpoints asynchronously. """
+"""Module for running endpoints asynchronously."""
 
 # pylint: disable=too-few-public-methods,R0801
 
@@ -37,9 +37,7 @@ class Job:
         Args:
             source: The URL source path of the job status.
         """
-        status_url = (
-            f"{self.endpoint_url_base}/{self.endpoint_id}/{source}/{self.job_id}"
-        )
+        status_url = f"{self.endpoint_url_base}/{self.endpoint_id}/{source}/{self.job_id}"
         job_state = await self.session.get(status_url, headers=self.headers)
         job_state = await job_state.json()
 
@@ -130,9 +128,7 @@ class Endpoint:
         Returns:
             Newly created job
         """
-        async with self.session.post(
-            self.endpoint_url, headers=self.headers, json={"input": endpoint_input}
-        ) as resp:
+        async with self.session.post(self.endpoint_url, headers=self.headers, json={"input": endpoint_input}) as resp:
             json_resp = await resp.json()
 
         return Job(self.endpoint_id, json_resp["id"], self.session)
@@ -143,9 +139,7 @@ class Endpoint:
         Returns:
             Health of endpoint
         """
-        async with self.session.get(
-            f"{self.endpoint_id}/health", headers=self.headers
-        ) as resp:
+        async with self.session.get(f"{self.endpoint_id}/health", headers=self.headers) as resp:
             return await resp.json()
 
     async def purge_queue(self) -> dict:
@@ -154,7 +148,5 @@ class Endpoint:
         Returns:
             Purge status
         """
-        async with self.session.post(
-            f"{self.endpoint_id}/purge", headers=self.headers
-        ) as resp:
+        async with self.session.post(f"{self.endpoint_id}/purge", headers=self.headers) as resp:
             return await resp.json()

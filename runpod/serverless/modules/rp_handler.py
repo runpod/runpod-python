@@ -1,4 +1,4 @@
-"""Retrieve handler info. """
+"""Retrieve handler info."""
 
 import inspect
 from typing import Callable

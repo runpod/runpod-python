@@ -11,9 +11,7 @@ from .functions import check_credentials, set_credentials
 
 @click.command("config", help="Configures the RunPod CLI with the user's API key.")
 @click.argument("api-key", required=False, default=None)
-@click.option(
-    "--profile", default="default", help="The profile to set the credentials for."
-)
+@click.option("--profile", default="default", help="The profile to set the credentials for.")
 @click.option("--check", is_flag=True, help="Check if credentials are already set.")
 def config_wizard(api_key, profile, check):
     """Starts the configuration wizard to set up the RunPod CLI.
@@ -29,16 +27,12 @@ def config_wizard(api_key, profile, check):
         sys.exit(1)
 
     if valid:
-        click.confirm(
-            f"Credentials already set for profile: {profile}. Overwrite?", abort=True
-        )
+        click.confirm(f"Credentials already set for profile: {profile}. Overwrite?", abort=True)
 
     if api_key is None:
         click.echo("Please enter your RunPod API Key.")
         click.echo("You can find it at https://www.runpod.io/console/user/settings")
-        api_key = click.prompt(
-            "    > RunPod API Key", hide_input=False, confirmation_prompt=False
-        )
+        api_key = click.prompt("    > RunPod API Key", hide_input=False, confirmation_prompt=False)
 
     set_credentials(api_key, profile, overwrite=True)
 

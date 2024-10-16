@@ -1,4 +1,4 @@
-""" Example of creating a container registry auth with the Runpod API. """
+"""Example of creating a container registry auth with the Runpod API."""
 
 import runpod
 

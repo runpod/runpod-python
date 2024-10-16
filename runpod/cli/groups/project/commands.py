@@ -21,9 +21,7 @@ def project_cli():
 
 # -------------------------------- New Project ------------------------------- #
 @project_cli.command("new")
-@click.option(
-    "--name", "-n", "project_name", type=str, default=None, help="The project name."
-)
+@click.option("--name", "-n", "project_name", type=str, default=None, help="The project name.")
 @click.option(
     "--type",
     "-t",
@@ -46,9 +44,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     network_volumes = get_user()["networkVolumes"]
     if len(network_volumes) == 0:
         click.echo("You do not have any network volumes.")
-        click.echo(
-            "Please create a network volume (https://runpod.io/console/user/storage) and try again."
-        )  # pylint: disable=line-too-long
+        click.echo("Please create a network volume (https://runpod.io/console/user/storage) and try again.")  # pylint: disable=line-too-long
         sys.exit(1)
 
     click.echo("Creating a new project...")
@@ -116,9 +112,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
 
     click.echo(f"Project {project_name} created successfully!")
     click.echo("")
-    click.echo(
-        "From your project root run `runpod project start` to start a development pod."
-    )
+    click.echo("From your project root run `runpod project start` to start a development pod.")
 
 
 # ------------------------------- Start Project ------------------------------ #
@@ -127,12 +121,8 @@ def start_project_pod():
     """
     Start the project development pod from runpod.toml
     """
-    click.echo(
-        "Starting the project will create a development pod on RunPod, if one does not already exist."
-    )  # pylint: disable=line-too-long
-    click.echo(
-        "    - You will be charged based on the GPU type specified in runpod.toml."
-    )
+    click.echo("Starting the project will create a development pod on RunPod, if one does not already exist.")  # pylint: disable=line-too-long
+    click.echo("    - You will be charged based on the GPU type specified in runpod.toml.")
     click.echo("    - When you are finished close the connection with CTRL+C.")
     click.echo("")
     click.confirm("Do you want to continue?", abort=True)

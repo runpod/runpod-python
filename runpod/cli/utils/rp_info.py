@@ -31,13 +31,9 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
         time.sleep(1)
 
     if desired_status != "RUNNING":
-        raise TimeoutError(
-            f"Pod {pod_id} did not reach 'RUNNING' state within {timeout} seconds."
-        )
+        raise TimeoutError(f"Pod {pod_id} did not reach 'RUNNING' state within {timeout} seconds.")
 
     if runtime is None:
-        raise TimeoutError(
-            f"Pod {pod_id} did not report runtime data within {timeout} seconds."
-        )
+        raise TimeoutError(f"Pod {pod_id} did not report runtime data within {timeout} seconds.")
 
     return pod_ip, pod_port

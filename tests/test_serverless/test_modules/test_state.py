@@ -1,4 +1,4 @@
-""" Tests for environment variables module """
+"""Tests for environment variables module"""
 
 import os
 import unittest
@@ -39,7 +39,6 @@ class TestEnvVars(unittest.TestCase):
 
 
 class TestJob(unittest.TestCase):
-
     def test_initialization_with_basic_attributes(self):
         """Test basic initialization of Job object."""
         job = Job(id="job_123", input={"task": "data_process"}, webhook="http://example.com/webhook")
@@ -59,7 +58,7 @@ class TestJob(unittest.TestCase):
         job1 = Job(id="job_123")
         job2 = Job(id="job_123")
         job3 = Job(id="job_456")
-        
+
         self.assertEqual(job1, job2)
         self.assertNotEqual(job1, job3)
 
@@ -68,7 +67,7 @@ class TestJob(unittest.TestCase):
         job1 = Job(id="job_123")
         job2 = Job(id="job_123")
         job3 = Job(id="job_456")
-        
+
         self.assertEqual(hash(job1), hash(job2))
         self.assertNotEqual(hash(job1), hash(job3))
 

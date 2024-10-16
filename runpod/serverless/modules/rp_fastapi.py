@@ -1,4 +1,4 @@
-""" Used to launch the FastAPI web server when worker is running in API mode. """
+"""Used to launch the FastAPI web server when worker is running in API mode."""
 
 import os
 import threading
@@ -217,14 +217,10 @@ class WorkerAPI:
         api_router = APIRouter()
 
         # Docs Redirect /docs -> /
-        api_router.add_api_route(
-            "/docs", lambda: RedirectResponse(url="/"), include_in_schema=False
-        )
+        api_router.add_api_route("/docs", lambda: RedirectResponse(url="/"), include_in_schema=False)
 
         if RUNPOD_ENDPOINT_ID:
-            api_router.add_api_route(
-                f"/{RUNPOD_ENDPOINT_ID}/realtime", self._realtime, methods=["POST"]
-            )
+            api_router.add_api_route(f"/{RUNPOD_ENDPOINT_ID}/realtime", self._realtime, methods=["POST"])
 
         # Simulation endpoints.
         api_router.add_api_route(
@@ -304,11 +300,7 @@ class WorkerAPI:
     async def _sim_run(self, job_request: DefaultRequest) -> JobOutput:
         """Development endpoint to simulate run behavior."""
         assigned_job_id = f"test-{uuid.uuid4()}"
-        job_list.add({
-            "id": assigned_job_id,
-            "input": job_request.input,
-            "webhook": job_request.webhook
-        })
+        job_list.add({"id": assigned_job_id, "input": job_request.input, "webhook": job_request.webhook})
         return jsonable_encoder({"id": assigned_job_id, "status": "IN_PROGRESS"})
 
     # ---------------------------------- runsync --------------------------------- #
@@ -326,9 +318,7 @@ class WorkerAPI:
             job_output = await run_job(self.config["handler"], job.__dict__)
 
         if job_output.get("error", None):
-            return jsonable_encoder(
-                {"id": job.id, "status": "FAILED", "error": job_output["error"]}
-            )
+            return jsonable_encoder({"id": job.id, "status": "FAILED", "error": job_output["error"]})
 
         if job_request.webhook:
             thread = threading.Thread(
@@ -338,18 +328,14 @@ class WorkerAPI:
             )
             thread.start()
 
-        return jsonable_encoder(
-            {"id": job.id, "status": "COMPLETED", "output": job_output["output"]}
-        )
+        return jsonable_encoder({"id": job.id, "status": "COMPLETED", "output": job_output["output"]})
 
     # ---------------------------------- stream ---------------------------------- #
     async def _sim_stream(self, job_id: str) -> StreamOutput:
         """Development endpoint to simulate stream behavior."""
         stashed_job = job_list.get(job_id)
         if stashed_job is None:
-            return jsonable_encoder(
-                {"id": job_id, "status": "FAILED", "error": "Job ID not found"}
-            )
+            return jsonable_encoder({"id": job_id, "status": "FAILED", "error": "Job ID not found"})
 
         job = TestJob(id=job_id, input=stashed_job.input)
 
@@ -377,18 +363,14 @@ class WorkerAPI:
             )
             thread.start()
 
-        return jsonable_encoder(
-            {"id": job_id, "status": "COMPLETED", "stream": stream_accumulator}
-        )
+        return jsonable_encoder({"id": job_id, "status": "COMPLETED", "stream": stream_accumulator})
 
     # ---------------------------------- status ---------------------------------- #
     async def _sim_status(self, job_id: str) -> JobOutput:
         """Development endpoint to simulate status behavior."""
         stashed_job = job_list.get(job_id)
         if stashed_job is None:
-            return jsonable_encoder(
-                {"id": job_id, "status": "FAILED", "error": "Job ID not found"}
-            )
+            return jsonable_encoder({"id": job_id, "status": "FAILED", "error": "Job ID not found"})
 
         job = TestJob(id=stashed_job.id, input=stashed_job.input)
 
@@ -403,9 +385,7 @@ class WorkerAPI:
         job_list.remove(job.id)
 
         if job_output.get("error", None):
-            return jsonable_encoder(
-                {"id": job_id, "status": "FAILED", "error": job_output["error"]}
-            )
+            return jsonable_encoder({"id": job_id, "status": "FAILED", "error": job_output["error"]})
 
         if stashed_job.webhook:
             thread = threading.Thread(
@@ -415,6 +395,4 @@ class WorkerAPI:
             )
             thread.start()
 
-        return jsonable_encoder(
-            {"id": job_id, "status": "COMPLETED", "output": job_output["output"]}
-        )
+        return jsonable_encoder({"id": job_id, "status": "COMPLETED", "output": job_output["output"]})

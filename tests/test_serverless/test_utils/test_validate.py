@@ -1,4 +1,4 @@
-""" Tests for runpod.serverless.utils.validate """
+"""Tests for runpod.serverless.utils.validate"""
 
 import unittest
 from unittest.mock import Mock
@@ -88,9 +88,7 @@ class TestValidator(unittest.TestCase):
         result = rp_validator.validate(self.raw_input, self.schema)
 
         self.assertIn("errors", result)
-        self.assertIn(
-            "x should be <class 'int'> type, not <class 'str'>.", result["errors"]
-        )
+        self.assertIn("x should be <class 'int'> type, not <class 'str'>.", result["errors"])
 
     def test_validate_rules_not_dict(self):
         """

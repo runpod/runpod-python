@@ -1,4 +1,4 @@
-""" Tests for my_module | bucket utilities """
+"""Tests for my_module | bucket utilities"""
 
 import importlib
 import io
@@ -67,9 +67,7 @@ class TestBotoConfig(unittest.TestCase):
             )
 
             creds_s3 = bucket_creds.copy()
-            creds_s3["endpointUrl"] = (
-                "https://bucket-name.s3.region-code.amazonaws.com/key-name"
-            )
+            creds_s3["endpointUrl"] = "https://bucket-name.s3.region-code.amazonaws.com/key-name"
 
             boto_client, transfer_config = get_boto_client(creds_s3)
 
@@ -83,9 +81,7 @@ class TestBotoConfig(unittest.TestCase):
             )
 
             creds_do = bucket_creds.copy()
-            creds_do["endpointUrl"] = (
-                "https://name.region-code.digitaloceanspaces.com/key-name"
-            )
+            creds_do["endpointUrl"] = "https://name.region-code.digitaloceanspaces.com/key-name"
 
             boto_client, transfer_config = get_boto_client(creds_do)
 

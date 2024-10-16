@@ -1,5 +1,5 @@
 """
-    This module is used to handle HTTP requests.
+This module is used to handle HTTP requests.
 """
 
 import json
@@ -13,14 +13,10 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from .worker_state import WORKER_ID
 
-JOB_DONE_URL_TEMPLATE = str(
-    os.environ.get("RUNPOD_WEBHOOK_POST_OUTPUT", "JOB_DONE_URL")
-)
+JOB_DONE_URL_TEMPLATE = str(os.environ.get("RUNPOD_WEBHOOK_POST_OUTPUT", "JOB_DONE_URL"))
 JOB_DONE_URL = JOB_DONE_URL_TEMPLATE.replace("$RUNPOD_POD_ID", WORKER_ID)
 
-JOB_STREAM_URL_TEMPLATE = str(
-    os.environ.get("RUNPOD_WEBHOOK_POST_STREAM", "JOB_STREAM_URL")
-)
+JOB_STREAM_URL_TEMPLATE = str(os.environ.get("RUNPOD_WEBHOOK_POST_STREAM", "JOB_STREAM_URL"))
 JOB_STREAM_URL = JOB_STREAM_URL_TEMPLATE.replace("$RUNPOD_POD_ID", WORKER_ID)
 
 log = RunPodLogger()
@@ -31,9 +27,7 @@ async def _transmit(client_session: ClientSession, url, job_data):
     Wrapper for transmitting results via POST.
     """
     retry_options = FibonacciRetry(attempts=3)
-    retry_client = RetryClient(
-        client_session=client_session, retry_options=retry_options
-    )
+    retry_client = RetryClient(client_session=client_session, retry_options=retry_options)
 
     kwargs = {
         "data": job_data,
@@ -48,9 +42,7 @@ async def _transmit(client_session: ClientSession, url, job_data):
         await client_response.text()
 
 
-async def _handle_result(
-    session: ClientSession, job_data, job, url_template, log_message, is_stream=False
-):
+async def _handle_result(session: ClientSession, job_data, job, url_template, log_message, is_stream=False):
     """
     A helper function to handle the result, either for sending or streaming.
     """
@@ -73,10 +65,7 @@ async def _handle_result(
 
     finally:
         # job_data status is used for local development with FastAPI
-        if (
-            url_template == JOB_DONE_URL
-            and job_data.get("status", None) != "IN_PROGRESS"
-        ):
+        if url_template == JOB_DONE_URL and job_data.get("status", None) != "IN_PROGRESS":
             log.info("Finished.", job["id"])
 
 
@@ -84,15 +73,11 @@ async def send_result(session, job_data, job, is_stream=False):
     """
     Return the job results.
     """
-    await _handle_result(
-        session, job_data, job, JOB_DONE_URL, "Results sent.", is_stream=is_stream
-    )
+    await _handle_result(session, job_data, job, JOB_DONE_URL, "Results sent.", is_stream=is_stream)
 
 
 async def stream_result(session, job_data, job):
     """
     Return the stream job results.
     """
-    await _handle_result(
-        session, job_data, job, JOB_STREAM_URL, "Intermediate results sent."
-    )
+    await _handle_result(session, job_data, job, JOB_STREAM_URL, "Intermediate results sent.")

@@ -33,9 +33,7 @@ def set_credentials(api_key: str, profile: str = "default", overwrite=False) -> 
     if not overwrite:
         with open(CREDENTIAL_FILE, "rb") as cred_file:
             if profile in toml.load(cred_file):
-                raise ValueError(
-                    "Profile already exists. Use `update_credentials` instead."
-                )
+                raise ValueError("Profile already exists. Use `update_credentials` instead.")
 
     with open(CREDENTIAL_FILE, "w", encoding="UTF-8") as cred_file:
         cred_file.write("[" + profile + "]\n")

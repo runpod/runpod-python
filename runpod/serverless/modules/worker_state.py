@@ -29,11 +29,7 @@ class Job:
     """
 
     def __init__(
-        self,
-        id: str,
-        input: Optional[Dict[str, Any]] = None,
-        webhook: Optional[str] = None,
-        **kwargs
+        self, id: str, input: Optional[Dict[str, Any]] = None, webhook: Optional[str] = None, **kwargs
     ) -> None:
         self.id = id
         self.input = input
@@ -75,7 +71,7 @@ class JobsProgress(set):
         Adds a Job object to the set.
 
         If the added element is a string, then `Job(id=element)` is added
-        
+
         If the added element is a dict, that `Job(**element)` is added
         """
         if isinstance(element, str):
@@ -94,7 +90,7 @@ class JobsProgress(set):
         Adds a Job object to the set.
 
         If the added element is a string, then `Job(id=element)` is added
-        
+
         If the added element is a dict, that `Job(**element)` is added
         """
         if isinstance(element, str):

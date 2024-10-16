@@ -1,4 +1,4 @@
-""" RunPod | API Wrapper | Mutations | Templates """
+"""RunPod | API Wrapper | Mutations | Templates"""
 
 # pylint: disable=too-many-arguments, too-many-branches
 
@@ -42,9 +42,7 @@ def generate_pod_template(
         input_fields.append('ports: ""')
 
     if env is not None:
-        env_string = ", ".join(
-            [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()]
-        )
+        env_string = ", ".join([f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()])
         input_fields.append(f"env: [{env_string}]")
     else:
         input_fields.append("env: []")

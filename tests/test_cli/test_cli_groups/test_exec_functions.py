@@ -1,4 +1,4 @@
-""" Tests for CLI group `exec functions` """
+"""Tests for CLI group `exec functions`"""
 
 import unittest
 from unittest.mock import MagicMock, patch

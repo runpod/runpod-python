@@ -33,9 +33,7 @@ class Heartbeat:
         self.PING_INTERVAL = int(os.environ.get("RUNPOD_PING_INTERVAL", 10000)) // 1000
 
         self._session = SyncClientSession()
-        self._session.headers.update(
-            {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
-        )
+        self._session.headers.update({"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"})
 
         retry_strategy = Retry(
             total=retries,
@@ -91,13 +89,9 @@ class Heartbeat:
         ping_params = {"job_id": job_ids, "runpod_version": runpod_version}
 
         try:
-            result = self._session.get(
-                self.PING_URL, params=ping_params, timeout=self.PING_INTERVAL * 2
-            )
+            result = self._session.get(self.PING_URL, params=ping_params, timeout=self.PING_INTERVAL * 2)
 
-            log.debug(
-                f"Heartbeat Sent | URL: {result.url} | Status: {result.status_code}"
-            )
+            log.debug(f"Heartbeat Sent | URL: {result.url} | Status: {result.status_code}")
 
         except requests.RequestException as err:
             log.error(f"Ping Request Error: {err}, attempting to restart ping.")

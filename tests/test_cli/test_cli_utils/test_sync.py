@@ -85,14 +85,10 @@ class TestSyncDirectory(unittest.TestCase):
         sync_function = sync_directory(mock_ssh_client, local_path, remote_path)
         sync_function()
 
-        mock_ssh_client.rsync.assert_called_once_with(
-            local_path, remote_path, quiet=True
-        )
+        mock_ssh_client.rsync.assert_called_once_with(local_path, remote_path, quiet=True)
 
         mock_thread_class.assert_called_once()
-        mock_thread_class.assert_called_with(
-            target=mock_start_watcher, daemon=True, args=(ANY, local_path)
-        )
+        mock_thread_class.assert_called_with(target=mock_start_watcher, daemon=True, args=(ANY, local_path))
 
         assert mock_start_watcher.called is False
 

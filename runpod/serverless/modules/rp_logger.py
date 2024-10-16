@@ -43,11 +43,7 @@ class RunPodLogger:
     """Singleton class for logging."""
 
     __instance = None
-    level = _validate_log_level(
-        os.environ.get(
-            "RUNPOD_LOG_LEVEL", os.environ.get("RUNPOD_DEBUG_LEVEL", "DEBUG")
-        )
-    )
+    level = _validate_log_level(os.environ.get("RUNPOD_LOG_LEVEL", os.environ.get("RUNPOD_DEBUG_LEVEL", "DEBUG")))
 
     def __new__(cls):
         if RunPodLogger.__instance is None:
@@ -79,9 +75,7 @@ class RunPodLogger:
             half_max_length = MAX_MESSAGE_LENGTH // 2
             truncated_amount = len(message) - MAX_MESSAGE_LENGTH
             truncation_note = f"\n...TRUNCATED {truncated_amount} CHARACTERS...\n"
-            message = (
-                message[:half_max_length] + truncation_note + message[-half_max_length:]
-            )
+            message = message[:half_max_length] + truncation_note + message[-half_max_length:]
 
         if os.environ.get("RUNPOD_ENDPOINT_ID"):
             log_json = {"requestId": job_id, "message": message, "level": message_level}

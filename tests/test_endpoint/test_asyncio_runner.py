@@ -1,4 +1,4 @@
-""" Unit tests for the asyncio_runner module. """
+"""Unit tests for the asyncio_runner module."""
 
 # pylint: disable=too-few-public-methods
 
@@ -20,9 +20,7 @@ class TestJob(IsolatedAsyncioTestCase):
         """
         Tests Job.status
         """
-        with patch(
-            "aiohttp.ClientSession", new_callable=AsyncMock
-        ) as mock_session_class:
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
             mock_session = mock_session_class.return_value
             mock_get = mock_session.get
             mock_resp = AsyncMock()
@@ -39,9 +37,7 @@ class TestJob(IsolatedAsyncioTestCase):
         """
         Tests Job.output
         """
-        with patch(
-            "runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep"
-        ) as mock_sleep, patch(
+        with patch("runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep") as mock_sleep, patch(
             "aiohttp.ClientSession", new_callable=AsyncMock
         ) as mock_session_class:
             mock_session = mock_session_class.return_value
@@ -67,9 +63,7 @@ class TestJob(IsolatedAsyncioTestCase):
         """
         Tests Job.output with a timeout
         """
-        with patch(
-            "aiohttp.ClientSession", new_callable=AsyncMock
-        ) as mock_session_class:
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
             mock_session = mock_session_class.return_value
             mock_get = mock_session.get
             mock_resp = AsyncMock()
@@ -87,9 +81,7 @@ class TestJob(IsolatedAsyncioTestCase):
         """
         Tests Job.stream
         """
-        with patch(
-            "aiohttp.ClientSession", new_callable=AsyncMock
-        ) as mock_session_class:
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
             mock_session = mock_session_class.return_value
             mock_get = mock_session.get
             mock_resp = AsyncMock()
@@ -100,11 +92,7 @@ class TestJob(IsolatedAsyncioTestCase):
             ]
 
             async def json_side_effect():
-                return (
-                    responses.pop(0)
-                    if responses
-                    else {"stream": [], "status": "COMPLETED"}
-                )
+                return responses.pop(0) if responses else {"stream": [], "status": "COMPLETED"}
 
             mock_resp.json.side_effect = json_side_effect
             mock_get.return_value = mock_resp
@@ -135,9 +123,7 @@ class TestJob(IsolatedAsyncioTestCase):
 
     async def test_output_in_progress_then_completed(self):
         """Tests Job.output when status is initially IN_PROGRESS and then changes to COMPLETED"""
-        with patch(
-            "aiohttp.ClientSession", new_callable=AsyncMock
-        ) as mock_session_class:
+        with patch("aiohttp.ClientSession", new_callable=AsyncMock) as mock_session_class:
             mock_session = mock_session_class.return_value
             mock_get = mock_session.get
             mock_resp = AsyncMock()
@@ -148,11 +134,7 @@ class TestJob(IsolatedAsyncioTestCase):
             ]
 
             async def json_side_effect():
-                return (
-                    responses.pop(0)
-                    if responses
-                    else {"status": "COMPLETED", "output": "OUTPUT"}
-                )  # pylint: disable=line-too-long
+                return responses.pop(0) if responses else {"status": "COMPLETED", "output": "OUTPUT"}  # pylint: disable=line-too-long
 
             mock_resp.json.side_effect = json_side_effect
             mock_get.return_value = mock_resp
@@ -215,9 +197,7 @@ class TestEndpointInitialization(unittest.TestCase):
         """Tests initialization of Endpoint class."""
         with patch("aiohttp.ClientSession"):
             endpoint = Endpoint("endpoint_id", MagicMock())
-            self.assertEqual(
-                endpoint.endpoint_url, "https://api.runpod.ai/v2/endpoint_id/run"
-            )
+            self.assertEqual(endpoint.endpoint_url, "https://api.runpod.ai/v2/endpoint_id/run")
             self.assertIn("Content-Type", endpoint.headers)
             self.assertIn("Authorization", endpoint.headers)
 

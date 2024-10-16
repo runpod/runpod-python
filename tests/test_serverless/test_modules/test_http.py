@@ -44,15 +44,10 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         with patch("runpod.serverless.modules.rp_http.log") as mock_log, patch(
             "runpod.serverless.modules.rp_http.RetryClient"
         ) as mock_retry:
-
             mock_retry.return_value.post.return_value = AsyncMock()
-            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = (
-                "response text"  # pylint: disable=line-too-long
-            )
+            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text"  # pylint: disable=line-too-long
 
-            send_return_local = await rp_http.send_result(
-                AsyncMock(), self.job_data, self.job
-            )
+            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 1
@@ -86,10 +81,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
 
         with patch("runpod.serverless.modules.rp_http.log") as mock_log, patch(
             "runpod.serverless.modules.rp_http.RetryClient"
-        ) as mock_retry, patch.object(
-            aiohttp.RequestInfo, "__init__", mock_request_info_init
-        ):
-
+        ) as mock_retry, patch.object(aiohttp.RequestInfo, "__init__", mock_request_info_init):
             mock_retry.side_effect = aiohttp.ClientResponseError(
                 request_info=MockRequestInfo,
                 history=None,
@@ -97,9 +89,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 message="Error message",
             )
 
-            send_return_local = await rp_http.send_result(
-                AsyncMock(), self.job_data, self.job
-            )
+            send_return_local = await rp_http.send_result(AsyncMock(), self.job_data, self.job)
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
@@ -112,24 +102,17 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         """
         with patch("runpod.serverless.modules.rp_http.log") as mock_log, patch(
             "runpod.serverless.modules.rp_http.json.dumps"
-        ) as mock_dumps, patch(
-            "runpod.serverless.modules.rp_http.RetryClient"
-        ) as mock_retry:
-
+        ) as mock_dumps, patch("runpod.serverless.modules.rp_http.RetryClient") as mock_retry:
             mock_dumps.side_effect = TypeError("Forced exception")
 
-            send_return_local = await rp_http.send_result(
-                aiohttp.ClientSession(), self.job_data, self.job
-            )
+            send_return_local = await rp_http.send_result(aiohttp.ClientSession(), self.job_data, self.job)
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 0
             assert mock_log.error.call_count == 1
             assert mock_log.info.call_count == 1
             assert mock_retry.return_value.post.call_count == 0
-            mock_log.error.assert_called_with(
-                "Error while returning job result. | Forced exception", "test_id"
-            )  # pylint: disable=line-too-long
+            mock_log.error.assert_called_with("Error while returning job result. | Forced exception", "test_id")  # pylint: disable=line-too-long
 
     async def test_stream_result(self):
         """
@@ -138,15 +121,10 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         with patch("runpod.serverless.modules.rp_http.log") as mock_log, patch(
             "runpod.serverless.modules.rp_http.RetryClient"
         ) as mock_retry:
-
             mock_retry.return_value.post.return_value = AsyncMock()
-            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = (
-                "response text"  # pylint: disable=line-too-long
-            )
+            mock_retry.return_value.post.return_value.__aenter__.return_value.text.return_value = "response text"  # pylint: disable=line-too-long
 
-            send_return_local = await rp_http.stream_result(
-                AsyncMock(), self.job_data, self.job
-            )
+            send_return_local = await rp_http.stream_result(AsyncMock(), self.job_data, self.job)
 
             assert send_return_local is None
             assert mock_log.debug.call_count == 1

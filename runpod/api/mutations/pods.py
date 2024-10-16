@@ -73,9 +73,7 @@ def generate_pod_deployment_mutation(
     if volume_mount_path is not None:
         input_fields.append(f'volumeMountPath: "{volume_mount_path}"')
     if env is not None:
-        env_string = ", ".join(
-            [f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()]
-        )
+        env_string = ", ".join([f'{{ key: "{key}", value: "{value}" }}' for key, value in env.items()])
         input_fields.append(f"env: [{env_string}]")
     if template_id is not None:
         input_fields.append(f'templateId: "{template_id}"')
@@ -84,9 +82,7 @@ def generate_pod_deployment_mutation(
         input_fields.append(f'networkVolumeId: "{network_volume_id}"')
 
     if allowed_cuda_versions is not None:
-        allowed_cuda_versions_string = ", ".join(
-            [f'"{version}"' for version in allowed_cuda_versions]
-        )
+        allowed_cuda_versions_string = ", ".join([f'"{version}"' for version in allowed_cuda_versions])
         input_fields.append(f"allowedCudaVersions: [{allowed_cuda_versions_string}]")
 
     # Format input fields

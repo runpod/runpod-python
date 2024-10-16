@@ -21,7 +21,6 @@ class TestSSHCommands(unittest.TestCase):
                 {"name": "key2", "type": "DSA", "fingerprint": "fp2"},
             ],
         ) as mock_get_keys:
-
             result = runner.invoke(list_keys)
 
             self.assertIn("key1", result.output)
@@ -32,14 +31,9 @@ class TestSSHCommands(unittest.TestCase):
     def test_add_key_without_params(self):
         """Test the add_key command without parameters."""
         runner = CliRunner()
-        with patch(
-            "runpod.cli.groups.ssh.commands.generate_ssh_key_pair"
-        ) as mock_gen_key, patch(
+        with patch("runpod.cli.groups.ssh.commands.generate_ssh_key_pair") as mock_gen_key, patch(
             "runpod.cli.groups.ssh.commands.click.prompt", return_value="TestKey"
-        ) as mock_prompt, patch(
-            "runpod.cli.groups.ssh.commands.click.confirm", return_value=True
-        ) as mock_confirm:  # pylint: disable=line-too-long
-
+        ) as mock_prompt, patch("runpod.cli.groups.ssh.commands.click.confirm", return_value=True) as mock_confirm:  # pylint: disable=line-too-long
             result = runner.invoke(add_key, [])
 
             self.assertIn("The key has been added to your account.", result.output)

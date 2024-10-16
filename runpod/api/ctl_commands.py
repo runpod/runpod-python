@@ -59,10 +59,7 @@ def get_gpu(gpu_id: str, gpu_quantity: int = 1):
     cleaned_return = raw_response["data"]["gpuTypes"]
 
     if len(cleaned_return) < 1:
-        raise ValueError(
-            "No GPU found with the specified ID, "
-            "run runpod.get_gpus() to get a list of all GPUs"
-        )
+        raise ValueError("No GPU found with the specified ID, " "run runpod.get_gpus() to get a list of all GPUs")
 
     return cleaned_return[0]
 
@@ -204,9 +201,7 @@ def resume_pod(pod_id: str, gpu_count: int):
     >>> runpod.stop_pod(pod_id)
     >>> runpod.resume_pod(pod_id)
     """
-    raw_response = run_graphql_query(
-        pod_mutations.generate_pod_resume_mutation(pod_id, gpu_count)
-    )
+    raw_response = run_graphql_query(pod_mutations.generate_pod_resume_mutation(pod_id, gpu_count))
 
     cleaned_response = raw_response["data"]["podResume"]
     return cleaned_response
@@ -346,9 +341,7 @@ def update_endpoint_template(endpoint_id: str, template_id: str):
 
     >>> endpoint_id = runpod.update_endpoint_template("test", "template_id")
     """
-    raw_response = run_graphql_query(
-        endpoint_mutations.update_endpoint_template_mutation(endpoint_id, template_id)
-    )
+    raw_response = run_graphql_query(endpoint_mutations.update_endpoint_template_mutation(endpoint_id, template_id))
 
     return raw_response["data"]["updateEndpointTemplate"]
 
@@ -366,9 +359,7 @@ def create_container_registry_auth(name: str, username: str, password: str):
         dict: The response data containing the saved container registry authentication.
     """
     raw_response = run_graphql_query(
-        container_register_auth_mutations.generate_container_registry_auth(
-            name, username, password
-        )
+        container_register_auth_mutations.generate_container_registry_auth(name, username, password)
     )
     return raw_response["data"]["saveRegistryAuth"]
 
@@ -386,9 +377,7 @@ def update_container_registry_auth(registry_auth_id: str, username: str, passwor
         dict: The response data containing the updated container registry authentication.
     """
     raw_response = run_graphql_query(
-        container_register_auth_mutations.update_container_registry_auth(
-            registry_auth_id, username, password
-        )
+        container_register_auth_mutations.update_container_registry_auth(registry_auth_id, username, password)
     )
     return raw_response["data"]["updateRegistryAuth"]
 
@@ -400,9 +389,5 @@ def delete_container_registry_auth(registry_auth_id: str):
     Args:
         registry_auth_id (str): The id of the container registry authentication
     """
-    raw_response = run_graphql_query(
-        container_register_auth_mutations.delete_container_registry_auth(
-            registry_auth_id
-        )
-    )
+    raw_response = run_graphql_query(container_register_auth_mutations.delete_container_registry_auth(registry_auth_id))
     return raw_response["data"]["deleteRegistryAuth"]

@@ -41,16 +41,12 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
     Returns the list of downloaded file absolute paths.
     Saves the files in a directory called "downloaded_files" in the job directory.
     """
-    download_directory = os.path.abspath(
-        os.path.join("jobs", job_id, "downloaded_files")
-    )
+    download_directory = os.path.abspath(os.path.join("jobs", job_id, "downloaded_files"))
     os.makedirs(download_directory, exist_ok=True)
 
     @backoff.on_exception(backoff.expo, RequestException, max_tries=3)
     def download_file(url: str, path_to_save: str) -> str:
-        with SyncClientSession().get(
-            url, headers=HEADERS, stream=True, timeout=5
-        ) as response:
+        with SyncClientSession().get(url, headers=HEADERS, stream=True, timeout=5) as response:
             response.raise_for_status()
             content_disposition = response.headers.get("Content-Disposition")
             file_extension = ""
@@ -115,9 +111,7 @@ def file(file_url: str) -> dict:
 
     original_file_name = []
     if "Content-Disposition" in download_response.headers.keys():
-        original_file_name = re.findall(
-            "filename=(.+)", download_response.headers["Content-Disposition"]
-        )
+        original_file_name = re.findall("filename=(.+)", download_response.headers["Content-Disposition"])
 
     if len(original_file_name) > 0:
         original_file_name = original_file_name[0]

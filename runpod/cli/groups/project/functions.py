@@ -51,19 +51,14 @@ def _launch_dev_pod():
     # Attempt to launch a pod with the given configuration
     new_pod = attempt_pod_launch(config, environment_variables)
     if new_pod is None:
-        print(
-            "Selected GPU types unavailable, try again later or use a different type."
-        )
+        print("Selected GPU types unavailable, try again later or use a different type.")
         return None
 
     print("Waiting for pod to come online... ", end="")
     sys.stdout.flush()
 
     # Wait for the pod to come online
-    while (
-        new_pod.get("desiredStatus", None) != "RUNNING"
-        or new_pod.get("runtime") is None
-    ):
+    while new_pod.get("desiredStatus", None) != "RUNNING" or new_pod.get("runtime") is None:
         new_pod = get_pod(new_pod["id"])
 
     project_pod_id = new_pod["id"]
@@ -108,9 +103,7 @@ def create_new_project(
                 "<<RUNPOD>>", "git+https://github.com/runpod/runpod-python.git"
             )
         else:
-            requirements_content = requirements_content.replace(
-                "<<RUNPOD>>", f"runpod=={__version__}"
-            )
+            requirements_content = requirements_content.replace("<<RUNPOD>>", f"runpod=={__version__}")
 
         with open(requirements_path, "w", encoding="utf-8") as requirements_file:
             requirements_file.write(requirements_content)
@@ -158,9 +151,7 @@ def create_new_project(
     runtime_table.add("requirements_path", "builder/requirements.txt")
     toml_config.add("runtime", runtime_table)
 
-    with open(
-        os.path.join(project_folder, "runpod.toml"), "w", encoding="UTF-8"
-    ) as config_file:
+    with open(os.path.join(project_folder, "runpod.toml"), "w", encoding="UTF-8") as config_file:
         tomlkit.dump(toml_config, config_file)
 
 
@@ -197,23 +188,14 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
         return
 
     with SSHConnection(project_pod_id) as ssh_conn:
-
-        project_path_uuid = (
-            f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
-        )
+        project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
         project_path_uuid_dev = os.path.join(project_path_uuid, "dev")
         project_path_uuid_prod = os.path.join(project_path_uuid, "prod")
-        remote_project_path = os.path.join(
-            project_path_uuid_dev, config["project"]["name"]
-        )
+        remote_project_path = os.path.join(project_path_uuid_dev, config["project"]["name"])
 
         # Create the project folder on the pod
-        print(
-            f"Checking pod project folder: {remote_project_path} on pod {project_pod_id}"
-        )
-        ssh_conn.run_commands(
-            [f"mkdir -p {remote_project_path} {project_path_uuid_prod}"]
-        )
+        print(f"Checking pod project folder: {remote_project_path} on pod {project_pod_id}")
+        ssh_conn.run_commands([f"mkdir -p {remote_project_path} {project_path_uuid_prod}"])
 
         # Copy local files to the pod project folder
         print(f"Syncing files to pod {project_pod_id}")
@@ -221,9 +203,7 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
 
         # Create the virtual environment
         venv_path = os.path.join(project_path_uuid_dev, "venv")
-        print(
-            f"Activating Python virtual environment: {venv_path} on pod {project_pod_id}"
-        )
+        print(f"Activating Python virtual environment: {venv_path} on pod {project_pod_id}")
         commands = [
             f'python{config["runtime"]["python_version"]} -m virtualenv {venv_path}',
             f"source {venv_path}/bin/activate &&"
@@ -237,12 +217,8 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
         sync_directory(ssh_conn, os.getcwd(), project_path_uuid_dev)
 
         project_name = config["project"]["name"]
-        pip_req_path = os.path.join(
-            remote_project_path, config["runtime"]["requirements_path"]
-        )
-        handler_path = os.path.join(
-            remote_project_path, config["runtime"]["handler_path"]
-        )
+        pip_req_path = os.path.join(remote_project_path, config["runtime"]["requirements_path"])
+        handler_path = os.path.join(remote_project_path, config["runtime"]["handler_path"])
 
         launch_api_server = [
             f"""
@@ -363,13 +339,9 @@ def create_project_endpoint():
         return None
 
     with SSHConnection(project_pod_id) as ssh_conn:
-        project_path_uuid = (
-            f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
-        )
+        project_path_uuid = f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
         project_path_uuid_prod = os.path.join(project_path_uuid, "prod")
-        remote_project_path = os.path.join(
-            project_path_uuid_prod, config["project"]["name"]
-        )
+        remote_project_path = os.path.join(project_path_uuid_prod, config["project"]["name"])
 
         # Copy local files to the pod project folder
         ssh_conn.run_commands([f"mkdir -p {remote_project_path}"])
@@ -378,9 +350,7 @@ def create_project_endpoint():
 
         # Create the virtual environment
         venv_path = os.path.join(project_path_uuid_prod, "venv")
-        print(
-            f"Activating Python virtual environment: {venv_path} on pod {project_pod_id}"
-        )
+        print(f"Activating Python virtual environment: {venv_path} on pod {project_pod_id}")
         commands = [
             f'python{config["runtime"]["python_version"]} -m venv {venv_path}',
             f"source {venv_path}/bin/activate &&"
@@ -396,9 +366,7 @@ def create_project_endpoint():
         environment_variables[variable] = config["project"]["env_vars"][variable]
 
     # Construct the docker start command
-    activate_cmd = (
-        f'. /runpod-volume/{config["project"]["uuid"]}/prod/venv/bin/activate'
-    )
+    activate_cmd = f'. /runpod-volume/{config["project"]["uuid"]}/prod/venv/bin/activate'
     python_cmd = f'python -u /runpod-volume/{config["project"]["uuid"]}/prod/{config["project"]["name"]}/{config["runtime"]["handler_path"]}'  # pylint: disable=line-too-long
     docker_start_cmd = 'bash -c "' + activate_cmd + " && " + python_cmd + '"'
 

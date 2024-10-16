@@ -43,9 +43,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
     async with AsyncClientSession() as session:
         # Create a JobScaler responsible for adjusting the concurrency
         # of the worker based on the modifier callable.
-        job_scaler = rp_scale.JobScaler(
-            concurrency_modifier=config.get("concurrency_modifier", None)
-        )
+        job_scaler = rp_scale.JobScaler(concurrency_modifier=config.get("concurrency_modifier", None))
 
         # Create tasks for getting and running jobs.
         jobtake_task = asyncio.create_task(job_scaler.get_jobs(session))
@@ -56,7 +54,7 @@ async def run_worker(config: Dict[str, Any]) -> None:
         try:
             # Concurrently run both tasks and wait for both to finish.
             await asyncio.gather(*tasks)
-        except asyncio.CancelledError: # worker is killed
+        except asyncio.CancelledError:  # worker is killed
             # Handle the task cancellation gracefully
             for task in tasks:
                 task.cancel()

@@ -37,9 +37,7 @@ def _validate_and_transform_schema_items(schema, error_list):
                 _add_error(error_list, SCHEMA_ERROR.format(key))
 
 
-def _validate_required_inputs_and_set_defaults(
-    raw_input, schema, validated_input, error_list
-):
+def _validate_required_inputs_and_set_defaults(raw_input, schema, validated_input, error_list):
     for key, rules in schema.items():
         if "type" not in rules:
             _add_error(error_list, MISSING_TYPE_ERROR.format(key))
@@ -77,15 +75,11 @@ def _validate_input_against_schema(schema, validated_input, error_list):
                 )
 
         # Check lambda constraints.
-        if "constraints" in rules and not rules["constraints"](
-            validated_input.get(key)
-        ):
+        if "constraints" in rules and not rules["constraints"](validated_input.get(key)):
             _add_error(error_list, CONSTRAINTS_ERROR.format(key))
 
 
-def validate(
-    raw_input: Dict[str, Any], schema: Dict[str, Any]
-) -> Dict[str, Union[Dict[str, Any], List[str]]]:
+def validate(raw_input: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Union[Dict[str, Any], List[str]]]:
     """
     Validates the input.
     Checks to see if the provided inputs match the expected types.
@@ -104,9 +98,7 @@ def validate(
     # Separate the process into functions for better readability
     _check_for_unexpected_inputs(raw_input, schema, error_list)
     _validate_and_transform_schema_items(schema, error_list)
-    _validate_required_inputs_and_set_defaults(
-        raw_input, schema, validated_input, error_list
-    )
+    _validate_required_inputs_and_set_defaults(raw_input, schema, validated_input, error_list)
     _validate_input_against_schema(schema, validated_input, error_list)
 
     validation_return = {"validated_input": validated_input}

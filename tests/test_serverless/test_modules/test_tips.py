@@ -1,4 +1,4 @@
-""" Tests for runpod.serverless.modules.rp_tips.py """
+"""Tests for runpod.serverless.modules.rp_tips.py"""
 
 import unittest
 from unittest.mock import patch

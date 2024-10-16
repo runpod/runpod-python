@@ -48,9 +48,7 @@ class RunPodClient:
 
         self.endpoint_url_base = endpoint_url_base
 
-    def _request(
-        self, method: str, endpoint: str, data: Optional[dict] = None, timeout: int = 10
-    ):
+    def _request(self, method: str, endpoint: str, data: Optional[dict] = None, timeout: int = 10):
         """
         Make a request to the specified endpoint using the given HTTP method.
 
@@ -68,9 +66,7 @@ class RunPodClient:
             requests.HTTPError: If the response contains an unsuccessful status code.
         """
         url = f"{self.endpoint_url_base}/{endpoint}"
-        response = self.rp_session.request(
-            method, url, headers=self.headers, json=data, timeout=timeout
-        )
+        response = self.rp_session.request(method, url, headers=self.headers, json=data, timeout=timeout)
 
         if response.status_code == 401:
             raise RuntimeError(UNAUTHORIZED_MSG)
@@ -151,10 +147,7 @@ class Job:
         while True:
             time.sleep(1)
             stream_partial = self._fetch_job(source="stream")
-            if (
-                stream_partial["status"] not in FINAL_STATES
-                or len(stream_partial["stream"]) > 0
-            ):
+            if stream_partial["status"] not in FINAL_STATES or len(stream_partial["stream"]) > 0:
                 for chunk in stream_partial.get("stream", []):
                     yield chunk["output"]
             elif stream_partial["status"] in FINAL_STATES:
@@ -167,9 +160,7 @@ class Job:
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
-        return self.rp_client.post(
-            f"{self.endpoint_id}/cancel/{self.job_id}", data=None, timeout=timeout
-        )
+        return self.rp_client.post(f"{self.endpoint_id}/cancel/{self.job_id}", data=None, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------- #
@@ -210,9 +201,7 @@ class Endpoint:
         job_request = self.rp_client.post(f"{self.endpoint_id}/run", request_input)
         return Job(self.endpoint_id, job_request["id"], self.rp_client)
 
-    def run_sync(
-        self, request_input: Dict[str, Any], timeout: int = 86400
-    ) -> Dict[str, Any]:
+    def run_sync(self, request_input: Dict[str, Any], timeout: int = 86400) -> Dict[str, Any]:
         """
         Run the endpoint with the given input synchronously.
 
@@ -222,16 +211,12 @@ class Endpoint:
         if not request_input.get("input"):
             request_input = {"input": request_input}
 
-        job_request = self.rp_client.post(
-            f"{self.endpoint_id}/runsync", request_input, timeout=timeout
-        )
+        job_request = self.rp_client.post(f"{self.endpoint_id}/runsync", request_input, timeout=timeout)
 
         if job_request["status"] in FINAL_STATES:
             return job_request.get("output", None)
 
-        return Job(self.endpoint_id, job_request["id"], self.rp_client).output(
-            timeout=timeout
-        )
+        return Job(self.endpoint_id, job_request["id"], self.rp_client).output(timeout=timeout)
 
     def health(self, timeout: int = 3) -> Dict[str, Any]:
         """
@@ -249,6 +234,4 @@ class Endpoint:
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
-        return self.rp_client.post(
-            f"{self.endpoint_id}/purge-queue", data=None, timeout=timeout
-        )
+        return self.rp_client.post(f"{self.endpoint_id}/purge-queue", data=None, timeout=timeout)

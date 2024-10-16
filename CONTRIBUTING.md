@@ -57,7 +57,10 @@ Please note that the project maintainers will review your changes. They might as
 
 ### Code Style
 
-This project adheres to the [PEP 8](https://www.python.org/dev/peps/pep-0008/) code style. We use [Black](https://black.readthedocs.io/en/stable/) to format our code. To ensure your code fits with the style, run Black on your code before committing.
+This project adheres to the [PEP 8](https://www.python.org/dev/peps/pep-0008/) code style. We use [Ruff](https://docs.astral.sh/ruff/formatter/) to format our code. To ensure your code fits with the style, run ruff on your code before committing:
+```sh
+ruff format .
+```
 
 ### Testing
 

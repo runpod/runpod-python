@@ -148,9 +148,7 @@ async def on_request_exception(
     report_trace(context, params, elapsed, log.error)
 
 
-def report_trace(
-    context: SimpleNamespace, params: object, elapsed: float, logger=log.trace
-):
+def report_trace(context: SimpleNamespace, params: object, elapsed: float, logger=log.trace):
     """
     Report the trace of a request.
     The logger function is called with the JSON representation of the context object and the request ID.
@@ -243,9 +241,7 @@ class TraceRequest:
         """
         Enter the context manager and record the start time of the request.
         """
-        self.request_start = (
-            monotonic()
-        )  # consistency with asyncio.get_event_loop().time()
+        self.request_start = monotonic()  # consistency with asyncio.get_event_loop().time()
         self.context.start_time = time()  # reported timestamp
         return self
 

@@ -1,4 +1,4 @@
-""" Tests for rp_local.py """
+"""Tests for rp_local.py"""
 
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import mock_open, patch
@@ -9,9 +9,7 @@ from runpod.serverless.modules import rp_local
 class TestRunLocal(IsolatedAsyncioTestCase):
     """Tests for run_local function"""
 
-    @patch(
-        "runpod.serverless.modules.rp_local.run_job", return_value={"result": "success"}
-    )
+    @patch("runpod.serverless.modules.rp_local.run_job", return_value={"result": "success"})
     @patch("builtins.open", new_callable=mock_open, read_data='{"input": "test"}')
     async def test_run_local_with_test_input(self, mock_file, mock_run):
         """

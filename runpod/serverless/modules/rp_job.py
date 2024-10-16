@@ -46,9 +46,7 @@ def _job_get_url(batch_size: int = 1):
     return job_take_url + f"&job_in_progress={job_in_progress}"
 
 
-async def get_job(
-    session: ClientSession, num_jobs: int = 1
-) -> Optional[List[Dict[str, Any]]]:
+async def get_job(session: ClientSession, num_jobs: int = 1) -> Optional[List[Dict[str, Any]]]:
     """
     Get a job from the job-take API.
 
@@ -91,9 +89,7 @@ async def get_job(
         log.debug("Timeout error, retrying.")
 
     except Exception as error:
-        log.error(
-            f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}"
-        )
+        log.error(f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}")
 
     # empty
     return []
@@ -156,11 +152,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         handler_return = handler(job)
-        job_output = (
-            await handler_return
-            if inspect.isawaitable(handler_return)
-            else handler_return
-        )
+        job_output = await handler_return if inspect.isawaitable(handler_return) else handler_return
 
         log.debug(f"Handler output: {job_output}", job["id"])
 
@@ -205,9 +197,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     return run_result
 
 
-async def run_job_generator(
-    handler: Callable, job: Dict[str, Any]
-) -> AsyncGenerator[Dict[str, Union[str, Any]], None]:
+async def run_job_generator(handler: Callable, job: Dict[str, Any]) -> AsyncGenerator[Dict[str, Union[str, Any]], None]:
     """
     Run generator job used to stream output.
     Yields output partials from the generator.

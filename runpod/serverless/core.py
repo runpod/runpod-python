@@ -1,4 +1,4 @@
-""" Core functionality for the runpod serverless worker. """
+"""Core functionality for the runpod serverless worker."""
 
 import asyncio
 import ctypes
@@ -16,10 +16,11 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 log = RunPodLogger()
 
 # _runpod_sls_get_jobs status codes
-STILL_WAITING = 0 
+STILL_WAITING = 0
 OK = 1
 ERROR_FROM_SERVER = 2
 ERROR_BUFFER_TOO_SMALL = 3
+
 
 class CGetJobResult(ctypes.Structure):  # pylint: disable=too-few-public-methods
     """
@@ -62,25 +63,18 @@ class Hook:  # pylint: disable=too-many-instance-attributes
         return Hook._instance
 
     def __init__(self, rust_so_path: Optional[str] = None) -> None:
-
         if self._initialized:
             return
 
         if rust_so_path is None:
-            default_path = os.path.join(
-                pathlib.Path(__file__).parent.absolute(), "sls_core.so"
-            )
-            self.rust_so_path = os.environ.get(
-                "RUNPOD_SLS_CORE_PATH", str(default_path)
-            )
+            default_path = os.path.join(pathlib.Path(__file__).parent.absolute(), "sls_core.so")
+            self.rust_so_path = os.environ.get("RUNPOD_SLS_CORE_PATH", str(default_path))
         else:
             self.rust_so_path = rust_so_path
 
         rust_library = CDLL(self.rust_so_path)
         buffer = ctypes.create_string_buffer(1024)  # 1 KiB
-        num_bytes = rust_library._runpod_sls_crate_version(
-            byref(buffer), c_int(len(buffer))
-        )
+        num_bytes = rust_library._runpod_sls_crate_version(byref(buffer), c_int(len(buffer)))
 
         self.rust_crate_version = buffer.raw[:num_bytes].decode("utf-8")
 
@@ -136,9 +130,7 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
     def get_jobs(self, max_concurrency: int, max_jobs: int) -> List[Dict[str, Any]]:
         """Get a job or jobs from the queue. The jobs are returned as a list of Job objects."""
-        buf = ctypes.create_string_buffer(
-            1024 * 1024 * 20
-        )  # 20MB buffer to store jobs in
+        buf = ctypes.create_string_buffer(1024 * 1024 * 20)  # 20MB buffer to store jobs in
         destination_length = len(buf.raw)
         res: CGetJobResult = self._get_jobs(
             c_int(max_concurrency),
@@ -165,7 +157,6 @@ class Hook:  # pylint: disable=too-many-instance-attributes
             raise ValueError("_runpod_sls_get_jobs: status code 3: buffer too small")
         else:
             raise ValueError(f"_runpod_sls_get_jobs: unknown status code {code}")
-
 
     def progress_update(self, job_id: str, json_data: bytes) -> bool:
         """
@@ -221,9 +212,7 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
 
 # -------------------------------- Process Job ------------------------------- #
-async def _process_job(
-    config: Dict[str, Any], job: Dict[str, Any], hook
-) -> Dict[str, Any]:
+async def _process_job(config: Dict[str, Any], job: Dict[str, Any], hook) -> Dict[str, Any]:
     """Process a single job."""
     handler = config["handler"]
 
@@ -283,7 +272,7 @@ async def run(config: Dict[str, Any]) -> None:
             jobs = serverless_hook.get_jobs(max_concurrency, max_jobs)
         except RuntimeError as err:
             log.error(f"SLS Core | Error getting jobs: {err}")
-            await asyncio.sleep(0.2) # sleep for a bit before trying again
+            await asyncio.sleep(0.2)  # sleep for a bit before trying again
             continue
 
         if len(jobs) == 0 or jobs is None:
@@ -291,9 +280,7 @@ async def run(config: Dict[str, Any]) -> None:
             continue
 
         for job in jobs:
-            asyncio.create_task(
-                _process_job(config, job, serverless_hook), name=job["id"]
-            )
+            asyncio.create_task(_process_job(config, job, serverless_hook), name=job["id"])
             await asyncio.sleep(0)
 
         await asyncio.sleep(0)

@@ -116,9 +116,7 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(run_request.job_id, "123")
         self.assertEqual(run_request.status(), "IN_PROGRESS")
 
-        mock_client_request.assert_called_with(
-            "GET", f"{self.ENDPOINT_ID}/status/123", timeout=10
-        )
+        mock_client_request.assert_called_with("GET", f"{self.ENDPOINT_ID}/status/123", timeout=10)
 
     @patch("runpod.endpoint.runner.RunPodClient._request")
     def test_endpoint_run_sync(self, mock_client_request):
@@ -146,18 +144,14 @@ class TestEndpoint(unittest.TestCase):
         """Test the health method of Endpoint"""
         self.endpoint.health()
 
-        mock_client_request.assert_called_once_with(
-            "GET", f"{self.ENDPOINT_ID}/health", timeout=3
-        )
+        mock_client_request.assert_called_once_with("GET", f"{self.ENDPOINT_ID}/health", timeout=3)
 
     @patch("runpod.endpoint.runner.RunPodClient._request")
     def test_endpoint_purge_queue(self, mock_client_request):
         """Test the health method of Endpoint"""
         self.endpoint.purge_queue()
 
-        mock_client_request.assert_called_once_with(
-            "POST", f"{self.ENDPOINT_ID}/purge-queue", None, 3
-        )
+        mock_client_request.assert_called_once_with("POST", f"{self.ENDPOINT_ID}/purge-queue", None, 3)
 
     def test_missing_api_key(self):
         """
@@ -292,9 +286,7 @@ class TestJob(unittest.TestCase):
 
         job.cancel()
 
-        mock_client.post.assert_called_with(
-            "endpoint_id/cancel/job_id", data=None, timeout=3
-        )
+        mock_client.post.assert_called_with("endpoint_id/cancel/job_id", data=None, timeout=3)
 
     @patch("runpod.endpoint.runner.RunPodClient")
     def test_job_status(self, mock_client):

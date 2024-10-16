@@ -1,1 +1,1 @@
-""" Import all test modules in this package. """
+"""Import all test modules in this package."""

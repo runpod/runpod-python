@@ -1,4 +1,4 @@
-""" Concurrency Modifier Example """
+"""Concurrency Modifier Example"""
 
 import runpod
 
@@ -23,6 +23,4 @@ def concurrency_modifier(current_concurrency=1):
     return desired_concurrency
 
 
-runpod.serverless.start(
-    {"handler": async_generator_handler, "concurrency_modifier": concurrency_modifier}
-)
+runpod.serverless.start({"handler": async_generator_handler, "concurrency_modifier": concurrency_modifier})
