@@ -17,7 +17,7 @@ extras_require = {
     "test": [
         "asynctest",
         "nest_asyncio",
-        "pylint==3.2.5",
+        "pylint==3.3.1",
         "pytest",
         "pytest-cov",
         "pytest-timeout",
