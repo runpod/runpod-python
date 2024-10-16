@@ -5,8 +5,8 @@ Handles getting stuff from environment variables and updating the global state l
 import os
 import time
 import uuid
-from typing import Any, Dict, Optional
 from asyncio import Queue
+from typing import Any, Dict, Optional
 
 REF_COUNT_ZERO = time.perf_counter()  # Used for benchmarking with the debugger.
 

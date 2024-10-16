@@ -1,0 +1,5 @@
+line-length = 120
+[format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true

@@ -7,9 +7,8 @@ import shutil
 import click
 import tomlkit
 
-from runpod import create_pod
+from runpod import create_pod, get_endpoints, get_pods
 from runpod import error as rp_error
-from runpod import get_endpoints, get_pods
 
 
 def validate_project_name(name):

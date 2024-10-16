@@ -4,15 +4,14 @@
 
 import argparse
 import os
-from unittest import mock
-from unittest.mock import patch, mock_open, Mock, MagicMock
+from unittest import IsolatedAsyncioTestCase, mock
+from unittest.mock import MagicMock, Mock, mock_open, patch
 
-from unittest import IsolatedAsyncioTestCase
 import nest_asyncio
 
 import runpod
-from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless import _signal_handler
+from runpod.serverless.modules.rp_logger import RunPodLogger
 
 nest_asyncio.apply()
 

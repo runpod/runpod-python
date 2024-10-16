@@ -7,7 +7,7 @@ import inspect
 import json
 import os
 import traceback
-from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union, List
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Union
 
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -17,7 +17,7 @@ from ..utils import rp_debugger
 from .rp_handler import is_generator
 from .rp_http import send_result, stream_result
 from .rp_tips import check_return_size
-from .worker_state import WORKER_ID, REF_COUNT_ZERO, JobsProgress
+from .worker_state import REF_COUNT_ZERO, WORKER_ID, JobsProgress
 
 JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 

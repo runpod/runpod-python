@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 from runpod.serverless.modules import rp_job
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from runpod.version import __version__ as runpod_version
 
 log = RunPodLogger()
 

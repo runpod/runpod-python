@@ -5,7 +5,7 @@ import unittest
 from runpod.api.mutations.container_register_auth import (
     delete_container_registry_auth,
     generate_container_registry_auth,
-    update_container_registry_auth
+    update_container_registry_auth,
 )
 
 

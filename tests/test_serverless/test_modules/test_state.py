@@ -4,11 +4,11 @@ import os
 import unittest
 
 from runpod.serverless.modules.worker_state import (
+    IS_LOCAL_TEST,
+    WORKER_ID,
     Job,
     JobsProgress,
     JobsQueue,
-    IS_LOCAL_TEST,
-    WORKER_ID,
 )
 
 

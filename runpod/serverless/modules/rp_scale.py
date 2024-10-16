@@ -9,7 +9,7 @@ from typing import Any, Dict
 from ...http_client import ClientSession
 from .rp_job import get_job, handle_job
 from .rp_logger import RunPodLogger
-from .worker_state import JobsQueue, JobsProgress
+from .worker_state import JobsProgress, JobsQueue
 
 log = RunPodLogger()
 job_list = JobsQueue()
