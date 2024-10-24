@@ -82,7 +82,6 @@ class JobScaler:
 
     async def run(self):
         # Create an async session that will be closed when the worker is killed.
-
         async with AsyncClientSession() as session:
             # Create tasks for getting and running jobs.
             jobtake_task = asyncio.create_task(self.get_jobs(session))
@@ -90,26 +89,8 @@ class JobScaler:
 
             tasks = [jobtake_task, jobrun_task]
 
-            try:
-                # Concurrently run both tasks and wait for both to finish.
-                await asyncio.gather(*tasks)
-            except asyncio.CancelledError:  # worker is killed
-                log.debug("Worker tasks cancelled.")
-                self.kill_worker()
-            finally:
-                # Handle the task cancellation gracefully
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                await self.cleanup()  # Ensure resources are cleaned up
-
-    async def cleanup(self):
-        # Perform any necessary cleanup here, such as closing connections
-        log.debug("Cleaning up resources before shutdown.")
-        # TODO: stop heartbeat or close any open connections
-        await asyncio.sleep(0)  # Give a chance for other tasks to run (optional)
-        log.debug("Cleanup complete.")
+            # Concurrently run both tasks and wait for both to finish.
+            await asyncio.gather(*tasks)
 
     def is_alive(self):
         """
