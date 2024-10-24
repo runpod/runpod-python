@@ -102,6 +102,7 @@ class JobScaler:
         """
         Whether to kill the worker.
         """
+        log.info("Kill worker.")
         self._shutdown_event.set()
 
     async def get_jobs(self, session: ClientSession):
@@ -123,7 +124,7 @@ class JobScaler:
             jobs_needed = self.current_concurrency - job_progress.get_job_count()
             if jobs_needed <= 0:
                 log.debug("JobScaler.get_jobs | Queue is full. Retrying soon.")
-                await asyncio.sleep(0.1)  # don't go rapidly
+                await asyncio.sleep(1)  # don't go rapidly
                 continue
 
             try:
