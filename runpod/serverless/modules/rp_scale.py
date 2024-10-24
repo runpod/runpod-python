@@ -150,34 +150,32 @@ class JobScaler:
                 acquired_jobs = await asyncio.wait_for(
                     get_job(session, jobs_needed), timeout=30
                 )
+
+                if not acquired_jobs:
+                    log.debug("JobScaler.get_jobs | No jobs acquired.")
+                    continue
+
+                for job in acquired_jobs:
+                    await job_list.add_job(job)
+
+                log.info(f"Jobs in queue: {job_list.get_job_count()}")
+
             except TooManyRequests:
                 log.debug(f"JobScaler.get_jobs | Too many requests. Debounce for 5 seconds.")
                 await asyncio.sleep(5)  # debounce for 5 seconds
-                continue
             except asyncio.CancelledError:
                 log.debug("JobScaler.get_jobs | Request was cancelled.")
-                continue
             except TimeoutError:
                 log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying.")
-                continue
             except TypeError as error:
                 log.debug(f"JobScaler.get_jobs | Unexpected error: {error}.")
-                continue
             except Exception as error:
                 log.error(
                     f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}"
                 )
-                continue
-
-            if not acquired_jobs:
-                log.debug("JobScaler.get_jobs | No jobs acquired.")
+            finally:
+                # Yield control back to the event loop
                 await asyncio.sleep(0)
-                continue
-
-            for job in acquired_jobs:
-                await job_list.add_job(job)
-
-            log.info(f"Jobs in queue: {job_list.get_job_count()}")
 
     async def run_jobs(self, session: ClientSession):
         """
