@@ -10,6 +10,7 @@ import traceback
 from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union, List
 
 from runpod.http_client import ClientSession
+from runpod.serverless.modules.rp_handler import is_async_generator
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
@@ -168,7 +169,7 @@ async def run_job_generator(
     Run generator job used to stream output.
     Yields output partials from the generator.
     """
-    is_async_gen = inspect.isasyncgenfunction(handler)
+    is_async_gen = is_async_generator(handler)
     log.debug(
         "Using Async Generator" if is_async_gen else "Using Standard Generator",
         job["id"],

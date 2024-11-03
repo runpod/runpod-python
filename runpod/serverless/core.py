@@ -11,6 +11,7 @@ from ctypes import CDLL, byref, c_char_p, c_int
 from typing import Any, Callable, Dict, List, Optional
 
 from runpod.serverless.modules import rp_job
+from runpod.serverless.modules.rp_handler import is_generator
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.version import __version__ as runpod_version
 
@@ -214,7 +215,7 @@ async def _process_job(
 
     result = {}
     try:
-        if inspect.isgeneratorfunction(handler) or inspect.isasyncgenfunction(handler):
+        if is_generator(handler):
             log.debug("SLS Core | Running job as a generator.")
             generator_output = rp_job.run_job_generator(handler, job)
             aggregated_output: dict[str, typing.Any] = {"output": []}
