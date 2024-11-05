@@ -2,25 +2,27 @@
 Job related helpers.
 """
 
-import asyncio
 import inspect
 import json
 import os
 import traceback
 from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union, List
 
-from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_handler import is_async_generator
+from runpod.http_client import ClientSession, TooManyRequests
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
+from ..utils import rp_debugger
+from .rp_handler import is_generator
+from .rp_http import send_result, stream_result
 from .rp_tips import check_return_size
-from .worker_state import WORKER_ID, JobsQueue
+from .worker_state import WORKER_ID, REF_COUNT_ZERO, JobsProgress
 
 JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 
 log = RunPodLogger()
-job_list = JobsQueue()
+job_progress = JobsProgress()
 
 
 def _job_get_url(batch_size: int = 1):
@@ -33,11 +35,11 @@ def _job_get_url(batch_size: int = 1):
     Returns:
         str: The prepared URL for the 'get' request to the serverless API.
     """
-    job_in_progress = "1" if job_list.get_job_count() else "0"
+    job_in_progress = "1" if job_progress.get_job_count() else "0"
 
     if batch_size > 1:
         job_take_url = JOB_GET_URL.replace("/job-take/", "/job-take-batch/")
-        job_take_url += f"&batch_size={batch_size}&batch_strategy=LMove"
+        job_take_url += f"&batch_size={batch_size}"
     else:
         job_take_url = JOB_GET_URL
 
@@ -58,43 +60,91 @@ async def get_job(
         session (ClientSession): The aiohttp ClientSession to use for the request.
         num_jobs (int): The number of jobs to get.
     """
-    try:
-        async with session.get(_job_get_url(num_jobs)) as response:
-            if response.status == 204:
-                log.debug("No content, no job to process.")
-                return
+    async with session.get(_job_get_url(num_jobs)) as response:
+        log.debug(f"- Response: {type(response).__name__} {response.status}")
 
-            if response.status == 400:
-                log.debug("Received 400 status, expected when FlashBoot is enabled.")
-                return
+        if response.status == 204:
+            log.debug("- No content, no job to process.")
+            return
 
-            if response.status != 200:
-                log.error(f"Failed to get job, status code: {response.status}")
-                return
+        if response.status == 400:
+            log.debug("- Received 400 status, expected when FlashBoot is enabled.")
+            return
 
-            jobs = await response.json()
-            log.debug(f"Request Received | {jobs}")
+        if response.status == 429:
+            raise TooManyRequests(
+                response.request_info,
+                response.history,
+                status=response.status,
+                message=response.reason
+            )
 
-            # legacy job-take API
-            if isinstance(jobs, dict):
-                if "id" not in jobs or "input" not in jobs:
-                    raise Exception("Job has missing field(s): id or input.")
-                return [jobs]
+        # All other errors should raise an exception
+        response.raise_for_status()
 
-            # batch job-take API
-            if isinstance(jobs, list):
-                return jobs
+        # Verify if the content type is JSON
+        if response.content_type != "application/json":
+            log.debug(f"- Unexpected content type: {response.content_type}")
+            return
 
-    except asyncio.TimeoutError:
-        log.debug("Timeout error, retrying.")
+        # Check if there is a non-empty content to parse
+        if response.content_length == 0:
+            log.debug("- No content to parse.")
+            return
 
-    except Exception as error:
-        log.error(
-            f"Failed to get job. | Error Type: {type(error).__name__} | Error Message: {str(error)}"
-        )
+        jobs = await response.json()
+        log.debug(f"- Received Job(s)")
 
-    # empty
-    return []
+        # legacy job-take API
+        if isinstance(jobs, dict):
+            if "id" not in jobs or "input" not in jobs:
+                raise Exception("Job has missing field(s): id or input.")
+            return [jobs]
+
+        # batch job-take API
+        if isinstance(jobs, list):
+            return jobs
+
+
+async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dict:
+    if is_generator(config["handler"]):
+        is_stream = True
+        generator_output = run_job_generator(config["handler"], job)
+        log.debug("Handler is a generator, streaming results.", job["id"])
+
+        job_result = {"output": []}
+        async for stream_output in generator_output:
+            log.debug(f"Stream output: {stream_output}", job["id"])
+            if "error" in stream_output:
+                job_result = stream_output
+                break
+            if config.get("return_aggregate_stream", False):
+                job_result["output"].append(stream_output["output"])
+
+            await stream_result(session, stream_output, job)
+    else:
+        is_stream = False
+        job_result = await run_job(config["handler"], job)
+
+    # If refresh_worker is set, pod will be reset after job is complete.
+    if config.get("refresh_worker", False):
+        log.info("refresh_worker flag set, stopping pod after job.", job["id"])
+        job_result["stopPod"] = True
+
+    # If rp_debugger is set, debugger output will be returned.
+    if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
+        job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
+        log.debug("rp_debugger | Flag set, returning debugger output.", job["id"])
+
+        # Calculate ready delay for the debugger output.
+        ready_delay = (config["reference_counter_start"] - REF_COUNT_ZERO) * 1000
+        job_result["output"]["rp_debugger"]["ready_delay_ms"] = ready_delay
+    else:
+        log.debug("rp_debugger | Flag not set, skipping debugger output.", job["id"])
+        rp_debugger.clear_debugger_output()
+
+    # Send the job result back to JOB_DONE_URL
+    await send_result(session, job_result, job, is_stream=is_stream)
 
 
 async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:

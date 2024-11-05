@@ -5,11 +5,15 @@ HTTP Client abstractions
 import os
 
 import requests
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
+from aiohttp import ClientSession, ClientTimeout, TCPConnector, ClientResponseError
 
 from .cli.groups.config.functions import get_credentials
 from .tracer import create_aiohttp_tracer, create_request_tracer
 from .user_agent import USER_AGENT
+
+
+class TooManyRequests(ClientResponseError):
+    pass
 
 
 def get_auth_header():

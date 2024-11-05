@@ -139,13 +139,13 @@ async def on_request_exception(
     params: TraceRequestExceptionParams,
 ):
     """Handle the exception that occurred during the request."""
-    context.exception = str(params.exception)
+    context.exception = params.exception
     elapsed = asyncio.get_event_loop().time() - context.on_request_start
     context.transfer = elapsed - context.connect
     context.end_time = time()
 
     # log to error level
-    report_trace(context, params, elapsed, log.error)
+    report_trace(context, params, elapsed, log.trace)
 
 
 def report_trace(
@@ -259,7 +259,9 @@ class TraceRequest:
             self.context.url = self.request.url
             self.context.mode = "sync"
 
-            if isinstance(self.request.body, bytes):
+            if hasattr(self.request, "body") and \
+                self.request.body and \
+                isinstance(self.request.body, bytes):
                 self.context.payload_size_bytes = len(self.request.body)
 
         if self.response is not None:
