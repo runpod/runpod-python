@@ -303,6 +303,7 @@ def create_endpoint(
     workers_max: int = 3,
     flashboot=False,
     allowed_cuda_versions: str = "12.1,12.2,12.3,12.4,12.5",
+    gpu_count: int = 1,
 ):
     """
     Create an endpoint
@@ -323,6 +324,7 @@ def create_endpoint(
             workers_max,
             flashboot,
             allowed_cuda_versions,
+            gpu_count
         )
     )
 
