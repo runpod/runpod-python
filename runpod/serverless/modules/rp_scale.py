@@ -114,14 +114,15 @@ class JobScaler:
         Adds jobs to the JobsQueue
         """
         while self.is_alive():
-            log.debug(f"JobScaler.get_jobs | Jobs in progress: {job_progress.get_job_count()}")
+            current_progress = await job_progress.get_job_count()
+            log.debug(f"JobScaler.get_jobs | Jobs in progress: {current_progress}")
 
             self.current_concurrency = self.concurrency_modifier(
                 self.current_concurrency
             )
             log.debug(f"JobScaler.get_jobs | Concurrency set to: {self.current_concurrency}")
 
-            jobs_needed = self.current_concurrency - job_progress.get_job_count()
+            jobs_needed = self.current_concurrency - current_progress
             if jobs_needed <= 0:
                 log.debug("JobScaler.get_jobs | Queue is full. Retrying soon.")
                 await asyncio.sleep(1)  # don't go rapidly
@@ -197,10 +198,10 @@ class JobScaler:
         """
         Process an individual job. This function is run concurrently for multiple jobs.
         """
-        log.debug(f"JobScaler.handle_job | {job}")
-        job_progress.add(job)
-
         try:
+            log.debug(f"JobScaler.handle_job | {job}")
+            await job_progress.add(job)
+
             await handle_job(session, self.config, job)
 
             if self.config.get("refresh_worker", False):
@@ -215,4 +216,4 @@ class JobScaler:
             job_list.task_done()
 
             # Job is no longer in progress
-            job_progress.remove(job["id"])
+            await job_progress.remove(job["id"])

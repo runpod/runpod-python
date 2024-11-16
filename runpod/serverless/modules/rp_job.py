@@ -43,7 +43,7 @@ def _job_get_url(batch_size: int = 1):
     else:
         job_take_url = JOB_GET_URL
 
-    job_in_progress = "1" if job_progress.get_job_count() else "0"
+    job_in_progress = "1" if job_progress.get_job_list() else "0"
     job_take_url += f"&job_in_progress={job_in_progress}"
 
     log.debug(f"rp_job | get_job: {job_take_url}")
