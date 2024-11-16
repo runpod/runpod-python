@@ -102,7 +102,7 @@ class JobsProgress(set):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
         async with self._lock:
-            log.debug(f"JobsProgress.add | {element}", element.id)
+            log.debug(f"JobsProgress.add", element.id)
             super().add(element)
 
     async def remove(self, element: Any):
@@ -123,7 +123,7 @@ class JobsProgress(set):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
         async with self._lock:
-            log.debug(f"JobsProgress.remove | {element}")
+            log.debug(f"JobsProgress.remove", element.id)
             return super().discard(element)
 
     async def get(self, element: Any) -> Job:
@@ -175,7 +175,7 @@ class JobsQueue(Queue):
         If the queue is full, wait until a free
         slot is available before adding item.
         """
-        log.debug(f"JobsQueue.add_job | {job}")
+        log.debug(f"JobsQueue.add_job", job["id"])
         return await self.put(job)
 
     async def get_job(self) -> dict:

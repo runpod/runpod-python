@@ -114,6 +114,8 @@ class JobScaler:
         Adds jobs to the JobsQueue
         """
         while self.is_alive():
+            log.debug("JobScaler.get_jobs | Starting job acquisition.")
+
             current_progress = await job_progress.get_job_count()
             log.debug(f"JobScaler.get_jobs | Jobs in progress: {current_progress}")
 
@@ -199,7 +201,6 @@ class JobScaler:
         Process an individual job. This function is run concurrently for multiple jobs.
         """
         try:
-            log.debug(f"JobScaler.handle_job | {job}")
             await job_progress.add(job)
 
             await handle_job(session, self.config, job)
