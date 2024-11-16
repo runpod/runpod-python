@@ -20,7 +20,7 @@ nest_asyncio.apply()
 class TestWorker(IsolatedAsyncioTestCase):
     """Tests for RunPod serverless worker."""
 
-    def setUp(self):
+    async def asyncSetUp(self):
         self.mock_handler = mock.Mock(return_value="test")
         self.mock_config = {
             "handler": self.mock_handler,
@@ -106,7 +106,7 @@ class TestWorker(IsolatedAsyncioTestCase):
 class TestWorkerTestInput(IsolatedAsyncioTestCase):
     """Tests for runpod | serverless| worker"""
 
-    def setUp(self):
+    async def asyncSetUp(self):
         self.mock_handler = Mock()
         self.mock_handler.return_value = {}
 
@@ -177,7 +177,7 @@ def test_generator_handler_exception():
 class TestRunWorker(IsolatedAsyncioTestCase):
     """Tests for runpod | serverless| worker"""
 
-    def setUp(self):
+    async def asyncSetUp(self):
         os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
 
         # Set up the config

@@ -100,7 +100,7 @@ class TestJob(unittest.TestCase):
 class TestJobsQueue(unittest.IsolatedAsyncioTestCase):
     """Tests for JobsQueue class"""
 
-    def setUp(self):
+    async def asyncSetUp(self):
         """
         Set up test variables
         """

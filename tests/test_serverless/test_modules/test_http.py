@@ -30,11 +30,11 @@ class MockRequestInfo:
 class TestHTTP(unittest.IsolatedAsyncioTestCase):
     """Test HTTP module."""
 
-    def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         self.job = {"id": "test_id"}
         self.job_data = {"output": "test_output"}
 
-    def tearDown(self) -> None:
+    async def asyncTearDown(self) -> None:
         gc.collect()
 
     async def test_send_result(self):
