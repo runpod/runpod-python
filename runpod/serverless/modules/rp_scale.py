@@ -116,15 +116,18 @@ class JobScaler:
         while self.is_alive():
             log.debug("JobScaler.get_jobs | Starting job acquisition.")
 
-            current_progress = await job_progress.get_job_count()
-            log.debug(f"JobScaler.get_jobs | Jobs in progress: {current_progress}")
-
             self.current_concurrency = self.concurrency_modifier(
                 self.current_concurrency
             )
-            log.debug(f"JobScaler.get_jobs | Concurrency set to: {self.current_concurrency}")
+            log.debug(f"JobScaler.get_jobs | current Concurrency set to: {self.current_concurrency}")
 
-            jobs_needed = self.current_concurrency - current_progress
+            current_progress_count = await job_progress.get_job_count()
+            log.debug(f"JobScaler.get_jobs | current Jobs in progress: {current_progress_count}")
+
+            current_queue_count = job_list.get_job_count()
+            log.debug(f"JobScaler.get_jobs | current Jobs in queue: {current_queue_count}")
+
+            jobs_needed = self.current_concurrency - current_progress_count - current_queue_count
             if jobs_needed <= 0:
                 log.debug("JobScaler.get_jobs | Queue is full. Retrying soon.")
                 await asyncio.sleep(1)  # don't go rapidly
