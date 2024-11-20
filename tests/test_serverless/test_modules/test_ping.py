@@ -98,7 +98,7 @@ class TestPing(unittest.TestCase):
 
 
 @patch.dict(os.environ, {"RUNPOD_PING_INTERVAL": "1000"})
-class TestHeartbeat(unittest.TestCase):
+class TestHeartbeat(unittest.IsolatedAsyncioTestCase):
 
     @patch.dict(os.environ, {"RUNPOD_AI_API_KEY": ""})
     @patch("runpod.serverless.modules.rp_ping.log")
@@ -128,7 +128,7 @@ class TestHeartbeat(unittest.TestCase):
         mock_send_ping.assert_called_once()
 
     @patch("runpod.serverless.modules.rp_ping.SyncClientSession.get")
-    def test_send_ping(self, mock_get):
+    async def test_send_ping(self, mock_get):
         """Test _send_ping method sends the correct request."""
         mock_response = MagicMock()
         mock_response.url = "http://localhost/ping"
@@ -136,8 +136,8 @@ class TestHeartbeat(unittest.TestCase):
         mock_get.return_value = mock_response
 
         jobs = JobsProgress()
-        jobs.add("job1")
-        jobs.add("job2")
+        await jobs.add("job1")
+        await jobs.add("job2")
 
         heartbeat = Heartbeat()
         heartbeat._send_ping()

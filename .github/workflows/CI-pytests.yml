@@ -15,7 +15,7 @@ jobs:
   run_tests:
     strategy:
       matrix:
-        python-version: [3.8, 3.9, 3.10.12, 3.11.0]
+        python-version: [3.8, 3.9, 3.10.15, 3.11.10]
     runs-on: ubuntu-latest
 
     steps:

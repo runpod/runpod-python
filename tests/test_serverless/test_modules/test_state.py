@@ -100,13 +100,11 @@ class TestJob(unittest.TestCase):
 class TestJobsQueue(unittest.IsolatedAsyncioTestCase):
     """Tests for JobsQueue class"""
 
-    def setUp(self):
+    async def asyncSetUp(self):
         """
         Set up test variables
         """
         self.jobs = JobsQueue()
-
-    async def asyncTearDown(self):
         await self.jobs.clear()  # clear jobs before each test
 
     def test_singleton(self):
@@ -172,64 +170,66 @@ class TestJobsQueue(unittest.IsolatedAsyncioTestCase):
         assert self.jobs.get_job_list() in ["123,456", "456,123"]
 
 
-class TestJobsProgress(unittest.TestCase):
+class TestJobsProgress(unittest.IsolatedAsyncioTestCase):
     """Tests for JobsProgress class"""
 
-    def setUp(self):
+    async def asyncSetUp(self):
         """
         Set up test variables
         """
         self.jobs = JobsProgress()
-
-    def asyncTearDown(self):
-        self.jobs.clear()  # clear jobs before each test
+        await self.jobs.clear()  # clear jobs before each test
 
     def test_singleton(self):
         jobs2 = JobsProgress()
         self.assertEqual(self.jobs, jobs2)
 
-    def test_add_job(self):
-        assert not self.jobs.get_job_count()
+    async def test_add_job(self):
+        assert not await self.jobs.get_job_count()
 
         id = "123"
-        self.jobs.add({"id": id})
-        assert self.jobs.get_job_count() == 1
+        await self.jobs.add({"id": id})
+        assert await self.jobs.get_job_count() == 1
 
-        job1 = self.jobs.get(id)
+        job1 = await self.jobs.get(id)
         assert job1 in self.jobs
 
         id = "234"
-        self.jobs.add(id)
-        assert self.jobs.get_job_count() == 2
+        await self.jobs.add(id)
+        assert await self.jobs.get_job_count() == 2
 
-        job2 = self.jobs.get(id)
+        job2 = await self.jobs.get(id)
         assert job2 in self.jobs
 
-    def test_remove_job(self):
-        assert not self.jobs.get_job_count()
+    async def test_remove_job(self):
+        assert not await self.jobs.get_job_count()
 
         job = {"id": "123"}
-        self.jobs.add(job)
-        assert self.jobs.get_job_count()
+        await self.jobs.add(job)
+        assert await self.jobs.get_job_count()
 
-        self.jobs.remove("123")
-        assert not self.jobs.get_job_count()
+        await self.jobs.remove("123")
+        assert not await self.jobs.get_job_count()
 
-    def test_get_job(self):
+    async def test_get_job(self):
         for id in ["123", "234", "345"]:
-            self.jobs.add({"id": id})
+            await self.jobs.add({"id": id})
 
-        job1 = self.jobs.get(id)
+        job1 = await self.jobs.get(id)
         assert job1 in self.jobs
 
-    def test_get_job_list(self):
-        self.assertTrue(self.jobs.get_job_list() is None)
+    async def test_get_job_list(self):
+        assert self.jobs.get_job_list() is None
 
         job1 = {"id": "123"}
-        self.jobs.add(job1)
+        await self.jobs.add(job1)
 
         job2 = {"id": "456"}
-        self.jobs.add(job2)
+        await self.jobs.add(job2)
 
-        assert self.jobs.get_job_count() == 2
+        assert await self.jobs.get_job_count() == 2
         assert self.jobs.get_job_list() in ["123,456", "456,123"]
+
+    async def test_get_job_count(self):
+        # test job count contention when adding and removing jobs in parallel
+        pass

@@ -6,7 +6,7 @@ import os
 import time
 import uuid
 from typing import Any, Dict, Optional
-from asyncio import Queue
+from asyncio import Queue, Lock
 
 from .rp_logger import RunPodLogger
 
@@ -72,10 +72,19 @@ class JobsProgress(set):
             JobsProgress._instance = set.__new__(cls)
         return JobsProgress._instance
 
+    def __init__(self):
+        if not hasattr(self, "_lock"):
+            # Initialize the lock once
+            self._lock = Lock()
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
-    def add(self, element: Any):
+    async def clear(self) -> None:
+        async with self._lock:
+            return super().clear()
+
+    async def add(self, element: Any):
         """
         Adds a Job object to the set.
 
@@ -92,16 +101,17 @@ class JobsProgress(set):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
-        log.debug(f"JobsProgress.add | {element}")
-        return super().add(element)
+        async with self._lock:
+            log.debug(f"JobsProgress.add", element.id)
+            super().add(element)
 
-    def remove(self, element: Any):
+    async def remove(self, element: Any):
         """
-        Adds a Job object to the set.
+        Removes a Job object from the set.
 
-        If the added element is a string, then `Job(id=element)` is added
+        If the element is a string, then `Job(id=element)` is removed
         
-        If the added element is a dict, that `Job(**element)` is added
+        If the element is a dict, then `Job(**element)` is removed
         """
         if isinstance(element, str):
             element = Job(id=element)
@@ -112,34 +122,37 @@ class JobsProgress(set):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
-        log.debug(f"JobsProgress.remove | {element}")
-        return super().remove(element)
+        async with self._lock:
+            log.debug(f"JobsProgress.remove", element.id)
+            return super().discard(element)
 
-    def get(self, element: Any) -> Job:
+    async def get(self, element: Any) -> Job:
         if isinstance(element, str):
             element = Job(id=element)
 
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be retrieved from JobsProgress.")
 
-        for job in self:
-            if job == element:
-                return job
+        async with self._lock:
+            for job in self:
+                if job == element:
+                    return job
 
     def get_job_list(self) -> str:
         """
         Returns the list of job IDs as comma-separated string.
         """
-        if not self.get_job_count():
+        if not len(self):
             return None
 
         return ",".join(str(job) for job in self)
 
-    def get_job_count(self) -> int:
+    async def get_job_count(self) -> int:
         """
-        Returns the number of jobs.
+        Returns the number of jobs in a thread-safe manner.
         """
-        return len(self)
+        async with self._lock:
+            return len(self)
 
 
 class JobsQueue(Queue):
@@ -162,7 +175,7 @@ class JobsQueue(Queue):
         If the queue is full, wait until a free
         slot is available before adding item.
         """
-        log.debug(f"JobsQueue.add_job | {job}")
+        log.debug(f"JobsQueue.add_job", job["id"])
         return await self.put(job)
 
     async def get_job(self) -> dict:
