@@ -8,6 +8,8 @@ import os
 import traceback
 from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union, List
 
+import aiohttp
+
 from runpod.http_client import ClientSession, TooManyRequests
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
@@ -34,7 +36,6 @@ def _job_get_url(batch_size: int = 1):
     Returns:
         str: The prepared URL for the 'get' request to the serverless API.
     """
-    job_in_progress = "1" if job_progress.get_job_count() else "0"
 
     if batch_size > 1:
         job_take_url = JOB_GET_URL.replace("/job-take/", "/job-take-batch/")
@@ -42,7 +43,11 @@ def _job_get_url(batch_size: int = 1):
     else:
         job_take_url = JOB_GET_URL
 
-    return job_take_url + f"&job_in_progress={job_in_progress}"
+    job_in_progress = "1" if job_progress.get_job_list() else "0"
+    job_take_url += f"&job_in_progress={job_in_progress}"
+
+    log.debug(f"rp_job | get_job: {job_take_url}")
+    return job_take_url
 
 
 async def get_job(
@@ -60,14 +65,14 @@ async def get_job(
         num_jobs (int): The number of jobs to get.
     """
     async with session.get(_job_get_url(num_jobs)) as response:
-        log.debug(f"- Response: {type(response).__name__} {response.status}")
+        log.debug(f"rp_job | Response: {type(response).__name__} {response.status}")
 
         if response.status == 204:
-            log.debug("- No content, no job to process.")
+            log.debug("rp_job | Received 204 status, no jobs.")
             return
 
         if response.status == 400:
-            log.debug("- Received 400 status, expected when FlashBoot is enabled.")
+            log.debug("rp_job | Received 400 status, expected when FlashBoot is enabled.")
             return
 
         if response.status == 429:
@@ -83,16 +88,23 @@ async def get_job(
 
         # Verify if the content type is JSON
         if response.content_type != "application/json":
-            log.debug(f"- Unexpected content type: {response.content_type}")
+            log.debug(f"rp_job | Unexpected content type: {response.content_type}")
             return
 
         # Check if there is a non-empty content to parse
         if response.content_length == 0:
-            log.debug("- No content to parse.")
+            log.debug("rp_job | No content to parse.")
             return
 
-        jobs = await response.json()
-        log.debug(f"- Received Job(s)")
+        try:
+            jobs = await response.json()
+            log.debug("rp_job | Received Job(s)")
+        except aiohttp.ContentTypeError:
+            log.debug(f"rp_job | Response content is not valid JSON. {response.content}")
+            return
+        except ValueError as json_error:
+            log.debug(f"rp_job | Failed to parse JSON response: {json_error}")
+            return
 
         # legacy job-take API
         if isinstance(jobs, dict):

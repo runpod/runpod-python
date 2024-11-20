@@ -153,7 +153,7 @@ class TestJob(IsolatedAsyncioTestCase):
 class TestRunJob(IsolatedAsyncioTestCase):
     """Tests the run_job function"""
 
-    def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         self.sample_job = {
             "id": "123",
             "input": {
