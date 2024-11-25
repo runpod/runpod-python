@@ -1,4 +1,4 @@
-""" Used to launch the FastAPI web server when worker is running in API mode. """
+"""Used to launch the FastAPI web server when worker is running in API mode."""
 
 import os
 import threading
@@ -267,18 +267,26 @@ class WorkerAPI:
         # Include the APIRouter in the FastAPI application.
         self.rp_app.include_router(api_router)
 
-    def start_uvicorn(self, api_host="localhost", api_port=8000, api_concurrency=1):
+    def start_uvicorn(
+        self,
+        api_host: str = "localhost",
+        api_port: int = 8000,
+        api_concurrency: int = 1,
+    ):
         """
         Starts the Uvicorn server.
         """
-        uvicorn.run(
-            self.rp_app,
-            host=api_host,
-            port=int(api_port),
-            workers=int(api_concurrency),
-            log_level=os.environ.get("UVICORN_LOG_LEVEL", "info"),
-            access_log=False,
+        server = uvicorn.Server(
+            uvicorn.Config(
+                app=self.rp_app,
+                host=api_host,
+                port=int(api_port),
+                workers=int(api_concurrency),
+                log_level=os.environ.get("UVICORN_LOG_LEVEL", "info"),
+                access_log=False,
+            )
         )
+        server.run()
 
     # ----------------------------- Realtime Endpoint ---------------------------- #
     async def _realtime(self, job: Job):
@@ -304,11 +312,13 @@ class WorkerAPI:
     async def _sim_run(self, job_request: DefaultRequest) -> JobOutput:
         """Development endpoint to simulate run behavior."""
         assigned_job_id = f"test-{uuid.uuid4()}"
-        await job_list.add({
-            "id": assigned_job_id,
-            "input": job_request.input,
-            "webhook": job_request.webhook
-        })
+        await job_list.add(
+            {
+                "id": assigned_job_id,
+                "input": job_request.input,
+                "webhook": job_request.webhook,
+            }
+        )
         return jsonable_encoder({"id": assigned_job_id, "status": "IN_PROGRESS"})
 
     # ---------------------------------- runsync --------------------------------- #
