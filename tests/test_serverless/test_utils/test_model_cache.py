@@ -43,6 +43,11 @@ class TestModelCache(unittest.TestCase):
             path, "/my-custom-model-cache/runwayml/stable-diffusion-v1-5/experimental"
         )
 
+    def test_with_missing_model_name(self):
+        """Test with a missing model name"""
+        path = resolve_model_cache_path_from_hugginface_repository(":experimental")
+        self.assertIsNone(path)
+
 
 if __name__ == "__main__":
     unittest.main()
