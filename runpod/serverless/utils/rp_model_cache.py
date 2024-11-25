@@ -4,7 +4,7 @@
 def resolve_model_cache_path_from_hugginface_repository(
     huggingface_repository: str,
     /,
-    path_template: str = "/runpod/cache/{model}/{revision}",
+    path_template: str = "/runpod/cache/{model}/{revision}",  # TODO: Should we just hardcode this?
 ) -> str:
     """
     Resolves the path to cache a HuggingFace model based on its repository string.
