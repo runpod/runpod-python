@@ -37,7 +37,7 @@ def resolve_model_cache_path_from_hugginface_repository(
     """
     model, *revision = huggingface_repository.rsplit(":", 1)
     if not model:
-        # No model name we could throw an exception here but return None allows us to filter a list of repositories without needing a try/except block
+        # We could throw an exception here but returning None allows us to filter a list of repositories without needing a try/except block
         log.warn(  # type: ignore in strict mode the typechecker complains about this method being partially unknown
             f'Unable to resolve the model-cache path for "{huggingface_repository}"'
         )
