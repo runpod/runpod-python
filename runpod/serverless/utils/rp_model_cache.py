@@ -1,4 +1,4 @@
-"""Utility functions for caching HuggingFace models in RunPod serverless environments."""
+"""Utility function for transforming HuggingFace repositories into model-cache paths"""
 
 
 def resolve_model_cache_path_from_hugginface_repository(
