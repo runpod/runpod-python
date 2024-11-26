@@ -108,6 +108,15 @@ class TestValidator(unittest.TestCase):
         )
         self.assertIn("errors", result)
 
+    def test_validate_none_type(self):
+        """
+        Tests validate with None type
+        """
+        result = rp_validator.validate(
+            {"my_input": None}, {"my_input": {"type": type(None), "required": True}}
+        )
+        self.assertNotIn("errors", result)
+
 
 if __name__ == "__main__":
     unittest.main()
