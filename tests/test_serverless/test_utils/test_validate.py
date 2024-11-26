@@ -99,6 +99,15 @@ class TestValidator(unittest.TestCase):
         result = rp_validator.validate(self.raw_input, {"x": "not dict"})
         self.assertIn("errors", result)
 
+    def test_validate_simple_input(self):
+        """
+        Tests validate with simple input
+        """
+        result = rp_validator.validate(
+            {"my_input": None}, {"my_input": {"type": str, "required": True}}
+        )
+        self.assertIn("errors", result)
+
 
 if __name__ == "__main__":
     unittest.main()
