@@ -90,7 +90,10 @@ class JobScaler:
             tasks = [jobtake_task, jobrun_task]
 
             # Concurrently run both tasks and wait for both to finish.
-            await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    log.error(f"Caught exception: {result}")
 
     def is_alive(self):
         """
@@ -134,9 +137,9 @@ class JobScaler:
                 continue
 
             try:
-                # Keep the connection to the blocking call up to 30 seconds
+                # Keep the connection to the blocking call up to 90 seconds
                 acquired_jobs = await asyncio.wait_for(
-                    get_job(session, jobs_needed), timeout=30
+                    get_job(session, jobs_needed), timeout=90
                 )
 
                 if not acquired_jobs:
@@ -197,7 +200,10 @@ class JobScaler:
             await asyncio.sleep(0)
 
         # Ensure all remaining tasks finish before stopping
-        await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                log.error(f"Caught exception from run_jobs: {result}")
 
     async def handle_job(self, session: ClientSession, job: dict):
         """
