@@ -6,7 +6,6 @@ import os
 import time
 import uuid
 from typing import Any, Dict, Optional
-from asyncio import Queue, Lock
 
 from .rp_logger import RunPodLogger
 
@@ -72,19 +71,13 @@ class JobsProgress(set):
             JobsProgress._instance = set.__new__(cls)
         return JobsProgress._instance
 
-    def __init__(self):
-        if not hasattr(self, "_lock"):
-            # Initialize the lock once
-            self._lock = Lock()
-
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
-    async def clear(self) -> None:
-        async with self._lock:
-            return super().clear()
+    def clear(self) -> None:
+        return super().clear()
 
-    async def add(self, element: Any):
+    def add(self, element: Any):
         """
         Adds a Job object to the set.
 
@@ -101,11 +94,9 @@ class JobsProgress(set):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
-        async with self._lock:
-            log.debug(f"JobsProgress.add", element.id)
-            super().add(element)
+        return super().add(element)
 
-    async def remove(self, element: Any):
+    def remove(self, element: Any):
         """
         Removes a Job object from the set.
 
@@ -122,21 +113,18 @@ class JobsProgress(set):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
-        async with self._lock:
-            log.debug(f"JobsProgress.remove", element.id)
-            return super().discard(element)
+        return super().discard(element)
 
-    async def get(self, element: Any) -> Job:
+    def get(self, element: Any) -> Job:
         if isinstance(element, str):
             element = Job(id=element)
 
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be retrieved from JobsProgress.")
 
-        async with self._lock:
-            for job in self:
-                if job == element:
-                    return job
+        for job in self:
+            if job == element:
+                return job
 
     def get_job_list(self) -> str:
         """
@@ -147,66 +135,8 @@ class JobsProgress(set):
 
         return ",".join(str(job) for job in self)
 
-    async def get_job_count(self) -> int:
-        """
-        Returns the number of jobs in a thread-safe manner.
-        """
-        async with self._lock:
-            return len(self)
-
-
-class JobsQueue(Queue):
-    """Central Jobs Queue for job take and job processing"""
-
-    _instance = None
-
-    def __new__(cls):
-        if JobsQueue._instance is None:
-            JobsQueue._instance = object.__new__(cls)
-        return JobsQueue._instance
-
-    def __iter__(self):
-        return iter(list(self._queue))
-
-    async def add_job(self, job: dict):
-        """
-        Adds a job to the queue.
-
-        If the queue is full, wait until a free
-        slot is available before adding item.
-        """
-        log.debug(f"JobsQueue.add_job", job["id"])
-        return await self.put(job)
-
-    async def get_job(self) -> dict:
-        """
-        Remove and return the next job from the queue.
-
-        If queue is empty, wait until a job is available.
-
-        Note: make sure to call `.task_done()` when processing the job is finished.
-        """
-        return await self.get()
-
-    def get_job_list(self) -> Optional[str]:
-        """
-        Returns the comma-separated list of jobs as a string. (read-only)
-        """
-        if self.empty():
-            return None
-
-        return ",".join(job.get("id") for job in self)
-
     def get_job_count(self) -> int:
         """
         Returns the number of jobs.
         """
-        return self.qsize()
-
-    async def clear(self):
-        """
-        Empties the Queue by getting each item.
-        """
-        while not self.empty():
-            await self.get()
-            self.task_done()
+        return len(self)
