@@ -10,10 +10,9 @@ from typing import Any, Dict
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
 from .rp_job import get_job, handle_job
 from .rp_logger import RunPodLogger
-from .worker_state import JobsQueue, JobsProgress
+from .worker_state import JobsProgress, IS_LOCAL_TEST
 
 log = RunPodLogger()
-job_list = JobsQueue()
 job_progress = JobsProgress()
 
 
@@ -52,6 +51,10 @@ class JobScaler:
         if concurrency_modifier := config.get("concurrency_modifier"):
             self.concurrency_modifier = concurrency_modifier
 
+        if not IS_LOCAL_TEST:
+            # below cannot be changed unless local
+            return
+
         if jobs_fetcher := self.config.get("jobs_fetcher"):
             self.jobs_fetcher = jobs_fetcher
 
@@ -60,6 +63,23 @@ class JobScaler:
 
         if jobs_handler := self.config.get("jobs_handler"):
             self.jobs_handler = jobs_handler
+
+    async def set_scale(self):
+        self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
+
+        if self.jobs_queue and (self.current_concurrency == self.jobs_queue.maxsize):
+            # no need to resize
+            return
+
+        while self.current_occupancy() > 0:
+            # not safe to scale when jobs are in flight
+            await asyncio.sleep(1)
+            continue
+
+        self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
+        log.debug(
+            f"JobScaler.set_scale | New concurrency set to: {self.current_concurrency}"
+        )
 
     def start(self):
         """
@@ -118,6 +138,15 @@ class JobScaler:
         log.info("Kill worker.")
         self._shutdown_event.set()
 
+    def current_occupancy(self) -> int:
+        current_queue_count = self.jobs_queue.qsize()
+        current_progress_count = job_progress.get_job_count()
+
+        log.debug(
+            f"JobScaler.status | concurrency: {self.current_concurrency}; queue: {current_queue_count}; progress: {current_progress_count}"
+        )
+        return current_progress_count + current_queue_count
+
     async def get_jobs(self, session: ClientSession):
         """
         Retrieve multiple jobs from the server in batches using blocking requests.
@@ -127,26 +156,17 @@ class JobScaler:
         Adds jobs to the JobsQueue
         """
         while self.is_alive():
-            log.debug("JobScaler.get_jobs | Starting job acquisition.")
+            await self.set_scale()
 
-            self.current_concurrency = self.concurrency_modifier(
-                self.current_concurrency
-            )
-            log.debug(f"JobScaler.get_jobs | current Concurrency set to: {self.current_concurrency}")
-
-            current_progress_count = await job_progress.get_job_count()
-            log.debug(f"JobScaler.get_jobs | current Jobs in progress: {current_progress_count}")
-
-            current_queue_count = job_list.get_job_count()
-            log.debug(f"JobScaler.get_jobs | current Jobs in queue: {current_queue_count}")
-
-            jobs_needed = self.current_concurrency - current_progress_count - current_queue_count
+            jobs_needed = self.current_concurrency - self.current_occupancy()
             if jobs_needed <= 0:
                 log.debug("JobScaler.get_jobs | Queue is full. Retrying soon.")
                 await asyncio.sleep(1)  # don't go rapidly
                 continue
 
             try:
+                log.debug("JobScaler.get_jobs | Starting job acquisition.")
+
                 # Keep the connection to the blocking call with timeout
                 acquired_jobs = await asyncio.wait_for(
                     self.jobs_fetcher(session, jobs_needed),
@@ -158,15 +178,20 @@ class JobScaler:
                     continue
 
                 for job in acquired_jobs:
-                    await job_list.add_job(job)
+                    await self.jobs_queue.put(job)
+                    job_progress.add(job)
+                    log.debug("Job Queued", job["id"])
 
-                log.info(f"Jobs in queue: {job_list.get_job_count()}")
+                log.info(f"Jobs in queue: {self.jobs_queue.qsize()}")
 
             except TooManyRequests:
-                log.debug(f"JobScaler.get_jobs | Too many requests. Debounce for 5 seconds.")
+                log.debug(
+                    f"JobScaler.get_jobs | Too many requests. Debounce for 5 seconds."
+                )
                 await asyncio.sleep(5)  # debounce for 5 seconds
             except asyncio.CancelledError:
                 log.debug("JobScaler.get_jobs | Request was cancelled.")
+                raise  # CancelledError is a BaseException
             except TimeoutError:
                 log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying.")
             except TypeError as error:
@@ -187,10 +212,10 @@ class JobScaler:
         """
         tasks = []  # Store the tasks for concurrent job processing
 
-        while self.is_alive() or not job_list.empty():
+        while self.is_alive() or not self.jobs_queue.empty():
             # Fetch as many jobs as the concurrency allows
-            while len(tasks) < self.current_concurrency and not job_list.empty():
-                job = await job_list.get_job()
+            while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
+                job = await self.jobs_queue.get()
 
                 # Create a new task for each job and add it to the task list
                 task = asyncio.create_task(self.handle_job(session, job))
@@ -218,7 +243,7 @@ class JobScaler:
         Process an individual job. This function is run concurrently for multiple jobs.
         """
         try:
-            await job_progress.add(job)
+            log.debug("Handling Job", job["id"])
 
             await self.jobs_handler(session, self.config, job)
 
@@ -230,8 +255,10 @@ class JobScaler:
             raise err
 
         finally:
-            # Inform JobsQueue of a task completion
-            job_list.task_done()
+            # Inform Queue of a task completion
+            self.jobs_queue.task_done()
 
             # Job is no longer in progress
-            await job_progress.remove(job["id"])
+            job_progress.remove(job)
+
+            log.debug("Finished Job", job["id"])
