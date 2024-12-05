@@ -38,15 +38,28 @@ class JobScaler:
     """
 
     def __init__(self, config: Dict[str, Any]):
-        concurrency_modifier = config.get("concurrency_modifier")
-        if concurrency_modifier is None:
-            self.concurrency_modifier = _default_concurrency_modifier
-        else:
-            self.concurrency_modifier = concurrency_modifier
-
         self._shutdown_event = asyncio.Event()
         self.current_concurrency = 1
         self.config = config
+
+        self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
+
+        self.concurrency_modifier = _default_concurrency_modifier
+        self.jobs_fetcher = get_job
+        self.jobs_fetcher_timeout = 90
+        self.jobs_handler = handle_job
+
+        if concurrency_modifier := config.get("concurrency_modifier"):
+            self.concurrency_modifier = concurrency_modifier
+
+        if jobs_fetcher := self.config.get("jobs_fetcher"):
+            self.jobs_fetcher = jobs_fetcher
+
+        if jobs_fetcher_timeout := self.config.get("jobs_fetcher_timeout"):
+            self.jobs_fetcher_timeout = jobs_fetcher_timeout
+
+        if jobs_handler := self.config.get("jobs_handler"):
+            self.jobs_handler = jobs_handler
 
     def start(self):
         """
@@ -134,9 +147,10 @@ class JobScaler:
                 continue
 
             try:
-                # Keep the connection to the blocking call up to 30 seconds
+                # Keep the connection to the blocking call with timeout
                 acquired_jobs = await asyncio.wait_for(
-                    get_job(session, jobs_needed), timeout=30
+                    self.jobs_fetcher(session, jobs_needed),
+                    timeout=self.jobs_fetcher_timeout,
                 )
 
                 if not acquired_jobs:
@@ -206,7 +220,7 @@ class JobScaler:
         try:
             await job_progress.add(job)
 
-            await handle_job(session, self.config, job)
+            await self.jobs_handler(session, self.config, job)
 
             if self.config.get("refresh_worker", False):
                 self.kill_worker()
