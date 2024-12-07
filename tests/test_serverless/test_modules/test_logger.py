@@ -58,7 +58,6 @@ class TestLogger(unittest.TestCase):
         log = rp_logger.RunPodLogger()
 
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
-
             log.warn("Test log message")
 
             mock_log.assert_called_once_with("Test log message", "WARN", None)

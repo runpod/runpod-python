@@ -1,4 +1,4 @@
-""" Reads the .runpodignore file and returns a list of files to ignore. """
+"""Reads the .runpodignore file and returns a list of files to ignore."""
 
 import fnmatch
 import os

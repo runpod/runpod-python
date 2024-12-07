@@ -1,4 +1,4 @@
-""" Core functionality for the runpod serverless worker. """
+"""Core functionality for the runpod serverless worker."""
 
 import asyncio
 import ctypes

@@ -197,7 +197,6 @@ def start_project():  # pylint: disable=too-many-locals, too-many-branches
         return
 
     with SSHConnection(project_pod_id) as ssh_conn:
-
         project_path_uuid = (
             f'{config["project"]["volume_mount_path"]}/{config["project"]["uuid"]}'
         )

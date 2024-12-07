@@ -26,7 +26,6 @@ extras_require = {
 }
 
 if __name__ == "__main__":
-
     setup(
         name="runpod",
         use_scm_version=True,

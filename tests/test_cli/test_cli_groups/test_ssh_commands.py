@@ -8,6 +8,7 @@ from click.testing import CliRunner
 from runpod.cli.groups.ssh.commands import add_key, list_keys
 
 
+
 class TestSSHCommands(unittest.TestCase):
     """Tests for the SSH commands of the CLI."""
 
@@ -21,7 +22,6 @@ class TestSSHCommands(unittest.TestCase):
                 {"name": "key2", "type": "DSA", "fingerprint": "fp2"},
             ],
         ) as mock_get_keys:
-
             result = runner.invoke(list_keys)
 
             self.assertIn("key1", result.output)
@@ -39,7 +39,6 @@ class TestSSHCommands(unittest.TestCase):
         ) as mock_prompt, patch(
             "runpod.cli.groups.ssh.commands.click.confirm", return_value=True
         ) as mock_confirm:  # pylint: disable=line-too-long
-
             result = runner.invoke(add_key, [])
 
             self.assertIn("The key has been added to your account.", result.output)

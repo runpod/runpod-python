@@ -1,4 +1,4 @@
-""" User-Agent for RunPod-Python-SDK """
+"""User-Agent for RunPod-Python-SDK"""
 
 import os
 import platform
