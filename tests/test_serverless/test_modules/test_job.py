@@ -2,182 +2,158 @@
 Test Serverless Job Module
 """
 
-import asyncio
 from unittest.mock import Mock, patch
 
 from unittest import IsolatedAsyncioTestCase
-from aiohttp import ClientResponse
+from aiohttp import ClientResponse, ClientResponseError
 from aiohttp.test_utils import make_mocked_coro
 
+from runpod.http_client import TooManyRequests
 from runpod.serverless.modules import rp_job
 
 
 class TestJob(IsolatedAsyncioTestCase):
-    """Tests the Job class."""
+    """Tests for the get_job function."""
 
     async def test_get_job_200(self):
-        """
-        Tests the get_job function
-        """
+        """Tests the get_job function with a valid 200 response."""
         # Mock the 200 response
-        response4 = Mock()
-        response4.status = 200
-        response4.json = make_mocked_coro(
+        response = Mock(ClientResponse)
+        response.status = 200
+        response.content_type = "application/json"
+        response.content_length = 50
+        response.json = make_mocked_coro(
             return_value={"id": "123", "input": {"number": 1}}
         )
 
         with patch("aiohttp.ClientSession") as mock_session, patch(
             "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
         ):
-
-            # Set side_effect to a list of mock responses
-            mock_session.get.return_value.__aenter__.side_effect = [response4]
-
+            mock_session.get.return_value.__aenter__.return_value = response
             job = await rp_job.get_job(mock_session)
-
             # Assertions for the success case
-            assert job == [{"id": "123", "input": {"number": 1}}]
+            self.assertEqual(job, [{"id": "123", "input": {"number": 1}}])
 
     async def test_get_job_204(self):
-        """
-        Tests the get_job function with a 204 response
-        """
-        # 204 Mock
-        response_204 = Mock()
-        response_204.status = 204
-        response_204.json = make_mocked_coro(return_value=None)
+        """Tests the get_job function with a 204 response."""
+        # Mock 204 No Content response
+        response = Mock(ClientResponse)
+        response.status = 204
+        response.content_type = "application/json"
+        response.content_length = 0
 
-        with patch("aiohttp.ClientSession") as mock_session_204, patch(
+        with patch("aiohttp.ClientSession") as mock_session, patch(
             "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
         ):
-
-            mock_session_204.get.return_value.__aenter__.return_value = response_204
-            job = await rp_job.get_job(mock_session_204)
-
-            assert job is None
-            assert mock_session_204.get.call_count == 1
+            mock_session.get.return_value.__aenter__.return_value = response
+            job = await rp_job.get_job(mock_session)
+            self.assertIsNone(job)
+            self.assertEqual(mock_session.get.call_count, 1)
 
     async def test_get_job_400(self):
-        """
-        Test the get_job function with a 400 response
-        """
-        # 400 Mock
-        response_400 = Mock(ClientResponse)
-        response_400.status = 400
+        """Tests the get_job function with a 400 response."""
+        # Mock 400 response
+        response = Mock(ClientResponse)
+        response.status = 400
 
-        with patch("aiohttp.ClientSession") as mock_session_400, patch(
+        with patch("aiohttp.ClientSession") as mock_session, patch(
             "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
         ):
+            mock_session.get.return_value.__aenter__.return_value = response
+            job = await rp_job.get_job(mock_session)
+            self.assertIsNone(job)
 
-            mock_session_400.get.return_value.__aenter__.return_value = response_400
-            job = await rp_job.get_job(mock_session_400)
+    async def test_get_job_429(self):
+        """Tests the get_job function with a 429 response."""
+        response = Mock(ClientResponse)
+        response.raise_for_status.side_effect = TooManyRequests(
+            request_info=None,
+            history=(),
+            status=429,
+        )
 
-            assert job is None
+        with patch("aiohttp.ClientSession") as mock_session, patch(
+            "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
+        ):
+            mock_session.get.return_value.__aenter__.return_value = response
+            with self.assertRaises(ClientResponseError):
+                await rp_job.get_job(mock_session)
 
     async def test_get_job_500(self):
-        """
-        Tests the get_job function with a 500 response
-        """
-        # 500 Mock
-        response_500 = Mock(ClientResponse)
-        response_500.status = 500
-
-        with patch("aiohttp.ClientSession") as mock_session_500, patch(
+        """Tests the get_job function with a 500 response."""
+        # Mock 500 response
+        response = Mock(ClientResponse)
+        response.raise_for_status.side_effect = TooManyRequests(
+            request_info=None,  # Not needed for the test
+            history=(),  # Not needed for the test
+            status=500, 
+        )
+        with patch("aiohttp.ClientSession") as mock_session, patch(
             "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
         ):
-
-            mock_session_500.get.return_value.__aenter__.return_value = response_500
-            job = await rp_job.get_job(mock_session_500)
-
-            assert job is None
+            mock_session.get.return_value.__aenter__.return_value = response
+            with self.assertRaises(Exception):
+                await rp_job.get_job(mock_session)
 
     async def test_get_job_no_id(self):
-        """
-        Tests the get_job function with a 200 response but no id
-        """
+        """Tests the get_job function with a 200 response but no 'id' field."""
         response = Mock(ClientResponse)
         response.status = 200
-        response.json = make_mocked_coro(return_value={})
+        response.content_type = "application/json"
+        response.content_length = 50
+        response.json = make_mocked_coro(return_value={"input": "foobar"})
 
         with patch("aiohttp.ClientSession") as mock_session, patch(
-            "runpod.serverless.modules.rp_job.log", new_callable=Mock
-        ) as mock_log, patch(
             "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
         ):
-
             mock_session.get.return_value.__aenter__.return_value = response
+            with self.assertRaises(Exception) as context:
+                await rp_job.get_job(mock_session)
+            self.assertEqual(str(context.exception), "Job has missing field(s): id or input.")
 
-            job = await rp_job.get_job(mock_session)
-
-            assert job == []
-            assert mock_log.error.call_count == 1
-
-    async def test_get_job_no_input(self):
-        """
-        Tests the get_job function with a 200 response but no input
-        """
+    async def test_get_job_invalid_content_type(self):
+        """Tests the get_job function with an invalid content type."""
         response = Mock(ClientResponse)
         response.status = 200
-        response.json = make_mocked_coro(return_value={"id": "123"})
+        response.content_type = "text/html"  # Invalid content type
+        response.content_length = 50
 
         with patch("aiohttp.ClientSession") as mock_session, patch(
-            "runpod.serverless.modules.rp_job.log", new_callable=Mock
-        ) as mock_log, patch(
             "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
         ):
-
             mock_session.get.return_value.__aenter__.return_value = response
-
             job = await rp_job.get_job(mock_session)
+            self.assertIsNone(job)
 
-            assert job == []
-            assert mock_log.error.call_count == 1
+    async def test_get_job_empty_content(self):
+        """Tests the get_job function with an empty content response."""
+        response = Mock(ClientResponse)
+        response.status = 200
+        response.content_type = "application/json"
+        response.content_length = 0  # No content to parse
 
-    async def test_get_job_no_timeout(self):
-        """Tests the get_job function with a timeout"""
-        # Timeout Mock
-        response_timeout = Mock(ClientResponse)
-        response_timeout.status = 200
-
-        with patch("aiohttp.ClientSession") as mock_session_timeout, patch(
-            "runpod.serverless.modules.rp_job.log", new_callable=Mock
-        ) as mock_log, patch(
+        with patch("aiohttp.ClientSession") as mock_session, patch(
             "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
         ):
-
-            mock_session_timeout.get.return_value.__aenter__.side_effect = (
-                asyncio.TimeoutError
-            )
-            job = await rp_job.get_job(mock_session_timeout)
-
-            assert job == []
-            assert mock_log.error.call_count == 0
+            mock_session.get.return_value.__aenter__.return_value = response
+            job = await rp_job.get_job(mock_session)
+            self.assertIsNone(job)
 
     async def test_get_job_exception(self):
-        """
-        Tests the get_job function with an exception
-        """
-        # Exception Mock
-        response_exception = Mock(ClientResponse)
-        response_exception.status = 200
-
-        with patch("aiohttp.ClientSession") as mock_session_exception, patch(
-            "runpod.serverless.modules.rp_job.log", new_callable=Mock
-        ) as mock_log, patch(
+        """Tests the get_job function with a raised exception."""
+        with patch("aiohttp.ClientSession") as mock_session, patch(
             "runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url"
         ):
-
-            mock_session_exception.get.return_value.__aenter__.side_effect = Exception
-            job = await rp_job.get_job(mock_session_exception)
-
-            assert job == []
-            assert mock_log.error.call_count == 1
+            mock_session.get.return_value.__aenter__.side_effect = Exception("Unexpected error")
+            with self.assertRaises(Exception) as context:
+                await rp_job.get_job(mock_session)
+            self.assertEqual(str(context.exception), "Unexpected error")
 
 
 class TestRunJob(IsolatedAsyncioTestCase):
     """Tests the run_job function"""
 
-    def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         self.sample_job = {
             "id": "123",
             "input": {

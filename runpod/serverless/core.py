@@ -16,6 +16,11 @@ from runpod.version import __version__ as runpod_version
 
 log = RunPodLogger()
 
+# _runpod_sls_get_jobs status codes
+STILL_WAITING = 0 
+OK = 1
+ERROR_FROM_SERVER = 2
+ERROR_BUFFER_TOO_SMALL = 3
 
 class CGetJobResult(ctypes.Structure):  # pylint: disable=too-few-public-methods
     """
@@ -36,6 +41,8 @@ def notregistered():
     """Function to raise NotImplementedError"""
     raise RuntimeError("This function is not registered with the SLS Core.")
 
+class SlsCoreError(Exception):
+    pass
 
 class Hook:  # pylint: disable=too-many-instance-attributes
     """Singleton class for interacting with sls_core.so"""
@@ -132,25 +139,36 @@ class Hook:  # pylint: disable=too-many-instance-attributes
 
     def get_jobs(self, max_concurrency: int, max_jobs: int) -> List[Dict[str, Any]]:
         """Get a job or jobs from the queue. The jobs are returned as a list of Job objects."""
-        buffer = ctypes.create_string_buffer(
+        buf = ctypes.create_string_buffer(
             1024 * 1024 * 20
         )  # 20MB buffer to store jobs in
-        destination_length = len(buffer.raw)
-        result: CGetJobResult = self._get_jobs(
+        destination_length = len(buf.raw)
+        res: CGetJobResult = self._get_jobs(
             c_int(max_concurrency),
             c_int(max_jobs),
-            byref(buffer),
+            byref(buf),
             c_int(destination_length),
         )
-        if (
-            result.status_code == 1
-        ):  # success! the job was stored bytes 0..res_len of buf.raw
-            return list(json.loads(buffer.raw[: result.res_len].decode("utf-8")))
+        n = res.res_len
+        code = res.status_code
+        if code == STILL_WAITING:
+            return []  # still waiting for jobs
+        elif code == OK:  # success! the job was stored bytes 0..res_len of buf.raw
+            log.trace(f"decoding {n} bytes of JSON")
+            return list(json.loads(buf.raw[:n].decode("utf-8")))
+        elif code == ERROR_FROM_SERVER:
+            try:
+                b = buf.raw[: res.res_len].decode("utf-8")
+            except Exception:
+                b = "<failed to decode buffer>"
+            if b == "":
+                b = "<unknown error or buffer too small>"
+            raise SlsCoreError(f"_runpod_sls_get_jobs: status code 2: error from server: {b}")
+        elif code == ERROR_BUFFER_TOO_SMALL:  # buffer too small
+            raise SlsCoreError("_runpod_sls_get_jobs: status code 3: buffer too small")
+        else:
+            raise ValueError(f"_runpod_sls_get_jobs: unknown status code {code}")
 
-        if result.status_code not in [0, 1]:
-            raise RuntimeError(f"get_jobs failed with status code {result.status_code}")
-
-        return []  # Status code 0, still waiting for jobs
 
     def progress_update(self, job_id: str, json_data: bytes) -> bool:
         """
@@ -220,7 +238,7 @@ async def _process_job(
             aggregated_output: dict[str, typing.Any] = {"output": []}
 
             async for part in generator_output:
-                log.debug(f"SLS Core | Streaming output: {part}", job["id"])
+                log.trace(f"SLS Core | Streaming output: {part}", job["id"])
 
                 if "error" in part:
                     aggregated_output = part
@@ -263,9 +281,13 @@ async def run(config: Dict[str, Any]) -> None:
     max_jobs = config.get("max_jobs", 1)
 
     serverless_hook = Hook()
-
     while True:
-        jobs = serverless_hook.get_jobs(max_concurrency, max_jobs)
+        try:
+            jobs = serverless_hook.get_jobs(max_concurrency, max_jobs)
+        except SlsCoreError as err:
+            log.error(f"SLS Core | Error getting jobs: {err}")
+            await asyncio.sleep(0.2) # sleep for a bit before trying again
+            continue
 
         if len(jobs) == 0 or jobs is None:
             await asyncio.sleep(0)
