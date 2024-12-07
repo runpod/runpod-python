@@ -136,8 +136,8 @@ class TestHeartbeat(unittest.IsolatedAsyncioTestCase):
         mock_get.return_value = mock_response
 
         jobs = JobsProgress()
-        await jobs.add("job1")
-        await jobs.add("job2")
+        jobs.add("job1")
+        jobs.add("job2")
 
         heartbeat = Heartbeat()
         heartbeat._send_ping()

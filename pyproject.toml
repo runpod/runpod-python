@@ -54,6 +54,7 @@ runpod = "runpod.cli.entry:runpod_cli"
 test = [
     "asynctest",
     "nest_asyncio",
+    "faker",
     "pytest-asyncio",
     "pytest-cov",
     "pytest-timeout",
