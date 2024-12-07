@@ -16,8 +16,8 @@ with open("requirements.txt", encoding="UTF-8") as requirements_file:
 extras_require = {
     "test": [
         "asynctest",
+        "faker",
         "nest_asyncio",
-        "pylint==3.3.1",
         "pytest",
         "pytest-cov",
         "pytest-timeout",
