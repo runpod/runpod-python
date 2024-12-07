@@ -5,8 +5,12 @@ Handles getting stuff from environment variables and updating the global state l
 import os
 import time
 import uuid
-from typing import Any, Dict, Optional, Union
-from asyncio import Queue
+from typing import Any, Dict, Optional
+
+from .rp_logger import RunPodLogger
+
+
+log = RunPodLogger()
 
 REF_COUNT_ZERO = time.perf_counter()  # Used for benchmarking with the debugger.
 
@@ -30,13 +34,17 @@ class Job:
 
     def __init__(
         self,
-        job_id: str,
-        job_input: Optional[Dict[str, Any]] = None,
+        id: str,
+        input: Optional[Dict[str, Any]] = None,
         webhook: Optional[str] = None,
+        **kwargs
     ) -> None:
-        self.id = job_id
-        self.input = job_input
+        self.id = id
+        self.input = input
         self.webhook = webhook
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Job):
@@ -53,105 +61,82 @@ class Job:
 # ---------------------------------------------------------------------------- #
 #                                    Tracker                                   #
 # ---------------------------------------------------------------------------- #
-class Jobs:
-    """Track the state of current jobs."""
+class JobsProgress(set):
+    """Track the state of current jobs in progress."""
 
     _instance = None
-    jobs = set()
 
     def __new__(cls):
-        if Jobs._instance is None:
-            Jobs._instance = object.__new__(cls)
-            Jobs._instance.jobs = set()
-        return Jobs._instance
+        if JobsProgress._instance is None:
+            JobsProgress._instance = set.__new__(cls)
+        return JobsProgress._instance
 
-    def add_job(self, job_id, job_input=None, webhook=None):
-        """
-        Adds a job to the list of jobs.
-        """
-        self.jobs.add(Job(job_id, job_input, webhook))
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
-    def remove_job(self, job_id):
-        """
-        Removes a job from the list of jobs.
-        """
-        self.jobs.remove(Job(job_id))
+    def clear(self) -> None:
+        return super().clear()
 
-    def get_job(self, job_id) -> Optional[Union[dict, list, str, int, float, bool]]:
+    def add(self, element: Any):
         """
-        Returns the job with the given id.
-        Used within rp_fastapi.py for local testing.
+        Adds a Job object to the set.
+
+        If the added element is a string, then `Job(id=element)` is added
+        
+        If the added element is a dict, that `Job(**element)` is added
         """
-        for job in self.jobs:
-            if job.id == job_id:
+        if isinstance(element, str):
+            element = Job(id=element)
+
+        if isinstance(element, dict):
+            element = Job(**element)
+
+        if not isinstance(element, Job):
+            raise TypeError("Only Job objects can be added to JobsProgress.")
+
+        return super().add(element)
+
+    def remove(self, element: Any):
+        """
+        Removes a Job object from the set.
+
+        If the element is a string, then `Job(id=element)` is removed
+        
+        If the element is a dict, then `Job(**element)` is removed
+        """
+        if isinstance(element, str):
+            element = Job(id=element)
+
+        if isinstance(element, dict):
+            element = Job(**element)
+
+        if not isinstance(element, Job):
+            raise TypeError("Only Job objects can be removed from JobsProgress.")
+
+        return super().discard(element)
+
+    def get(self, element: Any) -> Job:
+        if isinstance(element, str):
+            element = Job(id=element)
+
+        if not isinstance(element, Job):
+            raise TypeError("Only Job objects can be retrieved from JobsProgress.")
+
+        for job in self:
+            if job == element:
                 return job
 
-        return None
-
-    def get_job_list(self):
+    def get_job_list(self) -> str:
         """
-        Returns the list of jobs as a string.
+        Returns the list of job IDs as comma-separated string.
         """
-        return ",".join(str(job) for job in self.jobs) if self.jobs else None
-
-    def get_job_count(self):
-        """
-        Returns the number of jobs.
-        """
-        return len(self.jobs)
-
-
-class JobsQueue(Queue):
-    """Central Jobs Queue for job take and job processing"""
-
-    _instance = None
-
-    def __new__(cls):
-        if JobsQueue._instance is None:
-            JobsQueue._instance = object.__new__(cls)
-        return JobsQueue._instance
-
-    def __iter__(self):
-        return iter(list(self._queue))
-
-    async def add_job(self, job: dict):
-        """
-        Adds a job to the queue.
-
-        If the queue is full, wait until a free
-        slot is available before adding item.
-        """
-        return await self.put(job)
-
-    async def get_job(self) -> dict:
-        """
-        Remove and return the next job from the queue.
-
-        If queue is empty, wait until a job is available.
-
-        Note: make sure to call `.task_done()` when processing the job is finished.
-        """
-        return await self.get()
-
-    def get_job_list(self) -> Optional[str]:
-        """
-        Returns the comma-separated list of jobs as a string. (read-only)
-        """
-        if self.empty():
+        if not len(self):
             return None
 
-        return ",".join(job.get("id") for job in self)
+        return ",".join(str(job) for job in self)
 
     def get_job_count(self) -> int:
         """
         Returns the number of jobs.
         """
-        return self.qsize()
-
-    async def clear(self):
-        """
-        Empties the Queue by getting each item.
-        """
-        while not self.empty():
-            await self.get()
-            self.task_done()
+        return len(self)
