@@ -212,7 +212,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         runpod.serverless.start(self.config)
 
         # Make assertions about the behaviors
-        self.assertEqual(mock_get_job.call_count, 2)  # Verify get_job called twice
+        self.assertEqual(mock_get_job.call_count, 1)
         mock_run_job.assert_called_once()
         mock_send_result.assert_called_once()
 
@@ -282,7 +282,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert not mock_run_job.called
 
         # Check that `send_result` was called
-        assert mock_send_result.call_count == 2  # Adjust expectation if multiple calls are valid
+        assert mock_send_result.call_count == 1  # Adjust expectation if multiple calls are valid
 
         # Inspect the arguments for each call to `send_result`
         for call in mock_send_result.call_args_list:

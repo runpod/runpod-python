@@ -23,6 +23,13 @@ from .modules.rp_progress import progress_update
 
 log = RunPodLogger()
 
+
+def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
+    log.error(f"Uncaught exception | {exc_type}; {exc_value}; {exc_traceback};")
+
+sys.excepthook = handle_uncaught_exception
+
+
 # ---------------------------------------------------------------------------- #
 #                              Run Time Arguments                              #
 # ---------------------------------------------------------------------------- #
