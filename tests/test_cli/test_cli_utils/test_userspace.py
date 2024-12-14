@@ -1,4 +1,4 @@
-""" Unit testing for runpod.cli.utils.rp_userspace.py """
+"""Unit testing for runpod.cli.utils.rp_userspace.py"""
 
 import os
 import unittest

@@ -1,5 +1,5 @@
 """
-    This module is used to handle HTTP requests.
+This module is used to handle HTTP requests.
 """
 
 import json

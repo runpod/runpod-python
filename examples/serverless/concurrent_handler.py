@@ -1,4 +1,4 @@
-""" Concurrency Modifier Example """
+"""Concurrency Modifier Example"""
 
 import runpod
 

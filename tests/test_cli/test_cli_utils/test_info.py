@@ -1,4 +1,4 @@
-""" Unit testing for runpod.cli.utils.rp_info.py """
+"""Unit testing for runpod.cli.utils.rp_info.py"""
 
 from unittest.mock import patch
 

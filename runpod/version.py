@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 
+
 def get_version():
     """ Get the version of runpod-python """ ""
     try:
