@@ -44,8 +44,6 @@ class JobScaler:
     """
 
     def __init__(self, config: Dict[str, Any]):
-        sys.excepthook = _handle_uncaught_exception
- 
         self._shutdown_event = asyncio.Event()
         self.current_concurrency = 1
         self.config = config
@@ -96,6 +94,8 @@ class JobScaler:
         when the user sends a SIGTERM or SIGINT signal. This is typically
         the case when the worker is running in a container.
         """
+        sys.excepthook = _handle_uncaught_exception
+
         try:
             # Register signal handlers for graceful shutdown
             signal.signal(signal.SIGTERM, self.handle_shutdown)

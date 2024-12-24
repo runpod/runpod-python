@@ -550,7 +550,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             assert mock_main.called
 
     @patch("runpod.serverless.signal.signal")
-    @patch("runpod.serverless.worker.rp_scale.JobScaler.start")
+    @patch("runpod.serverless.worker.rp_scale.JobScaler.run")
     def test_start_sets_excepthook(self, _, __):
         runpod.serverless.start({})
         assert sys.excepthook == _handle_uncaught_exception
