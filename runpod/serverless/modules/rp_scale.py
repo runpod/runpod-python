@@ -5,6 +5,8 @@ Provides the functionality for scaling the runpod serverless worker.
 
 import asyncio
 import signal
+import sys
+import traceback
 from typing import Any, Dict
 
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
@@ -14,6 +16,11 @@ from .worker_state import JobsProgress, IS_LOCAL_TEST
 
 log = RunPodLogger()
 job_progress = JobsProgress()
+
+
+def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
+    exc = traceback.format_exception(exc_type, exc_value, exc_traceback)
+    log.error(f"Uncaught exception | {exc}")
 
 
 def _default_concurrency_modifier(current_concurrency: int) -> int:
