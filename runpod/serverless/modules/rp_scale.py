@@ -44,6 +44,8 @@ class JobScaler:
     """
 
     def __init__(self, config: Dict[str, Any]):
+        sys.excepthook = _handle_uncaught_exception
+ 
         self._shutdown_event = asyncio.Event()
         self.current_concurrency = 1
         self.config = config
