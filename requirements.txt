@@ -5,7 +5,7 @@ backoff >= 2.2.1
 boto3 >= 1.26.165
 click >= 8.1.7
 colorama >= 0.2.5, < 0.4.7
-cryptography < 44.0.0
+cryptography < 45.0.0
 fastapi[all] >= 0.94.0
 paramiko >= 3.3.1
 prettytable >= 3.9.0
