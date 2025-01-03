@@ -10,7 +10,6 @@ import os
 import signal
 import sys
 import time
-import typing
 from typing import Any, Dict
 
 from runpod.serverless import core
@@ -22,12 +21,6 @@ from .modules.rp_logger import RunPodLogger
 from .modules.rp_progress import progress_update
 
 log = RunPodLogger()
-
-
-def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
-    log.error(f"Uncaught exception | {exc_type}; {exc_value}; {exc_traceback};")
-
-sys.excepthook = handle_uncaught_exception
 
 
 # ---------------------------------------------------------------------------- #
