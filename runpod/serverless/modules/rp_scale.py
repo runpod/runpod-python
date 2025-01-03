@@ -144,7 +144,7 @@ class JobScaler:
         """
         Whether to kill the worker.
         """
-        log.info("Kill worker.")
+        log.debug("Kill worker.")
         self._shutdown_event.set()
 
     def current_occupancy(self) -> int:
