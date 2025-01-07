@@ -21,11 +21,12 @@ def run_graphql_query(query: str) -> Dict[str, Any]:
     from runpod import api_key  # pylint: disable=import-outside-toplevel, cyclic-import
 
     api_url_base = os.environ.get("RUNPOD_API_BASE_URL", "https://api.runpod.io")
-    url = f"{api_url_base}/graphql?api_key={api_key}"
+    url = f"{api_url_base}/graphql"
 
     headers = {
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
+        "Authorization": f"Bearer {api_key}",
     }
 
     data = json.dumps({"query": query})
