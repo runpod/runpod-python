@@ -1,4 +1,4 @@
-""" Test suite for the generate_container_registry_auth function. """
+"""Test suite for the generate_container_registry_auth function."""
 
 import unittest
 

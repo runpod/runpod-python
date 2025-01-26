@@ -1,4 +1,4 @@
-""" GraphQL queries for endpoints. """
+"""GraphQL queries for endpoints."""
 
 QUERY_ENDPOINT = """
 query Query {

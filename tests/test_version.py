@@ -1,4 +1,4 @@
-""" Test the version module """
+"""Test the version module"""
 
 from importlib.metadata import PackageNotFoundError
 from unittest.mock import patch

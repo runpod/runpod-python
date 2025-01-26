@@ -1,7 +1,6 @@
 """
 Test rp_http.py module.
 """
-
 # pylint: disable=too-few-public-methods
 
 import gc
@@ -89,7 +88,6 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
         ) as mock_retry, patch.object(
             aiohttp.RequestInfo, "__init__", mock_request_info_init
         ):
-
             mock_retry.side_effect = aiohttp.ClientResponseError(
                 request_info=MockRequestInfo,
                 history=None,
