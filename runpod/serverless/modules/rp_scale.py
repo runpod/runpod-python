@@ -201,7 +201,7 @@ class JobScaler:
             except asyncio.CancelledError:
                 log.debug("JobScaler.get_jobs | Request was cancelled.")
                 raise  # CancelledError is a BaseException
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying.")
             except TypeError as error:
                 log.debug(f"JobScaler.get_jobs | Unexpected error: {error}.")
@@ -211,7 +211,7 @@ class JobScaler:
                 )
             finally:
                 # Yield control back to the event loop
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.1)
 
     async def run_jobs(self, session: ClientSession):
         """
