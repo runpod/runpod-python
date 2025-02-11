@@ -211,7 +211,7 @@ class JobScaler:
                 )
             finally:
                 # Yield control back to the event loop
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0)
 
     async def run_jobs(self, session: ClientSession):
         """
