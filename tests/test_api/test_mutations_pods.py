@@ -10,11 +10,12 @@ class TestPodMutations(unittest.TestCase):
 
     def test_generate_pod_deployment_mutation(self):
         """
-        Test generate_pod_deployment_mutation
+        Test generate_pod_deployment_mutation for both GPU and CPU pods
         """
-        result = pods.generate_pod_deployment_mutation(
+        # Test GPU pod deployment
+        gpu_result = pods.generate_pod_deployment_mutation(
             name="test",
-            image_name="test_image",
+            image_name="test_image", 
             gpu_type_id="1",
             cloud_type="cloud",
             data_center_id="1",
@@ -33,8 +34,31 @@ class TestPodMutations(unittest.TestCase):
             allowed_cuda_versions=["11.8", "12.0"],
         )
 
-        # Here you should check the correct structure of the result
-        self.assertIn("mutation", result)
+        # Test CPU pod deployment
+        cpu_result = pods.generate_pod_deployment_mutation(
+            name="test-cpu",
+            image_name="test_image",
+            cloud_type="cloud",
+            data_center_id="1",
+            country_code="US",
+            volume_in_gb=100,
+            container_disk_in_gb=10,
+            min_vcpu_count=2,
+            min_memory_in_gb=4,
+            docker_args="args",
+            ports="8080",
+            volume_mount_path="/path",
+            env={"ENV": "test"},
+            instance_id="cpu3c-2-4"
+        )
+
+        # Check GPU pod mutation structure
+        self.assertIn("mutation", gpu_result)
+        self.assertIn("podFindAndDeployOnDemand", gpu_result)
+        
+        # Check CPU pod mutation structure  
+        self.assertIn("mutation", cpu_result)
+        self.assertIn("deployCpuPod", cpu_result)
 
     def test_generate_pod_stop_mutation(self):
         """
