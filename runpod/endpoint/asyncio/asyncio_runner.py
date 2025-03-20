@@ -1,4 +1,4 @@
-""" Module for running endpoints asynchronously. """
+"""Module for running endpoints asynchronously."""
 
 # pylint: disable=too-few-public-methods,R0801
 
@@ -89,9 +89,14 @@ class Job:
         while True:
             await asyncio.sleep(1)
             stream_partial = await self._fetch_job(source="stream")
-            if stream_partial["status"] not in FINAL_STATES:
+            if (
+                stream_partial["status"] not in FINAL_STATES
+                or len(stream_partial["stream"]) > 0
+            ):
                 for chunk in stream_partial.get("stream", []):
                     yield chunk["output"]
+            elif stream_partial["status"] in FINAL_STATES:
+                break
 
     async def cancel(self) -> dict:
         """Cancels current job
