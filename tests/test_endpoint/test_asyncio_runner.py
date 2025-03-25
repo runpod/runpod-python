@@ -1,4 +1,4 @@
-""" Unit tests for the asyncio_runner module. """
+"""Unit tests for the asyncio_runner module."""
 
 # pylint: disable=too-few-public-methods
 
@@ -114,8 +114,6 @@ class TestJob(IsolatedAsyncioTestCase):
             outputs = []
             async for stream_output in job.stream():
                 outputs.append(stream_output)
-                if not responses:  # Break the loop when responses are exhausted
-                    break
 
             assert outputs == ["OUTPUT1", "OUTPUT2"]
 
