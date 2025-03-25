@@ -91,7 +91,7 @@ class Job:
             stream_partial = await self._fetch_job(source="stream")
             if (
                 stream_partial["status"] not in FINAL_STATES
-                or len(stream_partial["stream"]) > 0
+                or len(stream_partial.get("stream", [])) > 0
             ):
                 for chunk in stream_partial.get("stream", []):
                     yield chunk["output"]
