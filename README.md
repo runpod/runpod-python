@@ -137,8 +137,11 @@ pods = runpod.get_pods()
 # Get a specific pod
 pod = runpod.get_pod(pod.id)
 
-# Create a pod
+# Create a pod with GPU
 pod = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
+
+# Create a pod with CPU
+pod = runpod.create_pod("test", "runpod/stack", instance_id="cpu3c-2-4")
 
 # Stop the pod
 runpod.stop_pod(pod.id)

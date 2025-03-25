@@ -89,7 +89,7 @@ def get_pod(pod_id: str):
 def create_pod(
     name: str,
     image_name: str,
-    gpu_type_id: str,
+    gpu_type_id: Optional[str] = None,
     cloud_type: str = "ALL",
     support_public_ip: bool = True,
     start_ssh: bool = True,
@@ -109,17 +109,18 @@ def create_pod(
     allowed_cuda_versions: Optional[list] = None,
     min_download = None,
     min_upload = None,
+    instance_id: Optional[str] = None,
 ) -> dict:
     """
     Create a pod
 
     :param name: the name of the pod
     :param image_name: the name of the docker image to be used by the pod
-    :param gpu_type_id: the gpu type wanted by the pod (retrievable by get_gpus)
+    :param gpu_type_id: the gpu type wanted by the pod (retrievable by get_gpus). If None, creates a CPU-only pod
     :param cloud_type: if secure cloud, community cloud or all is wanted
     :param data_center_id: the id of the data center
     :param country_code: the code for country to start the pod in
-    :param gpu_count: how many gpus should be attached to the pod
+    :param gpu_count: how many gpus should be attached to the pod (ignored for CPU-only pods)
     :param volume_in_gb: how big should the pod volume be
     :param ports: the ports to open in the pod, example format - "8888/http,666/tcp"
     :param volume_mount_path: where to mount the volume?
@@ -129,12 +130,19 @@ def create_pod(
     :param template_id: the id of the template to use for the pod
     :param min_download: minimum download speed in Mbps
     :param min_upload: minimum upload speed in Mbps
+    :param instance_id: the id of a specific instance to deploy to (for CPU pods)
     :example:
 
+    >>> # Create GPU pod
     >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
+    >>> # Create CPU pod
+    >>> pod_id = runpod.create_pod("test", "runpod/stack")
+    >>> # Create CPU pod on specific instance
+    >>> pod_id = runpod.create_pod("test", "runpod/stack", instance_id="cpu3c-2-4")
     """
     # Input Validation
-    get_gpu(gpu_type_id)  # Check if GPU exists, will raise ValueError if not.
+    if gpu_type_id is not None:
+        get_gpu(gpu_type_id)  # Check if GPU exists, will raise ValueError if not.
     if cloud_type not in ["ALL", "COMMUNITY", "SECURE"]:
         raise ValueError("cloud_type must be one of ALL, COMMUNITY or SECURE")
 
@@ -158,7 +166,7 @@ def create_pod(
             start_ssh,
             data_center_id,
             country_code,
-            gpu_count,
+            gpu_count if gpu_type_id is not None else None,
             volume_in_gb,
             container_disk_in_gb,
             min_vcpu_count,
@@ -172,10 +180,16 @@ def create_pod(
             allowed_cuda_versions,
             min_download,
             min_upload,
+            instance_id,
         )
     )
 
-    cleaned_response = raw_response["data"]["podFindAndDeployOnDemand"]
+    print(f"raw_response: {raw_response}")
+
+    if gpu_type_id is not None:
+        cleaned_response = raw_response["data"]["podFindAndDeployOnDemand"]
+    else:
+        cleaned_response = raw_response["data"]["deployCpuPod"]
     return cleaned_response
 
 
