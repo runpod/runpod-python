@@ -68,6 +68,10 @@ def _validate_input_against_schema(schema, validated_input, error_list):
             except TypeError:
                 continue
 
+            # skip type check assuming rare case, default value sets value
+            if "default" in rules and isinstance(validated_input[key], type(rules["default"])):
+                continue
+
             # Check for the correct type.
             is_instance = isinstance(validated_input[key], rules["type"])
             if not is_instance:
