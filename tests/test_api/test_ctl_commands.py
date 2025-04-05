@@ -1,4 +1,4 @@
-""" Tests for ctl_commands.py """
+"""Tests for ctl_commands.py"""
 
 import unittest
 from unittest.mock import patch

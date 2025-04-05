@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import mock_open, patch
 
 
+
 class TestAPIKey(unittest.TestCase):
     """Test the API key"""
 

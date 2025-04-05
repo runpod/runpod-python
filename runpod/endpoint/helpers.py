@@ -1,4 +1,4 @@
-""" Helper functions for the RunPod Endpoint API. """
+"""Helper functions for the RunPod Endpoint API."""
 
 FINAL_STATES = ["COMPLETED", "FAILED", "TIMED_OUT"]
 

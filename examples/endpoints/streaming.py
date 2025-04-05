@@ -1,4 +1,4 @@
-""" Example of streaming data from an endpoint. """
+"""Example of streaming data from an endpoint."""
 
 import runpod
 
