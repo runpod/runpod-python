@@ -15,10 +15,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# C extensions
-*.so
-!sls_core.so
-
 # Distribution / packaging
 .Python
 build/

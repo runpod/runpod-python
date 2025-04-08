@@ -537,18 +537,6 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         ):
             runpod.serverless.start(config)
 
-    # Test with sls-core
-    async def test_run_worker_with_sls_core(self):
-        """
-        Test run_worker with sls-core.
-        """
-        with patch("runpod.serverless.core.main") as mock_main:
-            os.environ["RUNPOD_USE_CORE"] = "true"
-            runpod.serverless.start(self.config)
-            os.environ.pop("RUNPOD_USE_CORE")
-
-            assert mock_main.called
-
     @patch("runpod.serverless.signal.signal")
     @patch("runpod.serverless.worker.rp_scale.JobScaler.run")
     def test_start_sets_excepthook(self, _, __):
