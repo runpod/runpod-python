@@ -201,7 +201,7 @@ class JobScaler:
             except asyncio.CancelledError:
                 log.debug("JobScaler.get_jobs | Request was cancelled.")
                 raise  # CancelledError is a BaseException
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 log.debug("JobScaler.get_jobs | Job acquisition timed out. Retrying.")
             except TypeError as error:
                 log.debug(f"JobScaler.get_jobs | Unexpected error: {error}.")
