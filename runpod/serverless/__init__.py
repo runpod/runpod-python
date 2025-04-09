@@ -12,8 +12,6 @@ import sys
 import time
 from typing import Any, Dict
 
-from runpod.serverless import core
-
 from ..version import __version__ as runpod_version
 from . import worker
 from .modules import rp_fastapi
@@ -171,17 +169,5 @@ def start(config: Dict[str, Any]):
         )
         return
 
-    # --------------------------------- SLS-Core --------------------------------- #
-
-    if os.getenv("RUNPOD_SLS_CORE") is None and os.getenv("RUNPOD_USE_CORE") is not None:
-            log.warn("RUNPOD_USE_CORE is deprecated. Please use RUNPOD_SLS_CORE instead.")
-            core.main(config)
-            return
-
-    elif os.getenv("RUNPOD_SLS_CORE","false").lower() in ["1", "t", "true"]:
-            core.main(config)
-            return
-
-    # --------------------------------- Standard --------------------------------- #
     worker.main(config)
     return
