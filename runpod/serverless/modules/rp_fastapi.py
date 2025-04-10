@@ -285,6 +285,7 @@ class WorkerAPI:
             )
         else:
             # For single worker, we can use the app instance directly
+            import uvicorn.workers
             uvicorn.run(
                 self.rp_app,
                 host=api_host,
