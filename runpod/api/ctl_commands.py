@@ -316,13 +316,28 @@ def create_endpoint(
     workers_min: int = 0,
     workers_max: int = 3,
     flashboot=False,
-    allowed_cuda_versions: str = "12.1,12.2,12.3,12.4,12.5",
+    allowed_cuda_versions: list = None,
     gpu_count: int = 1,
 ):
     """
     Create an endpoint
 
-    :param allowed_cuda_versions: Comma-separated string of allowed CUDA versions (e.g., "12.4,12.5").
+    :param name: the name of the endpoint
+    :param template_id: the id of the template to use for the endpoint
+    :param gpu_ids: the ids of the GPUs to use for the endpoint
+    :param network_volume_id: the id of the network volume to use for the endpoint
+    :param locations: the locations to use for the endpoint
+    :param idle_timeout: the idle timeout for the endpoint
+    :param scaler_type: the scaler type for the endpoint
+    :param scaler_value: the scaler value for the endpoint
+    :param workers_min: the minimum number of workers for the endpoint
+    :param workers_max: the maximum number of workers for the endpoint
+    :param allowed_cuda_versions: Comma-separated list of allowed CUDA versions (e.g., ["12.4", "12.5"]).
+    :param gpu_count: the number of GPUs to use for the endpoint
+
+    :example:
+
+    >>> endpoint_id = runpod.create_endpoint("test", "template_id")
     """
     raw_response = run_graphql_query(
         endpoint_mutations.generate_endpoint_mutation(
