@@ -1,4 +1,4 @@
-""" Tests for runpod | serverless | modules | download.py """
+"""Tests for runpod | serverless | modules | download.py"""
 
 # pylint: disable=R0903,W0613
 
@@ -17,6 +17,7 @@ from runpod.serverless.utils.rp_download import (
 URL_LIST = [
     "https://example.com/picture.jpg",
     "https://example.com/picture.jpg?X-Amz-Signature=123",
+    "https://example.com/file_without_extension",
 ]
 
 JOB_ID = "job_123"
@@ -75,9 +76,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         self.assertEqual(calculate_chunk_size(1024), 1024)
         self.assertEqual(calculate_chunk_size(1024 * 1024), 1024)
         self.assertEqual(calculate_chunk_size(1024 * 1024 * 1024), 1024 * 1024)
-        self.assertEqual(
-            calculate_chunk_size(1024 * 1024 * 1024 * 10), 1024 * 1024 * 10
-        )
+        self.assertEqual(calculate_chunk_size(1024 * 1024 * 1024 * 10), 1024 * 1024 * 10)
 
     @patch("os.makedirs", return_value=None)
     @patch("runpod.http_client.SyncClientSession.get", side_effect=mock_requests_get)
@@ -86,29 +85,26 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         """
         Tests download_files_from_urls
         """
+        urls = ["https://example.com/picture.jpg", "https://example.com/file_without_extension"]
         downloaded_files = download_files_from_urls(
             JOB_ID,
-            [
-                "https://example.com/picture.jpg",
-            ],
+            urls,
         )
 
-        self.assertEqual(len(downloaded_files), 1)
+        self.assertEqual(len(downloaded_files), len(urls))
 
-        # Check that the url was called with SyncClientSession.get
-        self.assertIn("https://example.com/picture.jpg", mock_get.call_args_list[0][0])
+        for index, url in enumerate(urls):
+            # Check that the url was called with SyncClientSession.get
+            self.assertIn(url, mock_get.call_args_list[index][0])
 
-        # Check that the file has the correct extension
-        self.assertTrue(downloaded_files[0].endswith(".jpg"))
+            # Check that the file has the correct extension
+            self.assertTrue(downloaded_files[index].endswith(".jpg"))
 
-        mock_open_file.assert_called_once_with(downloaded_files[0], "wb")
-        mock_makedirs.assert_called_once_with(
-            os.path.abspath(f"jobs/{JOB_ID}/downloaded_files"), exist_ok=True
-        )
+            mock_open_file.assert_any_call(downloaded_files[index], "wb")
 
-        string_download_file = download_files_from_urls(
-            JOB_ID, "https://example.com/picture.jpg"
-        )
+        mock_makedirs.assert_called_once_with(os.path.abspath(f"jobs/{JOB_ID}/downloaded_files"), exist_ok=True)
+
+        string_download_file = download_files_from_urls(JOB_ID, "https://example.com/picture.jpg")
         self.assertTrue(string_download_file[0].endswith(".jpg"))
 
         # Check if None is returned when url is None
@@ -124,9 +120,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
     @patch("os.makedirs", return_value=None)
     @patch("runpod.http_client.SyncClientSession.get", side_effect=mock_requests_get)
     @patch("builtins.open", new_callable=mock_open)
-    def test_download_files_from_urls_signed(
-        self, mock_open_file, mock_get, mock_makedirs
-    ):
+    def test_download_files_from_urls_signed(self, mock_open_file, mock_get, mock_makedirs):
         """
         Tests download_files_from_urls with signed urls
         """
@@ -147,9 +141,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         self.assertTrue(downloaded_files[0].endswith(".jpg"))
 
         mock_open_file.assert_called_once_with(downloaded_files[0], "wb")
-        mock_makedirs.assert_called_once_with(
-            os.path.abspath(f"jobs/{JOB_ID}/downloaded_files"), exist_ok=True
-        )
+        mock_makedirs.assert_called_once_with(os.path.abspath(f"jobs/{JOB_ID}/downloaded_files"), exist_ok=True)
 
 
 class FileDownloaderTestCase(unittest.TestCase):
@@ -169,6 +161,30 @@ class FileDownloaderTestCase(unittest.TestCase):
 
         # Call the function with a test URL
         result = file("http://test.com/test_file.txt")
+
+        # Check the result
+        self.assertEqual(result["type"], "txt")
+        self.assertEqual(result["original_name"], "test_file.txt")
+        self.assertTrue(result["file_path"].endswith(".txt"))
+        self.assertIsNone(result["extracted_path"])
+
+        # Check that the file was written correctly
+        mock_file().write.assert_called_once_with(b"file content")
+
+    @patch("runpod.serverless.utils.rp_download.SyncClientSession.get")
+    @patch("builtins.open", new_callable=mock_open)
+    def test_download_file(self, mock_file, mock_get):
+        """
+        Tests download_file using filename from Content-Disposition
+        """
+        # Mock the response from SyncClientSession.get
+        mock_response = MagicMock()
+        mock_response.content = b"file content"
+        mock_response.headers = {"Content-Disposition": 'inline; filename="test_file.txt"'}
+        mock_get.return_value = mock_response
+
+        # Call the function with a test URL
+        result = file("http://test.com/file_without_extension")
 
         # Check the result
         self.assertEqual(result["type"], "txt")
