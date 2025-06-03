@@ -316,7 +316,7 @@ def create_endpoint(
     workers_min: int = 0,
     workers_max: int = 3,
     flashboot=False,
-    allowed_cuda_versions: list = None,
+    allowed_cuda_versions: str = None,
     gpu_count: int = 1,
 ):
     """

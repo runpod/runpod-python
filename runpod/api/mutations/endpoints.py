@@ -15,7 +15,7 @@ def generate_endpoint_mutation(
     workers_min: int = 0,
     workers_max: int = 3,
     flashboot=False,
-    allowed_cuda_versions: list = None,
+    allowed_cuda_versions: str = None,
     gpu_count: int = None,
 ):
     """Generate a string for a GraphQL mutation to create a new endpoint."""
@@ -45,10 +45,7 @@ def generate_endpoint_mutation(
     input_fields.append(f"scalerValue: {scaler_value}")
     input_fields.append(f"workersMin: {workers_min}")
     input_fields.append(f"workersMax: {workers_max}")
-
-    if allowed_cuda_versions:
-        cuda_versions = ", ".join(f'"{v}"' for v in allowed_cuda_versions)
-        input_fields.append(f"allowedCudaVersions: [{cuda_versions}]")
+    input_fields.append(f"allowedCudaVersions: {allowed_cuda_versions}")
 
     if gpu_count is not None:
         input_fields.append(f"gpuCount: {gpu_count}")
