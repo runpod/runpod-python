@@ -7,14 +7,15 @@ import unittest
 from unittest.mock import patch
 
 import click
+from click.testing import CliRunner
 
 from runpod.cli.entry import runpod_cli
 
 
 class TestExecCommands(unittest.TestCase):
     """Tests for Runpod CLI exec commands."""
-
     def setUp(self):
+        self.runner = CliRunner()
         self.runner = click.testing.CliRunner()
 
     def test_remote_python_with_provided_pod_id(self):
@@ -49,9 +50,7 @@ class TestExecCommands(unittest.TestCase):
             "runpod.cli.groups.exec.commands.python_over_ssh"
         ) as mock_python_over_ssh, patch(
             "runpod.cli.groups.exec.commands.get_session_pod",
-            side_effect=lambda: click.prompt(
-                "Please provide the pod ID", "prompted_pod_id"
-            ),
+            return_value="prompted_pod_id",
         ) as mock_get_pod_id:  # pylint: disable=line-too-long
             mock_python_over_ssh.return_value = None
             result = self.runner.invoke(runpod_cli, ["exec", "python", temp_file.name])
