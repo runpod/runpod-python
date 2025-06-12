@@ -5,6 +5,7 @@ A collection of functions to help with debugging.
 """
 
 import datetime
+from datetime import timezone
 import platform
 import time
 
@@ -86,7 +87,7 @@ class Checkpoints:
         index = self.name_lookup[name]
         self.checkpoints[index]["start"] = time.perf_counter()
         self.checkpoints[index]["start_utc"] = (
-            datetime.datetime.utcnow().isoformat() + "Z"
+            datetime.datetime.now(timezone.utc).isoformat() + "Z"
         )
 
     def stop(self, name):
@@ -103,7 +104,7 @@ class Checkpoints:
 
         self.checkpoints[index]["end"] = time.perf_counter()
         self.checkpoints[index]["stop_utc"] = (
-            datetime.datetime.utcnow().isoformat() + "Z"
+            datetime.datetime.now(timezone.utc).isoformat() + "Z"
         )
 
     def get_checkpoints(self):
