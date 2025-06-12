@@ -60,7 +60,9 @@ def mock_requests_get(*args, **kwargs):
         def __exit__(self, *args):
             pass
 
-    if args[0] in URL_LIST:
+    url = args[0]
+    # Check if the URL matches any of the URLs in URL_LIST
+    if any(url.startswith(base_url) for base_url in URL_LIST):
         return MockResponse(b"nothing", 200, headers)
 
     return MockResponse(None, 404)
