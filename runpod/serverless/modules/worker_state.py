@@ -67,29 +67,32 @@ class JobsProgress:
     """Track the state of current jobs in progress using shared memory."""
     
     _instance: Optional['JobsProgress'] = None
-    _manager: SyncManager
-    _shared_data: Any
-    _lock: Any
-
+    # Singleton
     def __new__(cls):
         if cls._instance is None:
-            instance = object.__new__(cls)
-            # Initialize instance variables
-            instance._manager = Manager()
-            instance._shared_data = instance._manager.dict()
-            instance._shared_data['jobs'] = instance._manager.list()
-            instance._lock = instance._manager.Lock()
-            cls._instance = instance
+            cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
-        # Everything is already initialized in __new__
-        pass
+        if not hasattr(self, '_initialized'):
+            self._manager: Optional[SyncManager] = None
+            self._shared_data: Optional[Any] = None
+            self._lock: Optional[Any] = None
+            self._initialized = True
+
+    def _ensure_initialized(self):
+        """Initialize the multiprocessing manager and shared data structures only when needed."""
+        if self._manager is None:
+            self._manager = Manager()
+            self._shared_data = self._manager.dict()
+            self._shared_data['jobs'] = self._manager.list()
+            self._lock = self._manager.Lock()
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
     def clear(self) -> None:
+        self._ensure_initialized()
         with self._lock:
             self._shared_data['jobs'][:] = []
 
@@ -97,6 +100,8 @@ class JobsProgress:
         """
         Adds a Job object to the set.
         """
+        self._ensure_initialized()
+        
         if isinstance(element, str):
             job_dict = {'id': element}
         elif isinstance(element, dict):
@@ -123,6 +128,8 @@ class JobsProgress:
         
         If the element is a string, searches for Job with that id.
         """
+        self._ensure_initialized()
+        
         if isinstance(element, str):
             search_id = element
         elif isinstance(element, Job):
@@ -142,6 +149,8 @@ class JobsProgress:
         """
         Removes a Job object from the set.
         """
+        self._ensure_initialized()
+        
         if isinstance(element, str):
             job_id = element
         elif isinstance(element, dict):
@@ -153,7 +162,6 @@ class JobsProgress:
 
         with self._lock:
             job_list = self._shared_data['jobs']
-            # Find and remove the job
             for i, job_dict in enumerate(job_list):
                 if job_dict['id'] == job_id:
                     del job_list[i]
@@ -164,6 +172,9 @@ class JobsProgress:
         """
         Returns the list of job IDs as comma-separated string.
         """
+        if self._manager is None:
+            return None
+            
         with self._lock:
             job_list = list(self._shared_data['jobs'])
         
@@ -177,11 +188,17 @@ class JobsProgress:
         """
         Returns the number of jobs.
         """
+        if self._manager is None:
+            return 0
+            
         with self._lock:
             return len(self._shared_data['jobs'])
 
     def __iter__(self):
         """Make the class iterable - returns Job objects"""
+        if self._manager is None:
+            return iter([])
+            
         with self._lock:
             # Create a snapshot of jobs to avoid holding lock during iteration
             job_dicts = list(self._shared_data['jobs'])
@@ -195,6 +212,9 @@ class JobsProgress:
 
     def __contains__(self, element: Any) -> bool:
         """Support 'in' operator"""
+        if self._manager is None:
+            return False
+            
         if isinstance(element, str):
             search_id = element
         elif isinstance(element, Job):
