@@ -4,9 +4,8 @@ The heartbeat is responsible for sending periodic pings to the Runpod server.
 """
 
 import os
-import threading
 import time
-
+from multiprocessing import Process
 import requests
 from urllib3.util.retry import Retry
 
@@ -22,7 +21,7 @@ jobs = JobsProgress()  # Contains the list of jobs that are currently running.
 class Heartbeat:
     """Sends heartbeats to the Runpod server."""
 
-    _thread_started = False
+    _process_started = False
 
     def __init__(self, pool_connections=10, retries=3) -> None:
         """
@@ -32,9 +31,10 @@ class Heartbeat:
         self.PING_URL = self.PING_URL.replace("$RUNPOD_POD_ID", WORKER_ID)
         self.PING_INTERVAL = int(os.environ.get("RUNPOD_PING_INTERVAL", 10000)) // 1000
 
+        # Create a new HTTP session
         self._session = SyncClientSession()
         self._session.headers.update(
-            {"Authorization": f"{os.environ.get('RUNPOD_AI_API_KEY')}"}
+            {"Authorization": os.environ.get("RUNPOD_AI_API_KEY", "")}
         )
 
         retry_strategy = Retry(
@@ -52,9 +52,18 @@ class Heartbeat:
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
 
+    @staticmethod
+    def process_loop(test=False):
+        """
+        Static helper to run the ping loop in a separate process.
+        Creates a new Heartbeat instance to avoid pickling issues.
+        """
+        hb = Heartbeat()
+        hb.ping_loop(test)
+
     def start_ping(self, test=False):
         """
-        Sends heartbeat pings to the Runpod server.
+        Sends heartbeat pings to the Runpod server in a separate process.
         """
         if not os.environ.get("RUNPOD_AI_API_KEY"):
             log.debug("Not deployed on RunPod serverless, pings will not be sent.")
@@ -68,18 +77,19 @@ class Heartbeat:
             log.error("Ping URL not set, cannot start ping.")
             return
 
-        if not Heartbeat._thread_started:
-            threading.Thread(target=self.ping_loop, daemon=True, args=(test,)).start()
-            Heartbeat._thread_started = True
+        if not Heartbeat._process_started:
+            process = Process(target=Heartbeat.process_loop, args=(test,))
+            process.daemon = True
+            process.start()
+            Heartbeat._process_started = True
 
     def ping_loop(self, test=False):
         """
-        Sends heartbeat pings to the Runpod server.
+        Sends heartbeat pings to the Runpod server until interrupted.
         """
         while True:
             self._send_ping()
             time.sleep(self.PING_INTERVAL)
-
             if test:
                 return
 
@@ -98,6 +108,5 @@ class Heartbeat:
             log.debug(
                 f"Heartbeat Sent | URL: {result.url} | Status: {result.status_code}"
             )
-
         except requests.RequestException as err:
             log.error(f"Ping Request Error: {err}, attempting to restart ping.")
