@@ -271,14 +271,29 @@ class WorkerAPI:
         """
         Starts the Uvicorn server.
         """
-        uvicorn.run(
-            self.rp_app,
-            host=api_host,
-            port=int(api_port),
-            workers=int(api_concurrency),
-            log_level=os.environ.get("UVICORN_LOG_LEVEL", "info"),
-            access_log=False,
-        )
+        if api_concurrency > 1:
+            # For multiple workers, we need to use the module:app format
+            import uvicorn.workers
+            uvicorn.run(
+                "runpod.serverless.modules.rp_fastapi:app",
+                host=api_host,
+                port=int(api_port),
+                workers=int(api_concurrency),
+                log_level=os.environ.get("UVICORN_LOG_LEVEL", "info"),
+                access_log=False,
+                factory=True
+            )
+        else:
+            # For single worker, we can use the app instance directly
+            import uvicorn.workers
+            uvicorn.run(
+                self.rp_app,
+                host=api_host,
+                port=int(api_port),
+                workers=1,
+                log_level=os.environ.get("UVICORN_LOG_LEVEL", "info"),
+                access_log=False
+            )
 
     # ----------------------------- Realtime Endpoint ---------------------------- #
     async def _realtime(self, job: Job):
