@@ -1,11 +1,11 @@
 <div align="center">
-<h1>RunPod | Python Library </h1>
+<h1>Runpod | Python Library </h1>
 
 [![PyPI Package](https://badge.fury.io/py/runpod.svg)](https://badge.fury.io/py/runpod)
 &nbsp;
 [![Downloads](https://static.pepy.tech/personalized-badge/runpod?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/runpod)
 
-[![CI | End-to-End RunPod Python Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml)
+[![CI | End-to-End Runpod Python Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml)
 
 [![CI | Code Quality](https://github.com/runpod/runpod-python/actions/workflows/CI-pylint.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-pylint.yml)
 &nbsp;
@@ -15,7 +15,7 @@
 
 </div>
 
-Welcome to the official Python library for RunPod API &amp; SDK.
+Welcome to the official Python library for Runpod API &amp; SDK.
 
 ## Table of Contents
 
@@ -46,11 +46,11 @@ pip install git+https://github.com/runpod/runpod-python.git
 
 ## ⚡ | Serverless Worker (SDK)
 
-This python package can also be used to create a serverless worker that can be deployed to RunPod as a custom endpoint API.
+This python package can also be used to create a serverless worker that can be deployed to Runpod as a custom endpoint API.
 
 ### Quick Start
 
-Create a python script in your project that contains your model definition and the RunPod worker start code. Run this python code as your default container start command:
+Create a python script in your project that contains your model definition and the Runpod worker start code. Run this python code as your default container start command:
 
 ```python
 # my_worker.py
@@ -79,7 +79,7 @@ See our [blog post](https://www.runpod.io/blog/serverless-create-a-basic-api) fo
 
 ### Local Test Worker
 
-You can also test your worker locally before deploying it to RunPod. This is useful for debugging and testing.
+You can also test your worker locally before deploying it to Runpod. This is useful for debugging and testing.
 
 ```bash
 python my_worker.py --rp_serve_api
@@ -87,7 +87,7 @@ python my_worker.py --rp_serve_api
 
 ## 📚 | API Language Library (GraphQL Wrapper)
 
-When interacting with the RunPod API you can use this library to make requests to the API.
+When interacting with the Runpod API you can use this library to make requests to the API.
 
 ```python
 import runpod
