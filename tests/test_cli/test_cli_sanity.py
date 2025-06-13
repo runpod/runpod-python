@@ -84,23 +84,32 @@ class TestCLISanity(unittest.TestCase):
         try:
             from runpod.serverless.modules.worker_state import JobsProgress
             jobs = JobsProgress()
-            # Ensure lazy initialization is working
-            self.assertIsNone(jobs._manager, 
-                            "Manager should not be created until first use")
+            # Ensure lazy initialization is working - storage should be None until first use
+            self.assertIsNone(jobs._storage, 
+                            "Storage backend should not be created until first use")
             self.assertTrue(True, "JobsProgress import and instantiation successful")
         except Exception as e:
             self.fail(f"Failed to import/instantiate JobsProgress: {e}")
         
-        # Test that read-only operations work efficiently
+        # Test that operations trigger proper initialization
         try:
             from runpod.serverless.modules.worker_state import JobsProgress
             jobs = JobsProgress()
-            count = jobs.get_job_count()  # Should work without heavy initialization
+            # Initially no storage backend
+            self.assertIsNone(jobs._storage, "Storage should be None initially")
+            
+            # First operation should initialize storage backend
+            count = jobs.get_job_count()
             self.assertEqual(count, 0)
-            self.assertIsNone(jobs._manager, 
-                            "Manager should not be created for read-only operations")
+            self.assertIsNotNone(jobs._storage, 
+                               "Storage backend should be created after first operation")
+            
+            # Verify storage backend is one of the expected types
+            from runpod.serverless.modules.worker_state import _MultiprocessingStorage, _ThreadSafeStorage
+            self.assertIsInstance(jobs._storage, (_MultiprocessingStorage, _ThreadSafeStorage),
+                                "Storage should be either multiprocessing or thread-safe backend")
         except Exception as e:
-            self.fail(f"Read-only operations failed: {e}")
+            self.fail(f"Storage initialization failed: {e}")
 
     def test_cli_entry_point_import(self):
         """

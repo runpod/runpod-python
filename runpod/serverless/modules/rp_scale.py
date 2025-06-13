@@ -101,7 +101,7 @@ class JobScaler:
             signal.signal(signal.SIGTERM, self.handle_shutdown)
             signal.signal(signal.SIGINT, self.handle_shutdown)
         except ValueError:
-            log.warning("Signal handling is only supported in the main thread.")
+            log.warn("Signal handling is only supported in the main thread.")
 
         # Start the main loop
         # Run forever until the worker is signalled to shut down.
