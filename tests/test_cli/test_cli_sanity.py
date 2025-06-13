@@ -5,43 +5,66 @@ These tests ensure that basic CLI operations work correctly and efficiently.
 """
 
 import subprocess
-import sys
-import unittest
+import pytest
 from click.testing import CliRunner
 
 from runpod.cli.entry import runpod_cli
 
 
-class TestCLISanity(unittest.TestCase):
+@pytest.fixture
+def cli_runner():
+    """Provide a Click CLI runner for testing."""
+    return CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def reset_jobs_progress():
+    """Reset JobsProgress state before each test."""
+    try:
+        from runpod.serverless.modules.worker_state import JobsProgress
+        JobsProgress._instance = None
+        yield
+        # Cleanup after test
+        if hasattr(JobsProgress, '_instance') and JobsProgress._instance:
+            try:
+                JobsProgress._instance.clear()
+            except Exception:
+                pass
+        JobsProgress._instance = None
+    except ImportError:
+        # JobsProgress might not be available in all test contexts
+        yield
+
+
+class TestCLISanity:
     """Test basic CLI functionality and import safety"""
 
-    def test_help_command_works(self):
+    def test_help_command_works(self, cli_runner):
         """
         Test that --help commands work correctly for all CLI commands.
         """
-        runner = CliRunner()
         
         # Test main help
-        result = runner.invoke(runpod_cli, ["--help"])
-        self.assertEqual(result.exit_code, 0, f"Main --help failed: {result.output}")
-        self.assertIn("A collection of CLI functions for RunPod", result.output)
+        result = cli_runner.invoke(runpod_cli, ["--help"])
+        assert result.exit_code == 0, f"Main --help failed: {result.output}"
+        assert "A collection of CLI functions for RunPod" in result.output
         
         # Test subcommand help
-        result = runner.invoke(runpod_cli, ["pod", "--help"])
-        self.assertEqual(result.exit_code, 0, f"Pod --help failed: {result.output}")
-        self.assertIn("Manage and interact with pods", result.output)
+        result = cli_runner.invoke(runpod_cli, ["pod", "--help"])
+        assert result.exit_code == 0, f"Pod --help failed: {result.output}"
+        assert "Manage and interact with pods" in result.output
         
-        result = runner.invoke(runpod_cli, ["config", "--help"])
-        self.assertEqual(result.exit_code, 0, f"Config --help failed: {result.output}")
+        result = cli_runner.invoke(runpod_cli, ["config", "--help"])
+        assert result.exit_code == 0, f"Config --help failed: {result.output}"
         
-        result = runner.invoke(runpod_cli, ["project", "--help"])
-        self.assertEqual(result.exit_code, 0, f"Project --help failed: {result.output}")
+        result = cli_runner.invoke(runpod_cli, ["project", "--help"])
+        assert result.exit_code == 0, f"Project --help failed: {result.output}"
         
-        result = runner.invoke(runpod_cli, ["ssh", "--help"])
-        self.assertEqual(result.exit_code, 0, f"SSH --help failed: {result.output}")
+        result = cli_runner.invoke(runpod_cli, ["ssh", "--help"])
+        assert result.exit_code == 0, f"SSH --help failed: {result.output}"
         
-        result = runner.invoke(runpod_cli, ["exec", "--help"])
-        self.assertEqual(result.exit_code, 0, f"Exec --help failed: {result.output}")
+        result = cli_runner.invoke(runpod_cli, ["exec", "--help"])
+        assert result.exit_code == 0, f"Exec --help failed: {result.output}"
 
     def test_help_command_subprocess(self):
         """
@@ -54,9 +77,8 @@ class TestCLISanity(unittest.TestCase):
             text=True,
             timeout=10  # Prevent hanging
         )
-        self.assertEqual(result.returncode, 0, 
-                        f"Subprocess --help failed: {result.stderr}")
-        self.assertIn("A collection of CLI functions for RunPod", result.stdout)
+        assert result.returncode == 0, f"Subprocess --help failed: {result.stderr}"
+        assert "A collection of CLI functions for RunPod" in result.stdout
         
         # Test pod help
         result = subprocess.run(
@@ -65,9 +87,8 @@ class TestCLISanity(unittest.TestCase):
             text=True,
             timeout=10
         )
-        self.assertEqual(result.returncode, 0, 
-                        f"Subprocess pod --help failed: {result.stderr}")
-        self.assertIn("Manage and interact with pods", result.stdout)
+        assert result.returncode == 0, f"Subprocess pod --help failed: {result.stderr}"
+        assert "Manage and interact with pods" in result.stdout
 
     def test_import_safety(self):
         """
@@ -75,41 +96,43 @@ class TestCLISanity(unittest.TestCase):
         """
         # Test importing main package
         try:
-            import runpod
-            self.assertTrue(True, "Main runpod import successful")
+            import runpod  # noqa: F401  # pylint: disable=import-outside-toplevel,unused-import
+            # Import successful if no exception raised
         except Exception as e:
-            self.fail(f"Failed to import runpod: {e}")
+            pytest.fail(f"Failed to import runpod: {e}")
         
         # Test importing serverless modules
         try:
             from runpod.serverless.modules.worker_state import JobsProgress
             jobs = JobsProgress()
-            # Ensure lazy initialization is working - storage should be None until first use
-            self.assertIsNone(jobs._storage, 
-                            "Storage backend should not be created until first use")
-            self.assertTrue(True, "JobsProgress import and instantiation successful")
+            # JobsProgress should be properly instantiated (no exception = success)
         except Exception as e:
-            self.fail(f"Failed to import/instantiate JobsProgress: {e}")
+            pytest.fail(f"Failed to import/instantiate JobsProgress: {e}")
         
-        # Test that operations trigger proper initialization
+        # Test that operations work correctly
         try:
             from runpod.serverless.modules.worker_state import JobsProgress
             jobs = JobsProgress()
-            # Initially no storage backend
-            self.assertIsNone(jobs._storage, "Storage should be None initially")
             
-            # First operation should initialize storage backend
+            # Basic operations should work
             count = jobs.get_job_count()
-            self.assertEqual(count, 0)
-            self.assertIsNotNone(jobs._storage, 
-                               "Storage backend should be created after first operation")
+            assert count == 0
             
-            # Verify storage backend is one of the expected types
-            from runpod.serverless.modules.worker_state import _MultiprocessingStorage, _ThreadSafeStorage
-            self.assertIsInstance(jobs._storage, (_MultiprocessingStorage, _ThreadSafeStorage),
-                                "Storage should be either multiprocessing or thread-safe backend")
+            # Verify the instance has the expected mode attributes
+            assert isinstance(jobs._use_multiprocessing, bool), "Should have _use_multiprocessing boolean flag"
+            
+            # Test adding and retrieving jobs
+            jobs.add({'id': 'test-job'})
+            assert jobs.get_job_count() == 1
+            job_list = jobs.get_job_list()
+            assert job_list == 'test-job'
+            
+            # Clean up
+            jobs.clear()
+            assert jobs.get_job_count() == 0
+            
         except Exception as e:
-            self.fail(f"Storage initialization failed: {e}")
+            pytest.fail(f"JobsProgress operations failed: {e}")
 
     def test_cli_entry_point_import(self):
         """
@@ -117,10 +140,6 @@ class TestCLISanity(unittest.TestCase):
         """
         try:
             from runpod.cli.entry import runpod_cli
-            self.assertTrue(callable(runpod_cli), "runpod_cli should be callable")
+            assert callable(runpod_cli), "runpod_cli should be callable"
         except Exception as e:
-            self.fail(f"Failed to import CLI entry point: {e}")
-
-
-if __name__ == "__main__":
-    unittest.main() 
+            pytest.fail(f"Failed to import CLI entry point: {e}")
