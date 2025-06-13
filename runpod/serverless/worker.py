@@ -8,9 +8,9 @@ import os
 from typing import Any, Dict
 
 from runpod.serverless.modules import rp_logger, rp_local, rp_ping, rp_scale
+from runpod.serverless.modules.rp_ping import get_heartbeat
 
 log = rp_logger.RunPodLogger()
-heartbeat = rp_ping.Heartbeat()
 
 
 def _is_local(config) -> bool:
@@ -36,7 +36,7 @@ def run_worker(config: Dict[str, Any]) -> None:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
     # Start pinging RunPod to show that the worker is alive.
-    heartbeat.start_ping()
+    get_heartbeat().start_ping()
 
     # Create a JobScaler responsible for adjusting the concurrency
     job_scaler = rp_scale.JobScaler(config)

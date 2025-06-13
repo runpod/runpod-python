@@ -11,11 +11,27 @@ from urllib3.util.retry import Retry
 
 from runpod.http_client import SyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from runpod.serverless.modules.worker_state import WORKER_ID, JobsProgress
+from runpod.serverless.modules.worker_state import WORKER_ID, get_jobs_progress
 from runpod.version import __version__ as runpod_version
 
 log = RunPodLogger()
-jobs = JobsProgress()  # Contains the list of jobs that are currently running.
+
+# Lazy loading for Heartbeat instance
+_heartbeat_instance = None
+
+
+def get_heartbeat():
+    """Get the global Heartbeat instance with lazy initialization."""
+    global _heartbeat_instance
+    if _heartbeat_instance is None:
+        _heartbeat_instance = Heartbeat()
+    return _heartbeat_instance
+
+
+def reset_heartbeat():
+    """Reset the lazy-loaded Heartbeat instance (useful for testing)."""
+    global _heartbeat_instance
+    _heartbeat_instance = None
 
 
 class Heartbeat:
@@ -97,7 +113,7 @@ class Heartbeat:
         """
         Sends a heartbeat to the Runpod server.
         """
-        job_ids = jobs.get_job_list()
+        job_ids = get_jobs_progress().get_job_list()
         ping_params = {"job_id": job_ids, "runpod_version": runpod_version}
 
         try:
