@@ -52,9 +52,11 @@ class TestHeartbeat:
     @pytest.fixture
     def mock_jobs(self):
         """Mock the JobsProgress instance"""
-        with patch("runpod.serverless.modules.rp_ping.jobs") as mock:
-            mock.get_job_list.return_value = "job1,job2,job3"
-            yield mock
+        with patch("runpod.serverless.modules.rp_ping.get_jobs_progress") as mock_get_jobs:
+            mock_jobs_instance = MagicMock()
+            mock_jobs_instance.get_job_list.return_value = "job1,job2,job3"
+            mock_get_jobs.return_value = mock_jobs_instance
+            yield mock_jobs_instance
 
     @pytest.fixture
     def mock_logger(self):
@@ -242,7 +244,8 @@ class TestHeartbeat:
         heartbeat = Heartbeat()
         
         # Mock no jobs
-        with patch("runpod.serverless.modules.rp_ping.jobs.get_job_list", return_value=None):
+        with patch("runpod.serverless.modules.rp_ping.get_jobs_progress") as mock_jobs:
+            mock_jobs.return_value.get_job_list.return_value = None
             mock_response = MagicMock()
             mock_response.url = "https://test.com/ping/test_worker_123"
             mock_response.status_code = 200

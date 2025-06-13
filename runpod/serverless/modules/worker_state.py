@@ -15,6 +15,24 @@ from .rp_logger import RunPodLogger
 
 log = RunPodLogger()
 
+
+# ----------------------------- Lazy Loading Utilities -------------------------- #
+_jobs_progress_instance = None
+
+
+def get_jobs_progress():
+    """Get the global JobsProgress instance with lazy initialization."""
+    global _jobs_progress_instance
+    if _jobs_progress_instance is None:
+        _jobs_progress_instance = JobsProgress()
+    return _jobs_progress_instance
+
+
+def reset_jobs_progress():
+    """Reset the lazy-loaded JobsProgress instance (useful for testing)."""
+    global _jobs_progress_instance
+    _jobs_progress_instance = None
+
 REF_COUNT_ZERO = time.perf_counter()  # Used for benchmarking with the debugger.
 
 WORKER_ID = os.environ.get("RUNPOD_POD_ID", str(uuid.uuid4()))
@@ -72,6 +90,8 @@ class JobsProgress:
     _shared_data: Optional[Any] = None
     _lock: Optional[Any] = None
     _use_multiprocessing: bool = True
+    _fallback_jobs: list = []
+    _fallback_lock: Optional[threading.Lock] = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -99,10 +119,10 @@ class JobsProgress:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
     def clear(self) -> None:
-        if self._use_multiprocessing:
+        if self._use_multiprocessing and self._lock is not None and self._shared_data is not None:
             with self._lock:
                 self._shared_data['jobs'][:] = []
-        else:
+        elif not self._use_multiprocessing and self._fallback_lock is not None:
             with self._fallback_lock:
                 self._fallback_jobs.clear()
 
@@ -119,12 +139,12 @@ class JobsProgress:
         else:
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
-        if self._use_multiprocessing:
+        if self._use_multiprocessing and self._lock is not None and self._shared_data is not None:
             with self._lock:
                 job_list = self._shared_data['jobs']
                 if not any(job['id'] == job_dict['id'] for job in job_list):
                     job_list.append(job_dict)
-        else:
+        elif not self._use_multiprocessing and self._fallback_lock is not None:
             with self._fallback_lock:
                 if not any(job['id'] == job_dict['id'] for job in self._fallback_jobs):
                     self._fallback_jobs.append(job_dict)
@@ -144,13 +164,13 @@ class JobsProgress:
         else:
             raise TypeError("Only Job objects can be retrieved from JobsProgress.")
 
-        if self._use_multiprocessing:
+        if self._use_multiprocessing and self._lock is not None and self._shared_data is not None:
             with self._lock:
                 for job_dict in self._shared_data['jobs']:
                     if job_dict['id'] == search_id:
                         log.debug(f"JobsProgress | Retrieved job: {job_dict['id']}")
                         return Job(**job_dict)
-        else:
+        elif not self._use_multiprocessing and self._fallback_lock is not None:
             with self._fallback_lock:
                 for job_dict in self._fallback_jobs:
                     if job_dict['id'] == search_id:
@@ -171,7 +191,7 @@ class JobsProgress:
         else:
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
-        if self._use_multiprocessing:
+        if self._use_multiprocessing and self._lock is not None and self._shared_data is not None:
             with self._lock:
                 job_list = self._shared_data['jobs']
                 for i, job_dict in enumerate(job_list):
@@ -179,7 +199,7 @@ class JobsProgress:
                         del job_list[i]
                         log.debug(f"JobsProgress | Removed job: {job_dict['id']}")
                         break
-        else:
+        elif not self._use_multiprocessing and self._fallback_lock is not None:
             with self._fallback_lock:
                 for i, job_dict in enumerate(self._fallback_jobs):
                     if job_dict['id'] == job_id:
@@ -191,10 +211,11 @@ class JobsProgress:
         """
         Returns the list of job IDs as comma-separated string.
         """
-        if self._use_multiprocessing:
+        job_list = []
+        if self._use_multiprocessing and self._lock is not None and self._shared_data is not None:
             with self._lock:
                 job_list = list(self._shared_data['jobs'])
-        else:
+        elif not self._use_multiprocessing and self._fallback_lock is not None:
             with self._fallback_lock:
                 job_list = list(self._fallback_jobs)
         
@@ -208,19 +229,21 @@ class JobsProgress:
         """
         Returns the number of jobs.
         """
-        if self._use_multiprocessing:
+        if self._use_multiprocessing and self._lock is not None and self._shared_data is not None:
             with self._lock:
                 return len(self._shared_data['jobs'])
-        else:
+        elif not self._use_multiprocessing and self._fallback_lock is not None:
             with self._fallback_lock:
                 return len(self._fallback_jobs)
+        return 0
 
     def __iter__(self):
         """Make the class iterable - returns Job objects"""
-        if self._use_multiprocessing:
+        job_dicts = []
+        if self._use_multiprocessing and self._lock is not None and self._shared_data is not None:
             with self._lock:
                 job_dicts = list(self._shared_data['jobs'])
-        else:
+        elif not self._use_multiprocessing and self._fallback_lock is not None:
             with self._fallback_lock:
                 job_dicts = list(self._fallback_jobs)
         return iter(Job(**job_dict) for job_dict in job_dicts)
@@ -240,9 +263,10 @@ class JobsProgress:
         else:
             return False
 
-        if self._use_multiprocessing:
+        if self._use_multiprocessing and self._lock is not None and self._shared_data is not None:
             with self._lock:
                 return any(job['id'] == search_id for job in self._shared_data['jobs'])
-        else:
+        elif not self._use_multiprocessing and self._fallback_lock is not None:
             with self._fallback_lock:
                 return any(job['id'] == search_id for job in self._fallback_jobs)
+        return False

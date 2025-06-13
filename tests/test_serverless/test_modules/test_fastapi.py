@@ -30,8 +30,8 @@ class TestFastAPI(unittest.TestCase):
         """
         module_location = "runpod.serverless.modules.rp_fastapi"
         with patch(
-            f"{module_location}.Heartbeat.start_ping", Mock()
-        ) as mock_ping, patch(
+            f"{module_location}.get_heartbeat"
+        ) as mock_get_heartbeat, patch(
             f"{module_location}.FastAPI", Mock()
         ) as mock_fastapi, patch(
             f"{module_location}.APIRouter", return_value=Mock()
@@ -45,9 +45,14 @@ class TestFastAPI(unittest.TestCase):
             os.environ["RUNPOD_REALTIME_PORT"] = "1111"
             os.environ["RUNPOD_ENDPOINT_ID"] = "test_endpoint_id"
 
+            # Set up the mock heartbeat
+            mock_heartbeat = Mock()
+            mock_get_heartbeat.return_value = mock_heartbeat
+
             runpod.serverless.start({"handler": self.handler})
 
-            self.assertTrue(mock_ping.called)
+            self.assertTrue(mock_get_heartbeat.called)
+            self.assertTrue(mock_heartbeat.start_ping.called)
 
             self.assertTrue(mock_fastapi.called)
             self.assertTrue(mock_router.called)
@@ -94,8 +99,8 @@ class TestFastAPI(unittest.TestCase):
 
         module_location = "runpod.serverless.modules.rp_fastapi"
         with patch(
-            f"{module_location}.Heartbeat.start_ping", Mock()
-        ) as mock_ping, patch(f"{module_location}.FastAPI", Mock()), patch(
+            f"{module_location}.get_heartbeat"
+        ) as mock_get_heartbeat, patch(f"{module_location}.FastAPI", Mock()), patch(
             f"{module_location}.APIRouter", return_value=Mock()
         ), patch(
             f"{module_location}.uvicorn", Mock()
@@ -111,6 +116,10 @@ class TestFastAPI(unittest.TestCase):
                 input={"test_input": "test_input"}
             )
 
+            # Set up the mock heartbeat
+            mock_heartbeat = Mock()
+            mock_get_heartbeat.return_value = mock_heartbeat
+
             # Test with handler
             worker_api = rp_fastapi.WorkerAPI({"handler": self.handler})
 
@@ -120,7 +129,8 @@ class TestFastAPI(unittest.TestCase):
             debug_run_return = asyncio.run(worker_api._sim_run(default_input_object))
             assert debug_run_return == {"id": "test-123", "status": "IN_PROGRESS"}
 
-            self.assertTrue(mock_ping.called)
+            self.assertTrue(mock_get_heartbeat.called)
+            self.assertTrue(mock_heartbeat.start_ping.called)
 
             # Test with generator handler
             def generator_handler(job):

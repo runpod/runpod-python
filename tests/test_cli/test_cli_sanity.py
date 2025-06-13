@@ -20,20 +20,18 @@ def cli_runner():
 @pytest.fixture(autouse=True)
 def reset_jobs_progress():
     """Reset JobsProgress state before each test."""
+    yield
+    # Cleanup after test
     try:
-        from runpod.serverless.modules.worker_state import JobsProgress
-        JobsProgress._instance = None
-        yield
-        # Cleanup after test
-        if hasattr(JobsProgress, '_instance') and JobsProgress._instance:
-            try:
-                JobsProgress._instance.clear()
-            except Exception:
-                pass
-        JobsProgress._instance = None
-    except ImportError:
-        # JobsProgress might not be available in all test contexts
-        yield
+        from runpod.serverless.modules.worker_state import reset_jobs_progress, JobsProgress
+        from runpod.serverless.modules.rp_ping import reset_heartbeat
+        reset_jobs_progress()
+        reset_heartbeat()
+        # Also reset the singleton instance
+        if hasattr(JobsProgress, '_instance'):
+            JobsProgress._instance = None
+    except (ImportError, AttributeError):
+        pass
 
 
 class TestCLISanity:

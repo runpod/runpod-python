@@ -155,16 +155,17 @@ def setup_multiprocessing():
 def reset_jobs_progress():
     """Clear any existing JobsProgress state before each test."""
     # Reset the singleton instance to ensure clean state
-    from runpod.serverless.modules.worker_state import JobsProgress
+    from runpod.serverless.modules.worker_state import JobsProgress, reset_jobs_progress
+    from runpod.serverless.modules.rp_ping import reset_heartbeat
     JobsProgress._instance = None
+    reset_jobs_progress()
+    reset_heartbeat()
     yield
     # Cleanup after test
-    if hasattr(JobsProgress, '_instance') and JobsProgress._instance:
-        try:
-            JobsProgress._instance.clear()
-        except Exception:
-            pass
-    JobsProgress._instance = None
+    reset_jobs_progress()
+    reset_heartbeat()
+    if hasattr(JobsProgress, '_instance'):
+        JobsProgress._instance = None
 
 
 @pytest.mark.timeout(30)  # 30 second timeout for multiprocessing tests

@@ -18,12 +18,11 @@ from ..utils import rp_debugger
 from .rp_handler import is_generator
 from .rp_http import send_result, stream_result
 from .rp_tips import check_return_size
-from .worker_state import WORKER_ID, REF_COUNT_ZERO, JobsProgress
+from .worker_state import WORKER_ID, REF_COUNT_ZERO, get_jobs_progress
 
 JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 
 log = RunPodLogger()
-job_progress = JobsProgress()
 
 
 def _job_get_url(batch_size: int = 1):
@@ -43,7 +42,7 @@ def _job_get_url(batch_size: int = 1):
     else:
         job_take_url = JOB_GET_URL
 
-    job_in_progress = "1" if job_progress.get_job_list() else "0"
+    job_in_progress = "1" if get_jobs_progress().get_job_list() else "0"
     job_take_url += f"&job_in_progress={job_in_progress}"
 
     log.debug(f"rp_job | get_job: {job_take_url}")

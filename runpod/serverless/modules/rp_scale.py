@@ -12,10 +12,9 @@ from typing import Any, Dict
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
 from .rp_job import get_job, handle_job
 from .rp_logger import RunPodLogger
-from .worker_state import JobsProgress, IS_LOCAL_TEST
+from .worker_state import IS_LOCAL_TEST, get_jobs_progress
 
 log = RunPodLogger()
-job_progress = JobsProgress()
 
 
 def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
@@ -149,7 +148,7 @@ class JobScaler:
 
     def current_occupancy(self) -> int:
         current_queue_count = self.jobs_queue.qsize()
-        current_progress_count = job_progress.get_job_count()
+        current_progress_count = get_jobs_progress().get_job_count()
 
         log.debug(
             f"JobScaler.status | concurrency: {self.current_concurrency}; queue: {current_queue_count}; progress: {current_progress_count}"
@@ -188,7 +187,7 @@ class JobScaler:
 
                 for job in acquired_jobs:
                     await self.jobs_queue.put(job)
-                    job_progress.add(job)
+                    get_jobs_progress().add(job)
                     log.debug("Job Queued", job["id"])
 
                 log.info(f"Jobs in queue: {self.jobs_queue.qsize()}")
@@ -268,6 +267,6 @@ class JobScaler:
             self.jobs_queue.task_done()
 
             # Job is no longer in progress
-            job_progress.remove(job)
+            get_jobs_progress().remove(job)
 
             log.debug("Finished Job", job["id"])
