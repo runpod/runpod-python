@@ -5,9 +5,7 @@ Handles getting stuff from environment variables and updating the global state l
 import os
 import time
 import uuid
-from multiprocessing import Manager
-from multiprocessing.managers import SyncManager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from .rp_logger import RunPodLogger
 
@@ -63,149 +61,82 @@ class Job:
 # ---------------------------------------------------------------------------- #
 #                                    Tracker                                   #
 # ---------------------------------------------------------------------------- #
-class JobsProgress:
-    """Track the state of current jobs in progress using shared memory."""
-    
-    _instance: Optional['JobsProgress'] = None
-    _manager: SyncManager
-    _shared_data: Any
-    _lock: Any
+class JobsProgress(Set[Job]):
+    """Track the state of current jobs in progress."""
+
+    _instance = None
 
     def __new__(cls):
-        if cls._instance is None:
-            instance = object.__new__(cls)
-            # Initialize instance variables
-            instance._manager = Manager()
-            instance._shared_data = instance._manager.dict()
-            instance._shared_data['jobs'] = instance._manager.list()
-            instance._lock = instance._manager.Lock()
-            cls._instance = instance
-        return cls._instance
-
-    def __init__(self):
-        # Everything is already initialized in __new__
-        pass
+        if JobsProgress._instance is None:
+            JobsProgress._instance = set.__new__(cls)
+        return JobsProgress._instance
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
     def clear(self) -> None:
-        with self._lock:
-            self._shared_data['jobs'][:] = []
+        return super().clear()
 
     def add(self, element: Any):
         """
         Adds a Job object to the set.
+
+        If the added element is a string, then `Job(id=element)` is added
+        
+        If the added element is a dict, that `Job(**element)` is added
         """
         if isinstance(element, str):
-            job_dict = {'id': element}
-        elif isinstance(element, dict):
-            job_dict = element
-        elif hasattr(element, 'id'):
-            job_dict = {'id': element.id}
-        else:
+            element = Job(id=element)
+
+        if isinstance(element, dict):
+            element = Job(**element)
+
+        if not isinstance(element, Job):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
-        with self._lock:
-            # Check if job already exists
-            job_list = self._shared_data['jobs']
-            for existing_job in job_list:
-                if existing_job['id'] == job_dict['id']:
-                    return  # Job already exists
-            
-            # Add new job
-            job_list.append(job_dict)
-            log.debug(f"JobsProgress | Added job: {job_dict['id']}")
-
-    def get(self, element: Any) -> Optional[Job]:
-        """
-        Retrieves a Job object from the set.
-        
-        If the element is a string, searches for Job with that id.
-        """
-        if isinstance(element, str):
-            search_id = element
-        elif isinstance(element, Job):
-            search_id = element.id
-        else:
-            raise TypeError("Only Job objects can be retrieved from JobsProgress.")
-
-        with self._lock:
-            for job_dict in self._shared_data['jobs']:
-                if job_dict['id'] == search_id:
-                    log.debug(f"JobsProgress | Retrieved job: {job_dict['id']}")
-                    return Job(**job_dict)
-        
-        return None
+        return super().add(element)
 
     def remove(self, element: Any):
         """
         Removes a Job object from the set.
+
+        If the element is a string, then `Job(id=element)` is removed
+        
+        If the element is a dict, then `Job(**element)` is removed
         """
         if isinstance(element, str):
-            job_id = element
-        elif isinstance(element, dict):
-            job_id = element.get('id')
-        elif hasattr(element, 'id'):
-            job_id = element.id
-        else:
+            element = Job(id=element)
+
+        if isinstance(element, dict):
+            element = Job(**element)
+
+        if not isinstance(element, Job):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
-        with self._lock:
-            job_list = self._shared_data['jobs']
-            # Find and remove the job
-            for i, job_dict in enumerate(job_list):
-                if job_dict['id'] == job_id:
-                    del job_list[i]
-                    log.debug(f"JobsProgress | Removed job: {job_dict['id']}")
-                    break
+        return super().discard(element)
 
-    def get_job_list(self) -> Optional[str]:
+    def get(self, element: Any) -> Job:
+        if isinstance(element, str):
+            element = Job(id=element)
+
+        if not isinstance(element, Job):
+            raise TypeError("Only Job objects can be retrieved from JobsProgress.")
+
+        for job in self:
+            if job == element:
+                return job
+
+    def get_job_list(self) -> str:
         """
         Returns the list of job IDs as comma-separated string.
         """
-        with self._lock:
-            job_list = list(self._shared_data['jobs'])
-        
-        if not job_list:
+        if not len(self):
             return None
 
-        log.debug(f"JobsProgress | Jobs in progress: {job_list}")
-        return ",".join(str(job_dict['id']) for job_dict in job_list)
+        return ",".join(str(job) for job in self)
 
     def get_job_count(self) -> int:
         """
         Returns the number of jobs.
         """
-        with self._lock:
-            return len(self._shared_data['jobs'])
-
-    def __iter__(self):
-        """Make the class iterable - returns Job objects"""
-        with self._lock:
-            # Create a snapshot of jobs to avoid holding lock during iteration
-            job_dicts = list(self._shared_data['jobs'])
-        
-        # Return an iterator of Job objects
-        return iter(Job(**job_dict) for job_dict in job_dicts)
-
-    def __len__(self):
-        """Support len() operation"""
-        return self.get_job_count()
-
-    def __contains__(self, element: Any) -> bool:
-        """Support 'in' operator"""
-        if isinstance(element, str):
-            search_id = element
-        elif isinstance(element, Job):
-            search_id = element.id
-        elif isinstance(element, dict):
-            search_id = element.get('id')
-        else:
-            return False
-
-        with self._lock:
-            for job_dict in self._shared_data['jobs']:
-                if job_dict['id'] == search_id:
-                    return True
-        return False
+        return len(self)
