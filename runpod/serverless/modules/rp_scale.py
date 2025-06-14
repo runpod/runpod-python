@@ -15,7 +15,6 @@ from .rp_logger import RunPodLogger
 from .worker_state import JobsProgress, IS_LOCAL_TEST
 
 log = RunPodLogger()
-job_progress = JobsProgress()
 
 
 def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
@@ -48,6 +47,7 @@ class JobScaler:
         self.current_concurrency = 1
         self.config = config
 
+        self.job_progress = JobsProgress()
         self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
 
         self.concurrency_modifier = _default_concurrency_modifier
@@ -101,7 +101,7 @@ class JobScaler:
             signal.signal(signal.SIGTERM, self.handle_shutdown)
             signal.signal(signal.SIGINT, self.handle_shutdown)
         except ValueError:
-            log.warning("Signal handling is only supported in the main thread.")
+            log.warn("Signal handling is only supported in the main thread.")
 
         # Start the main loop
         # Run forever until the worker is signalled to shut down.
@@ -149,7 +149,7 @@ class JobScaler:
 
     def current_occupancy(self) -> int:
         current_queue_count = self.jobs_queue.qsize()
-        current_progress_count = job_progress.get_job_count()
+        current_progress_count = self.job_progress.get_job_count()
 
         log.debug(
             f"JobScaler.status | concurrency: {self.current_concurrency}; queue: {current_queue_count}; progress: {current_progress_count}"
@@ -188,14 +188,14 @@ class JobScaler:
 
                 for job in acquired_jobs:
                     await self.jobs_queue.put(job)
-                    job_progress.add(job)
+                    self.job_progress.add(job)
                     log.debug("Job Queued", job["id"])
 
                 log.info(f"Jobs in queue: {self.jobs_queue.qsize()}")
 
             except TooManyRequests:
                 log.debug(
-                    f"JobScaler.get_jobs | Too many requests. Debounce for 5 seconds."
+                    "JobScaler.get_jobs | Too many requests. Debounce for 5 seconds."
                 )
                 await asyncio.sleep(5)  # debounce for 5 seconds
             except asyncio.CancelledError:
@@ -268,6 +268,6 @@ class JobScaler:
             self.jobs_queue.task_done()
 
             # Job is no longer in progress
-            job_progress.remove(job)
+            self.job_progress.remove(job)
 
             log.debug("Finished Job", job["id"])

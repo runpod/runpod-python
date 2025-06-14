@@ -17,7 +17,7 @@ from ...version import __version__ as runpod_version
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
 from .rp_ping import Heartbeat
-from .worker_state import Job, JobsProgress
+from .worker_state import JobsProgress
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
@@ -96,7 +96,6 @@ This endpoint is invaluable for monitoring the progress of a job and obtaining t
 
 
 # ------------------------------ Initializations ----------------------------- #
-job_list = JobsProgress()
 heartbeat = Heartbeat()
 
 
@@ -186,6 +185,8 @@ class WorkerAPI:
         """
         # Start the heartbeat thread.
         heartbeat.start_ping()
+
+        self.job_list = JobsProgress()
 
         self.config = config
 
@@ -286,12 +287,12 @@ class WorkerAPI:
         Performs model inference on the input data using the provided handler.
         If handler is not provided, returns an error message.
         """
-        job_list.add(job.id)
+        self.job_list.add(job.id)
 
         # Process the job using the provided handler, passing in the job input.
         job_results = await run_job(self.config["handler"], job.__dict__)
 
-        job_list.remove(job.id)
+        self.job_list.remove(job.id)
 
         # Return the results of the job processing.
         return jsonable_encoder(job_results)
@@ -304,7 +305,7 @@ class WorkerAPI:
     async def _sim_run(self, job_request: DefaultRequest) -> JobOutput:
         """Development endpoint to simulate run behavior."""
         assigned_job_id = f"test-{uuid.uuid4()}"
-        job_list.add({
+        self.job_list.add({
             "id": assigned_job_id,
             "input": job_request.input,
             "webhook": job_request.webhook
@@ -345,7 +346,7 @@ class WorkerAPI:
     # ---------------------------------- stream ---------------------------------- #
     async def _sim_stream(self, job_id: str) -> StreamOutput:
         """Development endpoint to simulate stream behavior."""
-        stashed_job = job_list.get(job_id)
+        stashed_job = self.job_list.get(job_id)
         if stashed_job is None:
             return jsonable_encoder(
                 {"id": job_id, "status": "FAILED", "error": "Job ID not found"}
@@ -367,7 +368,7 @@ class WorkerAPI:
                 }
             )
 
-        job_list.remove(job.id)
+        self.job_list.remove(job.id)
 
         if stashed_job.webhook:
             thread = threading.Thread(
@@ -384,7 +385,7 @@ class WorkerAPI:
     # ---------------------------------- status ---------------------------------- #
     async def _sim_status(self, job_id: str) -> JobOutput:
         """Development endpoint to simulate status behavior."""
-        stashed_job = job_list.get(job_id)
+        stashed_job = self.job_list.get(job_id)
         if stashed_job is None:
             return jsonable_encoder(
                 {"id": job_id, "status": "FAILED", "error": "Job ID not found"}
@@ -400,7 +401,7 @@ class WorkerAPI:
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
 
-        job_list.remove(job.id)
+        self.job_list.remove(job.id)
 
         if job_output.get("error", None):
             return jsonable_encoder(

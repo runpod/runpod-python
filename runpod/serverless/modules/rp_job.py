@@ -23,7 +23,6 @@ from .worker_state import WORKER_ID, REF_COUNT_ZERO, JobsProgress
 JOB_GET_URL = str(os.environ.get("RUNPOD_WEBHOOK_GET_JOB")).replace("$ID", WORKER_ID)
 
 log = RunPodLogger()
-job_progress = JobsProgress()
 
 
 def _job_get_url(batch_size: int = 1):
@@ -43,6 +42,7 @@ def _job_get_url(batch_size: int = 1):
     else:
         job_take_url = JOB_GET_URL
 
+    job_progress = JobsProgress()
     job_in_progress = "1" if job_progress.get_job_list() else "0"
     job_take_url += f"&job_in_progress={job_in_progress}"
 
