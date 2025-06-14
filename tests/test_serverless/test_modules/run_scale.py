@@ -58,6 +58,6 @@ def main(start=1):
 
 if __name__ == '__main__':
     # This is required for multiprocessing on macOS/Windows
-    import multiprocessing
-    multiprocessing.set_start_method('spawn', force=True)
+    # import multiprocessing
+    # multiprocessing.set_start_method('spawn', force=True)
     main(start=10)

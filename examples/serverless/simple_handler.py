@@ -14,4 +14,5 @@ def handler(job):
     return f"Hello {job_input['name']}!"
 
 
-runpod.serverless.start({"handler": handler})
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})

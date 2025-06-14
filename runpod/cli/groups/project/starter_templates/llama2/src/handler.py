@@ -39,4 +39,5 @@ def handle_request(text, **input_args):
     return process_outputs(outputs)
 
 
-runpod.serverless.start({"handler": handle_request})
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handle_request})

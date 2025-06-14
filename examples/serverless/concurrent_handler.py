@@ -23,6 +23,7 @@ def concurrency_modifier(current_concurrency=1):
     return desired_concurrency
 
 
-runpod.serverless.start(
-    {"handler": async_generator_handler, "concurrency_modifier": concurrency_modifier}
-)
+if __name__ == "__main__":
+    runpod.serverless.start(
+        {"handler": async_generator_handler, "concurrency_modifier": concurrency_modifier}
+    )
