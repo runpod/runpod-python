@@ -3,7 +3,6 @@
 import logging
 import os
 
-from . import serverless
 from .api.ctl_commands import (
     create_container_registry_auth,
     create_endpoint,

@@ -16,7 +16,6 @@ from ..version import __version__ as runpod_version
 from . import worker
 from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
-from .modules.rp_progress import progress_update
 
 log = RunPodLogger()
 
