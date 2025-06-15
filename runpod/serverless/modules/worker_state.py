@@ -80,6 +80,11 @@ class JobsProgress(Set[Job]):
             JobsProgress._instance._load_state()
         return JobsProgress._instance
 
+    def __init__(self):
+        # This should never clear data in a singleton
+        # Don't call parent __init__ as it would clear the set
+        pass
+    
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
