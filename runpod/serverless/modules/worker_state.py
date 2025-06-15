@@ -199,6 +199,8 @@ class JobsProgress(Set[Job]):
         """
         Returns the list of job IDs as comma-separated string.
         """
+        self._load_state()
+
         if not len(self):
             return None
 
