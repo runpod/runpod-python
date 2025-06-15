@@ -149,7 +149,7 @@ async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dic
         job_result["stopPod"] = True
 
     # If rp_debugger is set, debugger output will be returned.
-    if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
+    if config.get("rp_args", {}).get("rp_debugger", False) and isinstance(job_result, dict):
         job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
         log.debug("rp_debugger | Flag set, returning debugger output.", job["id"])
 

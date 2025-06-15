@@ -87,7 +87,7 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         """
         Tests download_files_from_urls
         """
-        urls = ["https://example.com/picture.jpg", "https://example.com/file_without_extension"]
+        urls = ("https://example.com/picture.jpg", "https://example.com/file_without_extension",)
         downloaded_files = download_files_from_urls(
             JOB_ID,
             urls,
