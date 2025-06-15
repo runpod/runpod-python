@@ -1,24 +1,12 @@
-"""
-runpod | serverless | rp_scale.py
-OPTIMIZED VERSION - All performance improvements applied
-Now uses optimized JobsProgress from worker_state.py
-"""
-
-# ============================================================================
-# PERFORMANCE OPTIMIZATIONS - These alone give 3-5x improvement
-# ============================================================================
-
 import asyncio
 
 # OPTIMIZATION 1: Use uvloop for 2-4x faster event loop
 try:
     import uvloop
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    print("✅ RunPod Optimization: uvloop enabled (2-4x faster event loop)")
 except ImportError:
-    print("⚠️  RunPod: Install uvloop for 2-4x performance: pip install uvloop")
+    print("⚠️  RunPod: Install uvloop: pip install uvloop")
 
-# OPTIMIZATION 2: Use orjson for 3-10x faster JSON
 try:
     import orjson
     import json as stdlib_json
@@ -34,13 +22,9 @@ try:
     stdlib_json.loads = safe_orjson_loads
     stdlib_json.dumps = safe_orjson_dumps
     
-    print("✅ RunPod Optimization: orjson enabled (3-10x faster JSON)")
 except ImportError:
-    print("⚠️  RunPod: Install orjson for 3-10x performance: pip install orjson")
+    print("⚠️  RunPod: Install orjson: pip install orjson")
 
-# ============================================================================
-# Original imports with optimizations applied
-# ============================================================================
 
 import signal
 import sys
@@ -59,7 +43,7 @@ log = RunPodLogger()
 
 
 # ============================================================================
-# OPTIMIZATION 3: Job Caching for Batch Fetching
+#  3: Job Caching for Batch Fetching
 # ============================================================================
 
 class JobCache:
@@ -187,9 +171,7 @@ class JobScaler:
         except ValueError:
             log.warning("Signal handling is only supported in the main thread.")
 
-        # Print performance stats on shutdown
-        import atexit
-        atexit.register(self._print_stats)
+        
 
         asyncio.run(self.run())
 
@@ -200,7 +182,7 @@ class JobScaler:
     async def run(self):
         """Optimized main loop"""
         async with AsyncClientSession() as session:
-            # OPTIMIZATION: Use create_task instead of gather for better control
+            #  Use create_task instead of gather for better control
             tasks = [
                 asyncio.create_task(self.get_jobs(session), name="job_fetcher"),
                 asyncio.create_task(self.run_jobs(session), name="job_runner")
@@ -245,7 +227,7 @@ class JobScaler:
                 continue
 
             try:
-                # OPTIMIZATION: Check cache first
+                #  Check cache first
                 cached_jobs = await self._job_cache.get_jobs(jobs_needed)
                 if cached_jobs:
                     self._stats["cache_hits"] += len(cached_jobs)
@@ -256,7 +238,7 @@ class JobScaler:
                     if jobs_needed <= 0:
                         continue
 
-                # OPTIMIZATION: Fetch more jobs than needed (batching)
+                # Fetch more jobs than needed (batching)
                 fetch_count = min(jobs_needed * 3, 50)  # Fetch up to 3x needed, max 50
                 
                 log.debug(f"JobScaler.get_jobs | Fetching {fetch_count} jobs (need {jobs_needed})")
@@ -268,7 +250,7 @@ class JobScaler:
 
                 if not acquired_jobs:
                     consecutive_empty += 1
-                    # OPTIMIZATION: Exponential backoff
+                    # Exponential backoff
                     wait_time = min(0.1 * (2 ** consecutive_empty), 5.0)
                     await asyncio.sleep(wait_time)
                     continue
@@ -383,23 +365,3 @@ class JobScaler:
             self._stats["total_processing_time"] += elapsed
             
             log.debug("Finished Job", job["id"])
-
-    def _print_stats(self):
-        """Print performance statistics"""
-        runtime = time.perf_counter() - self._stats["start_time"]
-        jobs = self._stats["jobs_processed"]
-        
-        if runtime > 0 and jobs > 0:
-            print("\n" + "="*60)
-            print("RunPod Performance Statistics (Optimized):")
-            print(f"  Runtime: {runtime:.2f}s")
-            print(f"  Jobs processed: {jobs}")
-            print(f"  Jobs fetched: {self._stats['jobs_fetched']}")
-            print(f"  Cache hits: {self._stats['cache_hits']}")
-            print(f"  Cache efficiency: {self._stats['cache_hits'] / max(1, self._stats['jobs_fetched'] + self._stats['cache_hits']) * 100:.1f}%")
-            print(f"  Average job time: {self._stats['total_processing_time'] / jobs:.3f}s")
-            print(f"  Throughput: {jobs / runtime:.2f} jobs/second")
-            print("  Optimizations enabled:")
-            print(f"    - uvloop: {'Yes' if 'uvloop' in str(asyncio.get_event_loop_policy()) else 'No'}")
-            print(f"    - orjson: {'Yes' if 'orjson' in sys.modules else 'No'}")
-            print("="*60)

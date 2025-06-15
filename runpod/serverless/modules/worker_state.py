@@ -1,8 +1,3 @@
-"""
-Handles getting stuff from environment variables and updating the global state like job id.
-OPTIMIZED VERSION - Using threading.Lock instead of multiprocessing for performance
-"""
-
 import os
 import time
 import uuid
@@ -60,9 +55,7 @@ class Job:
         return self.id
 
 
-# ---------------------------------------------------------------------------- #
-#                            Optimized Job Tracker                             #
-# ---------------------------------------------------------------------------- #
+
 class JobsProgress:
     """
     OPTIMIZED: Track jobs in progress with O(1) operations using threading.Lock
@@ -120,7 +113,7 @@ class JobsProgress:
 
     def get(self, element: Any) -> Optional[Job]:
         """
-        OPTIMIZED: O(1) retrieval using dict lookup
+        retrieval using dict lookup
         """
         if isinstance(element, str):
             search_id = element
@@ -139,7 +132,7 @@ class JobsProgress:
 
     def remove(self, element: Any):
         """
-        OPTIMIZED: O(1) removal using dict
+        removal using dict
         """
         if isinstance(element, str):
             job_id = element
@@ -171,7 +164,7 @@ class JobsProgress:
 
     def get_job_count(self) -> int:
         """
-        OPTIMIZED: O(1) count operation
+        count operation
         """
         # No lock needed for reading an int (atomic operation)
         return self._count
@@ -191,7 +184,7 @@ class JobsProgress:
 
     def __contains__(self, element: Any) -> bool:
         """
-        OPTIMIZED: O(1) membership test using dict
+        membership test using dict
         """
         if isinstance(element, str):
             search_id = element
