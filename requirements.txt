@@ -17,3 +17,5 @@ tomlkit >= 0.12.2
 tqdm-loggable >= 0.1.4
 urllib3 >= 1.26.6
 watchdog >= 3.0.0
+uvloop
+orjson
