@@ -22,9 +22,18 @@ except ImportError:
 try:
     import orjson
     import json as stdlib_json
-    # Monkey-patch json module globally
-    stdlib_json.dumps = lambda obj, **kwargs: orjson.dumps(obj).decode('utf-8')
-    stdlib_json.loads = orjson.loads
+
+    # Safe wrapper for orjson.loads to ignore unexpected keyword arguments
+    def safe_orjson_loads(s, **kwargs):
+        return orjson.loads(s)
+
+    def safe_orjson_dumps(obj, **kwargs):
+        return orjson.dumps(obj).decode('utf-8')
+
+    # Monkey-patch json globally but safely
+    stdlib_json.loads = safe_orjson_loads
+    stdlib_json.dumps = safe_orjson_dumps
+    
     print("✅ RunPod Optimization: orjson enabled (3-10x faster JSON)")
 except ImportError:
     print("⚠️  RunPod: Install orjson for 3-10x performance: pip install orjson")
