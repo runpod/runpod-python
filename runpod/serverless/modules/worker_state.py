@@ -5,9 +5,10 @@ Handles getting stuff from environment variables and updating the global state l
 import os
 import time
 import uuid
-from multiprocessing import Manager
-from multiprocessing.managers import SyncManager
-from typing import Any, Dict, Optional
+import pickle
+import fcntl
+import tempfile
+from typing import Any, Dict, Optional, Set
 
 from .rp_logger import RunPodLogger
 
@@ -63,149 +64,150 @@ class Job:
 # ---------------------------------------------------------------------------- #
 #                                    Tracker                                   #
 # ---------------------------------------------------------------------------- #
-class JobsProgress:
-    """Track the state of current jobs in progress using shared memory."""
-    
-    _instance: Optional['JobsProgress'] = None
-    _manager: SyncManager
-    _shared_data: Any
-    _lock: Any
+class JobsProgress(Set[Job]):
+    """Track the state of current jobs in progress with persistent state."""
+
+    _instance = None
+    _STATE_DIR = os.getcwd()
+    _STATE_FILE = os.path.join(_STATE_DIR, ".runpod_jobs.pkl")
 
     def __new__(cls):
-        if cls._instance is None:
-            instance = object.__new__(cls)
-            # Initialize instance variables
-            instance._manager = Manager()
-            instance._shared_data = instance._manager.dict()
-            instance._shared_data['jobs'] = instance._manager.list()
-            instance._lock = instance._manager.Lock()
-            cls._instance = instance
-        return cls._instance
+        if JobsProgress._instance is None:
+            os.makedirs(cls._STATE_DIR, exist_ok=True)
+            JobsProgress._instance = set.__new__(cls)
+            # Initialize as empty set before loading state
+            set.__init__(JobsProgress._instance)
+            JobsProgress._instance._load_state()
+        return JobsProgress._instance
 
     def __init__(self):
-        # Everything is already initialized in __new__
+        # This should never clear data in a singleton
+        # Don't call parent __init__ as it would clear the set
         pass
-
+    
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
+    def _load_state(self):
+        """Load jobs state from pickle file with file locking."""
+        try:
+            if (
+                os.path.exists(self._STATE_FILE)
+                and os.path.getsize(self._STATE_FILE) > 0
+            ):
+                with open(self._STATE_FILE, "rb") as f:
+                    fcntl.flock(f, fcntl.LOCK_SH)
+                    try:
+                        loaded_jobs = pickle.load(f)
+                        # Clear current state and add loaded jobs
+                        super().clear()
+                        for job in loaded_jobs:
+                            set.add(
+                                self, job
+                            )  # Use set.add to avoid triggering _save_state
+
+                    except (EOFError, pickle.UnpicklingError):
+                        # Handle empty or corrupted file
+                        log.debug(
+                            "JobsProgress: Failed to load state file, starting with empty state"
+                        )
+                        pass
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
+
+        except FileNotFoundError:
+            log.debug("JobsProgress: No state file found, starting with empty state")
+            pass
+
+    def _save_state(self):
+        """Save jobs state to pickle file with atomic write and file locking."""
+        try:
+            # Use temporary file for atomic write
+            with tempfile.NamedTemporaryFile(
+                dir=self._STATE_DIR, delete=False, mode="wb"
+            ) as temp_f:
+                fcntl.flock(temp_f, fcntl.LOCK_EX)
+                try:
+                    pickle.dump(set(self), temp_f)
+                finally:
+                    fcntl.flock(temp_f, fcntl.LOCK_UN)
+            
+            # Atomically replace the state file
+            os.replace(temp_f.name, self._STATE_FILE)
+        except Exception as e:
+            log.error(f"Failed to save job state: {e}")
+
     def clear(self) -> None:
-        with self._lock:
-            self._shared_data['jobs'][:] = []
+        super().clear()
+        self._save_state()
 
     def add(self, element: Any):
         """
         Adds a Job object to the set.
+
+        If the added element is a string, then `Job(id=element)` is added
+        
+        If the added element is a dict, that `Job(**element)` is added
         """
         if isinstance(element, str):
-            job_dict = {'id': element}
-        elif isinstance(element, dict):
-            job_dict = element
-        elif hasattr(element, 'id'):
-            job_dict = {'id': element.id}
-        else:
+            element = Job(id=element)
+
+        if isinstance(element, dict):
+            element = Job(**element)
+
+        if not isinstance(element, Job):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
-        with self._lock:
-            # Check if job already exists
-            job_list = self._shared_data['jobs']
-            for existing_job in job_list:
-                if existing_job['id'] == job_dict['id']:
-                    return  # Job already exists
-            
-            # Add new job
-            job_list.append(job_dict)
-            log.debug(f"JobsProgress | Added job: {job_dict['id']}")
-
-    def get(self, element: Any) -> Optional[Job]:
-        """
-        Retrieves a Job object from the set.
-        
-        If the element is a string, searches for Job with that id.
-        """
-        if isinstance(element, str):
-            search_id = element
-        elif isinstance(element, Job):
-            search_id = element.id
-        else:
-            raise TypeError("Only Job objects can be retrieved from JobsProgress.")
-
-        with self._lock:
-            for job_dict in self._shared_data['jobs']:
-                if job_dict['id'] == search_id:
-                    log.debug(f"JobsProgress | Retrieved job: {job_dict['id']}")
-                    return Job(**job_dict)
-        
-        return None
+        result = super().add(element)
+        self._save_state()
+        return result
 
     def remove(self, element: Any):
         """
         Removes a Job object from the set.
+
+        If the element is a string, then `Job(id=element)` is removed
+        
+        If the element is a dict, then `Job(**element)` is removed
         """
         if isinstance(element, str):
-            job_id = element
-        elif isinstance(element, dict):
-            job_id = element.get('id')
-        elif hasattr(element, 'id'):
-            job_id = element.id
-        else:
+            element = Job(id=element)
+
+        if isinstance(element, dict):
+            element = Job(**element)
+
+        if not isinstance(element, Job):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
-        with self._lock:
-            job_list = self._shared_data['jobs']
-            # Find and remove the job
-            for i, job_dict in enumerate(job_list):
-                if job_dict['id'] == job_id:
-                    del job_list[i]
-                    log.debug(f"JobsProgress | Removed job: {job_dict['id']}")
-                    break
+        result = super().discard(element)
+        self._save_state()
+        return result
+
+    def get(self, element: Any) -> Optional[Job]:
+        if isinstance(element, str):
+            element = Job(id=element)
+
+        if not isinstance(element, Job):
+            raise TypeError("Only Job objects can be retrieved from JobsProgress.")
+
+        for job in self:
+            if job == element:
+                return job
+        return None
 
     def get_job_list(self) -> Optional[str]:
         """
         Returns the list of job IDs as comma-separated string.
         """
-        with self._lock:
-            job_list = list(self._shared_data['jobs'])
-        
-        if not job_list:
+        self._load_state()
+
+        if not len(self):
             return None
 
-        log.debug(f"JobsProgress | Jobs in progress: {job_list}")
-        return ",".join(str(job_dict['id']) for job_dict in job_list)
+        return ",".join(str(job) for job in self)
 
     def get_job_count(self) -> int:
         """
         Returns the number of jobs.
         """
-        with self._lock:
-            return len(self._shared_data['jobs'])
-
-    def __iter__(self):
-        """Make the class iterable - returns Job objects"""
-        with self._lock:
-            # Create a snapshot of jobs to avoid holding lock during iteration
-            job_dicts = list(self._shared_data['jobs'])
-        
-        # Return an iterator of Job objects
-        return iter(Job(**job_dict) for job_dict in job_dicts)
-
-    def __len__(self):
-        """Support len() operation"""
-        return self.get_job_count()
-
-    def __contains__(self, element: Any) -> bool:
-        """Support 'in' operator"""
-        if isinstance(element, str):
-            search_id = element
-        elif isinstance(element, Job):
-            search_id = element.id
-        elif isinstance(element, dict):
-            search_id = element.get('id')
-        else:
-            return False
-
-        with self._lock:
-            for job_dict in self._shared_data['jobs']:
-                if job_dict['id'] == search_id:
-                    return True
-        return False
+        return len(self)

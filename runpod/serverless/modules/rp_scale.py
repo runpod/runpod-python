@@ -15,7 +15,6 @@ from .rp_logger import RunPodLogger
 from .worker_state import JobsProgress, IS_LOCAL_TEST
 
 log = RunPodLogger()
-job_progress = JobsProgress()
 
 
 def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
@@ -47,6 +46,7 @@ class JobScaler:
         self._shutdown_event = asyncio.Event()
         self.current_concurrency = 1
         self.config = config
+        self.job_progress = JobsProgress()  # Cache the singleton instance
 
         self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
 
@@ -149,7 +149,7 @@ class JobScaler:
 
     def current_occupancy(self) -> int:
         current_queue_count = self.jobs_queue.qsize()
-        current_progress_count = job_progress.get_job_count()
+        current_progress_count = self.job_progress.get_job_count()
 
         log.debug(
             f"JobScaler.status | concurrency: {self.current_concurrency}; queue: {current_queue_count}; progress: {current_progress_count}"
@@ -188,7 +188,7 @@ class JobScaler:
 
                 for job in acquired_jobs:
                     await self.jobs_queue.put(job)
-                    job_progress.add(job)
+                    self.job_progress.add(job)
                     log.debug("Job Queued", job["id"])
 
                 log.info(f"Jobs in queue: {self.jobs_queue.qsize()}")
@@ -268,6 +268,6 @@ class JobScaler:
             self.jobs_queue.task_done()
 
             # Job is no longer in progress
-            job_progress.remove(job)
+            self.job_progress.remove(job)
 
             log.debug("Finished Job", job["id"])

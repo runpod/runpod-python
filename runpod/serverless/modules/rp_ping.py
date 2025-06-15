@@ -15,7 +15,6 @@ from runpod.serverless.modules.worker_state import WORKER_ID, JobsProgress
 from runpod.version import __version__ as runpod_version
 
 log = RunPodLogger()
-jobs = JobsProgress()  # Contains the list of jobs that are currently running.
 
 
 class Heartbeat:
@@ -97,6 +96,7 @@ class Heartbeat:
         """
         Sends a heartbeat to the Runpod server.
         """
+        jobs = JobsProgress()  # Get the singleton instance
         job_ids = jobs.get_job_list()
         ping_params = {"job_id": job_ids, "runpod_version": runpod_version}
 
