@@ -69,12 +69,14 @@ class JobsProgress(Set[Job]):
 
     _instance = None
     _STATE_DIR = os.getcwd()
-    _STATE_FILE = os.path.join(_STATE_DIR, '.runpod_jobs.pkl')
+    _STATE_FILE = os.path.join(_STATE_DIR, ".runpod_jobs.pkl")
 
     def __new__(cls):
         if JobsProgress._instance is None:
             os.makedirs(cls._STATE_DIR, exist_ok=True)
             JobsProgress._instance = set.__new__(cls)
+            # Initialize as empty set before loading state
+            set.__init__(JobsProgress._instance)
             JobsProgress._instance._load_state()
         return JobsProgress._instance
 
@@ -84,25 +86,41 @@ class JobsProgress(Set[Job]):
     def _load_state(self):
         """Load jobs state from pickle file with file locking."""
         try:
-            with open(self._STATE_FILE, 'ab+') as f:
-                fcntl.flock(f, fcntl.LOCK_SH)
-                try:
-                    f.seek(0)
-                    loaded_jobs = pickle.load(f) if os.path.getsize(self._STATE_FILE) > 0 else set()
-                    self.update(loaded_jobs)
-                except (EOFError, pickle.UnpicklingError):
-                    # Handle empty or corrupted file
-                    pass
-                finally:
-                    fcntl.flock(f, fcntl.LOCK_UN)
+            if (
+                os.path.exists(self._STATE_FILE)
+                and os.path.getsize(self._STATE_FILE) > 0
+            ):
+                with open(self._STATE_FILE, "rb") as f:
+                    fcntl.flock(f, fcntl.LOCK_SH)
+                    try:
+                        loaded_jobs = pickle.load(f)
+                        # Clear current state and add loaded jobs
+                        super().clear()
+                        for job in loaded_jobs:
+                            set.add(
+                                self, job
+                            )  # Use set.add to avoid triggering _save_state
+
+                    except (EOFError, pickle.UnpicklingError):
+                        # Handle empty or corrupted file
+                        log.debug(
+                            "JobsProgress: Failed to load state file, starting with empty state"
+                        )
+                        pass
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
+
         except FileNotFoundError:
+            log.debug("JobsProgress: No state file found, starting with empty state")
             pass
 
     def _save_state(self):
         """Save jobs state to pickle file with atomic write and file locking."""
         try:
             # Use temporary file for atomic write
-            with tempfile.NamedTemporaryFile(dir=self._STATE_DIR, delete=False, mode='wb') as temp_f:
+            with tempfile.NamedTemporaryFile(
+                dir=self._STATE_DIR, delete=False, mode="wb"
+            ) as temp_f:
                 fcntl.flock(temp_f, fcntl.LOCK_EX)
                 try:
                     pickle.dump(set(self), temp_f)
@@ -160,7 +178,7 @@ class JobsProgress(Set[Job]):
         self._save_state()
         return result
 
-    def get(self, element: Any) -> Job:
+    def get(self, element: Any) -> Optional[Job]:
         if isinstance(element, str):
             element = Job(id=element)
 
@@ -170,8 +188,9 @@ class JobsProgress(Set[Job]):
         for job in self:
             if job == element:
                 return job
+        return None
 
-    def get_job_list(self) -> str:
+    def get_job_list(self) -> Optional[str]:
         """
         Returns the list of job IDs as comma-separated string.
         """
