@@ -58,7 +58,7 @@ class Job:
 
 class JobsProgress:
     """
-    OPTIMIZED: Track jobs in progress with O(1) operations using threading.Lock
+    Track jobs in progress with min operations using threading.Lock
     instead of multiprocessing.Manager for better performance.
     """
     
@@ -91,7 +91,7 @@ class JobsProgress:
 
     def add(self, element: Any):
         """
-        OPTIMIZED: O(1) addition of jobs using dict
+        addition of jobs using dict
         """
         if isinstance(element, str):
             job_id = element

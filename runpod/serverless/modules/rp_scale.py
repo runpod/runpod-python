@@ -176,6 +176,15 @@ class JobScaler:
         asyncio.run(self.run())
 
     def handle_shutdown(self, signum, frame):
+        """
+        Called when the worker is signalled to shut down.
+        This function is called when the worker receives a signal to shut down, such as
+        SIGTERM or SIGINT. It sets the shutdown event, which will cause the worker to
+        exit its main loop and shut down gracefully.
+        Args:
+            signum: The signal number that was received.
+            frame: The current stack frame.
+        """
         log.debug(f"Received shutdown signal: {signum}.")
         self.kill_worker()
 
@@ -197,9 +206,15 @@ class JobScaler:
                 raise
 
     def is_alive(self):
+        """
+        Return whether the worker is alive or not.
+        """
         return not self._shutdown_event.is_set()
 
     def kill_worker(self):
+        """
+        Whether to kill the worker.
+        """
         log.debug("Kill worker.")
         self._shutdown_event.set()
 
