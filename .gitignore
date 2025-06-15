@@ -137,3 +137,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 runpod/_version.py
+.runpod_jobs.pkl

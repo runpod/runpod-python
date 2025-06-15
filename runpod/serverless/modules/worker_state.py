@@ -5,6 +5,9 @@ Handles getting stuff from environment variables and updating the global state l
 import os
 import time
 import uuid
+import pickle
+import fcntl
+import tempfile
 from typing import Any, Dict, Optional, Set
 
 from .rp_logger import RunPodLogger
@@ -62,20 +65,58 @@ class Job:
 #                                    Tracker                                   #
 # ---------------------------------------------------------------------------- #
 class JobsProgress(Set[Job]):
-    """Track the state of current jobs in progress."""
+    """Track the state of current jobs in progress with persistent state."""
 
     _instance = None
+    _STATE_DIR = os.getcwd()
+    _STATE_FILE = os.path.join(_STATE_DIR, '.runpod_jobs.pkl')
 
     def __new__(cls):
         if JobsProgress._instance is None:
+            os.makedirs(cls._STATE_DIR, exist_ok=True)
             JobsProgress._instance = set.__new__(cls)
+            JobsProgress._instance._load_state()
         return JobsProgress._instance
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
 
+    def _load_state(self):
+        """Load jobs state from pickle file with file locking."""
+        try:
+            with open(self._STATE_FILE, 'ab+') as f:
+                fcntl.flock(f, fcntl.LOCK_SH)
+                try:
+                    f.seek(0)
+                    loaded_jobs = pickle.load(f) if os.path.getsize(self._STATE_FILE) > 0 else set()
+                    self.update(loaded_jobs)
+                except (EOFError, pickle.UnpicklingError):
+                    # Handle empty or corrupted file
+                    pass
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
+        except FileNotFoundError:
+            pass
+
+    def _save_state(self):
+        """Save jobs state to pickle file with atomic write and file locking."""
+        try:
+            # Use temporary file for atomic write
+            with tempfile.NamedTemporaryFile(dir=self._STATE_DIR, delete=False, mode='wb') as temp_f:
+                fcntl.flock(temp_f, fcntl.LOCK_EX)
+                try:
+                    pickle.dump(set(self), temp_f)
+                finally:
+                    fcntl.flock(temp_f, fcntl.LOCK_UN)
+            
+            # Atomically replace the state file
+            os.replace(temp_f.name, self._STATE_FILE)
+        except Exception as e:
+            log.error(f"Failed to save job state: {e}")
+
     def clear(self) -> None:
-        return super().clear()
+        super().clear()
+        self._save_state()
 
     def add(self, element: Any):
         """
@@ -94,7 +135,9 @@ class JobsProgress(Set[Job]):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
-        return super().add(element)
+        result = super().add(element)
+        self._save_state()
+        return result
 
     def remove(self, element: Any):
         """
@@ -113,7 +156,9 @@ class JobsProgress(Set[Job]):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
-        return super().discard(element)
+        result = super().discard(element)
+        self._save_state()
+        return result
 
     def get(self, element: Any) -> Job:
         if isinstance(element, str):
