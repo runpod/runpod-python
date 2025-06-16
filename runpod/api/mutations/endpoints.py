@@ -47,7 +47,7 @@ def generate_endpoint_mutation(
     input_fields.append(f"workersMax: {workers_max}")
 
     if allowed_cuda_versions:
-        input_fields.append(f"allowedCudaVersions: {allowed_cuda_versions}")
+        input_fields.append(f'allowedCudaVersions: "{allowed_cuda_versions}"')
 
     if gpu_count is not None:
         input_fields.append(f"gpuCount: {gpu_count}")
