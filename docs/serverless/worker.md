@@ -1,6 +1,6 @@
 # The Serverless Worker
 
-Both RunPod official endpoints as well as custom built endpoints function by means of a worker that fetches available jobs, passes them into a handler and then returns the output.
+Both Runpod official endpoints as well as custom built endpoints function by means of a worker that fetches available jobs, passes them into a handler and then returns the output.
 
 A worker entry point is a python file containing the command `runpod.serverless.start(config)`. An minimal worker file is shown below:
 

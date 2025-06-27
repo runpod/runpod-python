@@ -1,5 +1,5 @@
 """
-RunPod | API Wrapper | GraphQL
+Runpod | API Wrapper | GraphQL
 """
 
 import json

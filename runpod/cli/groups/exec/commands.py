@@ -1,5 +1,5 @@
 """
-RunPod | CLI | Exec | Commands
+Runpod | CLI | Exec | Commands
 """
 
 import click

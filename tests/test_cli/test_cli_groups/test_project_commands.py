@@ -1,5 +1,5 @@
 """
-RunPod | CLI | Groups | Project | Commands | Tests
+Runpod | CLI | Groups | Project | Commands | Tests
 """
 
 import unittest

@@ -1,6 +1,6 @@
 # Performs a full test of the package within production environment.
 
-name: CI | End-to-End RunPod Python Tests
+name: CI | End-to-End Runpod Python Tests
 
 on:
   push:
