@@ -35,7 +35,7 @@ if __name__ == "__main__":
         extras_require=extras_require,
         packages=find_packages(),
         python_requires=">=3.8",
-        description="🐍 | Python library for RunPod API and serverless worker SDK.",
+        description="🐍 | Python library for Runpod API and serverless worker SDK.",
         long_description=long_description,
         long_description_content_type="text/markdown",
         author="RunPod",

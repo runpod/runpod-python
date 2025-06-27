@@ -1,5 +1,5 @@
 """
-RunPod | CLI | Utils | SSH Command
+Runpod | CLI | Utils | SSH Command
 
 Connect and run commands over SSH.
 """

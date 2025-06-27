@@ -17,9 +17,9 @@ BUCKET_ACCESS_KEY_ID =  # S3 bucket access key id
 BUCKET_SECRET_ACCESS_KEY =  # S3 bucket secret access key
 ```
 
-The credentials can be set in your Docker image using `ENV`, however, it is recommended to set them in the RunPod template using the `Environment Variables` property for security.
+The credentials can be set in your Docker image using `ENV`, however, it is recommended to set them in the Runpod template using the `Environment Variables` property for security.
 
-![RunPod Template Location](.docs/images/../../../../images/env_var_location.png)
+![Runpod Template Location](.docs/images/../../../../images/env_var_location.png)
 
 ### Passed as a Dictionary
 

@@ -20,7 +20,7 @@ nest_asyncio.apply()
 
 
 class TestWorker(IsolatedAsyncioTestCase):
-    """Tests for RunPod serverless worker."""
+    """Tests for Runpod serverless worker."""
 
     async def asyncSetUp(self):
         self.mock_handler = mock.Mock(return_value="test")

@@ -103,7 +103,7 @@ class TestHeartbeat:
                 # Process should not be created
                 mock_process.assert_not_called()
                 mock_logger.debug.assert_called_with(
-                    "Not deployed on RunPod serverless, pings will not be sent."
+                    "Not deployed on Runpod serverless, pings will not be sent."
                 )
 
     def test_start_ping_missing_pod_id(self, mock_logger, mock_worker_id):

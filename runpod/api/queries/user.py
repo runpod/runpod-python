@@ -1,5 +1,5 @@
 """
-RunPod | API | Queries | User
+Runpod | API | Queries | User
 
 Query for user information.
 """

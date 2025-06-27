@@ -54,14 +54,14 @@
 
 ### Fixed
 
-- Edge case when using RunPod Serverless Core that return `None` for function output.
+- Edge case when using Runpod Serverless Core that return `None` for function output.
 - Missing Job ID for logging.
 - Concurrency modifier not adhering to the maximum concurrency.
 - Improved in progress job tracking and counting.
 
 ### Added
 
-- Expanded RunPod Serverless Core testing.
+- Expanded Runpod Serverless Core testing.
 
 ---
 

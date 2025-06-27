@@ -1,5 +1,5 @@
 """
-RunPod | Python | Endpoint Runner
+Runpod | Python | Endpoint Runner
 """
 
 import time
@@ -91,7 +91,7 @@ class RunPodClient:
 #                                      Job                                     #
 # ---------------------------------------------------------------------------- #
 class Job:
-    """Represents a job to be run on the RunPod service."""
+    """Represents a job to be run on the Runpod service."""
 
     def __init__(self, endpoint_id: str, job_id: str, client: RunPodClient):
         """
@@ -176,7 +176,7 @@ class Job:
 #                                   Endpoint                                   #
 # ---------------------------------------------------------------------------- #
 class Endpoint:
-    """Manages an endpoint to run jobs on the RunPod service."""
+    """Manages an endpoint to run jobs on the Runpod service."""
 
     def __init__(self, endpoint_id: str):
         """

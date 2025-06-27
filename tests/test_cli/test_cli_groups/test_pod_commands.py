@@ -182,7 +182,7 @@ class TestPodCommands(unittest.TestCase):
         assert result.exit_code == 0, result.exception
         
         # Verify error message was shown
-        mock_echo.assert_any_call("❌ No SSH keys found in your RunPod account!")
+        mock_echo.assert_any_call("❌ No SSH keys found in your Runpod account!")
         mock_echo.assert_any_call("🔑 To create an SSH key, run:")
         mock_echo.assert_any_call("   runpod ssh add-key")
 

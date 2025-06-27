@@ -1,5 +1,5 @@
 """
-Contains the main entrypoint for the RunPod Serverless Worker.
+Contains the main entrypoint for the Runpod Serverless Worker.
 
 Arguments can be passed in when the worker is started, and will be passed to the worker.
 """

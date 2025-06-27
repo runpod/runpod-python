@@ -1,5 +1,5 @@
 """
-RunPod | API | Queries | GPUs
+Runpod | API | Queries | GPUs
 """
 
 QUERY_GPU_TYPES = """

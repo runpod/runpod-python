@@ -1,7 +1,7 @@
 [project]
 name = "runpod"
 dynamic = ["version", "dependencies"]
-description = "🐍 | Python library for RunPod API and serverless worker SDK."
+description = "🐍 | Python library for Runpod API and serverless worker SDK."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.8"
 license = { text = "MIT License" }

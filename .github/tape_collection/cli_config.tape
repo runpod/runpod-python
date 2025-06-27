@@ -10,4 +10,4 @@ Enter
 
 Sleep 4s
 
-Type "<Paste your RunPod API Key here>"
+Type "<Paste your Runpod API Key here>"

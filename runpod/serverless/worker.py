@@ -35,7 +35,7 @@ def run_worker(config: Dict[str, Any]) -> None:
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
-    # Start pinging RunPod to show that the worker is alive.
+    # Start pinging Runpod to show that the worker is alive.
     heartbeat.start_ping()
 
     # Create a JobScaler responsible for adjusting the concurrency

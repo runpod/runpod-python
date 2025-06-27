@@ -1,5 +1,5 @@
 """
-RunPod | CLI | Project | Functions
+Runpod | CLI | Project | Functions
 """
 
 import os
@@ -130,7 +130,7 @@ def create_new_project(
     project_uuid = str(uuid.uuid4())[:8]
 
     toml_config = document()
-    toml_config.add(comment("RunPod Project Configuration"))
+    toml_config.add(comment("Runpod Project Configuration"))
     toml_config.add(nl())
     toml_config.add("title", project_name)
 

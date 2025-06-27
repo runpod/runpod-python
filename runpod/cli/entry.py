@@ -1,5 +1,5 @@
 """
-RunPod | CLI | Entry
+Runpod | CLI | Entry
 
 The entry point for the CLI.
 """

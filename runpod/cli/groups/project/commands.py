@@ -1,5 +1,5 @@
 """
-RunPod | CLI | Project | Commands
+Runpod | CLI | Project | Commands
 """
 
 import os
@@ -14,7 +14,7 @@ from .functions import create_new_project, create_project_endpoint, start_projec
 from .helpers import validate_project_name
 
 
-@click.group("project", help="Create, deploy, and manage RunPod projects.")
+@click.group("project", help="Create, deploy, and manage Runpod projects.")
 def project_cli():
     """Create and deploy projects on RunPod."""
 
@@ -96,7 +96,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     click.echo("Project Summary:")
 
     click.echo(f"   - Project Name: {project_name}")
-    click.echo(f"   - RunPod Network Storage ID: {runpod_volume_id}")
+    click.echo(f"   - Runpod Network Storage ID: {runpod_volume_id}")
     click.echo(f"   - CUDA Version: {cuda_version}")
     click.echo(f"   - Python Version: {python_version}")
 
