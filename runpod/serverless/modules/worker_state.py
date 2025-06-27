@@ -6,9 +6,10 @@ import os
 import time
 import uuid
 import pickle
-import fcntl
 import tempfile
 from typing import Any, Dict, Optional, Set
+
+from filelock import FileLock
 
 from .rp_logger import RunPodLogger
 
@@ -95,25 +96,23 @@ class JobsProgress(Set[Job]):
                 os.path.exists(self._STATE_FILE)
                 and os.path.getsize(self._STATE_FILE) > 0
             ):
-                with open(self._STATE_FILE, "rb") as f:
-                    fcntl.flock(f, fcntl.LOCK_SH)
-                    try:
-                        loaded_jobs = pickle.load(f)
-                        # Clear current state and add loaded jobs
-                        super().clear()
-                        for job in loaded_jobs:
-                            set.add(
-                                self, job
-                            )  # Use set.add to avoid triggering _save_state
+                with FileLock(self._STATE_FILE + '.lock'):
+                    with open(self._STATE_FILE, "rb") as f:
+                        try:
+                            loaded_jobs = pickle.load(f)
+                            # Clear current state and add loaded jobs
+                            super().clear()
+                            for job in loaded_jobs:
+                                set.add(
+                                    self, job
+                                )  # Use set.add to avoid triggering _save_state
 
-                    except (EOFError, pickle.UnpicklingError):
-                        # Handle empty or corrupted file
-                        log.debug(
-                            "JobsProgress: Failed to load state file, starting with empty state"
-                        )
-                        pass
-                    finally:
-                        fcntl.flock(f, fcntl.LOCK_UN)
+                        except (EOFError, pickle.UnpicklingError):
+                            # Handle empty or corrupted file
+                            log.debug(
+                                "JobsProgress: Failed to load state file, starting with empty state"
+                            )
+                            pass
 
         except FileNotFoundError:
             log.debug("JobsProgress: No state file found, starting with empty state")
@@ -123,17 +122,14 @@ class JobsProgress(Set[Job]):
         """Save jobs state to pickle file with atomic write and file locking."""
         try:
             # Use temporary file for atomic write
-            with tempfile.NamedTemporaryFile(
-                dir=self._STATE_DIR, delete=False, mode="wb"
-            ) as temp_f:
-                fcntl.flock(temp_f, fcntl.LOCK_EX)
-                try:
+            with FileLock(self._STATE_FILE + '.lock'):
+                with tempfile.NamedTemporaryFile(
+                    dir=self._STATE_DIR, delete=False, mode="wb"
+                ) as temp_f:
                     pickle.dump(set(self), temp_f)
-                finally:
-                    fcntl.flock(temp_f, fcntl.LOCK_UN)
-            
-            # Atomically replace the state file
-            os.replace(temp_f.name, self._STATE_FILE)
+                
+                # Atomically replace the state file
+                os.replace(temp_f.name, self._STATE_FILE)
         except Exception as e:
             log.error(f"Failed to save job state: {e}")
 
