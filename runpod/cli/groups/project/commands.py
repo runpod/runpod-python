@@ -47,7 +47,7 @@ def new_project_wizard(project_name, model_type, model_name, init_current_dir):
     if len(network_volumes) == 0:
         click.echo("You do not have any network volumes.")
         click.echo(
-            "Please create a network volume (https://runpod.io/console/user/storage) and try again."
+            "Please create a network volume (https://console.runpod.io/user/storage) and try again."
         )  # pylint: disable=line-too-long
         sys.exit(1)
 
