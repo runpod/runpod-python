@@ -26,7 +26,7 @@ TITLE = "Runpod | Development Worker API"
 DESCRIPTION = """
 The Development Worker API facilitates testing and debugging of your Runpod workers.
 It offers a sandbox environment for executing code and simulating interactions with your worker, ensuring your applications can seamlessly transition to production on Runpod serverless platform.
-Use this API for comprehensive testing of request submissions and result retrieval, mimicking the behavior of RunPod's operational environment.
+Use this API for comprehensive testing of request submissions and result retrieval, mimicking the behavior of Runpod's operational environment.
 ---
 *Note: This API serves as a local testing tool and will not be utilized once your worker is operational on the Runpod platform.*
 """

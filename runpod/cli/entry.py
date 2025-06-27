@@ -15,7 +15,7 @@ from .groups.ssh.commands import ssh_cli
 
 @click.group()
 def runpod_cli():
-    """A collection of CLI functions for RunPod."""
+    """A collection of CLI functions for Runpod."""
 
 
 runpod_cli.add_command(config_wizard)  # runpod config

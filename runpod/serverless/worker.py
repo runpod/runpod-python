@@ -29,7 +29,7 @@ def run_worker(config: Dict[str, Any]) -> None:
     """
     Starts the worker loop for multi-processing.
 
-    This function is called when the worker is running on RunPod. This function
+    This function is called when the worker is running on Runpod. This function
     starts a loop that runs indefinitely until the worker is killed.
 
     Args:
@@ -45,9 +45,9 @@ def run_worker(config: Dict[str, Any]) -> None:
 
 def main(config: Dict[str, Any]) -> None:
     """
-    Checks if the worker is running locally or on RunPod.
+    Checks if the worker is running locally or on Runpod.
     If running locally, the test job is run and the worker exits.
-    If running on RunPod, the worker loop is created.
+    If running on Runpod, the worker loop is created.
     """
     if _is_local(config):
         asyncio.run(rp_local.run_local(config))

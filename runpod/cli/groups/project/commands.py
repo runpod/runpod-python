@@ -16,7 +16,7 @@ from .helpers import validate_project_name
 
 @click.group("project", help="Create, deploy, and manage Runpod projects.")
 def project_cli():
-    """Create and deploy projects on RunPod."""
+    """Create and deploy projects on Runpod."""
 
 
 # -------------------------------- New Project ------------------------------- #
@@ -128,7 +128,7 @@ def start_project_pod():
     Start the project development pod from runpod.toml
     """
     click.echo(
-        "Starting the project will create a development pod on RunPod, if one does not already exist."
+        "Starting the project will create a development pod on Runpod, if one does not already exist."
     )  # pylint: disable=line-too-long
     click.echo(
         "    - You will be charged based on the GPU type specified in runpod.toml."
@@ -145,7 +145,7 @@ def start_project_pod():
 # ------------------------------ Deploy Project ------------------------------ #
 @project_cli.command("deploy")
 def deploy_project():
-    """Deploy the project to RunPod."""
+    """Deploy the project to Runpod."""
     click.echo("Deploying project...")
 
     endpoint_id = create_project_endpoint()

@@ -36,7 +36,7 @@ def _launch_dev_pod():
     """Launch a development pod."""
     config = load_project_config()  # Load runpod.toml
 
-    print("Deploying development pod on RunPod...")
+    print("Deploying development pod on Runpod...")
 
     # Prepare the environment variables
     environment_variables = {"RUNPOD_PROJECT_ID": config["project"]["uuid"]}
