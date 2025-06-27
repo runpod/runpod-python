@@ -1,5 +1,5 @@
 """
-RunPod | API Wrapper | CTL Commands
+Runpod | API Wrapper | CTL Commands
 """
 
 # pylint: disable=too-many-arguments,too-many-locals

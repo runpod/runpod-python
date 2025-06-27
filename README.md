@@ -97,7 +97,7 @@ runpod.api_key = "your_runpod_api_key_found_under_settings"
 
 ### Endpoints
 
-You can interact with RunPod endpoints via a `run` or `run_sync` method.
+You can interact with Runpod endpoints via a `run` or `run_sync` method.
 
 ```python
 endpoint = runpod.Endpoint("ENDPOINT_ID")

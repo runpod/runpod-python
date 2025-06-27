@@ -21,14 +21,14 @@ from .worker_state import Job, JobsProgress
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
-TITLE = "RunPod | Development Worker API"
+TITLE = "Runpod | Development Worker API"
 
 DESCRIPTION = """
-The Development Worker API facilitates testing and debugging of your RunPod workers.
-It offers a sandbox environment for executing code and simulating interactions with your worker, ensuring your applications can seamlessly transition to production on RunPod serverless platform.
-Use this API for comprehensive testing of request submissions and result retrieval, mimicking the behavior of RunPod's operational environment.
+The Development Worker API facilitates testing and debugging of your Runpod workers.
+It offers a sandbox environment for executing code and simulating interactions with your worker, ensuring your applications can seamlessly transition to production on Runpod serverless platform.
+Use this API for comprehensive testing of request submissions and result retrieval, mimicking the behavior of Runpod's operational environment.
 ---
-*Note: This API serves as a local testing tool and will not be utilized once your worker is operational on the RunPod platform.*
+*Note: This API serves as a local testing tool and will not be utilized once your worker is operational on the Runpod platform.*
 """
 
 # Add CLI tool suggestion if RUNPOD_PROJECT_ID is not set.

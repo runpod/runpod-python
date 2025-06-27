@@ -1,4 +1,4 @@
-"""RunPod | CLI | Utils | rp_info
+"""Runpod | CLI | Utils | rp_info
 
 A collection of utility functions for retrieving information about pods.
 """

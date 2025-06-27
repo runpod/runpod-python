@@ -1,5 +1,5 @@
 """
-RunPod | Tests | CLI | Commands
+Runpod | Tests | CLI | Commands
 """
 
 import unittest
@@ -44,7 +44,7 @@ class TestCommands(unittest.TestCase):
             assert result.exit_code == 0
             mock_set_credentials.assert_called_with("KEY", "test", overwrite=True)
             mock_prompt.assert_called_with(
-                "    > RunPod API Key", hide_input=False, confirmation_prompt=False
+                "    > Runpod API Key", hide_input=False, confirmation_prompt=False
             )  # pylint: disable=line-too-long
 
             # Simulating existing credentials, prompting for overwrite
@@ -108,7 +108,7 @@ class TestCommands(unittest.TestCase):
         ):
             result = self.runner.invoke(runpod_cli, ["config", "--profile", "test"])
             mock_prompt.assert_called_with(
-                "    > RunPod API Key", hide_input=False, confirmation_prompt=False
+                "    > Runpod API Key", hide_input=False, confirmation_prompt=False
             )  # pylint: disable=line-too-long
             mock_set_credentials.assert_called_with("KEY", "test", overwrite=True)
             assert result.exit_code == 0

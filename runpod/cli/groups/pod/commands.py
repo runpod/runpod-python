@@ -1,5 +1,5 @@
 """
-RunPod | CLI | Pod | Commands
+Runpod | CLI | Pod | Commands
 """
 
 import os
@@ -91,13 +91,13 @@ def sync_pods(source_pod_id, dest_pod_id, source_workspace, dest_workspace):
     📋 PREREQUISITES:
     
     1. SSH Key Setup:
-       • You must have an SSH key configured in your RunPod account
+       • You must have an SSH key configured in your Runpod account
        • If you don't have one, create it with: runpod ssh add-key
        • List your keys with: runpod ssh list-keys
     
     2. Pod Configuration:
        • Both pods must have SSH access enabled
-       • For running pods using official RunPod templates, you may need to add
+       • For running pods using official Runpod templates, you may need to add
          your public key to the PUBLIC_KEY environment variable and restart the pod
     
     ⚠️  IMPORTANT NOTES:
@@ -127,7 +127,7 @@ def sync_pods(source_pod_id, dest_pod_id, source_workspace, dest_workspace):
         from ...groups.ssh.functions import get_user_pub_keys
         user_keys = get_user_pub_keys()
         if not user_keys:
-            click.echo("❌ No SSH keys found in your RunPod account!")
+            click.echo("❌ No SSH keys found in your Runpod account!")
             click.echo("")
             click.echo("🔑 To create an SSH key, run:")
             click.echo("   runpod ssh add-key")
@@ -234,7 +234,7 @@ def sync_pods(source_pod_id, dest_pod_id, source_workspace, dest_workspace):
         click.echo("")
         click.echo("🔧 Troubleshooting tips:")
         click.echo("• Ensure both pods have SSH access enabled")
-        click.echo("• Check that your SSH key is added to your RunPod account: runpod ssh list-keys")
+        click.echo("• Check that your SSH key is added to your Runpod account: runpod ssh list-keys")
         click.echo("• For running pods, you may need to add PUBLIC_KEY env var and restart")
         click.echo("• Verify the source and destination paths exist")
     finally:

@@ -1,4 +1,4 @@
-""" RunPod | API Wrapper | Mutations | Endpoints """
+""" Runpod | API Wrapper | Mutations | Endpoints """
 
 # pylint: disable=too-many-arguments
 

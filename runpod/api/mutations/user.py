@@ -1,5 +1,5 @@
 """
-RunPod | API | Mutations | User
+Runpod | API | Mutations | User
 """
 
 

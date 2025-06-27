@@ -1,6 +1,6 @@
 # Getting Started
 
-The RunPod python library is a powerful library providing SDK functions, API access, and CLI commands for interacting with the RunPod platform.
+The Runpod python library is a powerful library providing SDK functions, API access, and CLI commands for interacting with the Runpod platform.
 
 ## Credentials File
 

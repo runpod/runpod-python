@@ -1,5 +1,5 @@
 """
-RunPod | API Wrapper | Mutations | Pods
+Runpod | API Wrapper | Mutations | Pods
 """
 
 # pylint: disable=too-many-arguments, too-many-locals, too-many-branches
