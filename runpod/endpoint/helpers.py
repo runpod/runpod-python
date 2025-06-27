@@ -8,7 +8,7 @@ API_KEY_NOT_SET_MSG = (
     "Expected `run_pod.api_key` to be initialized. "
     "You can solve this by setting `run_pod.api_key = 'your-key'. "
     "An API key can be generated at "
-    "https://runpod.io/console/user/settings"
+    "https://console.runpod.io/user/settings"
 )
 
 

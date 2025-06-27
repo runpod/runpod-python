@@ -35,7 +35,7 @@ def config_wizard(api_key, profile, check):
 
     if api_key is None:
         click.echo("Please enter your Runpod API Key.")
-        click.echo("You can find it at https://www.runpod.io/console/user/settings")
+        click.echo("You can find it at https://console.runpod.io/user/settings")
         api_key = click.prompt(
             "    > Runpod API Key", hide_input=False, confirmation_prompt=False
         )
