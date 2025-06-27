@@ -38,7 +38,7 @@ if __name__ == "__main__":
         description="🐍 | Python library for Runpod API and serverless worker SDK.",
         long_description=long_description,
         long_description_content_type="text/markdown",
-        author="RunPod",
+        author="Runpod",
         author_email="engineer@runpod.io",
         url="https://runpod.io",
         project_urls={
