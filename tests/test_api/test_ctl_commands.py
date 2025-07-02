@@ -136,6 +136,76 @@ class TestCTL(unittest.TestCase):
                 "cloud_type must be one of ALL, COMMUNITY or SECURE",
             )
 
+    def test_create_pod_with_encrypt_volume(self):
+        """
+        Tests create_pod with encrypt_volume parameter
+        """
+        with patch("runpod.api.graphql.requests.post") as patch_request, patch(
+            "runpod.api.ctl_commands.get_gpu"
+        ) as patch_get_gpu, patch("runpod.api.ctl_commands.get_user") as patch_get_user:
+            patch_request.return_value.json.return_value = {
+                "data": {"podFindAndDeployOnDemand": {"id": "POD_ID_ENCRYPTED"}}
+            }
+
+            patch_get_gpu.return_value = None
+            patch_get_user.return_value = {
+                "networkVolumes": [
+                    {"id": "NETWORK_VOLUME_ID", "dataCenterId": "us-east-1"}
+                ]
+            }
+
+            # Test with encryption enabled
+            pod = ctl_commands.create_pod(
+                name="POD_NAME_ENCRYPTED",
+                image_name="IMAGE_NAME",
+                gpu_type_id="NVIDIA A100 80GB PCIe",
+                network_volume_id="NETWORK_VOLUME_ID",
+                encrypt_volume=True
+            )
+
+            self.assertEqual(pod["id"], "POD_ID_ENCRYPTED")
+
+            # Verify that the GraphQL mutation was called with encryptVolume: true
+            called_mutation = patch_request.call_args[1]['data']
+            self.assertIn("encryptVolume: true", called_mutation)
+
+            # Test with encryption explicitly disabled
+            patch_request.return_value.json.return_value = {
+                "data": {"podFindAndDeployOnDemand": {"id": "POD_ID_NO_ENCRYPTION"}}
+            }
+
+            pod = ctl_commands.create_pod(
+                name="POD_NAME_NO_ENCRYPTION",
+                image_name="IMAGE_NAME",
+                gpu_type_id="NVIDIA A100 80GB PCIe",
+                network_volume_id="NETWORK_VOLUME_ID",
+                encrypt_volume=False
+            )
+
+            self.assertEqual(pod["id"], "POD_ID_NO_ENCRYPTION")
+
+            # Verify that the GraphQL mutation was not called with encryptVolume
+            called_mutation = patch_request.call_args[1]['data']
+            self.assertNotIn("encryptVolume", called_mutation)
+
+            # Test with default value (should not include encryptVolume)
+            patch_request.return_value.json.return_value = {
+                "data": {"podFindAndDeployOnDemand": {"id": "POD_ID_DEFAULT"}}
+            }
+
+            pod = ctl_commands.create_pod(
+                name="POD_NAME_DEFAULT",
+                image_name="IMAGE_NAME",
+                gpu_type_id="NVIDIA A100 80GB PCIe",
+                network_volume_id="NETWORK_VOLUME_ID"
+            )
+
+            self.assertEqual(pod["id"], "POD_ID_DEFAULT")
+
+            # Verify that the GraphQL mutation was not called with encryptVolume (default)
+            called_mutation = patch_request.call_args[1]['data']
+            self.assertNotIn("encryptVolume", called_mutation)
+
     def test_stop_pod(self):
         """
         Test stop_pod

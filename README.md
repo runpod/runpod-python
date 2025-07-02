@@ -140,8 +140,14 @@ pod = runpod.get_pod(pod.id)
 # Create a pod with GPU
 pod = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
 
+# Create a pod with GPU and encrypted volume
+pod = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070", encrypt_volume=True)
+
 # Create a pod with CPU
 pod = runpod.create_pod("test", "runpod/stack", instance_id="cpu3c-2-4")
+
+# Create a pod with CPU and encrypted volume
+pod = runpod.create_pod("test", "runpod/stack", instance_id="cpu3c-2-4", encrypt_volume=True)
 
 # Stop the pod
 runpod.stop_pod(pod.id)
