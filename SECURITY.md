@@ -2,4 +2,4 @@
 
 ## Reporting a Vulnerability
 
-Suspected vulnerabilities can be reported to `justin.merrell@runpod.io`
+Suspected vulnerabilities can be reported to `security@runpod.io`
