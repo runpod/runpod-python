@@ -59,6 +59,7 @@ test = [
     "pytest-timeout",
     "pytest-watch",
     "pytest",
+    "twine",
 ]
 
 [build-system]
