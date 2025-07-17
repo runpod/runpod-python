@@ -1,4 +1,16 @@
-# Change Log
+# Changelog
+
+## [1.7.13](https://github.com/runpod/runpod-python/compare/1.7.12...v1.7.13) (2025-07-17)
+
+
+### Bug Fixes
+
+* allowedCudaVersions is treated as float without the quotes ([#431](https://github.com/runpod/runpod-python/issues/431)) ([b2bf0ce](https://github.com/runpod/runpod-python/commit/b2bf0ce68c38d5a6ade1365634aa83266d882ece))
+* label creation permission ([#445](https://github.com/runpod/runpod-python/issues/445)) ([0ca6da2](https://github.com/runpod/runpod-python/commit/0ca6da29919a1274567f5bd1d4c6cae56bc5c47e))
+* No module named 'fcntl' ([#434](https://github.com/runpod/runpod-python/issues/434)) ([88d2e4a](https://github.com/runpod/runpod-python/commit/88d2e4a2edc366ead08039691e43f1ebeeae843b))
+* proper public exports by __all__ ([#437](https://github.com/runpod/runpod-python/issues/437)) ([0a52c70](https://github.com/runpod/runpod-python/commit/0a52c70868685ee633ebfef160ab5d914dc79369))
+
+## Change Log
 
 ## Release 1.6.2 (2/12/24)
 
