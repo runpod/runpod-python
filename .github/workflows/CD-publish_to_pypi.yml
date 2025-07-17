@@ -1,54 +1,65 @@
 name: CD | Publish Python 🐍 distributions 📦 to PyPI
 
 on:
-  release:
-    types: [published]
-
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: google-github-actions/release-please-action@v3
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-type: python
+          package-name: runpod
+
   build-n-publish:
     name: Build and publish Python 🐍 distributions 📦 to PyPI
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write  # Required for OIDC
 
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python 3.11.10
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: 3.11.10
+          enable-cache: true
 
-      - name: Install pypa/build
-        run: >-
-          python -m
-          pip install
-          build
-          --user
+      - name: Set up Python 3.11.10
+        run: uv python install 3.11.10
 
-      - name: Build a binary wheel and a source tarball
-        run: >-
-          python -m
-          build
-          --sdist
-          --wheel
-          --outdir dist/
-          .
+      - name: Build package
+        run: uv build
 
       - name: Publish distribution 📦 to Test PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
-          repository_url: https://test.pypi.org/legacy/
+          repository-url: https://test.pypi.org/legacy/
 
       - name: Publish distribution 📦 to PyPI
-        # if: startsWith(github.ref, 'refs/tags')
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
 
   notify-runpod-workers:
     name: Notify workers
-    needs: build-n-publish
+    needs: [release-please, build-n-publish]
+    if: ${{ needs.release-please.outputs.release_created }}
     strategy:
       matrix:
         repo:
@@ -75,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Wait for propegation
+      - name: Wait for propagation
         run: sleep 300s
         shell: bash
 

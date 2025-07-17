@@ -7,8 +7,6 @@
 
 [![CI | End-to-End Runpod Python Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml)
 
-[![CI | Code Quality](https://github.com/runpod/runpod-python/actions/workflows/CI-pylint.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-pylint.yml)
-&nbsp;
 [![CI | Unit Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-pytests.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-pytests.yml)
 &nbsp;
 [![CI | CodeQL](https://github.com/runpod/runpod-python/actions/workflows/CI-codeql.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-codeql.yml)
@@ -36,10 +34,14 @@ Welcome to the official Python library for Runpod API &amp; SDK.
 # Install the latest release version
 pip install runpod
 
-# or
+# Using uv (faster alternative)
+uv add runpod
 
 # Install the latest development version (main branch)
 pip install git+https://github.com/runpod/runpod-python.git
+
+# Or with uv
+uv add git+https://github.com/runpod/runpod-python.git
 ```
 
 *Python 3.8 or higher is required to use the latest version of this package.*
