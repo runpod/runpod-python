@@ -50,6 +50,10 @@ runpod = "runpod.cli.entry:runpod_cli"
 
 
 [dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+    "twine>=6.1.0",
+]
 test = [
     "asynctest",
     "nest_asyncio",
@@ -59,7 +63,6 @@ test = [
     "pytest-timeout",
     "pytest-watch",
     "pytest",
-    "twine",
 ]
 
 [build-system]
