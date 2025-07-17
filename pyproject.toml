@@ -49,7 +49,7 @@ version_file = "runpod/_version.py"
 runpod = "runpod.cli.entry:runpod_cli"
 
 
-[project.optional-dependencies]
+[dependency-groups]
 test = [
     "asynctest",
     "nest_asyncio",
