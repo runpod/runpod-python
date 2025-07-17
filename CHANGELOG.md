@@ -2,13 +2,165 @@
 
 ## [1.7.13](https://github.com/runpod/runpod-python/compare/1.7.12...v1.7.13) (2025-07-17)
 
-
 ### Bug Fixes
 
 * allowedCudaVersions is treated as float without the quotes ([#431](https://github.com/runpod/runpod-python/issues/431)) ([b2bf0ce](https://github.com/runpod/runpod-python/commit/b2bf0ce68c38d5a6ade1365634aa83266d882ece))
 * label creation permission ([#445](https://github.com/runpod/runpod-python/issues/445)) ([0ca6da2](https://github.com/runpod/runpod-python/commit/0ca6da29919a1274567f5bd1d4c6cae56bc5c47e))
 * No module named 'fcntl' ([#434](https://github.com/runpod/runpod-python/issues/434)) ([88d2e4a](https://github.com/runpod/runpod-python/commit/88d2e4a2edc366ead08039691e43f1ebeeae843b))
 * proper public exports by __all__ ([#437](https://github.com/runpod/runpod-python/issues/437)) ([0a52c70](https://github.com/runpod/runpod-python/commit/0a52c70868685ee633ebfef160ab5d914dc79369))
+
+---
+
+## Release 1.7.12 (6/16/24)
+
+### Fixed
+
+- Resolved multiprocess local development issue.
+
+---
+
+## Release 1.7.11 (6/12/24)
+
+### Added
+
+- Added sync function for workspace copying.
+
+### Changed
+
+- README.md name update.
+- Dependency updates.
+
+### Fixed
+
+- Fixed ping failures.
+
+---
+
+## Release 1.7.10 (5/28/24)
+
+### Fixed
+
+- Corrected CUDA versions typing.
+- Improved Content-Disposition parsing.
+- Dependency updates.
+
+---
+
+## Release 1.7.9 (4/9/24)
+
+### Added
+
+- CPU Pod Creation support.
+
+### Changed
+
+- Retired sls-core.
+- Improved exception handling.
+
+---
+
+## Release 1.7.8 (4/5/24)
+
+### Added
+
+- Added allowed CUDA versions parameter.
+- Improved async job streaming.
+
+### Changed
+
+- Enhanced error handling for Serverless workers.
+- Updated GraphQL API key authorization.
+
+---
+
+## Release 1.7.7 (12/10/23)
+
+### Added
+
+- Added utility function for model-cache paths.
+
+### Changed
+
+- Dependency updates.
+
+### Fixed
+
+- Fixed streamed error handling.
+
+---
+
+## Release 1.7.6 (12/5/23)
+
+### Fixed
+
+- Resolved JobScaler request failures.
+- Improved input validation.
+
+---
+
+## Release 1.7.5 (11/20/23)
+
+### Fixed
+
+- Addressed race conditions in job queue.
+
+---
+
+## Release 1.7.4 (10/24/23)
+
+### Added
+
+- Added minimum network speed parameters for pod creation.
+
+### Fixed
+
+- Fixed long-running jobs crash.
+
+---
+
+## Release 1.7.3 (10/19/23)
+
+### Fixed
+
+- Performance improvements and bug fixes.
+
+---
+
+## Release 1.7.2 (10/17/23)
+
+### Fixed
+
+- Additional stability improvements.
+
+---
+
+## Release 1.7.1 (10/16/23)
+
+### Fixed
+
+- Bug fixes and improvements.
+
+---
+
+## Release 1.7.0 (10/13/23)
+
+### Added
+
+- Major version release with new features.
+
+### Changed
+
+- Breaking changes and improvements.
+
+---
+
+## Release 1.6.3 (2/14/24)
+
+### Fixed
+
+- Bug fixes and stability improvements.
+
+---
 
 ## Change Log
 
