@@ -2,15 +2,14 @@ name: CD | Publish Python 🐍 distributions 📦 to PyPI
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [main]
 
 permissions:
   contents: write
   pull-requests: write
   actions: write
   issues: write
+  id-token: write
 
 jobs:
   release-please:
@@ -26,36 +25,44 @@ jobs:
           release-type: python
           package-name: runpod
 
-  build-n-publish:
-    name: Build and publish Python 🐍 distributions 📦 to PyPI
+  # PyPI publishing
+  pypi-publish:
+    name: PyPI Publish
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      contents: read
-      id-token: write  # Required for OIDC
+
+    environment:
+      name: pypi-production
+      url: https://pypi.org/project/runpod/
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.10
+
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v2
         with:
           enable-cache: true
 
-      - name: Set up Python 3.11.10
-        run: uv python install 3.11.10
+      - name: Install dependencies
+        run: uv sync --all-groups
 
       - name: Build package
         run: uv build
 
-      - name: Publish distribution 📦 to Test PyPI
+      - name: Verify package
+        run: uv run twine check dist/*
+
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: https://test.pypi.org/legacy/
-
-      - name: Publish distribution 📦 to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          verbose: true
 
   notify-runpod-workers:
     name: Notify workers
