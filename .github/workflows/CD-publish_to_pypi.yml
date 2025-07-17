@@ -3,6 +3,16 @@ name: CD | Publish Python 🐍 distributions 📦 to PyPI
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Force publish without release-please'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: write
@@ -29,7 +39,7 @@ jobs:
   pypi-publish:
     name: PyPI Publish
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true') }}
     runs-on: ubuntu-latest
 
     environment:
@@ -66,8 +76,8 @@ jobs:
 
   notify-runpod-workers:
     name: Notify workers
-    needs: [release-please, build-n-publish]
-    if: ${{ needs.release-please.outputs.release_created }}
+    needs: [release-please, pypi-publish]
+    if: ${{ needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true') }}
     strategy:
       matrix:
         repo:
