@@ -1,4 +1,168 @@
-# Change Log
+# Changelog
+
+## [1.7.13](https://github.com/runpod/runpod-python/compare/1.7.12...v1.7.13) (2025-07-17)
+
+### Bug Fixes
+
+* allowedCudaVersions is treated as float without the quotes ([#431](https://github.com/runpod/runpod-python/issues/431)) ([b2bf0ce](https://github.com/runpod/runpod-python/commit/b2bf0ce68c38d5a6ade1365634aa83266d882ece))
+* label creation permission ([#445](https://github.com/runpod/runpod-python/issues/445)) ([0ca6da2](https://github.com/runpod/runpod-python/commit/0ca6da29919a1274567f5bd1d4c6cae56bc5c47e))
+* No module named 'fcntl' ([#434](https://github.com/runpod/runpod-python/issues/434)) ([88d2e4a](https://github.com/runpod/runpod-python/commit/88d2e4a2edc366ead08039691e43f1ebeeae843b))
+* proper public exports by __all__ ([#437](https://github.com/runpod/runpod-python/issues/437)) ([0a52c70](https://github.com/runpod/runpod-python/commit/0a52c70868685ee633ebfef160ab5d914dc79369))
+
+---
+
+## Release 1.7.12 (2024-06-16)
+
+### Fixed
+
+- Resolved multiprocess local development issue.
+
+---
+
+## Release 1.7.11 (2024-06-12)
+
+### Added
+
+- Added sync function for workspace copying.
+
+### Changed
+
+- README.md name update.
+- Dependency updates.
+
+### Fixed
+
+- Fixed ping failures.
+
+---
+
+## Release 1.7.10 (2024-05-28)
+
+### Fixed
+
+- Corrected CUDA versions typing.
+- Improved Content-Disposition parsing.
+- Dependency updates.
+
+---
+
+## Release 1.7.9 (2024-04-09)
+
+### Added
+
+- CPU Pod Creation support.
+
+### Changed
+
+- Retired sls-core.
+- Improved exception handling.
+
+---
+
+## Release 1.7.8 (2024-04-05)
+
+### Added
+
+- Added allowed CUDA versions parameter.
+- Improved async job streaming.
+
+### Changed
+
+- Enhanced error handling for Serverless workers.
+- Updated GraphQL API key authorization.
+
+---
+
+## Release 1.7.7 (2024-12-10)
+
+### Added
+
+- Added utility function for model-cache paths.
+
+### Changed
+
+- Dependency updates.
+
+### Fixed
+
+- Fixed streamed error handling.
+
+---
+
+## Release 1.7.6 (2024-12-05)
+
+### Fixed
+
+- Resolved JobScaler request failures.
+- Improved input validation.
+
+---
+
+## Release 1.7.5 (2024-11-20)
+
+### Fixed
+
+- Addressed race conditions in job queue.
+
+---
+
+## Release 1.7.4 (2024-10-24)
+
+### Added
+
+- Added minimum network speed parameters for pod creation.
+
+### Fixed
+
+- Fixed long-running jobs crash.
+
+---
+
+## Release 1.7.3 (2024-10-15)
+
+### Fixed
+
+- Performance improvements and bug fixes.
+
+---
+
+## Release 1.7.2 (2024-10-07)
+
+### Fixed
+
+- Additional stability improvements.
+
+---
+
+## Release 1.7.1 (2024-09-26)
+
+### Fixed
+
+- Bug fixes and improvements.
+
+---
+
+## Release 1.7.0 (2024-08-07)
+
+### Added
+
+- Major version release with new features.
+
+### Changed
+
+- Breaking changes and improvements.
+
+---
+
+## Release 1.6.3 (2/14/24)
+
+### Fixed
+
+- Bug fixes and stability improvements.
+
+---
+
+## Change Log
 
 ## Release 1.6.3 (TBD)
 

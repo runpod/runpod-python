@@ -1,54 +1,83 @@
 name: CD | Publish Python 🐍 distributions 📦 to PyPI
 
 on:
-  release:
-    types: [published]
-
+  push:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Force publish without release-please'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  issues: write
+  id-token: write
 
 jobs:
-  build-n-publish:
-    name: Build and publish Python 🐍 distributions 📦 to PyPI
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: google-github-actions/release-please-action@v3
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-type: python
+          package-name: runpod
+
+  # PyPI publishing
+  pypi-publish:
+    name: PyPI Publish
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true') }}
     runs-on: ubuntu-latest
 
+    environment:
+      name: pypi-production
+      url: https://pypi.org/project/runpod/
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python 3.11.10
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: 3.11.10
 
-      - name: Install pypa/build
-        run: >-
-          python -m
-          pip install
-          build
-          --user
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
 
-      - name: Build a binary wheel and a source tarball
-        run: >-
-          python -m
-          build
-          --sdist
-          --wheel
-          --outdir dist/
-          .
+      - name: Install dependencies
+        run: uv sync --all-groups
 
-      - name: Publish distribution 📦 to Test PyPI
+      - name: Build package
+        run: uv build
+
+      - name: Verify package
+        run: uv run twine check dist/*
+
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
-          repository_url: https://test.pypi.org/legacy/
-
-      - name: Publish distribution 📦 to PyPI
-        # if: startsWith(github.ref, 'refs/tags')
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
 
   notify-runpod-workers:
     name: Notify workers
-    needs: build-n-publish
+    needs: [release-please, pypi-publish]
+    if: ${{ needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true') }}
     strategy:
       matrix:
         repo:
@@ -75,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Wait for propegation
+      - name: Wait for propagation
         run: sleep 300s
         shell: bash
 
