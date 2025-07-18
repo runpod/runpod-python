@@ -88,7 +88,7 @@ def get_pod(pod_id: str):
 
 def create_pod(
     name: str,
-    image_name: str,
+    image_name: Optional[str] = "",
     gpu_type_id: Optional[str] = None,
     cloud_type: str = "ALL",
     support_public_ip: bool = True,
@@ -143,6 +143,10 @@ def create_pod(
     >>> pod_id = runpod.create_pod("test", "runpod/stack", instance_id="cpu3c-2-4")
     """
     # Input Validation
+
+    if not image_name and not template_id:
+        raise ValueError("Either image_name or template_id must be provided")
+
     if gpu_type_id is not None:
         get_gpu(gpu_type_id)  # Check if GPU exists, will raise ValueError if not.
     if cloud_type not in ["ALL", "COMMUNITY", "SECURE"]:

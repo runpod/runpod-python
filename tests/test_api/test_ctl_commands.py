@@ -206,6 +206,26 @@ class TestCTL(unittest.TestCase):
             called_mutation = patch_request.call_args[1]['data']
             self.assertNotIn("encryptVolume", called_mutation)
 
+    def test_create_pod_missing_image_and_template(self):
+        """
+        Tests create_pod error if neither image_name nor template_id are provided
+        """
+        with patch("runpod.api.graphql.requests.post"), patch(
+            "runpod.api.ctl_commands.get_gpu"
+        ), patch("runpod.api.ctl_commands.get_user"):
+            with self.assertRaises(ValueError) as context:
+                ctl_commands.create_pod(
+                    name="POD_NAME",
+                    gpu_type_id="NVIDIA A100 80GB PCIe",
+                    network_volume_id="NETWORK_VOLUME_ID",
+                )
+
+            self.assertEqual(
+                str(context.exception),
+                "Either image_name or template_id must be provided",
+            )
+            
+            
     def test_stop_pod(self):
         """
         Test stop_pod
