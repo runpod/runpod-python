@@ -136,6 +136,18 @@ class TestCTL(unittest.TestCase):
                 "cloud_type must be one of ALL, COMMUNITY or SECURE",
             )
 
+            with self.assertRaises(ValueError) as context:
+                pod = ctl_commands.create_pod(
+                    name="POD_NAME",
+                    gpu_type_id="NVIDIA A100 80GB PCIe",
+                    network_volume_id="NETWORK_VOLUME_ID",
+                )
+
+            self.assertEqual(
+                str(context.exception),
+                "Either image_name or template_id must be provided",
+            )
+
     def test_stop_pod(self):
         """
         Test stop_pod
