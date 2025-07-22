@@ -164,17 +164,6 @@
 
 ## Change Log
 
-## Release 1.6.3 (TBD)
-
-### Added
-
-- Support for volume encryption via `encrypt_volume` parameter in `create_pod()` function and CLI commands.
-  - Add `encrypt_volume: bool = False` parameter to pod creation API and GraphQL mutations.
-  - Add `--encrypt-volume/--no-encrypt-volume` CLI option for `runpod pod create` command.
-  - Add `encrypt_volume` configuration support in project `runpod.toml` files for development pods.
-
----
-
 ## Release 1.6.2 (2/12/24)
 
 ### Fixed
