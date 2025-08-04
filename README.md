@@ -151,6 +151,9 @@ runpod.stop_pod(pod.id)
 # Resume the pod
 runpod.resume_pod(pod.id)
 
+# Restart the pod
+runpod.restart_pod(pod.id)
+
 # Terminate the pod
 runpod.terminate_pod(pod.id)
 ```

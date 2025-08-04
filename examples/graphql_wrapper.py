@@ -40,5 +40,13 @@ print(pod)
 print("Waiting for pod to be resumed...")
 time.sleep(10)
 
+# Restart a pod
+pod = runpod.restart_pod(pod["id"])
+print(pod)
+
+# Pause while the pod is being restarted
+print("Waiting for pod to be restarted...")
+time.sleep(10)
+
 # Terminate a pod
 runpod.terminate_pod(pod["id"])

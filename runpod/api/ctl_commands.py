@@ -249,6 +249,25 @@ def terminate_pod(pod_id: str):
     run_graphql_query(pod_mutations.generate_pod_terminate_mutation(pod_id))
 
 
+def restart_pod(pod_id: str):
+    """
+    Restart a pod
+
+    :param pod_id: the id of the pod
+
+    :example:
+
+    >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
+    >>> runpod.restart_pod(pod_id)
+    """
+    raw_response = run_graphql_query(
+        pod_mutations.generate_pod_restart_mutation(pod_id)
+    )
+
+    cleaned_response = raw_response["data"]["podRestart"]
+    return cleaned_response
+
+
 def create_template(
     name: str,
     image_name: str,

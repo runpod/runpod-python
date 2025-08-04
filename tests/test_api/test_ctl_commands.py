@@ -185,6 +185,20 @@ class TestCTL(unittest.TestCase):
 
             self.assertIsNone(ctl_commands.terminate_pod(pod_id="POD_ID"))
 
+    def test_restart_pod(self):
+        """
+        Test restart_pod
+        """
+        with patch("runpod.api.graphql.requests.post") as patch_request:
+            patch_request.return_value.json.return_value = {
+                "data": {"podRestart": {"id": "POD_ID", "desiredStatus": "restarting"}}
+            }
+
+            pod = ctl_commands.restart_pod(pod_id="POD_ID")
+
+            self.assertEqual(pod["id"], "POD_ID")
+            self.assertEqual(pod["desiredStatus"], "restarting")
+
     def test_raised_error(self):
         """
         Test raised_error

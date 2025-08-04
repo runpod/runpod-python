@@ -76,6 +76,16 @@ class TestPodMutations(unittest.TestCase):
         # Here you should check the correct structure of the result
         self.assertIn("mutation", result)
 
+    def test_generate_pod_restart_mutation(self):
+        """
+        Test generate_pod_restart_mutation
+        """
+        result = pods.generate_pod_restart_mutation("pod_id")
+        # Here you should check the correct structure of the result
+        self.assertIn("mutation", result)
+        self.assertIn("podRestart", result)
+        self.assertIn("pod_id", result)
+
     def test_generate_pod_terminate_mutation(self):
         """
         Test generate_pod_terminate_mutation
