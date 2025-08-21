@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 
 import requests
 
-import runpod
 from runpod import error
 from runpod.user_agent import USER_AGENT
 
@@ -23,8 +22,10 @@ def run_graphql_query(query: str, api_key: Optional[str] = None) -> Dict[str, An
         query: The GraphQL query to execute.
         api_key: Optional API key to use for this query.
     """
+    from runpod import api_key as global_api_key  # pylint: disable=import-outside-toplevel, cyclic-import
+    
     # Use provided API key or fall back to global
-    effective_api_key = api_key or runpod.api_key
+    effective_api_key = api_key or global_api_key
     
     if not effective_api_key:
         raise error.AuthenticationError("No API key provided")

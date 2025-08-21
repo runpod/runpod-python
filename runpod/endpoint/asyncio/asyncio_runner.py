@@ -5,7 +5,6 @@
 import asyncio
 from typing import Any, Dict, Optional
 
-import runpod
 from runpod.endpoint.helpers import FINAL_STATES, is_completed
 from runpod.http_client import ClientSession
 
@@ -24,13 +23,18 @@ class Job:
             session: The aiohttp ClientSession.
             api_key: Optional API key for this specific job.
         """
+        from runpod import (  # pylint: disable=import-outside-toplevel,cyclic-import
+            api_key as global_api_key,
+            endpoint_url_base,
+        )
+        
         self.endpoint_id = endpoint_id
         self.job_id = job_id
         self.session = session
-        self.endpoint_url_base = runpod.endpoint_url_base
+        self.endpoint_url_base = endpoint_url_base
         
         # Use provided API key or fall back to global
-        effective_api_key = api_key or runpod.api_key
+        effective_api_key = api_key or global_api_key
         
         if effective_api_key is None:
             raise RuntimeError("API key must be provided or set globally")
@@ -135,12 +139,17 @@ class Endpoint:
             session: The aiohttp ClientSession.
             api_key: Optional API key for this endpoint instance.
         """
+        from runpod import (  # pylint: disable=import-outside-toplevel
+            api_key as global_api_key,
+            endpoint_url_base,
+        )
+        
         self.endpoint_id = endpoint_id
         self.session = session
-        self.endpoint_url_base = runpod.endpoint_url_base
+        self.endpoint_url_base = endpoint_url_base
         
         # Store instance API key for future requests
-        self.api_key = api_key or runpod.api_key
+        self.api_key = api_key or global_api_key
         
         if self.api_key is None:
             raise RuntimeError("API key must be provided or set globally")

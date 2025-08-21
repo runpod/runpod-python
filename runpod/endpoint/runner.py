@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
-import runpod
 from runpod.endpoint.helpers import (
     API_KEY_NOT_SET_MSG,
     FINAL_STATES,
@@ -33,8 +32,13 @@ class RunPodClient:
         Raises:
             RuntimeError: If the API key has not been initialized.
         """
+        from runpod import (  # pylint: disable=import-outside-toplevel, cyclic-import
+            api_key as global_api_key,
+            endpoint_url_base,
+        )
+        
         # Use provided api_key or fall back to global
-        self.api_key = api_key or runpod.api_key
+        self.api_key = api_key or global_api_key
         
         if self.api_key is None:
             raise RuntimeError(API_KEY_NOT_SET_MSG)
@@ -48,7 +52,7 @@ class RunPodClient:
             "Authorization": f"Bearer {self.api_key}",
         }
 
-        self.endpoint_url_base = runpod.endpoint_url_base
+        self.endpoint_url_base = endpoint_url_base
 
     def _request(
         self, method: str, endpoint: str, data: Optional[dict] = None, 
