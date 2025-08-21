@@ -22,6 +22,54 @@ class TestRunPodClient(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             runpod.api_key = None
             RunPodClient()
+    
+    def test_client_with_custom_api_key(self):
+        """Test RunPodClient with custom API key"""
+        custom_key = "CUSTOM_API_KEY"
+        client = RunPodClient(api_key=custom_key)
+        
+        # Verify headers contain custom key
+        self.assertEqual(
+            client.headers["Authorization"], 
+            f"Bearer {custom_key}"
+        )
+        self.assertEqual(client.api_key, custom_key)
+    
+    def test_client_fallback_to_global(self):
+        """Test RunPodClient falls back to global API key"""
+        runpod.api_key = "GLOBAL_API_KEY"
+        client = RunPodClient()
+        
+        self.assertEqual(
+            client.headers["Authorization"],
+            "Bearer GLOBAL_API_KEY"
+        )
+        self.assertEqual(client.api_key, "GLOBAL_API_KEY")
+    
+    def test_client_custom_overrides_global(self):
+        """Test custom API key overrides global"""
+        runpod.api_key = "GLOBAL_API_KEY"
+        custom_key = "CUSTOM_API_KEY"
+        client = RunPodClient(api_key=custom_key)
+        
+        self.assertEqual(
+            client.headers["Authorization"],
+            f"Bearer {custom_key}"
+        )
+        self.assertEqual(client.api_key, custom_key)
+    
+    def test_conflicting_api_keys_raises_error(self):
+        """Test that conflicting API keys raise an error"""
+        instance_key = "INSTANCE_KEY"
+        request_key = "DIFFERENT_KEY"
+        
+        client = RunPodClient(api_key=instance_key)
+        
+        # Should raise ValueError when keys conflict
+        with self.assertRaises(ValueError) as context:
+            client._request("POST", "test", api_key=request_key)
+        
+        self.assertIn("Conflicting API keys", str(context.exception))
 
     @patch.object(requests.Session, "post")
     def test_post_with_401(self, mock_post):
@@ -96,6 +144,42 @@ class TestEndpoint(unittest.TestCase):
         """Common setup for the tests."""
         runpod.api_key = self.MOCK_API_KEY
         self.endpoint = Endpoint(self.ENDPOINT_ID)
+    
+    def test_endpoint_with_instance_api_key(self):
+        """Test Endpoint with instance-level API key"""
+        custom_key = "INSTANCE_API_KEY"
+        endpoint = Endpoint(self.ENDPOINT_ID, api_key=custom_key)
+        
+        # Verify the client was initialized with custom API key
+        self.assertEqual(endpoint.rp_client.api_key, custom_key)
+    
+    def test_endpoint_with_per_request_api_key(self):
+        """Test Endpoint with per-request API key"""
+        instance_key = "INSTANCE_KEY"
+        request_key = "REQUEST_KEY"
+        
+        endpoint = Endpoint(self.ENDPOINT_ID, api_key=instance_key)
+        
+        # Use a different key for this specific request - should raise error
+        with self.assertRaises(ValueError) as context:
+            endpoint.run(self.MODEL_INPUT, api_key=request_key)
+        
+        self.assertIn("Conflicting API keys", str(context.exception))
+    
+    @patch("runpod.endpoint.runner.RunPodClient._request")
+    def test_endpoint_same_api_keys_no_error(self, mock_request):
+        """Test that same API keys don't raise an error"""
+        same_key = "SAME_KEY"
+        
+        endpoint = Endpoint(self.ENDPOINT_ID, api_key=same_key)
+        mock_request.return_value = {"id": "job_123", "status": "IN_PROGRESS"}
+        
+        # Should not raise error when keys are the same
+        try:
+            job = endpoint.run(self.MODEL_INPUT, api_key=same_key)
+            self.assertEqual(job.job_id, "job_123")
+        except ValueError:
+            self.fail("Should not raise ValueError for identical keys")
 
     @patch("runpod.endpoint.runner.RunPodClient._request")
     def test_endpoint_run(self, mock_client_request):
@@ -110,6 +194,7 @@ class TestEndpoint(unittest.TestCase):
             f"{self.ENDPOINT_ID}/run",
             {"input": {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}},
             10,
+            api_key=None
         )
 
         self.assertIsInstance(run_request, Job)
@@ -117,7 +202,7 @@ class TestEndpoint(unittest.TestCase):
         self.assertEqual(run_request.status(), "IN_PROGRESS")
 
         mock_client_request.assert_called_with(
-            "GET", f"{self.ENDPOINT_ID}/status/123", timeout=10
+            "GET", f"{self.ENDPOINT_ID}/status/123", timeout=10, api_key=None
         )
 
     @patch("runpod.endpoint.runner.RunPodClient._request")
@@ -139,6 +224,7 @@ class TestEndpoint(unittest.TestCase):
             f"{self.ENDPOINT_ID}/runsync",
             {"input": {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}},
             86400,
+            api_key=None
         )
 
     @patch("runpod.endpoint.runner.RunPodClient._request")
@@ -147,7 +233,7 @@ class TestEndpoint(unittest.TestCase):
         self.endpoint.health()
 
         mock_client_request.assert_called_once_with(
-            "GET", f"{self.ENDPOINT_ID}/health", timeout=3
+            "GET", f"{self.ENDPOINT_ID}/health", timeout=3, api_key=None
         )
 
     @patch("runpod.endpoint.runner.RunPodClient._request")
@@ -156,7 +242,7 @@ class TestEndpoint(unittest.TestCase):
         self.endpoint.purge_queue()
 
         mock_client_request.assert_called_once_with(
-            "POST", f"{self.ENDPOINT_ID}/purge-queue", None, 3
+            "POST", f"{self.ENDPOINT_ID}/purge-queue", None, 3, api_key=None
         )
 
     def test_missing_api_key(self):
@@ -293,7 +379,7 @@ class TestJob(unittest.TestCase):
         job.cancel()
 
         mock_client.post.assert_called_with(
-            "endpoint_id/cancel/job_id", data=None, timeout=3
+            "endpoint_id/cancel/job_id", data=None, timeout=3, api_key=None
         )
 
     @patch("runpod.endpoint.runner.RunPodClient")

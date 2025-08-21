@@ -3,7 +3,7 @@
 # pylint: disable=too-few-public-methods,R0801
 
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from runpod.endpoint.helpers import FINAL_STATES, is_completed
 from runpod.http_client import ClientSession
@@ -12,21 +12,38 @@ from runpod.http_client import ClientSession
 class Job:
     """Class representing a job for an asynchronous endpoint"""
 
-    def __init__(self, endpoint_id: str, job_id: str, session: ClientSession):
+    def __init__(self, endpoint_id: str, job_id: str, session: ClientSession,
+                 api_key: Optional[str] = None):
+        """
+        Initialize a Job instance with optional API key.
+        
+        Args:
+            endpoint_id: The identifier for the endpoint.
+            job_id: The identifier for the job.
+            session: The aiohttp ClientSession.
+            api_key: Optional API key for this specific job.
+        """
         from runpod import (  # pylint: disable=import-outside-toplevel,cyclic-import
-            api_key,
+            api_key as global_api_key,
             endpoint_url_base,
         )
-
+        
         self.endpoint_id = endpoint_id
         self.job_id = job_id
-        self.headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "X-Request-ID": job_id,
-        }
         self.session = session
         self.endpoint_url_base = endpoint_url_base
+        
+        # Use provided API key or fall back to global
+        effective_api_key = api_key or global_api_key
+        
+        if effective_api_key is None:
+            raise RuntimeError("API key must be provided or set globally")
+        
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {effective_api_key}",
+            "X-Request-ID": job_id,
+        }
 
         self.job_status = None
         self.job_output = None
@@ -112,54 +129,108 @@ class Job:
 class Endpoint:
     """Class for running endpoint"""
 
-    def __init__(self, endpoint_id: str, session: ClientSession):
-        from runpod import (
-            api_key,  # pylint: disable=import-outside-toplevel
+    def __init__(self, endpoint_id: str, session: ClientSession, 
+                 api_key: Optional[str] = None):
+        """
+        Initialize an async Endpoint instance.
+        
+        Args:
+            endpoint_id: The identifier for the endpoint.
+            session: The aiohttp ClientSession.
+            api_key: Optional API key for this endpoint instance.
+        """
+        from runpod import (  # pylint: disable=import-outside-toplevel
+            api_key as global_api_key,
             endpoint_url_base,
         )
-
+        
         self.endpoint_id = endpoint_id
+        self.session = session
+        self.endpoint_url_base = endpoint_url_base
         self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
+        
+        # Store instance API key for future requests
+        self.api_key = api_key or global_api_key
+        
+        if self.api_key is None:
+            raise RuntimeError("API key must be provided or set globally")
+        
+        # Keep headers attribute for backward compatibility
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {self.api_key}",
         }
-        self.session = session
+    
+    def _get_headers(self, api_key: Optional[str] = None) -> dict:
+        """
+        Get headers with the appropriate API key.
+        
+        Raises:
+            ValueError: If request API key conflicts with instance API key.
+        """
+        # Check for conflicting API keys
+        if api_key and self.api_key and api_key != self.api_key:
+            raise ValueError(
+                "Conflicting API keys: Request API key differs from instance API key. "
+                "Use only one API key source to avoid security issues."
+            )
+        
+        effective_api_key = api_key or self.api_key
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {effective_api_key}",
+        }
 
-    async def run(self, endpoint_input: dict) -> Job:
-        """Runs endpoint with specified input
+    async def run(self, endpoint_input: dict, api_key: Optional[str] = None) -> Job:
+        """
+        Runs endpoint with specified input.
 
         Args:
             endpoint_input: any dictionary with input
+            api_key: Optional API key to use for this specific request.
 
         Returns:
             Newly created job
         """
+        headers = self._get_headers(api_key)
+        
         async with self.session.post(
-            self.endpoint_url, headers=self.headers, json={"input": endpoint_input}
+            self.endpoint_url, headers=headers, json={"input": endpoint_input}
         ) as resp:
             json_resp = await resp.json()
 
-        return Job(self.endpoint_id, json_resp["id"], self.session)
+        # Pass the API key to the Job instance
+        return Job(self.endpoint_id, json_resp["id"], self.session, 
+                   api_key=api_key or self.api_key)
 
-    async def health(self) -> dict:
-        """Checks health of endpoint
+    async def health(self, api_key: Optional[str] = None) -> dict:
+        """
+        Checks health of endpoint
+
+        Args:
+            api_key: Optional API key to use for this specific request.
 
         Returns:
             Health of endpoint
         """
-        async with self.session.get(
-            f"{self.endpoint_id}/health", headers=self.headers
-        ) as resp:
+        headers = self._get_headers(api_key)
+        health_url = f"{self.endpoint_url_base}/{self.endpoint_id}/health"
+        
+        async with self.session.get(health_url, headers=headers) as resp:
             return await resp.json()
 
-    async def purge_queue(self) -> dict:
-        """Purges queue of endpoint
+    async def purge_queue(self, api_key: Optional[str] = None) -> dict:
+        """
+        Purges queue of endpoint
+
+        Args:
+            api_key: Optional API key to use for this specific request.
 
         Returns:
             Purge status
         """
-        async with self.session.post(
-            f"{self.endpoint_id}/purge", headers=self.headers
-        ) as resp:
+        headers = self._get_headers(api_key)
+        purge_url = f"{self.endpoint_url_base}/{self.endpoint_id}/purge-queue"
+        
+        async with self.session.post(purge_url, headers=headers) as resp:
             return await resp.json()
