@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
+import runpod
 from runpod.endpoint.helpers import (
     API_KEY_NOT_SET_MSG,
     FINAL_STATES,
@@ -22,19 +23,20 @@ from runpod.endpoint.helpers import (
 class RunPodClient:
     """A client for running endpoint calls."""
 
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None):
         """
         Initialize a RunPodClient instance.
+
+        Args:
+            api_key: Optional API key. If not provided, uses global api_key.
 
         Raises:
             RuntimeError: If the API key has not been initialized.
         """
-        from runpod import (  # pylint: disable=import-outside-toplevel, cyclic-import
-            api_key,
-            endpoint_url_base,
-        )
-
-        if api_key is None:
+        # Use provided api_key or fall back to global
+        self.api_key = api_key or runpod.api_key
+        
+        if self.api_key is None:
             raise RuntimeError(API_KEY_NOT_SET_MSG)
 
         self.rp_session = requests.Session()
@@ -43,13 +45,14 @@ class RunPodClient:
 
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {self.api_key}",
         }
 
-        self.endpoint_url_base = endpoint_url_base
+        self.endpoint_url_base = runpod.endpoint_url_base
 
     def _request(
-        self, method: str, endpoint: str, data: Optional[dict] = None, timeout: int = 10
+        self, method: str, endpoint: str, data: Optional[dict] = None, 
+        timeout: int = 10, api_key: Optional[str] = None
     ):
         """
         Make a request to the specified endpoint using the given HTTP method.
@@ -59,17 +62,33 @@ class RunPodClient:
             endpoint: The endpoint path to which the request will be made.
             data: The JSON payload to send with the request.
             timeout: The number of seconds to wait for the server to send data before giving up.
+            api_key: Optional API key to use for this specific request.
 
         Returns:
             The JSON response from the server.
 
         Raises:
+            ValueError: If request API key conflicts with instance API key.
             RuntimeError: If the response returns a 401 Unauthorized status.
             requests.HTTPError: If the response contains an unsuccessful status code.
         """
+        # Check for conflicting API keys
+        if api_key and self.api_key and api_key != self.api_key:
+            raise ValueError(
+                "Conflicting API keys: Request API key differs from instance API key. "
+                "Use only one API key source to avoid security issues."
+            )
+        
+        # Use request-specific API key if provided, otherwise use instance API key
+        effective_api_key = api_key or self.api_key
+        headers = self.headers if not api_key else {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {effective_api_key}",
+        }
+        
         url = f"{self.endpoint_url_base}/{endpoint}"
         response = self.rp_session.request(
-            method, url, headers=self.headers, json=data, timeout=timeout
+            method, url, headers=headers, json=data, timeout=timeout
         )
 
         if response.status_code == 401:
@@ -78,13 +97,13 @@ class RunPodClient:
         response.raise_for_status()
         return response.json()
 
-    def post(self, endpoint: str, data: dict, timeout: int = 10):
-        """Post to the endpoint."""
-        return self._request("POST", endpoint, data, timeout)
+    def post(self, endpoint: str, data: dict, timeout: int = 10, api_key: Optional[str] = None):
+        """Post to the endpoint with optional API key override."""
+        return self._request("POST", endpoint, data, timeout, api_key=api_key)
 
-    def get(self, endpoint: str, timeout: int = 10):
-        """Get from the endpoint."""
-        return self._request("GET", endpoint, timeout=timeout)
+    def get(self, endpoint: str, timeout: int = 10, api_key: Optional[str] = None):
+        """Get from the endpoint with optional API key override."""
+        return self._request("GET", endpoint, timeout=timeout, api_key=api_key)
 
 
 # ---------------------------------------------------------------------------- #
@@ -93,7 +112,8 @@ class RunPodClient:
 class Job:
     """Represents a job to be run on the Runpod service."""
 
-    def __init__(self, endpoint_id: str, job_id: str, client: RunPodClient):
+    def __init__(self, endpoint_id: str, job_id: str, client: RunPodClient, 
+                 api_key: Optional[str] = None):
         """
         Initialize a Job instance with the given endpoint ID and job ID.
 
@@ -101,10 +121,12 @@ class Job:
             endpoint_id: The identifier for the endpoint.
             job_id: The identifier for the job.
             client: An instance of the RunPodClient to make requests with.
+            api_key: Optional API key for this specific job.
         """
         self.endpoint_id = endpoint_id
         self.job_id = job_id
         self.rp_client = client
+        self.api_key = api_key  # Store job-specific API key
 
         self.job_status = None
         self.job_output = None
@@ -112,7 +134,8 @@ class Job:
     def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
         """Returns the raw json of the status, raises an exception if invalid"""
         status_url = f"{self.endpoint_id}/{source}/{self.job_id}"
-        job_state = self.rp_client.get(endpoint=status_url)
+        # Pass the job-specific API key if available
+        job_state = self.rp_client.get(endpoint=status_url, api_key=self.api_key)
 
         if is_completed(job_state["status"]):
             self.job_status = job_state["status"]
@@ -168,7 +191,10 @@ class Job:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
         return self.rp_client.post(
-            f"{self.endpoint_id}/cancel/{self.job_id}", data=None, timeout=timeout
+            f"{self.endpoint_id}/cancel/{self.job_id}", 
+            data=None, 
+            timeout=timeout,
+            api_key=self.api_key
         )
 
 
@@ -178,12 +204,13 @@ class Job:
 class Endpoint:
     """Manages an endpoint to run jobs on the Runpod service."""
 
-    def __init__(self, endpoint_id: str):
+    def __init__(self, endpoint_id: str, api_key: Optional[str] = None):
         """
         Initialize an Endpoint instance with the given endpoint ID.
 
         Args:
             endpoint_id: The identifier for the endpoint.
+            api_key: Optional API key for this endpoint instance.
 
         Example:
             >>> endpoint = runpod.Endpoint("ENDPOINT_ID")
@@ -192,14 +219,15 @@ class Endpoint:
             >>> print(run_request.output())
         """
         self.endpoint_id = endpoint_id
-        self.rp_client = RunPodClient()
+        self.rp_client = RunPodClient(api_key=api_key)
 
-    def run(self, request_input: Dict[str, Any]) -> Job:
+    def run(self, request_input: Dict[str, Any], api_key: Optional[str] = None) -> Job:
         """
         Run the endpoint with the given input.
 
         Args:
             request_input: The input to pass into the endpoint.
+            api_key: Optional API key to use for this specific request.
 
         Returns:
             A Job instance for the run request.
@@ -207,48 +235,67 @@ class Endpoint:
         if not request_input.get("input"):
             request_input = {"input": request_input}
 
-        job_request = self.rp_client.post(f"{self.endpoint_id}/run", request_input)
-        return Job(self.endpoint_id, job_request["id"], self.rp_client)
+        job_request = self.rp_client.post(
+            f"{self.endpoint_id}/run", 
+            request_input,
+            api_key=api_key
+        )
+        return Job(self.endpoint_id, job_request["id"], self.rp_client, api_key=api_key)
 
     def run_sync(
-        self, request_input: Dict[str, Any], timeout: int = 86400
+        self, request_input: Dict[str, Any], timeout: int = 86400, 
+        api_key: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Run the endpoint with the given input synchronously.
 
         Args:
             request_input: The input to pass into the endpoint.
+            timeout: Maximum time to wait for the job to complete.
+            api_key: Optional API key to use for this specific request.
         """
         if not request_input.get("input"):
             request_input = {"input": request_input}
 
         job_request = self.rp_client.post(
-            f"{self.endpoint_id}/runsync", request_input, timeout=timeout
+            f"{self.endpoint_id}/runsync", 
+            request_input, 
+            timeout=timeout,
+            api_key=api_key
         )
 
         if job_request["status"] in FINAL_STATES:
             return job_request.get("output", None)
 
-        return Job(self.endpoint_id, job_request["id"], self.rp_client).output(
-            timeout=timeout
-        )
+        return Job(
+            self.endpoint_id, job_request["id"], self.rp_client, api_key=api_key
+        ).output(timeout=timeout)
 
-    def health(self, timeout: int = 3) -> Dict[str, Any]:
+    def health(self, timeout: int = 3, api_key: Optional[str] = None) -> Dict[str, Any]:
         """
         Check the health of the endpoint (number/state of workers, number/state of requests).
 
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
+            api_key: Optional API key to use for this specific request.
         """
-        return self.rp_client.get(f"{self.endpoint_id}/health", timeout=timeout)
+        return self.rp_client.get(
+            f"{self.endpoint_id}/health", 
+            timeout=timeout, 
+            api_key=api_key
+        )
 
-    def purge_queue(self, timeout: int = 3) -> Dict[str, Any]:
+    def purge_queue(self, timeout: int = 3, api_key: Optional[str] = None) -> Dict[str, Any]:
         """
         Purges the endpoint's job queue and returns the result of the purge request.
 
         Args:
             timeout: The number of seconds to wait for the server to respond before giving up.
+            api_key: Optional API key to use for this specific request.
         """
         return self.rp_client.post(
-            f"{self.endpoint_id}/purge-queue", data=None, timeout=timeout
+            f"{self.endpoint_id}/purge-queue", 
+            data=None, 
+            timeout=timeout,
+            api_key=api_key
         )
