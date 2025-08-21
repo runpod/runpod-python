@@ -147,12 +147,19 @@ class Endpoint:
         self.endpoint_id = endpoint_id
         self.session = session
         self.endpoint_url_base = endpoint_url_base
+        self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
         
         # Store instance API key for future requests
         self.api_key = api_key or global_api_key
         
         if self.api_key is None:
             raise RuntimeError("API key must be provided or set globally")
+        
+        # Keep headers attribute for backward compatibility
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
     
     def _get_headers(self, api_key: Optional[str] = None) -> dict:
         """
@@ -186,10 +193,9 @@ class Endpoint:
             Newly created job
         """
         headers = self._get_headers(api_key)
-        endpoint_url = f"{self.endpoint_url_base}/{self.endpoint_id}/run"
         
         async with self.session.post(
-            endpoint_url, headers=headers, json={"input": endpoint_input}
+            self.endpoint_url, headers=headers, json={"input": endpoint_input}
         ) as resp:
             json_resp = await resp.json()
 

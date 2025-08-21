@@ -153,14 +153,12 @@ class TestEndpoint(unittest.TestCase):
         # Verify the client was initialized with custom API key
         self.assertEqual(endpoint.rp_client.api_key, custom_key)
     
-    @patch("runpod.endpoint.runner.RunPodClient._request")
-    def test_endpoint_with_per_request_api_key(self, mock_request):
+    def test_endpoint_with_per_request_api_key(self):
         """Test Endpoint with per-request API key"""
         instance_key = "INSTANCE_KEY"
         request_key = "REQUEST_KEY"
         
         endpoint = Endpoint(self.ENDPOINT_ID, api_key=instance_key)
-        mock_request.return_value = {"id": "job_123", "status": "IN_PROGRESS"}
         
         # Use a different key for this specific request - should raise error
         with self.assertRaises(ValueError) as context:

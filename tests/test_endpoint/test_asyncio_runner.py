@@ -16,6 +16,11 @@ tracemalloc.start()
 class TestJob(IsolatedAsyncioTestCase):
     """Tests the Job class."""
 
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
+
     async def test_status(self):
         """
         Tests Job.status
@@ -163,6 +168,11 @@ class TestJob(IsolatedAsyncioTestCase):
 class TestEndpoint(IsolatedAsyncioTestCase):
     """Unit tests for the Endpoint class."""
 
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
+
     async def test_run(self):
         """
         Tests Endpoint.run
@@ -208,6 +218,11 @@ class TestEndpoint(IsolatedAsyncioTestCase):
 
 class TestEndpointInitialization(unittest.TestCase):
     """Tests for the Endpoint class initialization."""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
 
     def test_endpoint_initialization(self):
         """Tests initialization of Endpoint class."""
