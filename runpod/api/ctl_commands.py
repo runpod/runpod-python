@@ -18,43 +18,59 @@ from .queries import pods as pod_queries
 from .queries import user as user_queries
 
 
-def get_user() -> dict:
+def get_user(api_key: Optional[str] = None) -> dict:
     """
-    Get the current user
+    Get the current user with optional API key override.
+    
+    Args:
+        api_key: Optional API key to use for this query.
     """
-    raw_response = run_graphql_query(user_queries.QUERY_USER)
+    raw_response = run_graphql_query(user_queries.QUERY_USER, api_key=api_key)
     cleaned_return = raw_response["data"]["myself"]
     return cleaned_return
 
 
-def update_user_settings(pubkey: str) -> dict:
+def update_user_settings(pubkey: str, api_key: Optional[str] = None) -> dict:
     """
     Update the current user
 
-    :param pubkey: the public key of the user
+    Args:
+        pubkey: the public key of the user
+        api_key: Optional API key to use for this query.
     """
-    raw_response = run_graphql_query(user_mutations.generate_user_mutation(pubkey))
+    raw_response = run_graphql_query(
+        user_mutations.generate_user_mutation(pubkey), 
+        api_key=api_key
+    )
     cleaned_return = raw_response["data"]["updateUserSettings"]
     return cleaned_return
 
 
-def get_gpus() -> dict:
+def get_gpus(api_key: Optional[str] = None) -> dict:
     """
     Get all GPU types
+    
+    Args:
+        api_key: Optional API key to use for this query.
     """
-    raw_response = run_graphql_query(gpus.QUERY_GPU_TYPES)
+    raw_response = run_graphql_query(gpus.QUERY_GPU_TYPES, api_key=api_key)
     cleaned_return = raw_response["data"]["gpuTypes"]
     return cleaned_return
 
 
-def get_gpu(gpu_id: str, gpu_quantity: int = 1):
+def get_gpu(gpu_id: str, gpu_quantity: int = 1, api_key: Optional[str] = None):
     """
     Get a specific GPU type
 
-    :param gpu_id: the id of the gpu
-    :param gpu_quantity: how many of the gpu should be returned
+    Args:
+        gpu_id: the id of the gpu
+        gpu_quantity: how many of the gpu should be returned
+        api_key: Optional API key to use for this query.
     """
-    raw_response = run_graphql_query(gpus.generate_gpu_query(gpu_id, gpu_quantity))
+    raw_response = run_graphql_query(
+        gpus.generate_gpu_query(gpu_id, gpu_quantity), 
+        api_key=api_key
+    )
 
     cleaned_return = raw_response["data"]["gpuTypes"]
 
@@ -67,22 +83,30 @@ def get_gpu(gpu_id: str, gpu_quantity: int = 1):
     return cleaned_return[0]
 
 
-def get_pods() -> dict:
+def get_pods(api_key: Optional[str] = None) -> dict:
     """
     Get all pods
+    
+    Args:
+        api_key: Optional API key to use for this query.
     """
-    raw_return = run_graphql_query(pod_queries.QUERY_POD)
+    raw_return = run_graphql_query(pod_queries.QUERY_POD, api_key=api_key)
     cleaned_return = raw_return["data"]["myself"]["pods"]
     return cleaned_return
 
 
-def get_pod(pod_id: str):
+def get_pod(pod_id: str, api_key: Optional[str] = None):
     """
     Get a specific pod
 
-    :param pod_id: the id of the pod
+    Args:
+        pod_id: the id of the pod
+        api_key: Optional API key to use for this query.
     """
-    raw_response = run_graphql_query(pod_queries.generate_pod_query(pod_id))
+    raw_response = run_graphql_query(
+        pod_queries.generate_pod_query(pod_id), 
+        api_key=api_key
+    )
     return raw_response["data"]["pod"]
 
 

@@ -3,7 +3,7 @@
 # pylint: disable=too-few-public-methods,R0801
 
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from runpod.endpoint.helpers import FINAL_STATES, is_completed
 from runpod.http_client import ClientSession
@@ -12,21 +12,25 @@ from runpod.http_client import ClientSession
 class Job:
     """Class representing a job for an asynchronous endpoint"""
 
-    def __init__(self, endpoint_id: str, job_id: str, session: ClientSession):
+    def __init__(self, endpoint_id: str, job_id: str, session: ClientSession, headers: dict):
+        """
+        Initialize a Job instance.
+        
+        Args:
+            endpoint_id: The identifier for the endpoint.
+            job_id: The identifier for the job.
+            session: The aiohttp ClientSession.
+            headers: Headers to use for requests.
+        """
         from runpod import (  # pylint: disable=import-outside-toplevel,cyclic-import
-            api_key,
             endpoint_url_base,
         )
-
+        
         self.endpoint_id = endpoint_id
         self.job_id = job_id
-        self.headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "X-Request-ID": job_id,
-        }
         self.session = session
         self.endpoint_url_base = endpoint_url_base
+        self.headers = headers
 
         self.job_status = None
         self.job_output = None
@@ -112,22 +116,40 @@ class Job:
 class Endpoint:
     """Class for running endpoint"""
 
-    def __init__(self, endpoint_id: str, session: ClientSession):
-        from runpod import (
-            api_key,  # pylint: disable=import-outside-toplevel
+    def __init__(self, endpoint_id: str, session: ClientSession, 
+                 api_key: Optional[str] = None):
+        """
+        Initialize an async Endpoint instance.
+        
+        Args:
+            endpoint_id: The identifier for the endpoint.
+            session: The aiohttp ClientSession.
+            api_key: Optional API key for this endpoint instance.
+        """
+        from runpod import (  # pylint: disable=import-outside-toplevel
+            api_key as global_api_key,
             endpoint_url_base,
         )
-
+        
         self.endpoint_id = endpoint_id
+        self.session = session
+        self.endpoint_url_base = endpoint_url_base
         self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
+        
+        # Store instance API key for future requests
+        self.api_key = api_key or global_api_key
+        
+        if self.api_key is None:
+            raise RuntimeError("API key must be provided or set globally")
+        
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {self.api_key}",
         }
-        self.session = session
 
     async def run(self, endpoint_input: dict) -> Job:
-        """Runs endpoint with specified input
+        """
+        Runs endpoint with specified input.
 
         Args:
             endpoint_input: any dictionary with input
@@ -140,26 +162,31 @@ class Endpoint:
         ) as resp:
             json_resp = await resp.json()
 
-        return Job(self.endpoint_id, json_resp["id"], self.session)
+        # Create job with endpoint's headers
+        job_headers = self.headers.copy()
+        job_headers["X-Request-ID"] = json_resp["id"]
+        return Job(self.endpoint_id, json_resp["id"], self.session, job_headers)
 
     async def health(self) -> dict:
-        """Checks health of endpoint
+        """
+        Checks health of endpoint
 
         Returns:
             Health of endpoint
         """
-        async with self.session.get(
-            f"{self.endpoint_id}/health", headers=self.headers
-        ) as resp:
+        health_url = f"{self.endpoint_url_base}/{self.endpoint_id}/health"
+        
+        async with self.session.get(health_url, headers=self.headers) as resp:
             return await resp.json()
 
     async def purge_queue(self) -> dict:
-        """Purges queue of endpoint
+        """
+        Purges queue of endpoint
 
         Returns:
             Purge status
         """
-        async with self.session.post(
-            f"{self.endpoint_id}/purge", headers=self.headers
-        ) as resp:
+        purge_url = f"{self.endpoint_url_base}/{self.endpoint_id}/purge-queue"
+        
+        async with self.session.post(purge_url, headers=self.headers) as resp:
             return await resp.json()

@@ -16,6 +16,11 @@ tracemalloc.start()
 class TestJob(IsolatedAsyncioTestCase):
     """Tests the Job class."""
 
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
+
     async def test_status(self):
         """
         Tests Job.status
@@ -30,7 +35,12 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_resp.json.return_value = {"status": "COMPLETED"}
             mock_get.return_value = mock_resp
 
-            job = Job("endpoint_id", "job_id", mock_session)
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer MOCK_API_KEY",
+                "X-Request-ID": "job_id",
+            }
+            job = Job("endpoint_id", "job_id", mock_session, headers)
             status = await job.status()
             assert status == "COMPLETED"
             assert await job.status() == "COMPLETED"
@@ -56,7 +66,12 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_resp.json.side_effect = json_side_effect
             mock_get.return_value = mock_resp
 
-            job = Job("endpoint_id", "job_id", mock_session)
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer MOCK_API_KEY",
+                "X-Request-ID": "job_id",
+            }
+            job = Job("endpoint_id", "job_id", mock_session, headers)
             output_task = asyncio.create_task(job.output(timeout=3))
 
             output = await output_task
@@ -77,7 +92,12 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_resp.json.return_value = {"status": "IN_PROGRESS"}
             mock_get.return_value = mock_resp
 
-            job = Job("endpoint_id", "job_id", mock_session)
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer MOCK_API_KEY",
+                "X-Request-ID": "job_id",
+            }
+            job = Job("endpoint_id", "job_id", mock_session, headers)
             output_task = asyncio.create_task(job.output(timeout=1))
 
             with self.assertRaises(TimeoutError):
@@ -109,7 +129,12 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_resp.json.side_effect = json_side_effect
             mock_get.return_value = mock_resp
 
-            job = Job("endpoint_id", "job_id", mock_session)
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer MOCK_API_KEY",
+                "X-Request-ID": "job_id",
+            }
+            job = Job("endpoint_id", "job_id", mock_session, headers)
 
             outputs = []
             async for stream_output in job.stream():
@@ -127,7 +152,12 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_resp.json.return_value.set_result({"result": "CANCELLED"})
             mock_session.post.return_value.__aenter__.return_value = mock_resp
 
-            job = Job("endpoint_id", "job_id", mock_session)
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer MOCK_API_KEY",
+                "X-Request-ID": "job_id",
+            }
+            job = Job("endpoint_id", "job_id", mock_session, headers)
             cancel_result = await job.cancel()
             assert cancel_result == {"result": "CANCELLED"}
 
@@ -155,13 +185,23 @@ class TestJob(IsolatedAsyncioTestCase):
             mock_resp.json.side_effect = json_side_effect
             mock_get.return_value = mock_resp
 
-            job = Job("endpoint_id", "job_id", mock_session)
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer MOCK_API_KEY",
+                "X-Request-ID": "job_id",
+            }
+            job = Job("endpoint_id", "job_id", mock_session, headers)
             output = await job.output(timeout=3)
             assert output == "OUTPUT"
 
 
 class TestEndpoint(IsolatedAsyncioTestCase):
     """Unit tests for the Endpoint class."""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
 
     async def test_run(self):
         """
@@ -208,6 +248,11 @@ class TestEndpoint(IsolatedAsyncioTestCase):
 
 class TestEndpointInitialization(unittest.TestCase):
     """Tests for the Endpoint class initialization."""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
 
     def test_endpoint_initialization(self):
         """Tests initialization of Endpoint class."""

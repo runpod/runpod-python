@@ -9,6 +9,11 @@ from runpod.api import ctl_commands
 class TestCTL(unittest.TestCase):
     """Tests for CTL Commands"""
 
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
+
     def test_get_user(self):
         """
         Tests get_user

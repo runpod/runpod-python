@@ -22,6 +22,42 @@ class TestRunPodClient(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             runpod.api_key = None
             RunPodClient()
+    
+    def test_client_with_custom_api_key(self):
+        """Test RunPodClient with custom API key"""
+        custom_key = "CUSTOM_API_KEY"
+        client = RunPodClient(api_key=custom_key)
+        
+        # Verify headers contain custom key
+        self.assertEqual(
+            client.headers["Authorization"], 
+            f"Bearer {custom_key}"
+        )
+        self.assertEqual(client.api_key, custom_key)
+    
+    def test_client_fallback_to_global(self):
+        """Test RunPodClient falls back to global API key"""
+        runpod.api_key = "GLOBAL_API_KEY"
+        client = RunPodClient()
+        
+        self.assertEqual(
+            client.headers["Authorization"],
+            "Bearer GLOBAL_API_KEY"
+        )
+        self.assertEqual(client.api_key, "GLOBAL_API_KEY")
+    
+    def test_client_custom_overrides_global(self):
+        """Test custom API key overrides global"""
+        runpod.api_key = "GLOBAL_API_KEY"
+        custom_key = "CUSTOM_API_KEY"
+        client = RunPodClient(api_key=custom_key)
+        
+        self.assertEqual(
+            client.headers["Authorization"],
+            f"Bearer {custom_key}"
+        )
+        self.assertEqual(client.api_key, custom_key)
+    
 
     @patch.object(requests.Session, "post")
     def test_post_with_401(self, mock_post):
@@ -96,6 +132,16 @@ class TestEndpoint(unittest.TestCase):
         """Common setup for the tests."""
         runpod.api_key = self.MOCK_API_KEY
         self.endpoint = Endpoint(self.ENDPOINT_ID)
+    
+    def test_endpoint_with_instance_api_key(self):
+        """Test Endpoint with instance-level API key"""
+        custom_key = "INSTANCE_API_KEY"
+        endpoint = Endpoint(self.ENDPOINT_ID, api_key=custom_key)
+        
+        # Verify the client was initialized with custom API key
+        self.assertEqual(endpoint.rp_client.api_key, custom_key)
+    
+    
 
     @patch("runpod.endpoint.runner.RunPodClient._request")
     def test_endpoint_run(self, mock_client_request):
@@ -109,7 +155,7 @@ class TestEndpoint(unittest.TestCase):
             "POST",
             f"{self.ENDPOINT_ID}/run",
             {"input": {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}},
-            10,
+            10
         )
 
         self.assertIsInstance(run_request, Job)
@@ -138,7 +184,7 @@ class TestEndpoint(unittest.TestCase):
             "POST",
             f"{self.ENDPOINT_ID}/runsync",
             {"input": {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}},
-            86400,
+            86400
         )
 
     @patch("runpod.endpoint.runner.RunPodClient._request")
