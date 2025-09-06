@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.8.0](https://github.com/runpod/runpod-python/compare/v1.7.13...v1.8.0) (2025-09-06)
+
+
+### Features
+
+* add manual workflow dispatch for PyPI publishing ([05b2d72](https://github.com/runpod/runpod-python/commit/05b2d720f725390cddbf1aebfcbbe1c5385827e7))
+
+
+### Bug Fixes
+
+* pypi package verification ([95015dc](https://github.com/runpod/runpod-python/commit/95015dcdcfefaeec1f52c7f39e5c15d3ddcdfab1))
+* PyPI publishing issues ([6992b10](https://github.com/runpod/runpod-python/commit/6992b102977924dc00bd847681ab94f559942576))
+
 ## [1.7.13](https://github.com/runpod/runpod-python/compare/1.7.12...v1.7.13) (2025-07-17)
 
 ### Bug Fixes
