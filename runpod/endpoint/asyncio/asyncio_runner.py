@@ -36,7 +36,7 @@ class Job:
         self.job_output = None
 
     async def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
-        """Returns the raw json of the status, reaises an exception if invalid.
+        """Returns the raw json of the status, raises an exception if invalid.
 
         Args:
             source: The URL source path of the job status.
