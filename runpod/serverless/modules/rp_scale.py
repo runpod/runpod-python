@@ -219,10 +219,10 @@ class JobScaler:
         tasks = []  # Store the tasks for concurrent job processing
 
         while self.is_alive() or not self.jobs_queue.empty() or tasks:
-            log.debug(f"Task count: {len(tasks)}, Queue size: {self.jobs_queue.qsize()}, Concurrency: {self.current_concurrency}")
+            # log.debug(f"Task count: {len(tasks)}, Queue size: {self.jobs_queue.qsize()}, Concurrency: {self.current_concurrency}")
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
-                log.debug(f"About to get a job from the queue. Queue size: {self.jobs_queue.qsize()}")
+                # log.debug(f"About to get a job from the queue. Queue size: {self.jobs_queue.qsize()}")
                 job = await self.jobs_queue.get()
                 self.job_progress.add(job)
                 log.debug(f"Dequeued job {job['id']}, now running. Queue size: {self.jobs_queue.qsize()}")
@@ -234,14 +234,13 @@ class JobScaler:
             # Prune completed tasks
             tasks = [t for t in tasks if not t.done()]
 
-            if tasks:
-                log.info(f"Jobs in progress: {len(tasks)}")
+            if tasks or not self.jobs_queue.empty():
+                # log.info(f"Jobs in progress: {len(tasks)}")
+                await asyncio.sleep(0)  # actively process work
             else:
                 # If no jobs running, don’t spin CPU at 100%
-                await asyncio.sleep(0.5)
-
-            # Yield control back to the event loop
-            await asyncio.sleep(0)
+                log.info("No jobs running, sleeping for 1 second.")
+                await asyncio.sleep(1)
 
         # Ensure all remaining tasks finish before stopping
         await asyncio.gather(*tasks)
