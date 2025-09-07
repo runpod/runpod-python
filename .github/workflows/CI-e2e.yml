@@ -16,6 +16,7 @@ on:
 jobs:
   e2e-build:
     name: Build and push mock-worker Docker image
+    if: github.repository == 'runpod/runpod-python'
     runs-on: ubuntu-latest
     outputs:
       docker_tag: ${{ steps.output_docker_tag.outputs.docker_tag }}
