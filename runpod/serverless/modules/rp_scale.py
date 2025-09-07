@@ -48,7 +48,7 @@ class JobScaler:
         self.config = config
         self.job_progress = JobsProgress()  # Cache the singleton instance
 
-        self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
+        self.jobs_queue = asyncio.Queue()
 
         self.concurrency_modifier = _default_concurrency_modifier
         self.jobs_fetcher = get_job
@@ -72,9 +72,9 @@ class JobScaler:
             self.jobs_handler = jobs_handler
 
     async def set_scale(self):
-        self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
+        new_concurrency = self.concurrency_modifier(self.current_concurrency)
 
-        if self.jobs_queue and (self.current_concurrency == self.jobs_queue.maxsize):
+        if new_concurrency == self.current_concurrency:
             # no need to resize
             return
 
@@ -83,10 +83,8 @@ class JobScaler:
             await asyncio.sleep(1)
             continue
 
-        self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
-        log.debug(
-            f"JobScaler.set_scale | New concurrency set to: {self.current_concurrency}"
-        )
+        self.current_concurrency = new_concurrency
+        log.debug(f"JobScaler.set_scale | New concurrency set to: {self.current_concurrency}")
 
     def start(self):
         """
@@ -221,10 +219,12 @@ class JobScaler:
         tasks = []  # Store the tasks for concurrent job processing
 
         while self.is_alive() or not self.jobs_queue.empty():
+            log.debug(f"Task count: {len(tasks)}, Queue size: {self.jobs_queue.qsize()}, Concurrency: {self.current_concurrency}")
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
                 job = await self.jobs_queue.get()
                 self.job_progress.add(job)
+                log.info(f"Dequeued job {job['id']}, now running. Queue size: {self.jobs_queue.qsize()}")
 
                 # Create a new task for each job and add it to the task list
                 task = asyncio.create_task(self.handle_job(session, job))
