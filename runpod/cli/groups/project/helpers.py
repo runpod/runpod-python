@@ -57,7 +57,7 @@ def copy_template_files(template_dir, destination):
             shutil.copy2(source_item, destination_item)
 
 
-def attempt_pod_launch(config, environment_variables):
+def attempt_pod_launch(config, environment_variables, encrypt_volume=False):
     """Attempt to launch a pod with the given configuration."""
     for gpu_type in config["project"].get("gpu_types", []):
         print(f"Trying to get a pod with {gpu_type}... ", end="")
@@ -73,6 +73,7 @@ def attempt_pod_launch(config, environment_variables):
                 volume_mount_path=f'{config["project"]["volume_mount_path"]}',
                 container_disk_in_gb=int(config["project"]["container_disk_size_gb"]),
                 env=environment_variables,
+                encrypt_volume=encrypt_volume,
             )
             print("Success!")
             return created_pod
