@@ -384,7 +384,7 @@ class TestCTL(unittest.TestCase):
         """
         Tests create_container_registry_auth by mocking the run_graphql_query function
         """
-        # Setup the mock to return a predefined response
+        # Set up the mock to return a predefined response
         mock_run_graphql_query.return_value = {
             "data": {
                 "saveRegistryAuth": {"id": "REGISTRY_AUTH_ID", "name": "REGISTRY_NAME"}

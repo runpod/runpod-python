@@ -141,17 +141,17 @@ def file(file_url: str) -> dict:
         output_file.write(download_response.content)
 
     if file_type == "zip":
-        unziped_directory = os.path.join("job_files", file_name)
-        os.makedirs(unziped_directory, exist_ok=True)
+        unzipped_directory = os.path.join("job_files", file_name)
+        os.makedirs(unzipped_directory, exist_ok=True)
         with zipfile.ZipFile(output_file_path, "r") as zip_ref:
-            zip_ref.extractall(unziped_directory)
-        unziped_directory = os.path.abspath(unziped_directory)
+            zip_ref.extractall(unzipped_directory)
+        unzipped_directory = os.path.abspath(unzipped_directory)
     else:
-        unziped_directory = None
+        unzipped_directory = None
 
     return {
         "file_path": os.path.abspath(output_file_path),
         "type": file_type,
         "original_name": original_file_name,
-        "extracted_path": unziped_directory,
+        "extracted_path": unzipped_directory,
     }
