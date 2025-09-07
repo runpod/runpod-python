@@ -218,7 +218,7 @@ class JobScaler:
         """
         tasks = []  # Store the tasks for concurrent job processing
 
-        while self.is_alive() or not self.jobs_queue.empty():
+        while self.is_alive() or not self.jobs_queue.empty() or tasks:
             log.debug(f"Task count: {len(tasks)}, Queue size: {self.jobs_queue.qsize()}, Concurrency: {self.current_concurrency}")
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
@@ -231,16 +231,14 @@ class JobScaler:
                 task = asyncio.create_task(self.handle_job(session, job))
                 tasks.append(task)
 
-            # Wait for any job to finish
+            # Prune completed tasks
+            tasks = [t for t in tasks if not t.done()]
+
             if tasks:
                 log.info(f"Jobs in progress: {len(tasks)}")
-
-                done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
-                )
-
-                # Remove completed tasks from the list
-                tasks = [t for t in tasks if t not in done]
+            else:
+                # If no jobs running, don’t spin CPU at 100%
+                await asyncio.sleep(0.5)
 
             # Yield control back to the event loop
             await asyncio.sleep(0)
