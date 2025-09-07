@@ -222,9 +222,10 @@ class JobScaler:
             log.debug(f"Task count: {len(tasks)}, Queue size: {self.jobs_queue.qsize()}, Concurrency: {self.current_concurrency}")
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
+                log.debug(f"About to get a job from the queue. Queue size: {self.jobs_queue.qsize()}")
                 job = await self.jobs_queue.get()
                 self.job_progress.add(job)
-                log.info(f"Dequeued job {job['id']}, now running. Queue size: {self.jobs_queue.qsize()}")
+                log.debug(f"Dequeued job {job['id']}, now running. Queue size: {self.jobs_queue.qsize()}")
 
                 # Create a new task for each job and add it to the task list
                 task = asyncio.create_task(self.handle_job(session, job))
