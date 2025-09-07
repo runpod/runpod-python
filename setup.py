@@ -1,6 +1,6 @@
 """
 runpod-python | setup.py
-Called to setup the runpod-python package.
+Called to set up the runpod-python package.
 """
 
 from setuptools import find_packages, setup
