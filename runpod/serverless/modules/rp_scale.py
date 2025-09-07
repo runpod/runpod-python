@@ -208,7 +208,7 @@ class JobScaler:
                 )
             finally:
                 # Yield control back to the event loop
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.1)
 
     async def run_jobs(self, session: ClientSession):
         """
@@ -235,10 +235,10 @@ class JobScaler:
             tasks = [t for t in tasks if not t.done()]
 
             if tasks or not self.jobs_queue.empty():
-                # log.info(f"Jobs in progress: {len(tasks)}")
-                await asyncio.sleep(0)  # actively process work
+                # Work is active → check often for new jobs
+                await asyncio.sleep(0.5)
             else:
-                # If no jobs running, don’t spin CPU at 100%
+                # Fully idle → sleep longer to save CPU
                 log.info("No jobs running, sleeping for 1 second.")
                 await asyncio.sleep(1)
 
