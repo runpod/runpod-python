@@ -229,11 +229,17 @@ class JobScaler:
                 # Create a new task for each job and add it to the task list
                 task = asyncio.create_task(self.handle_job(session, job))
                 tasks.add(task)
-                task.add_done_callback(tasks.discard)
 
             # 2. If jobs are running, wait a little for completions
             if tasks:
-                await asyncio.wait(tasks, timeout=0.1, return_when=asyncio.FIRST_COMPLETED)
+                # Wait for at least one task to finish
+                done, pending = await asyncio.wait(
+                    tasks,
+                    timeout=0.1,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                # Remove completed tasks
+                tasks.difference_update(done)
             else:
                 # Nothing running — don’t spin CPU
                 await asyncio.sleep(0.5)
