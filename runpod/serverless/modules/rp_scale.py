@@ -216,10 +216,9 @@ class JobScaler:
 
         Runs the block in an infinite loop while the worker is alive or jobs queue is not empty.
         """
-        tasks = []  # Store the tasks for concurrent job processing
+        tasks: set[asyncio.Task] = set()  # Store the tasks for concurrent job processing
 
         while self.is_alive() or not self.jobs_queue.empty() or tasks:
-            # log.debug(f"Task count: {len(tasks)}, Queue size: {self.jobs_queue.qsize()}, Concurrency: {self.current_concurrency}")
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
                 # log.debug(f"About to get a job from the queue. Queue size: {self.jobs_queue.qsize()}")
@@ -229,18 +228,15 @@ class JobScaler:
 
                 # Create a new task for each job and add it to the task list
                 task = asyncio.create_task(self.handle_job(session, job))
-                tasks.append(task)
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
 
-            # Prune completed tasks
-            tasks = [t for t in tasks if not t.done()]
-
-            if tasks or not self.jobs_queue.empty():
-                # Work is active → check often for new jobs
-                await asyncio.sleep(0.5)
+            # 2. If jobs are running, wait a little for completions
+            if tasks:
+                await asyncio.wait(tasks, timeout=0.1, return_when=asyncio.FIRST_COMPLETED)
             else:
-                # Fully idle → sleep longer to save CPU
-                log.info("No jobs running, sleeping for 1 second.")
-                await asyncio.sleep(1)
+                # Nothing running — don’t spin CPU
+                await asyncio.sleep(0.5)
 
         # Ensure all remaining tasks finish before stopping
         await asyncio.gather(*tasks)
