@@ -20,6 +20,23 @@ FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
 logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHandler()])
 
 
+def _import_boto3_dependencies():
+    """
+    Lazy-load boto3 dependencies.
+    Returns tuple of (session, TransferConfig, Config) or raises ImportError.
+    """
+    try:
+        from boto3 import session
+        from boto3.s3.transfer import TransferConfig
+        from botocore.config import Config
+        return session, TransferConfig, Config
+    except ImportError as e:
+        raise ImportError(
+            "boto3 is required for S3 upload functionality. "
+            "Install with: pip install boto3"
+        ) from e
+
+
 def extract_region_from_url(endpoint_url):
     """
     Extracts the region from the endpoint URL.
@@ -45,9 +62,7 @@ def get_boto_client(
     Lazy-loads boto3 to reduce initial import time.
     """
     try:
-        from boto3 import session
-        from boto3.s3.transfer import TransferConfig
-        from botocore.config import Config
+        session, TransferConfig, Config = _import_boto3_dependencies()
     except ImportError:
         logger.warning(
             "boto3 not installed. S3 upload functionality disabled. "
@@ -187,16 +202,13 @@ def bucket_upload(job_id, file_list, bucket_creds):  # pragma: no cover
     Uploads files to bucket storage.
     """
     try:
-        from boto3 import session
-        from botocore.config import Config
+        session, _, Config = _import_boto3_dependencies()
     except ImportError:
         logger.error(
             "boto3 not installed. Cannot upload to S3 bucket. "
             "Install with: pip install boto3"
         )
-        raise ImportError(
-            "boto3 is required for bucket_upload. Install with: pip install boto3"
-        )
+        raise
 
     temp_bucket_session = session.Session()
 
