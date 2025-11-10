@@ -133,11 +133,11 @@ def upload_image(
 
     if boto_client is None:
         # Save the output to a file
-        print("No bucket endpoint set, saving to disk folder 'simulated_uploaded'")
-        print("If this is a live endpoint, please reference the following:")
-        print(
+        logger.warning(
+            "No bucket endpoint set, saving to disk folder 'simulated_uploaded'. "
+            "If this is a live endpoint, please reference: "
             "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
-        )  # pylint: disable=line-too-long
+        )
 
         os.makedirs("simulated_uploaded", exist_ok=True)
         sim_upload_location = f"simulated_uploaded/{image_name}{file_extension}"
@@ -261,11 +261,11 @@ def upload_file_to_bucket(
     key = f"{prefix}/{file_name}" if prefix else file_name
 
     if boto_client is None:
-        print("No bucket endpoint set, saving to disk folder 'local_upload'")
-        print("If this is a live endpoint, please reference the following:")
-        print(
+        logger.warning(
+            "No bucket endpoint set, saving to disk folder 'local_upload'. "
+            "If this is a live endpoint, please reference: "
             "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
-        )  # pylint: disable=line-too-long
+        )
 
         os.makedirs("local_upload", exist_ok=True)
         local_upload_location = f"local_upload/{file_name}"
@@ -316,9 +316,9 @@ def upload_in_memory_object(
     key = f"{prefix}/{file_name}" if prefix else file_name
 
     if boto_client is None:
-        print("No bucket endpoint set, saving to disk folder 'local_upload'")
-        print("If this is a live endpoint, please reference the following:")
-        print(
+        logger.warning(
+            "No bucket endpoint set, saving to disk folder 'local_upload'. "
+            "If this is a live endpoint, please reference: "
             "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
         )
 
