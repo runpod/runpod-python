@@ -32,6 +32,15 @@ class TestBotoConfig(unittest.TestCase):
     def tearDown(self):
         os.environ = self.original_environ
 
+    def test_import_boto3_dependencies_missing(self):
+        """
+        Tests _import_boto3_dependencies when boto3 is not available
+        """
+        with patch("builtins.__import__", side_effect=ImportError("No module named 'boto3'")):
+            with self.assertRaises(ImportError) as context:
+                rp_upload._import_boto3_dependencies()
+            self.assertIn("boto3 is required for S3 upload functionality", str(context.exception))
+
     def test_get_boto_client(self):
         """
         Tests get_boto_client
@@ -179,8 +188,45 @@ class TestUploadImage(unittest.TestCase):
         mock_boto_client.generate_presigned_url.assert_called_once()
 
 
+class TestLocalFallback(unittest.TestCase):
+    """Tests for _save_to_local_fallback helper function"""
+
+    @patch("os.makedirs")
+    def test_save_to_local_fallback_invalid_args(self, mock_makedirs):
+        """
+        Tests _save_to_local_fallback raises ValueError when neither source_path nor file_data provided
+        """
+        with self.assertRaises(ValueError) as context:
+            rp_upload._save_to_local_fallback("test.txt")
+        self.assertIn("Either source_path or file_data must be provided", str(context.exception))
+
+
 class TestUploadUtility(unittest.TestCase):
     """Tests for upload utility"""
+
+    @patch("runpod.serverless.utils.rp_upload.get_boto_client")
+    @patch("os.path.exists")
+    @patch("shutil.copyfile")
+    @patch("os.makedirs")
+    def test_upload_file_to_bucket_fallback(
+        self, mock_makedirs, mock_copyfile, mock_exists, mock_get_boto_client
+    ):
+        """
+        Tests upload_file_to_bucket fallback when boto_client is None
+        """
+        # Mock get_boto_client to return None
+        mock_get_boto_client.return_value = (None, None)
+        mock_exists.return_value = True
+
+        file_name = "example.txt"
+        file_location = "/path/to/file.txt"
+
+        result = upload_file_to_bucket(file_name, file_location)
+
+        # Check fallback behavior
+        assert result == "local_upload/example.txt"
+        mock_makedirs.assert_called_once_with("local_upload", exist_ok=True)
+        mock_copyfile.assert_called_once_with(file_location, "local_upload/example.txt")
 
     @patch("runpod.serverless.utils.rp_upload.get_boto_client")
     def test_upload_file_to_bucket(self, mock_get_boto_client):
@@ -220,6 +266,29 @@ class TestUploadUtility(unittest.TestCase):
             Params={"Bucket": str(time.strftime("%m-%y")), "Key": file_name},
             ExpiresIn=604800,
         )
+
+    @patch("runpod.serverless.utils.rp_upload.get_boto_client")
+    @patch("builtins.open", new_callable=unittest.mock.mock_open)
+    @patch("os.makedirs")
+    def test_upload_in_memory_object_fallback(
+        self, mock_makedirs, mock_open_file, mock_get_boto_client
+    ):
+        """
+        Tests upload_in_memory_object fallback when boto_client is None
+        """
+        # Mock get_boto_client to return None
+        mock_get_boto_client.return_value = (None, None)
+
+        file_name = "example.txt"
+        file_data = b"This is test data."
+
+        result = upload_in_memory_object(file_name, file_data)
+
+        # Check fallback behavior
+        assert result == "local_upload/example.txt"
+        mock_makedirs.assert_called_once_with("local_upload", exist_ok=True)
+        mock_open_file.assert_called_once_with("local_upload/example.txt", "wb")
+        mock_open_file().write.assert_called_once_with(file_data)
 
     @patch("runpod.serverless.utils.rp_upload.get_boto_client")
     def test_upload_in_memory_object(self, mock_get_boto_client):

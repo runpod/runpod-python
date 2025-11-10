@@ -37,6 +37,38 @@ def _import_boto3_dependencies():
         ) from e
 
 
+def _save_to_local_fallback(file_name: str, source_path: Optional[str] = None, file_data: Optional[bytes] = None) -> str:
+    """
+    Save file to local 'local_upload' directory as fallback when S3 is unavailable.
+
+    Args:
+        file_name: Name of the file to save
+        source_path: Path to source file to copy (for file-based uploads)
+        file_data: Bytes to write (for in-memory uploads)
+
+    Returns:
+        Path to the saved local file
+    """
+    logger.warning(
+        "No bucket endpoint set, saving to disk folder 'local_upload'. "
+        "If this is a live endpoint, please reference: "
+        "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
+    )
+
+    os.makedirs("local_upload", exist_ok=True)
+    local_upload_location = f"local_upload/{file_name}"
+
+    if source_path:
+        shutil.copyfile(source_path, local_upload_location)
+    elif file_data is not None:
+        with open(local_upload_location, "wb") as file_output:
+            file_output.write(file_data)
+    else:
+        raise ValueError("Either source_path or file_data must be provided")
+
+    return local_upload_location
+
+
 def extract_region_from_url(endpoint_url):
     """
     Extracts the region from the endpoint URL.
@@ -261,17 +293,7 @@ def upload_file_to_bucket(
     key = f"{prefix}/{file_name}" if prefix else file_name
 
     if boto_client is None:
-        logger.warning(
-            "No bucket endpoint set, saving to disk folder 'local_upload'. "
-            "If this is a live endpoint, please reference: "
-            "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
-        )
-
-        os.makedirs("local_upload", exist_ok=True)
-        local_upload_location = f"local_upload/{file_name}"
-        shutil.copyfile(file_location, local_upload_location)
-
-        return local_upload_location
+        return _save_to_local_fallback(file_name, source_path=file_location)
 
     file_size = os.path.getsize(file_location)
     with tqdm(
@@ -316,18 +338,7 @@ def upload_in_memory_object(
     key = f"{prefix}/{file_name}" if prefix else file_name
 
     if boto_client is None:
-        logger.warning(
-            "No bucket endpoint set, saving to disk folder 'local_upload'. "
-            "If this is a live endpoint, please reference: "
-            "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
-        )
-
-        os.makedirs("local_upload", exist_ok=True)
-        local_upload_location = f"local_upload/{file_name}"
-        with open(local_upload_location, "wb") as file_output:
-            file_output.write(file_data)
-
-        return local_upload_location
+        return _save_to_local_fallback(file_name, file_data=file_data)
 
     file_size = len(file_data)
     with tqdm(
