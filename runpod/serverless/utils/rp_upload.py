@@ -10,13 +10,9 @@ import shutil
 import threading
 import time
 import uuid
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 from urllib.parse import urlparse
 
-import boto3
-from boto3 import session
-from boto3.s3.transfer import TransferConfig
-from botocore.config import Config
 from tqdm_loggable.auto import tqdm
 
 logger = logging.getLogger("runpod upload utility")
@@ -43,12 +39,22 @@ def extract_region_from_url(endpoint_url):
 # --------------------------- S3 Bucket Connection --------------------------- #
 def get_boto_client(
     bucket_creds: Optional[dict] = None,
-) -> Tuple[
-    boto3.client, TransferConfig
-]:  # pragma: no cover # pylint: disable=line-too-long
+) -> Tuple[Any, Any]:  # pragma: no cover # pylint: disable=line-too-long
     """
     Returns a boto3 client and transfer config for the bucket.
+    Lazy-loads boto3 to reduce initial import time.
     """
+    try:
+        from boto3 import session
+        from boto3.s3.transfer import TransferConfig
+        from botocore.config import Config
+    except ImportError:
+        logger.warning(
+            "boto3 not installed. S3 upload functionality disabled. "
+            "Install with: pip install boto3"
+        )
+        return None, None
+
     bucket_session = session.Session()
 
     boto_config = Config(
@@ -180,6 +186,18 @@ def bucket_upload(job_id, file_list, bucket_creds):  # pragma: no cover
     """
     Uploads files to bucket storage.
     """
+    try:
+        from boto3 import session
+        from botocore.config import Config
+    except ImportError:
+        logger.error(
+            "boto3 not installed. Cannot upload to S3 bucket. "
+            "Install with: pip install boto3"
+        )
+        raise ImportError(
+            "boto3 is required for bucket_upload. Install with: pip install boto3"
+        )
+
     temp_bucket_session = session.Session()
 
     temp_boto_config = Config(
@@ -284,6 +302,20 @@ def upload_in_memory_object(
         bucket_name = time.strftime("%m-%y")
 
     key = f"{prefix}/{file_name}" if prefix else file_name
+
+    if boto_client is None:
+        print("No bucket endpoint set, saving to disk folder 'local_upload'")
+        print("If this is a live endpoint, please reference the following:")
+        print(
+            "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
+        )
+
+        os.makedirs("local_upload", exist_ok=True)
+        local_upload_location = f"local_upload/{file_name}"
+        with open(local_upload_location, "wb") as file_output:
+            file_output.write(file_data)
+
+        return local_upload_location
 
     file_size = len(file_data)
     with tqdm(

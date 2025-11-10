@@ -4,6 +4,12 @@ The upload utility provides functions to upload files and in-memory objects to a
 
 *Note: The upload utility utilizes the Virtual-hosted-style URL with the bucket name in the host name. For example, `https: // bucket-name.s3.amazonaws.com`.*
 
+## Requirements
+
+The upload utility requires [boto3](https://pypi.org/project/boto3/) for S3 functionality. boto3 is lazy-loaded to minimize initial import time and memory footprint.
+
+If you attempt to use S3 upload features without boto3 installed, you'll receive a warning and files will be saved to local disk instead (`simulated_uploaded/` or `local_upload/` directories).
+
 ## Bucket Credentials
 
 You can set your S3 bucket credentials in the following ways:

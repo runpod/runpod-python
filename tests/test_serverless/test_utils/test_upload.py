@@ -39,9 +39,9 @@ class TestBotoConfig(unittest.TestCase):
         # Define the bucket credentials
         bucket_creds = BUCKET_CREDENTIALS
 
-        # Mock boto3.session.Session
+        # Mock boto3 imports (now lazy-loaded inside the function)
         with patch("boto3.session.Session") as mock_session, patch(
-            "runpod.serverless.utils.rp_upload.TransferConfig"
+            "boto3.s3.transfer.TransferConfig"
         ) as mock_transfer_config:
             mock_session.return_value.client.return_value = self.mock_boto_client
             mock_transfer_config.return_value = self.mock_transfer_config
@@ -110,8 +110,9 @@ class TestBotoConfig(unittest.TestCase):
 
         importlib.reload(rp_upload)
 
+        # Mock boto3 imports (now lazy-loaded inside the function)
         with patch("boto3.session.Session") as mock_session, patch(
-            "runpod.serverless.utils.rp_upload.TransferConfig"
+            "boto3.s3.transfer.TransferConfig"
         ) as mock_transfer_config:
             mock_session.return_value.client.return_value = self.mock_boto_client
             mock_transfer_config.return_value = self.mock_transfer_config
