@@ -37,26 +37,32 @@ def _import_boto3_dependencies():
         ) from e
 
 
-def _save_to_local_fallback(file_name: str, source_path: Optional[str] = None, file_data: Optional[bytes] = None) -> str:
+def _save_to_local_fallback(
+    file_name: str,
+    source_path: Optional[str] = None,
+    file_data: Optional[bytes] = None,
+    directory: str = "local_upload"
+) -> str:
     """
-    Save file to local 'local_upload' directory as fallback when S3 is unavailable.
+    Save file to local directory as fallback when S3 is unavailable.
 
     Args:
         file_name: Name of the file to save
         source_path: Path to source file to copy (for file-based uploads)
         file_data: Bytes to write (for in-memory uploads)
+        directory: Local directory to save to (default: 'local_upload')
 
     Returns:
         Path to the saved local file
     """
     logger.warning(
-        "No bucket endpoint set, saving to disk folder 'local_upload'. "
+        f"No bucket endpoint set, saving to disk folder '{directory}'. "
         "If this is a live endpoint, please reference: "
         "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
     )
 
-    os.makedirs("local_upload", exist_ok=True)
-    local_upload_location = f"local_upload/{file_name}"
+    os.makedirs(directory, exist_ok=True)
+    local_upload_location = f"{directory}/{file_name}"
 
     if source_path:
         shutil.copyfile(source_path, local_upload_location)
@@ -164,18 +170,13 @@ def upload_image(
         output = input_file.read()
 
     if boto_client is None:
-        # Save the output to a file
-        logger.warning(
-            "No bucket endpoint set, saving to disk folder 'simulated_uploaded'. "
-            "If this is a live endpoint, please reference: "
-            "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
+        # Save the output to a file using fallback helper
+        file_name_with_ext = f"{image_name}{file_extension}"
+        sim_upload_location = _save_to_local_fallback(
+            file_name_with_ext,
+            file_data=output,
+            directory="simulated_uploaded"
         )
-
-        os.makedirs("simulated_uploaded", exist_ok=True)
-        sim_upload_location = f"simulated_uploaded/{image_name}{file_extension}"
-
-        with open(sim_upload_location, "wb") as file_output:
-            file_output.write(output)
 
         if results_list is not None:
             results_list[result_index] = sim_upload_location
