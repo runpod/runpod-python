@@ -10,10 +10,14 @@ import shutil
 import threading
 import time
 import uuid
-from typing import Any, Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 from urllib.parse import urlparse
 
 from tqdm_loggable.auto import tqdm
+
+if TYPE_CHECKING:
+    from boto3.s3.transfer import TransferConfig
+    from botocore.client import BaseClient
 
 logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
@@ -94,7 +98,7 @@ def extract_region_from_url(endpoint_url):
 # --------------------------- S3 Bucket Connection --------------------------- #
 def get_boto_client(
     bucket_creds: Optional[dict] = None,
-) -> Tuple[Any, Any]:  # pragma: no cover # pylint: disable=line-too-long
+) -> Tuple[Optional["BaseClient"], Optional["TransferConfig"]]:
     """
     Returns a boto3 client and transfer config for the bucket.
     Lazy-loads boto3 to reduce initial import time.
