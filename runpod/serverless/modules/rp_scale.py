@@ -195,7 +195,7 @@ class JobScaler:
 
             except TooManyRequests:
                 log.debug(
-                    f"JobScaler.get_jobs | Too many requests. Debounce for 5 seconds."
+                    "JobScaler.get_jobs | Too many requests. Debounce for 5 seconds."
                 )
                 await asyncio.sleep(5)  # debounce for 5 seconds
             except asyncio.CancelledError:
