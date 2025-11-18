@@ -157,7 +157,7 @@ def compare_benchmarks(baseline_file: str, optimized_file: str):
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python compare_benchmarks.py <baseline.json> <optimized.json>")
+        print("Usage: uv run python scripts/compare_benchmarks.py <baseline.json> <optimized.json>")
         sys.exit(1)
 
     baseline_file = sys.argv[1]

@@ -50,7 +50,11 @@ def measure_import_time(module_name: str, iterations: int = 10) -> dict:
         "min": round(times[0], 2),
         "max": round(times[-1], 2),
         "mean": round(sum(times) / len(times), 2),
-        "median": round(times[len(times) // 2], 2),
+        "median": round(
+            times[len(times) // 2] if len(times) % 2 == 1 else
+            (times[len(times) // 2 - 1] + times[len(times) // 2]) / 2,
+            2
+        ),
         "iterations": iterations,
     }
 
