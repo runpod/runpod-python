@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/runpod/runpod-python/compare/v1.8.0...v1.8.1) (2025-11-19)
+
+
+### Bug Fixes
+
+* prevent PyPI local version rejection ([#468](https://github.com/runpod/runpod-python/issues/468)) ([c3cd473](https://github.com/runpod/runpod-python/commit/c3cd4730f6faf93fe2b454f1c18c884b3d41afb9))
+
 ## [1.8.0](https://github.com/runpod/runpod-python/compare/v1.7.13...v1.8.0) (2025-11-13)
 
 
