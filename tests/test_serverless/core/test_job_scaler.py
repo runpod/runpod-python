@@ -511,7 +511,7 @@ class TestJobScalerLifecycle:
     """Test complete start/stop lifecycle."""
 
     @pytest.mark.asyncio
-    async def test_start_and_stop(self, mock_session, tmp_path):
+    async def test_start_and_stop(self, mock_session_with_long_poll, tmp_path):
         """JobScaler can start and stop acquisition loop."""
         from runpod.serverless.core.job_scaler import JobScaler
 
@@ -520,24 +520,19 @@ class TestJobScalerLifecycle:
 
         job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
 
-        # Mock 204 No Content (no jobs)
-        response_mock = AsyncMock()
-        response_mock.status = 204
-        mock_session.get.return_value.__aenter__.return_value = response_mock
-
         scaler = JobScaler(
             concurrency=1,
             handler=handler,
             job_state=job_state,
-            session=mock_session,
+            session=mock_session_with_long_poll,
             job_fetch_url="http://test/job-take"
         )
 
         # Start scaler in background
         start_task = asyncio.create_task(scaler.start())
 
-        # Give it time to start
-        await asyncio.sleep(0.1)
+        # Give it time to start and make at least one fetch attempt
+        await asyncio.sleep(0.15)
 
         # Verify it's running
         assert scaler._acquisition_task is not None
@@ -553,7 +548,7 @@ class TestJobScalerLifecycle:
         assert not scaler.is_alive()
 
     @pytest.mark.asyncio
-    async def test_start_initializes_acquisition_task(self, mock_session, tmp_path):
+    async def test_start_initializes_acquisition_task(self, mock_session_with_long_poll, tmp_path):
         """Start creates and runs the acquisition task."""
         from runpod.serverless.core.job_scaler import JobScaler
 
@@ -562,16 +557,11 @@ class TestJobScalerLifecycle:
 
         job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
 
-        # Mock 204 (no jobs)
-        response_mock = AsyncMock()
-        response_mock.status = 204
-        mock_session.get.return_value.__aenter__.return_value = response_mock
-
         scaler = JobScaler(
             concurrency=1,
             handler=handler,
             job_state=job_state,
-            session=mock_session,
+            session=mock_session_with_long_poll,
             job_fetch_url="http://test/job-take"
         )
 
@@ -580,7 +570,7 @@ class TestJobScalerLifecycle:
 
         # Start scaler
         start_task = asyncio.create_task(scaler.start())
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.15)
 
         # After start, acquisition task exists
         assert scaler._acquisition_task is not None
@@ -591,7 +581,7 @@ class TestJobScalerLifecycle:
         await start_task
 
     @pytest.mark.asyncio
-    async def test_stop_cancels_acquisition_loop(self, mock_session, tmp_path):
+    async def test_stop_cancels_acquisition_loop(self, mock_session_with_long_poll, tmp_path):
         """Stop cancels the acquisition loop task."""
         from runpod.serverless.core.job_scaler import JobScaler
 
@@ -600,22 +590,17 @@ class TestJobScalerLifecycle:
 
         job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
 
-        # Mock 204 (no jobs)
-        response_mock = AsyncMock()
-        response_mock.status = 204
-        mock_session.get.return_value.__aenter__.return_value = response_mock
-
         scaler = JobScaler(
             concurrency=1,
             handler=handler,
             job_state=job_state,
-            session=mock_session,
+            session=mock_session_with_long_poll,
             job_fetch_url="http://test/job-take"
         )
 
         # Start scaler
         start_task = asyncio.create_task(scaler.start())
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.15)
 
         acquisition_task = scaler._acquisition_task
         assert acquisition_task is not None
