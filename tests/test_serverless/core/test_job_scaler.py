@@ -14,7 +14,7 @@ Key improvements over current queue-based approach:
 import pytest
 import asyncio
 import time
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 from runpod.serverless.core.job_state import JobState, Job
 
 

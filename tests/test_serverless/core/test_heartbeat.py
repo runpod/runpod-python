@@ -13,7 +13,7 @@ Key improvements over current multiprocessing approach:
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock
 from runpod.serverless.core.job_state import JobState, Job
 
 

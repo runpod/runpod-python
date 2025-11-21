@@ -14,8 +14,7 @@ Key improvements over current polling approach:
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, Mock
-from runpod.serverless.core.job_state import Job
+from unittest.mock import AsyncMock
 
 
 class TestProgressSystemInitialization:
@@ -250,7 +249,6 @@ class TestRetryBehavior:
         """Backoff increases exponentially on repeated failures."""
         from runpod.serverless.core.progress import ProgressSystem
         import aiohttp
-        import time
 
         session = AsyncMock()
 
@@ -270,9 +268,7 @@ class TestRetryBehavior:
 
         await progress.update("job-1", {"percent": 50})
 
-        start = time.perf_counter()
         await asyncio.sleep(0.5)
-        duration = time.perf_counter() - start
 
         # Should have attempted multiple times with increasing delays
         # Initial + retry @ 0.1s + retry @ 0.2s

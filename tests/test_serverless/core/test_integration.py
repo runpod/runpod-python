@@ -15,7 +15,6 @@ These tests simulate real worker scenarios with the mock backend.
 import pytest
 import asyncio
 import time
-from typing import Dict, Any, List
 import aiohttp
 
 
@@ -25,7 +24,7 @@ class TestBasicJobLifecycle:
     @pytest.mark.asyncio
     async def test_single_job_end_to_end(self, tmp_path):
         """Single job flows from queue to completion."""
-        from runpod.serverless.core.job_state import JobState, Job
+        from runpod.serverless.core.job_state import JobState
         from runpod.serverless.core.job_scaler import JobScaler
         from tests.test_serverless.core.mock_backend import MockBackend
 
@@ -52,8 +51,8 @@ class TestBasicJobLifecycle:
                 handler=handler,
                 job_state=job_state,
                 session=session,
-                job_fetch_url=f"http://localhost:8000/job-take",
-                result_url=f"http://localhost:8000/job-done"
+                job_fetch_url="http://localhost:8000/job-take",
+                result_url="http://localhost:8000/job-done"
             )
 
             # Manually get job from backend's internal queue
@@ -174,9 +173,7 @@ class TestHeartbeatIntegration:
         """Heartbeat reports active job IDs during processing."""
         from runpod.serverless.core.job_state import JobState, Job
         from runpod.serverless.core.heartbeat import Heartbeat
-        from tests.test_serverless.core.mock_backend import MockBackend
 
-        backend = MockBackend()
         job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
 
         # Add jobs to state
@@ -246,9 +243,6 @@ class TestProgressIntegration:
         from runpod.serverless.core.job_state import JobState
 
         job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
-
-        # Track progress updates
-        progress_updates = []
 
         async with aiohttp.ClientSession() as session:
             # Mock session for progress
