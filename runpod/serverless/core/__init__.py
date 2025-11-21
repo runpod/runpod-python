@@ -17,6 +17,7 @@ Performance targets:
 """
 
 from .job_state import JobState, Job
+from .heartbeat import Heartbeat
 
 __all__ = [
     "JobState",
