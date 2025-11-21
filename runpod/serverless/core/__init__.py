@@ -18,6 +18,9 @@ Performance targets:
 
 from .job_state import JobState, Job
 from .heartbeat import Heartbeat
+from .job_scaler import JobScaler
+from .progress import ProgressSystem
+from .executor import JobExecutor
 
 __all__ = [
     "JobState",

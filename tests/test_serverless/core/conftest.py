@@ -40,11 +40,14 @@ async def mock_session() -> AsyncMock:
     response_mock = AsyncMock()
     response_mock.status = 200
     response_mock.json = AsyncMock(return_value={})
-    response_mock.raise_for_status = Mock()
+    response_mock.raise_for_status = AsyncMock(return_value=None)
 
     # Setup context manager for get/post
     session.get.return_value.__aenter__.return_value = response_mock
+    session.get.return_value.__aexit__.return_value = None
+
     session.post.return_value.__aenter__.return_value = response_mock
+    session.post.return_value.__aexit__.return_value = None
 
     return session
 
