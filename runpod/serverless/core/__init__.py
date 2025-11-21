@@ -16,8 +16,11 @@ Performance targets:
 - 40-60% tail latency reduction
 """
 
+from .job_state import JobState, Job
+
 __all__ = [
     "JobState",
+    "Job",
     "Heartbeat",
     "JobScaler",
     "ProgressSystem",
