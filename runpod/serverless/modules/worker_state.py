@@ -1,8 +1,17 @@
 """
 Handles getting stuff from environment variables and updating the global state like job id.
+
+DEPRECATED: This module is part of the legacy polling-based architecture and will be
+removed in v2.0.0. The new event-driven core (runpod.serverless.core) is now the default.
+
+To continue using the legacy system, set: RUNPOD_USE_LEGACY_CORE=true
+
+For new code, the legacy API (runpod.serverless.start) automatically uses the new core.
+No code changes are required.
 """
 
 import os
+import warnings
 import time
 import uuid
 import pickle
@@ -66,7 +75,11 @@ class Job:
 #                                    Tracker                                   #
 # ---------------------------------------------------------------------------- #
 class JobsProgress(Set[Job]):
-    """Track the state of current jobs in progress with persistent state."""
+    """Track the state of current jobs in progress with persistent state.
+
+    DEPRECATED: Legacy JobsProgress will be removed in v2.0.0.
+    Use runpod.serverless.start() which now defaults to the new event-driven core.
+    """
 
     _instance = None
     _STATE_DIR = os.getcwd()
@@ -74,6 +87,13 @@ class JobsProgress(Set[Job]):
 
     def __new__(cls):
         if JobsProgress._instance is None:
+            warnings.warn(
+                "Legacy JobsProgress (worker_state.py) is deprecated and will be removed in v2.0.0. "
+                "The new event-driven core is now the default when using runpod.serverless.start(). "
+                "To continue using legacy code, set RUNPOD_USE_LEGACY_CORE=true.",
+                DeprecationWarning,
+                stacklevel=2
+            )
             os.makedirs(cls._STATE_DIR, exist_ok=True)
             JobsProgress._instance = set.__new__(cls)
             # Initialize as empty set before loading state

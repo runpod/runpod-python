@@ -1,9 +1,18 @@
 """
 This module defines the Heartbeat class.
 The heartbeat is responsible for sending periodic pings to the Runpod server.
+
+DEPRECATED: This module is part of the legacy polling-based architecture and will be
+removed in v2.0.0. The new event-driven core (runpod.serverless.core) is now the default.
+
+To continue using the legacy system, set: RUNPOD_USE_LEGACY_CORE=true
+
+For new code, the legacy API (runpod.serverless.start) automatically uses the new core.
+No code changes are required.
 """
 
 import os
+import warnings
 import time
 from multiprocessing import Process
 import requests
@@ -18,7 +27,11 @@ log = RunPodLogger()
 
 
 class Heartbeat:
-    """Sends heartbeats to the Runpod server."""
+    """Sends heartbeats to the Runpod server.
+
+    DEPRECATED: Legacy Heartbeat will be removed in v2.0.0.
+    Use runpod.serverless.start() which now defaults to the new event-driven core.
+    """
 
     _process_started = False
 
@@ -26,6 +39,13 @@ class Heartbeat:
         """
         Initializes the Heartbeat class.
         """
+        warnings.warn(
+            "Legacy Heartbeat (rp_ping.py) is deprecated and will be removed in v2.0.0. "
+            "The new event-driven core is now the default when using runpod.serverless.start(). "
+            "To continue using legacy code, set RUNPOD_USE_LEGACY_CORE=true.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.PING_URL = os.environ.get("RUNPOD_WEBHOOK_PING", "PING_NOT_SET")
         self.PING_URL = self.PING_URL.replace("$RUNPOD_POD_ID", WORKER_ID)
         self.PING_INTERVAL = int(os.environ.get("RUNPOD_PING_INTERVAL", 10000)) // 1000

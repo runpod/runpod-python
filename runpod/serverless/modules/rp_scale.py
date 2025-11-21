@@ -1,9 +1,18 @@
 """
 runpod | serverless | rp_scale.py
 Provides the functionality for scaling the runpod serverless worker.
+
+DEPRECATED: This module is part of the legacy polling-based architecture and will be
+removed in v2.0.0. The new event-driven core (runpod.serverless.core) is now the default.
+
+To continue using the legacy system, set: RUNPOD_USE_LEGACY_CORE=true
+
+For new code, the legacy API (runpod.serverless.start) automatically uses the new core.
+No code changes are required.
 """
 
 import asyncio
+import warnings
 import signal
 import sys
 import traceback
@@ -40,9 +49,19 @@ def _default_concurrency_modifier(current_concurrency: int) -> int:
 class JobScaler:
     """
     Job Scaler. This class is responsible for scaling the number of concurrent requests.
+
+    DEPRECATED: Legacy JobScaler will be removed in v2.0.0.
+    Use runpod.serverless.start() which now defaults to the new event-driven core.
     """
 
     def __init__(self, config: Dict[str, Any]):
+        warnings.warn(
+            "Legacy JobScaler (rp_scale.py) is deprecated and will be removed in v2.0.0. "
+            "The new event-driven core is now the default when using runpod.serverless.start(). "
+            "To continue using legacy code, set RUNPOD_USE_LEGACY_CORE=true.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self._shutdown_event = asyncio.Event()
         self.current_concurrency = 1
         self.config = config
