@@ -10,7 +10,6 @@ preventing blocking operations while maintaining crash recovery capability.
 
 import asyncio
 import pickle
-import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -18,8 +17,10 @@ from pathlib import Path
 from typing import Set, Optional, Dict, Any, Callable
 from filelock import FileLock
 
+from .log_adapter import CoreLogger
 
-log = logging.getLogger(__name__)
+
+log = CoreLogger(__name__)
 
 
 # Python 3.8 compatibility: asyncio.to_thread was added in 3.9

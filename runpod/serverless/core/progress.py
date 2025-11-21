@@ -11,14 +11,15 @@ Key improvements over current approach:
 """
 
 import asyncio
-import logging
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from datetime import datetime
 import aiohttp
 
+from .log_adapter import CoreLogger
 
-log = logging.getLogger(__name__)
+
+log = CoreLogger(__name__)
 
 
 @dataclass
@@ -89,9 +90,9 @@ class ProgressSystem:
         update = ProgressUpdate(job_id=job_id, data=data)
         try:
             await self._queue.put(update)
-            log.debug(f"Queued progress update for {job_id}")
+            log.debug("Queued progress update", job_id=job_id)
         except asyncio.QueueFull:
-            log.warning(f"Progress queue full, dropping update for {job_id}")
+            log.warning("Progress queue full, dropping update", job_id=job_id)
 
     async def start(self) -> None:
         """Start background worker task."""

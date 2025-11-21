@@ -9,15 +9,15 @@ This adapter ensures zero breaking changes for users calling:
 """
 
 import asyncio
-import logging
 import threading
 from typing import Any, Dict, Optional
 
 from ...http_client import AsyncClientSession
 from .progress import ProgressSystem
+from .log_adapter import CoreLogger
 
 
-log = logging.getLogger(__name__)
+log = CoreLogger(__name__)
 
 
 class ProgressAdapter:

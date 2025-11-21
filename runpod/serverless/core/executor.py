@@ -10,13 +10,14 @@ ensuring optimal performance for both async and sync workloads.
 """
 
 import asyncio
-import logging
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Any
 
+from .log_adapter import CoreLogger
 
-log = logging.getLogger(__name__)
+
+log = CoreLogger(__name__)
 
 
 class JobExecutor:
@@ -86,13 +87,15 @@ class JobExecutor:
         if self._executor is None:
             raise RuntimeError("Executor has been shut down")
 
+        job_id = job.get('id', 'unknown')
+
         if self.is_async_handler(handler):
             # Async handler - execute directly in event loop
-            log.debug(f"Executing async handler for job {job.get('id')}")
+            log.debug("Executing async handler", job_id=job_id)
             return await handler(job)
         else:
             # Sync handler - execute in thread pool
-            log.debug(f"Executing sync handler in thread pool for job {job.get('id')}")
+            log.debug("Executing sync handler in thread pool", job_id=job_id)
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(self._executor, handler, job)
 
