@@ -284,27 +284,32 @@ class JobScaler:
 
         Continuously fetches and processes jobs until shutdown.
         Uses semaphore to control concurrency.
+
+        Note: Backend uses long-polling (holds connection open until job arrives).
+        To handle this, we fetch BEFORE acquiring semaphore so job fetching
+        continues even when at max concurrency.
         """
         log.info("Starting job acquisition loop")
 
         while self._alive:
             try:
-                # Acquire semaphore (blocks if at concurrency limit)
+                # Fetch job FIRST (before semaphore)
+                # Backend long-polls (holds connection), so this may block waiting for job
+                # But we still fetch continuously, not blocked by concurrency limit
+                job = await self._fetch_job()
+
+                if job is None:
+                    # No jobs available (204 or timeout)
+                    continue
+
+                # Acquire semaphore AFTER getting job
+                # If at concurrency limit, job waits here until slot available
                 await self.semaphore.acquire()
 
                 # Check if we're shutting down
                 if not self._alive:
                     self.semaphore.release()
                     break
-
-                # Fetch job
-                job = await self._fetch_job()
-
-                if job is None:
-                    # No jobs available - release semaphore and wait
-                    self.semaphore.release()
-                    await asyncio.sleep(0.5)  # Polling interval
-                    continue
 
                 # Process job in background (semaphore released in _process_job)
                 asyncio.create_task(self._process_job(job))
@@ -315,8 +320,6 @@ class JobScaler:
 
             except Exception as e:
                 log.error(f"Job acquisition error: {e}", exc_info=True)
-                # Release semaphore on error
-                self.semaphore.release()
                 await asyncio.sleep(1)  # Back off on errors
 
         log.info("Job acquisition loop stopped")
