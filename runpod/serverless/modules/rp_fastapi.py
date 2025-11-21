@@ -19,7 +19,7 @@ from ...version import __version__ as runpod_version
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
 from .rp_ping import Heartbeat
-from .worker_state import Job, JobsProgress
+from .worker_state import JobsProgress
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
@@ -105,8 +105,8 @@ log = logging.getLogger(__name__)
 
 # ------------------------------- Input Objects ------------------------------ #
 @dataclass
-class Job:
-    """Represents a job."""
+class RealtimeJob:
+    """Represents a realtime job."""
 
     id: str
     input: Union[dict, list, str, int, float, bool]
@@ -295,7 +295,7 @@ class WorkerAPI:
         )
 
     # ----------------------------- Realtime Endpoint ---------------------------- #
-    async def _realtime(self, job: Job):
+    async def _realtime(self, job: RealtimeJob):
         """
         Performs model inference on the input data using the provided handler.
         If handler is not provided, returns an error message.
