@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional
 
 import aiohttp
 
+from ...http_client import AsyncClientSession
 from .executor import JobExecutor
 from .heartbeat import Heartbeat
 from .job_scaler import JobScaler
@@ -111,8 +112,8 @@ class WorkerAdapter:
 
     async def _initialize_components(self):
         """Initialize all core components."""
-        # Create HTTP session
-        self.session = aiohttp.ClientSession()
+        # Create HTTP session with authentication
+        self.session = AsyncClientSession()
 
         # Initialize job state
         self.job_state = JobState(
