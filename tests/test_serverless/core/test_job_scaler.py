@@ -628,3 +628,171 @@ class TestJobScalerLifecycle:
         # Acquisition task should be done (either cancelled or completed)
         assert acquisition_task.done()
         assert not scaler.is_alive()
+
+
+class TestFeatureParity:
+    """Test feature parity with legacy implementation."""
+
+    @pytest.mark.asyncio
+    async def test_job_fetch_includes_job_in_progress(self, mock_session, tmp_path):
+        """Job fetch includes job_in_progress parameter."""
+        from runpod.serverless.core.job_scaler import JobScaler
+
+        async def handler(job):
+            return {"output": "done"}
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+
+        # Add a job to state
+        await job_state.add(Job(id="job-1"))
+
+        # Mock 204 (no jobs available)
+        response_mock = AsyncMock()
+        response_mock.status = 204
+        mock_session.get.return_value.__aenter__.return_value = response_mock
+
+        scaler = JobScaler(
+            concurrency=1,
+            handler=handler,
+            job_state=job_state,
+            session=mock_session,
+            job_fetch_url="http://test/job-take"
+        )
+
+        await scaler._fetch_job()
+
+        # Verify job_in_progress parameter was included
+        call_args = mock_session.get.call_args
+        url = call_args[0][0]
+        assert "job_in_progress=1" in url
+
+    @pytest.mark.asyncio
+    async def test_job_fetch_job_in_progress_zero_when_empty(self, mock_session, tmp_path):
+        """Job fetch sends job_in_progress=0 when no jobs."""
+        from runpod.serverless.core.job_scaler import JobScaler
+
+        async def handler(job):
+            return {"output": "done"}
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+
+        # Mock 204 (no jobs available)
+        response_mock = AsyncMock()
+        response_mock.status = 204
+        mock_session.get.return_value.__aenter__.return_value = response_mock
+
+        scaler = JobScaler(
+            concurrency=1,
+            handler=handler,
+            job_state=job_state,
+            session=mock_session,
+            job_fetch_url="http://test/job-take?existing=param"
+        )
+
+        await scaler._fetch_job()
+
+        # Verify job_in_progress parameter was included
+        call_args = mock_session.get.call_args
+        url = call_args[0][0]
+        assert "job_in_progress=0" in url
+        assert "existing=param" in url  # Existing params preserved
+
+    @pytest.mark.asyncio
+    async def test_result_includes_request_id_header(self, mock_session, tmp_path):
+        """Result posting includes X-Request-ID header."""
+        from runpod.serverless.core.job_scaler import JobScaler
+
+        async def handler(job):
+            return {"output": "done"}
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+
+        # Mock successful post
+        response_mock = AsyncMock()
+        response_mock.raise_for_status.return_value = None
+        mock_session.post.return_value.__aenter__.return_value = response_mock
+
+        scaler = JobScaler(
+            concurrency=1,
+            handler=handler,
+            job_state=job_state,
+            session=mock_session,
+            job_fetch_url="http://test/job-take",
+            result_url="http://test/job-done"
+        )
+
+        await scaler._post_result("test-job-123", {"output": "done"})
+
+        # Verify X-Request-ID header was included
+        call_kwargs = mock_session.post.call_args.kwargs
+        assert "headers" in call_kwargs
+        assert call_kwargs["headers"]["X-Request-ID"] == "test-job-123"
+
+    @pytest.mark.asyncio
+    async def test_error_includes_metadata(self, mock_session, tmp_path, monkeypatch):
+        """Error posting includes comprehensive metadata."""
+        from runpod.serverless.core.job_scaler import JobScaler
+
+        # Set environment variables
+        monkeypatch.setenv("RUNPOD_POD_HOSTNAME", "test-hostname")
+        monkeypatch.setenv("RUNPOD_POD_ID", "test-pod-123")
+
+        async def handler(job):
+            return {"output": "done"}
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+
+        # Mock successful post
+        response_mock = AsyncMock()
+        response_mock.raise_for_status.return_value = None
+        mock_session.post.return_value.__aenter__.return_value = response_mock
+
+        scaler = JobScaler(
+            concurrency=1,
+            handler=handler,
+            job_state=job_state,
+            session=mock_session,
+            job_fetch_url="http://test/job-take",
+            result_url="http://test/job-done"
+        )
+
+        await scaler._post_error("test-job-123", "Test error")
+
+        # Verify error metadata was included
+        call_kwargs = mock_session.post.call_args.kwargs
+        payload = call_kwargs["json"]
+        assert "error_metadata" in payload
+        assert payload["error_metadata"]["hostname"] == "test-hostname"
+        assert payload["error_metadata"]["worker_id"] == "test-pod-123"
+        assert "runpod_version" in payload["error_metadata"]
+
+    @pytest.mark.asyncio
+    async def test_error_includes_request_id_header(self, mock_session, tmp_path):
+        """Error posting includes X-Request-ID header."""
+        from runpod.serverless.core.job_scaler import JobScaler
+
+        async def handler(job):
+            return {"output": "done"}
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+
+        # Mock successful post
+        response_mock = AsyncMock()
+        response_mock.raise_for_status.return_value = None
+        mock_session.post.return_value.__aenter__.return_value = response_mock
+
+        scaler = JobScaler(
+            concurrency=1,
+            handler=handler,
+            job_state=job_state,
+            session=mock_session,
+            job_fetch_url="http://test/job-take",
+            result_url="http://test/job-done"
+        )
+
+        await scaler._post_error("test-job-456", "Test error")
+
+        # Verify X-Request-ID header was included
+        call_kwargs = mock_session.post.call_args.kwargs
+        assert "headers" in call_kwargs
+        assert call_kwargs["headers"]["X-Request-ID"] == "test-job-456"

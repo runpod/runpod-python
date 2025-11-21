@@ -121,6 +121,25 @@ class TestHeartbeatMemoryAccess:
         call_kwargs = mock_session.get.call_args.kwargs
         assert call_kwargs["params"]["job_id"] == ""
 
+    @pytest.mark.asyncio
+    async def test_heartbeat_includes_version(self, mock_session, tmp_path):
+        """Heartbeat includes runpod_version in ping parameters."""
+        from runpod.serverless.core.heartbeat import Heartbeat
+        from runpod.version import __version__ as runpod_version
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+        heartbeat = Heartbeat(
+            session=mock_session,
+            job_state=job_state,
+            ping_url="http://test/ping"
+        )
+
+        await heartbeat._send_ping()
+
+        call_kwargs = mock_session.get.call_args.kwargs
+        assert "runpod_version" in call_kwargs["params"]
+        assert call_kwargs["params"]["runpod_version"] == runpod_version
+
 
 class TestHeartbeatBackoff:
     """Test exponential backoff on failures."""

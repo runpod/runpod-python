@@ -13,9 +13,11 @@ Key improvements:
 
 import asyncio
 import logging
+import os
 from typing import Optional, Dict, Any, Callable
 import aiohttp
 
+from ...version import __version__ as runpod_version
 from .job_state import JobState, Job
 
 
@@ -107,7 +109,12 @@ class JobScaler:
             aiohttp.ClientError: On HTTP errors
         """
         try:
-            async with self.session.get(self.job_fetch_url) as response:
+            # Add job_in_progress parameter (used by platform for scheduling)
+            job_in_progress = "1" if self.job_state.get_job_list() else "0"
+            separator = "&" if "?" in self.job_fetch_url else "?"
+            url = f"{self.job_fetch_url}{separator}job_in_progress={job_in_progress}"
+
+            async with self.session.get(url) as response:
                 if response.status == 204:
                     # No jobs available
                     return None
@@ -214,7 +221,9 @@ class JobScaler:
                 "status": "COMPLETED",
                 "output": result
             }
-            async with self.session.post(self.result_url, json=payload) as response:
+            # Add X-Request-ID header for request tracing
+            headers = {"X-Request-ID": job_id}
+            async with self.session.post(self.result_url, json=payload, headers=headers) as response:
                 response.raise_for_status()
                 log.debug(f"Posted result for job {job_id}")
         except Exception as e:
@@ -232,9 +241,16 @@ class JobScaler:
             payload = {
                 "job_id": job_id,
                 "status": "FAILED",
-                "error": error
+                "error": error,
+                "error_metadata": {
+                    "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
+                    "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
+                    "runpod_version": runpod_version,
+                }
             }
-            async with self.session.post(self.result_url, json=payload) as response:
+            # Add X-Request-ID header for request tracing
+            headers = {"X-Request-ID": job_id}
+            async with self.session.post(self.result_url, json=payload, headers=headers) as response:
                 response.raise_for_status()
                 log.debug(f"Posted error for job {job_id}")
         except Exception as e:

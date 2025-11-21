@@ -17,6 +17,7 @@ import logging
 from typing import Optional
 import aiohttp
 
+from ...version import __version__ as runpod_version
 from .job_state import JobState
 
 
@@ -143,6 +144,7 @@ class Heartbeat:
 
         params = {
             "job_id": job_ids or "",
+            "runpod_version": runpod_version,
             "retry_ping": "0"
         }
 
