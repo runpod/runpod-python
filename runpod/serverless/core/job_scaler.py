@@ -66,6 +66,8 @@ class JobScaler:
         self.job_fetch_url = job_fetch_url
         self.result_url = result_url
         self._alive = True
+        self._shutdown_event = asyncio.Event()
+        self._acquisition_task: Optional[asyncio.Task] = None
 
     async def adjust_concurrency(self, new_concurrency: int) -> None:
         """
@@ -255,3 +257,87 @@ class JobScaler:
         """
         self._alive = False
         log.info("JobScaler shutdown initiated")
+
+    async def _acquisition_loop(self) -> None:
+        """
+        Main job acquisition loop.
+
+        Continuously fetches and processes jobs until shutdown.
+        Uses semaphore to control concurrency.
+        """
+        log.info("Starting job acquisition loop")
+
+        while self._alive:
+            try:
+                # Acquire semaphore (blocks if at concurrency limit)
+                await self.semaphore.acquire()
+
+                # Check if we're shutting down
+                if not self._alive:
+                    self.semaphore.release()
+                    break
+
+                # Fetch job
+                job = await self._fetch_job()
+
+                if job is None:
+                    # No jobs available - release semaphore and wait
+                    self.semaphore.release()
+                    await asyncio.sleep(0.5)  # Polling interval
+                    continue
+
+                # Process job in background (semaphore released in _process_job)
+                asyncio.create_task(self._process_job(job))
+
+            except asyncio.CancelledError:
+                log.info("Job acquisition loop cancelled")
+                break
+
+            except Exception as e:
+                log.error(f"Job acquisition error: {e}", exc_info=True)
+                # Release semaphore on error
+                self.semaphore.release()
+                await asyncio.sleep(1)  # Back off on errors
+
+        log.info("Job acquisition loop stopped")
+
+    async def start(self) -> None:
+        """
+        Start job acquisition loop.
+
+        This runs until stop() is called or an unrecoverable error occurs.
+        """
+        log.info("Starting JobScaler")
+        self._alive = True
+        self._shutdown_event.clear()
+
+        # Start acquisition loop
+        self._acquisition_task = asyncio.create_task(self._acquisition_loop())
+
+        # Wait for shutdown signal
+        await self._shutdown_event.wait()
+
+        log.info("JobScaler shutdown signal received")
+
+    async def stop(self) -> None:
+        """
+        Stop job acquisition and wait for active jobs to complete.
+
+        This gracefully shuts down the scaler:
+        1. Stops acquiring new jobs
+        2. Waits for active jobs to finish
+        3. Cleans up resources
+        """
+        log.info("Stopping JobScaler")
+        self._alive = False
+        self._shutdown_event.set()
+
+        # Cancel acquisition task
+        if self._acquisition_task:
+            self._acquisition_task.cancel()
+            try:
+                await self._acquisition_task
+            except asyncio.CancelledError:
+                pass
+
+        log.info("JobScaler stopped")
