@@ -13,8 +13,7 @@ import logging
 import threading
 from typing import Any, Dict, Optional
 
-import aiohttp
-
+from ...http_client import AsyncClientSession
 from .progress import ProgressSystem
 
 
@@ -47,7 +46,7 @@ class ProgressAdapter:
             return
 
         self._progress_system: Optional[ProgressSystem] = None
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: Optional[AsyncClientSession] = None
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._initialized = True
 
@@ -66,7 +65,7 @@ class ProgressAdapter:
 
         # Create session if needed
         if self._session is None:
-            self._session = aiohttp.ClientSession()
+            self._session = AsyncClientSession()
 
         # Create progress system
         self._progress_system = ProgressSystem(
