@@ -1,9 +1,11 @@
 """ Used to launch the FastAPI web server when worker is running in API mode. """
 
+import logging
 import os
 import threading
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
 import requests
@@ -98,6 +100,7 @@ This endpoint is invaluable for monitoring the progress of a job and obtaining t
 # ------------------------------ Initializations ----------------------------- #
 job_list = JobsProgress()
 heartbeat = Heartbeat()
+log = logging.getLogger(__name__)
 
 
 # ------------------------------- Input Objects ------------------------------ #
@@ -264,6 +267,17 @@ class WorkerAPI:
             tags=["Check Job Results"],
         )
 
+        # Heartbeat endpoint for local testing
+        api_router.add_api_route(
+            "/ping",
+            self._sim_ping,
+            methods=["POST"],
+            response_model_exclude_none=True,
+            summary="Receive heartbeat pings from worker (local testing only).",
+            description="Logs heartbeat pings with job IDs for debugging heartbeat behavior during local development.",
+            tags=["Check Job Results"],
+        )
+
         # Include the APIRouter in the FastAPI application.
         self.rp_app.include_router(api_router)
 
@@ -418,3 +432,29 @@ class WorkerAPI:
         return jsonable_encoder(
             {"id": job_id, "status": "COMPLETED", "output": job_output["output"]}
         )
+
+    # ----------------------------------- ping ----------------------------------- #
+    async def _sim_ping(self, request: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Development endpoint to receive and log heartbeat pings.
+
+        This endpoint allows users to observe heartbeat behavior during local testing.
+        It logs the ping timestamp and active job IDs, making it easier to debug
+        heartbeat timing and job tracking.
+
+        Args:
+            request: Ping request containing job_ids list
+
+        Returns:
+            Status response
+        """
+        job_ids = request.get("job_ids", [])
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Log the ping for user visibility
+        if job_ids:
+            log.info(f"[{timestamp}] Heartbeat ping received: job_ids={job_ids}")
+        else:
+            log.info(f"[{timestamp}] Heartbeat ping received: no active jobs")
+
+        return {"status": "ok", "timestamp": timestamp}
