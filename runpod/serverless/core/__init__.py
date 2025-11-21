@@ -21,6 +21,8 @@ from .heartbeat import Heartbeat
 from .job_scaler import JobScaler
 from .progress import ProgressSystem
 from .executor import JobExecutor
+from .worker_adapter import WorkerAdapter, run_worker_new_core
+from .progress_adapter import progress_update, shutdown_progress_adapter
 
 __all__ = [
     "JobState",
@@ -29,4 +31,8 @@ __all__ = [
     "JobScaler",
     "ProgressSystem",
     "JobExecutor",
+    "WorkerAdapter",
+    "run_worker_new_core",
+    "progress_update",
+    "shutdown_progress_adapter",
 ]

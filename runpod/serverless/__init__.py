@@ -15,11 +15,13 @@ from typing import Any, Dict
 from ..version import __version__ as runpod_version
 from . import worker
 from .modules.rp_logger import RunPodLogger
-from .modules.rp_progress import progress_update
+
+# Import progress_update from new adapter (maintains exact same signature)
+from .core.progress_adapter import progress_update
 
 __all__ = [
     "start",
-    "progress_update", 
+    "progress_update",
     "runpod_version"
 ]
 

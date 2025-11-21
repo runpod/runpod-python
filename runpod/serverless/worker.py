@@ -12,6 +12,9 @@ from runpod.serverless.modules import rp_logger, rp_local, rp_ping, rp_scale
 log = rp_logger.RunPodLogger()
 heartbeat = rp_ping.Heartbeat()
 
+# Feature flag: Default to NEW CORE, opt-out to legacy
+USE_LEGACY_CORE = os.getenv("RUNPOD_USE_LEGACY_CORE", "false").lower() == "true"
+
 
 def _is_local(config) -> bool:
     """Returns True if the worker is running locally, False otherwise."""
@@ -25,22 +28,39 @@ def _is_local(config) -> bool:
 
 
 # ------------------------- Main Worker Running Loop ------------------------- #
-def run_worker(config: Dict[str, Any]) -> None:
+def run_worker_legacy(config: Dict[str, Any]) -> None:
     """
-    Starts the worker loop for multi-processing.
+    Starts the LEGACY worker loop for multi-processing.
 
-    This function is called when the worker is running on Runpod. This function
-    starts a loop that runs indefinitely until the worker is killed.
+    This function is called when the worker is running on Runpod with legacy core.
+    This function starts a loop that runs indefinitely until the worker is killed.
 
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
+    log.info("Using LEGACY CORE (polling-based architecture)")
+
     # Start pinging Runpod to show that the worker is alive.
     heartbeat.start_ping()
 
     # Create a JobScaler responsible for adjusting the concurrency
     job_scaler = rp_scale.JobScaler(config)
     job_scaler.start()
+
+
+def run_worker(config: Dict[str, Any]) -> None:
+    """
+    Starts the worker loop - routes to new core or legacy based on feature flag.
+
+    Args:
+        config (Dict[str, Any]): Configuration parameters for the worker.
+    """
+    if USE_LEGACY_CORE:
+        run_worker_legacy(config)
+    else:
+        # Use new core (default)
+        from runpod.serverless.core import run_worker_new_core
+        run_worker_new_core(config)
 
 
 def main(config: Dict[str, Any]) -> None:
