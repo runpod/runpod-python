@@ -12,16 +12,16 @@ Key improvements:
 """
 
 import asyncio
-import logging
 import os
 from typing import Optional, Dict, Any, Callable
 import aiohttp
 
 from ...version import __version__ as runpod_version
 from .job_state import JobState, Job
+from .log_adapter import CoreLogger
 
 
-log = logging.getLogger(__name__)
+log = CoreLogger(__name__)
 
 
 class JobScaler:
@@ -117,11 +117,12 @@ class JobScaler:
             async with self.session.get(url) as response:
                 if response.status == 204:
                     # No jobs available
+                    log.debug("Received 204 status, no jobs.")
                     return None
 
                 if response.status == 200:
                     job = await response.json()
-                    log.debug(f"Fetched job {job.get('id')}")
+                    log.debug(f"Received Job(s)")
                     return job
 
                 # Unexpected status
@@ -159,22 +160,25 @@ class JobScaler:
                 webhook=job.get("webhook")
             )
             await self.job_state.add(job_obj)
-            log.info(f"Processing job {job_id}")
 
-            # Execute handler
-            try:
-                result = await self._execute_handler(job)
-                log.info(f"Job {job_id} completed successfully")
+            # Use job context for all logs related to this job
+            with log.job_context(job_id):
+                log.info("Started.")
 
-                # Post result if configured
-                if self.result_url:
-                    await self._post_result(job_id, result)
+                # Execute handler
+                try:
+                    result = await self._execute_handler(job)
+                    log.info("Finished.")
 
-            except Exception as handler_error:
-                log.error(f"Handler failed for job {job_id}: {handler_error}", exc_info=True)
-                # Post error result if configured
-                if self.result_url:
-                    await self._post_error(job_id, str(handler_error))
+                    # Post result if configured
+                    if self.result_url:
+                        await self._post_result(job_id, result)
+
+                except Exception as handler_error:
+                    log.error(f"Captured Handler Exception: {handler_error}", exc_info=True)
+                    # Post error result if configured
+                    if self.result_url:
+                        await self._post_error(job_id, str(handler_error))
 
         except Exception as e:
             log.error(f"Job processing failed for {job_id}: {e}", exc_info=True)
@@ -227,9 +231,9 @@ class JobScaler:
             url = self.result_url.replace("$ID", job_id)
             async with self.session.post(url, json=payload, headers=headers) as response:
                 response.raise_for_status()
-                log.debug(f"Posted result for job {job_id}")
+                log.debug("Results sent.", job_id=job_id)
         except Exception as e:
-            log.error(f"Failed to post result for job {job_id}: {e}")
+            log.error(f"Failed to return job results. | {e}", job_id=job_id)
 
     async def _post_error(self, job_id: str, error: str) -> None:
         """
@@ -256,9 +260,9 @@ class JobScaler:
             url = self.result_url.replace("$ID", job_id)
             async with self.session.post(url, json=payload, headers=headers) as response:
                 response.raise_for_status()
-                log.debug(f"Posted error for job {job_id}")
+                log.debug("Error result sent.", job_id=job_id)
         except Exception as e:
-            log.error(f"Failed to post error for job {job_id}: {e}")
+            log.error(f"Error while returning job result. | {e}", job_id=job_id)
 
     def is_alive(self) -> bool:
         """

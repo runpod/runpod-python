@@ -13,15 +13,15 @@ Key improvements:
 """
 
 import asyncio
-import logging
 from typing import Optional
 import aiohttp
 
 from ...version import __version__ as runpod_version
 from .job_state import JobState
+from .log_adapter import CoreLogger
 
 
-log = logging.getLogger(__name__)
+log = CoreLogger(__name__)
 
 
 class Heartbeat:
@@ -119,10 +119,7 @@ class Heartbeat:
                 raise
 
             except Exception as e:
-                log.warning(
-                    f"Heartbeat failed: {e}, backing off {backoff}s",
-                    exc_info=True
-                )
+                log.warning(f"Heartbeat failed: {e}, backing off {backoff}s")
 
                 # Exponential backoff
                 await asyncio.sleep(backoff)
@@ -157,7 +154,4 @@ class Heartbeat:
             timeout=timeout
         ) as response:
             response.raise_for_status()
-            log.debug(
-                f"Heartbeat sent: {response.status} "
-                f"(jobs: {job_ids or 'none'})"
-            )
+            log.debug(f"Heartbeat Sent | URL: {self.ping_url} | Status: {response.status}")

@@ -13,7 +13,6 @@ This adapter ensures zero breaking changes for existing users while delivering
 """
 
 import asyncio
-import logging
 import os
 import signal
 import sys
@@ -28,9 +27,10 @@ from .heartbeat import Heartbeat
 from .job_scaler import JobScaler
 from .job_state import JobState
 from .progress import ProgressSystem
+from .log_adapter import CoreLogger
 
 
-log = logging.getLogger(__name__)
+log = CoreLogger(__name__)
 
 
 def _default_concurrency_modifier(current_concurrency: int) -> int:
