@@ -796,3 +796,101 @@ class TestFeatureParity:
         call_kwargs = mock_session.post.call_args.kwargs
         assert "headers" in call_kwargs
         assert call_kwargs["headers"]["X-Request-ID"] == "test-job-456"
+
+
+class TestURLTemplateSubstitution:
+    """Test URL template variable replacement."""
+
+    @pytest.mark.asyncio
+    async def test_result_url_replaces_job_id(self, mock_session, tmp_path):
+        """Result URL replaces $ID with actual job ID."""
+        from runpod.serverless.core.job_scaler import JobScaler
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+
+        # URL template with $ID variable
+        result_url = "https://api.runpod.ai/v2/endpoint/job-done/worker-123/$ID?gpu=RTX4090"
+
+        async def test_handler(job):
+            return {"result": "success"}
+
+        scaler = JobScaler(
+            concurrency=1,
+            handler=test_handler,
+            job_state=job_state,
+            session=mock_session,
+            job_fetch_url="http://test/fetch",
+            result_url=result_url
+        )
+
+        # Post result with specific job ID
+        await scaler._post_result("job-abc-123", {"output": "test"})
+
+        # Verify URL had $ID replaced
+        call_args = mock_session.post.call_args
+        actual_url = call_args[0][0]
+        assert "$ID" not in actual_url
+        assert "job-abc-123" in actual_url
+        assert actual_url == "https://api.runpod.ai/v2/endpoint/job-done/worker-123/job-abc-123?gpu=RTX4090"
+
+    @pytest.mark.asyncio
+    async def test_error_url_replaces_job_id(self, mock_session, tmp_path):
+        """Error URL replaces $ID with actual job ID."""
+        from runpod.serverless.core.job_scaler import JobScaler
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+
+        # URL template with $ID variable
+        result_url = "https://api.runpod.ai/v2/endpoint/job-done/worker-456/$ID?gpu=A100"
+
+        async def test_handler(job):
+            return {"result": "success"}
+
+        scaler = JobScaler(
+            concurrency=1,
+            handler=test_handler,
+            job_state=job_state,
+            session=mock_session,
+            job_fetch_url="http://test/fetch",
+            result_url=result_url
+        )
+
+        # Post error with specific job ID
+        await scaler._post_error("job-xyz-789", "Test error")
+
+        # Verify URL had $ID replaced
+        call_args = mock_session.post.call_args
+        actual_url = call_args[0][0]
+        assert "$ID" not in actual_url
+        assert "job-xyz-789" in actual_url
+        assert actual_url == "https://api.runpod.ai/v2/endpoint/job-done/worker-456/job-xyz-789?gpu=A100"
+
+    @pytest.mark.asyncio
+    async def test_url_without_template_remains_unchanged(self, mock_session, tmp_path):
+        """URLs without template variables are not modified."""
+        from runpod.serverless.core.job_scaler import JobScaler
+
+        job_state = JobState(checkpoint_path=tmp_path / "jobs.pkl")
+
+        # URL without template variables
+        result_url = "https://api.runpod.ai/v2/endpoint/result"
+
+        async def test_handler(job):
+            return {"result": "success"}
+
+        scaler = JobScaler(
+            concurrency=1,
+            handler=test_handler,
+            job_state=job_state,
+            session=mock_session,
+            job_fetch_url="http://test/fetch",
+            result_url=result_url
+        )
+
+        # Post result
+        await scaler._post_result("job-123", {"output": "test"})
+
+        # Verify URL unchanged
+        call_args = mock_session.post.call_args
+        actual_url = call_args[0][0]
+        assert actual_url == "https://api.runpod.ai/v2/endpoint/result"

@@ -75,11 +75,31 @@ class WorkerAdapter:
             "concurrency_modifier", _default_concurrency_modifier
         )
 
-        # Environment variables
-        self.job_fetch_url = os.getenv("RUNPOD_WEBHOOK_GET_JOB")
-        self.result_url = os.getenv("RUNPOD_WEBHOOK_POST_OUTPUT")
-        self.stream_url = os.getenv("RUNPOD_WEBHOOK_POST_STREAM")
-        self.ping_url = os.getenv("RUNPOD_WEBHOOK_PING")
+        # Environment variables - with template substitution
+        worker_id = os.getenv("RUNPOD_POD_ID", "unknown")
+        gpu_type_id = os.getenv("RUNPOD_GPU_TYPE_ID", "unknown")
+
+        # Replace template variables at initialization
+        self.job_fetch_url = (
+            os.getenv("RUNPOD_WEBHOOK_GET_JOB", "")
+            .replace("$RUNPOD_POD_ID", worker_id)
+            .replace("$RUNPOD_GPU_TYPE_ID", gpu_type_id)
+        )
+        self.result_url = (
+            os.getenv("RUNPOD_WEBHOOK_POST_OUTPUT", "")
+            .replace("$RUNPOD_POD_ID", worker_id)
+            .replace("$RUNPOD_GPU_TYPE_ID", gpu_type_id)
+        )
+        self.stream_url = (
+            os.getenv("RUNPOD_WEBHOOK_POST_STREAM", "")
+            .replace("$RUNPOD_POD_ID", worker_id)
+            .replace("$RUNPOD_GPU_TYPE_ID", gpu_type_id)
+        )
+        self.ping_url = (
+            os.getenv("RUNPOD_WEBHOOK_PING", "")
+            .replace("$RUNPOD_POD_ID", worker_id)
+            .replace("$RUNPOD_GPU_TYPE_ID", gpu_type_id)
+        )
         self.ping_interval_ms = int(os.getenv("RUNPOD_PING_INTERVAL", "10000"))
         self.ping_interval = self.ping_interval_ms / 1000.0  # Convert to seconds
 

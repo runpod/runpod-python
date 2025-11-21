@@ -223,7 +223,9 @@ class JobScaler:
             }
             # Add X-Request-ID header for request tracing
             headers = {"X-Request-ID": job_id}
-            async with self.session.post(self.result_url, json=payload, headers=headers) as response:
+            # Replace per-job template variable
+            url = self.result_url.replace("$ID", job_id)
+            async with self.session.post(url, json=payload, headers=headers) as response:
                 response.raise_for_status()
                 log.debug(f"Posted result for job {job_id}")
         except Exception as e:
@@ -250,7 +252,9 @@ class JobScaler:
             }
             # Add X-Request-ID header for request tracing
             headers = {"X-Request-ID": job_id}
-            async with self.session.post(self.result_url, json=payload, headers=headers) as response:
+            # Replace per-job template variable
+            url = self.result_url.replace("$ID", job_id)
+            async with self.session.post(url, json=payload, headers=headers) as response:
                 response.raise_for_status()
                 log.debug(f"Posted error for job {job_id}")
         except Exception as e:
