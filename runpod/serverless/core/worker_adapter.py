@@ -331,7 +331,7 @@ class WorkerAdapter:
             await self._run_worker_loop()
 
         except KeyboardInterrupt:
-            log.info("Keyboard interrupt received")
+            log.debug("Keyboard interrupt received")
 
         except Exception as error:
             log.error(f"Worker error: {error}", exc_info=True)

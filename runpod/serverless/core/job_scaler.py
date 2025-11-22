@@ -89,12 +89,12 @@ class JobScaler:
             # Scale up - add permits
             for _ in range(delta):
                 self.semaphore.release()
-            log.info(f"Scaled up from {self.current_concurrency} to {new_concurrency}")
+            log.debug(f"Scaled up from {self.current_concurrency} to {new_concurrency}")
         elif delta < 0:
             # Scale down - acquire permits (doesn't block active jobs)
             for _ in range(abs(delta)):
                 await self.semaphore.acquire()
-            log.info(f"Scaled down from {self.current_concurrency} to {new_concurrency}")
+            log.debug(f"Scaled down from {self.current_concurrency} to {new_concurrency}")
 
         self.current_concurrency = new_concurrency
 
@@ -280,7 +280,7 @@ class JobScaler:
         Active jobs will continue to completion.
         """
         self._alive = False
-        log.info("JobScaler shutdown initiated")
+        log.debug("JobScaler shutdown initiated")
 
     async def _acquisition_loop(self) -> None:
         """
@@ -293,7 +293,7 @@ class JobScaler:
         To handle this, we fetch BEFORE acquiring semaphore so job fetching
         continues even when at max concurrency.
         """
-        log.info("Starting job acquisition loop")
+        log.debug("Starting job acquisition loop")
 
         while self._alive:
             try:
@@ -319,14 +319,14 @@ class JobScaler:
                 asyncio.create_task(self._process_job(job))
 
             except asyncio.CancelledError:
-                log.info("Job acquisition loop cancelled")
+                log.debug("Job acquisition loop cancelled")
                 break
 
             except Exception as e:
                 log.error(f"Job acquisition error: {e}", exc_info=True)
                 await asyncio.sleep(1)  # Back off on errors
 
-        log.info("Job acquisition loop stopped")
+        log.debug("Job acquisition loop stopped")
 
     async def start(self) -> None:
         """
@@ -334,7 +334,7 @@ class JobScaler:
 
         This runs until stop() is called or an unrecoverable error occurs.
         """
-        log.info("Starting JobScaler")
+        log.debug("Starting JobScaler")
         self._alive = True
         self._shutdown_event.clear()
 
@@ -344,7 +344,7 @@ class JobScaler:
         # Wait for shutdown signal
         await self._shutdown_event.wait()
 
-        log.info("JobScaler shutdown signal received")
+        log.debug("JobScaler shutdown signal received")
 
     async def stop(self) -> None:
         """
@@ -355,7 +355,7 @@ class JobScaler:
         2. Waits for active jobs to finish
         3. Cleans up resources
         """
-        log.info("Stopping JobScaler")
+        log.debug("Stopping JobScaler")
         self._alive = False
         self._shutdown_event.set()
 
@@ -367,4 +367,4 @@ class JobScaler:
             except asyncio.CancelledError:
                 pass
 
-        log.info("JobScaler stopped")
+        log.debug("JobScaler stopped")

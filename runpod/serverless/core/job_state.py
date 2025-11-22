@@ -182,7 +182,7 @@ class JobState:
         except asyncio.CancelledError:
             pass
         self._checkpoint_task = None
-        log.info("Stopped checkpoint task")
+        log.debug("Stopped checkpoint task")
 
     async def _checkpoint_loop(self) -> None:
         """

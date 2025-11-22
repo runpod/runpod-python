@@ -72,7 +72,7 @@ class Heartbeat:
             return
 
         self._task = asyncio.create_task(self._ping_loop())
-        log.info(
+        log.debug(
             f"Started heartbeat task (interval: {self.interval}s, url: {self.ping_url})"
         )
 
@@ -91,7 +91,7 @@ class Heartbeat:
         except asyncio.CancelledError:
             pass
         self._task = None
-        log.info("Stopped heartbeat task")
+        log.debug("Stopped heartbeat task")
 
     async def _ping_loop(self) -> None:
         """
@@ -115,7 +115,7 @@ class Heartbeat:
                 await asyncio.sleep(self.interval)
 
             except asyncio.CancelledError:
-                log.info("Heartbeat loop cancelled, exiting")
+                log.debug("Heartbeat loop cancelled, exiting")
                 raise
 
             except Exception as e:

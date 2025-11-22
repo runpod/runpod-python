@@ -52,7 +52,7 @@ class JobExecutor:
 
         self.max_workers = max_workers
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
-        log.info(f"Initialized JobExecutor with {max_workers} workers")
+        log.debug(f"Initialized JobExecutor with {max_workers} workers")
 
     def is_async_handler(self, handler: Callable) -> bool:
         """

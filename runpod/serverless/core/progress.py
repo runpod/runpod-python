@@ -101,7 +101,7 @@ class ProgressSystem:
             return
 
         self._worker_task = asyncio.create_task(self._worker_loop())
-        log.info("Started progress worker")
+        log.debug("Started progress worker")
 
     async def stop(self) -> None:
         """Stop worker and flush pending updates."""
@@ -126,7 +126,7 @@ class ProgressSystem:
         except asyncio.CancelledError:
             pass
         self._worker_task = None
-        log.info("Stopped progress worker")
+        log.debug("Stopped progress worker")
 
     async def _worker_loop(self) -> None:
         """
