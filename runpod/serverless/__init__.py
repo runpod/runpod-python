@@ -16,10 +16,12 @@ from ..version import __version__ as runpod_version
 from . import worker
 from .modules.rp_logger import RunPodLogger
 from .modules.rp_progress import progress_update
+from .modules.rp_fitness import register_fitness_check
 
 __all__ = [
     "start",
-    "progress_update", 
+    "progress_update",
+    "register_fitness_check",
     "runpod_version"
 ]
 
