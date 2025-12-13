@@ -1,6 +1,6 @@
 # Runpod Serverless Module Architecture
 
-**Last Updated**: 2025-11-19
+**Last Updated**: 2025-12-13
 **Module**: `runpod/serverless/`
 **Python Support**: 3.8-3.11
 
@@ -11,6 +11,7 @@
 1. [Overview](#overview)
 2. [System Architecture](#system-architecture)
 3. [Component Details](#component-details)
+   - [Fitness Checks](#fitness-checks-modulesrp_fitnesspy)
 4. [Data Flow](#data-flow)
 5. [Concurrency Model](#concurrency-model)
 6. [State Management](#state-management)
@@ -56,6 +57,7 @@ graph TB
 
     subgraph "Worker Orchestration"
         WORKER[worker.py::main]
+        FITNESS[run_fitness_checks]
         SCALER[JobScaler]
         HEARTBEAT[Heartbeat Process]
     end
@@ -88,8 +90,9 @@ graph TB
     end
 
     START --> WORKER
-    WORKER --> SCALER
-    WORKER --> HEARTBEAT
+    WORKER --> FITNESS
+    FITNESS --> HEARTBEAT
+    FITNESS --> SCALER
     SCALER --> JOBFETCH
     SCALER --> JOBRUN
     JOBFETCH --> QUEUE
@@ -110,6 +113,7 @@ graph TB
     SCALER --> LOGGER
 
     style START fill:#1976d2,stroke:#0d47a1,stroke-width:3px,color:#fff
+    style FITNESS fill:#1976d2,stroke:#0d47a1,stroke-width:3px,color:#fff
     style SCALER fill:#d32f2f,stroke:#b71c1c,stroke-width:3px,color:#fff
     style HANDLER fill:#388e3c,stroke:#1b5e20,stroke-width:3px,color:#fff
     style STATE fill:#f57c00,stroke:#e65100,stroke-width:3px,color:#fff
@@ -119,10 +123,11 @@ graph TB
 ### High-Level Flow
 
 1. **Initialization**: `start()` parses arguments, configures worker
-2. **Mode Selection**: Routes to local testing, realtime API, or production worker
-3. **Worker Loop**: JobScaler manages job acquisition and processing
-4. **Concurrent Execution**: Multiple jobs processed simultaneously
-5. **Graceful Shutdown**: Signal handlers ensure clean termination
+2. **Fitness Checks**: Validate worker health at startup (production only)
+3. **Mode Selection**: Routes to local testing, realtime API, or production worker
+4. **Worker Loop**: JobScaler manages job acquisition and processing
+5. **Concurrent Execution**: Multiple jobs processed simultaneously
+6. **Graceful Shutdown**: Signal handlers ensure clean termination
 
 ---
 
@@ -592,6 +597,35 @@ log.error(message, job_id=None)
 
 ---
 
+### Fitness Checks: `modules/rp_fitness.py`
+
+**Location**: `runpod/serverless/modules/rp_fitness.py`
+
+**Responsibilities**:
+- Validate worker health at startup before handler initialization
+- Support both synchronous and asynchronous check functions
+- Exit immediately with sys.exit(1) on any check failure
+- Enable fail-fast deployment validation
+
+**Key Functions**:
+- `register_fitness_check(func)`: Decorator to register fitness checks
+- `run_fitness_checks()`: Execute all registered checks sequentially
+- `clear_fitness_checks()`: Clear registry (testing only)
+
+**Execution Flow**:
+1. Called from `worker.py:40` before heartbeat starts: `asyncio.run(run_fitness_checks())`
+2. Runs only in production mode (skipped for local testing)
+3. Auto-detects sync vs async using `inspect.iscoroutinefunction()`
+4. Executes checks in registration order (list preserves order)
+5. On failure: log detailed error, call `sys.exit(1)`
+6. On success: log completion, proceed with worker startup
+
+**Performance**: ~0.5ms framework overhead per check, total depends on check logic
+
+**User Documentation**: See `docs/serverless/worker_fitness_checks.md` for usage guide and examples
+
+---
+
 ### Utilities
 
 #### `utils/rp_cleanup.py`
@@ -614,6 +648,9 @@ Validate job input against schema.
 
 #### `utils/rp_model_cache.py`
 Manage model caching for faster job startup.
+
+#### `utils/rp_tips.py`
+Validate return body size and suggest S3 upload for outputs exceeding 20MB.
 
 ---
 
@@ -705,6 +742,34 @@ sequenceDiagram
     S->>S: close session
     EL->>EL: close event loop
     T->>T: exit thread
+```
+
+### Fitness Check Flow
+
+```mermaid
+sequenceDiagram
+    participant USER as User Code
+    participant REG as Fitness Registry
+    participant WORKER as Worker Startup
+    participant CHECK as Fitness Check
+    participant SYS as System
+
+    USER->>REG: @register_fitness_check
+    REG->>REG: Append to _fitness_checks[]
+
+    WORKER->>CHECK: run_fitness_checks()
+
+    loop For each registered check
+        CHECK->>CHECK: Auto-detect sync/async
+        alt Check passes
+            CHECK->>CHECK: Log success
+        else Check fails
+            CHECK->>SYS: Log error + traceback
+            CHECK->>SYS: sys.exit(1)
+        end
+    end
+
+    CHECK->>WORKER: All checks passed
 ```
 
 ---
@@ -1197,11 +1262,44 @@ RUNPOD_POD_HOSTNAME="worker-12345.runpod.io"
 RUNPOD_PING_INTERVAL="10"
 ```
 
+### Fitness Check Contract
+
+**Registration Pattern**:
+```python
+@runpod.serverless.register_fitness_check
+def check_name():
+    """Validation logic."""
+    if not valid:
+        raise RuntimeError("Descriptive error message")
+```
+
+**Execution Timing**:
+- Runs once at worker startup (production only)
+- Before handler initialization
+- Before heartbeat starts
+- Before first job acquisition
+
+**Failure Behavior**:
+- Exit code: 1
+- Container marked unhealthy
+- Orchestrator can restart or fail deployment
+
+**Success Behavior**:
+- Worker continues startup normally
+- Heartbeat process starts
+- Worker begins accepting jobs
+
 ---
 
 ## Performance Characteristics
 
 ### Latency Budget
+
+**Fitness Checks** (startup only, production mode):
+- Framework overhead: ~0.5ms per check
+- Total for empty registry: ~0.1ms
+- Typical total impact: 10-500ms depending on check logic
+- **Total**: One-time at startup
 
 **Job Acquisition**:
 - HTTP request: 1-5s (long-polling)
@@ -1358,12 +1456,15 @@ stateDiagram-v2
 - Heartbeat: `runpod/serverless/modules/rp_ping.py`
 - Progress updates: `runpod/serverless/modules/rp_progress.py`
 - Local API: `runpod/serverless/modules/rp_fastapi.py`
+- Fitness checks: `runpod/serverless/modules/rp_fitness.py`
 
 **Performance analysis**: See [TODO.md](TODO.md)
 
-**Recent optimizations**: Commit cc05a5b (lazy loading, -32-42% cold start)
+**Recent additions**:
+- Fitness check system for worker startup validation
+- Lazy loading optimization: Commit cc05a5b (-32-42% cold start)
 
 ---
 
 **Document Version**: 1.0
-**Last Updated**: 2025-11-19
+**Last Updated**: 2025-12-13
