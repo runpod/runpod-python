@@ -162,6 +162,71 @@ def check_environment():
         raise RuntimeError(f"Missing environment variables: {', '.join(missing)}")
 ```
 
+### Automatic GPU Memory Allocation Test
+
+GPU workers automatically run a built-in fitness check that validates GPU memory allocation. **No user action required** - this check runs automatically on GPU machines.
+
+The check:
+- Tests actual GPU memory allocation (cudaMalloc) to ensure GPUs are accessible
+- Enumerates all detected GPUs and validates each one
+- Uses a native CUDA binary for comprehensive testing
+- Falls back to Python-based checks if the binary is unavailable
+- Skips silently on CPU-only workers (allows same code for CPU/GPU)
+
+```python
+import runpod
+
+# GPU health check runs automatically on GPU workers
+# No manual registration needed!
+
+def handler(job):
+    """Your handler runs after GPU health check passes."""
+    return {"output": "success"}
+
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})
+```
+
+**Configuration (Advanced)**:
+
+You can customize the GPU check behavior with environment variables:
+
+```python
+import os
+
+# Adjust timeout (default: 30 seconds)
+os.environ["RUNPOD_GPU_TEST_TIMEOUT"] = "60"
+
+# Override binary path (for custom/patched versions)
+os.environ["RUNPOD_BINARY_GPU_TEST_PATH"] = "/custom/path/gpu_test"
+```
+
+**What it tests**:
+- CUDA driver availability and version
+- NVML initialization
+- GPU enumeration
+- Memory allocation capability for each GPU
+- Actual GPU accessibility
+
+**Success example**:
+```
+Linux Kernel Version: 5.15.0
+CUDA Driver Version: 12.2
+Found 2 GPUs:
+GPU 0: NVIDIA A100 (UUID: GPU-xxx)
+GPU 0 memory allocation test passed.
+GPU 1: NVIDIA A100 (UUID: GPU-yyy)
+GPU 1 memory allocation test passed.
+```
+
+**Failure handling**:
+If the automatic GPU check fails, the worker exits immediately and is marked unhealthy. This ensures GPU workers only process jobs when GPUs are fully functional.
+
+**Performance**:
+- Execution time: 100-500ms per GPU (minimal startup impact)
+- Covers V100, T4, A100, and RTX GPU families
+- For detailed compilation information, see [GPU Binary Compilation Guide](./gpu_binary_compilation.md)
+
 ## Behavior
 
 ### Execution Timing
