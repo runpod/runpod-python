@@ -128,3 +128,16 @@ async def run_fitness_checks() -> None:
             sys.exit(1)
 
     log.info("All fitness checks passed.")
+
+
+# Auto-register GPU fitness check on module import
+try:
+    from .rp_gpu_fitness import auto_register_gpu_check
+
+    auto_register_gpu_check()
+except ImportError:
+    # GPU fitness module not available (shouldn't happen, but defensive)
+    log.debug("GPU fitness check module not found, skipping auto-registration")
+except Exception as e:
+    # Don't fail worker startup if auto-registration has issues
+    log.warning(f"Failed to auto-register GPU fitness check: {e}")
