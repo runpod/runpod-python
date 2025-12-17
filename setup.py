@@ -58,6 +58,12 @@ if __name__ == "__main__":
             "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
         ],
         include_package_data=True,
+        package_data={
+            "runpod": [
+                "serverless/binaries/gpu_test",
+                "serverless/binaries/README.md",
+            ]
+        },
         entry_points={"console_scripts": ["runpod = runpod.cli.entry:runpod_cli"]},
         keywords=[
             "runpod",
