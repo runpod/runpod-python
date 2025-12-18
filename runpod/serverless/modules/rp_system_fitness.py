@@ -26,7 +26,7 @@ log = RunPodLogger()
 
 # Configuration via environment variables
 MIN_MEMORY_GB = float(os.environ.get("RUNPOD_MIN_MEMORY_GB", "4.0"))
-MIN_DISK_GB = float(os.environ.get("RUNPOD_MIN_DISK_GB", "10.0"))
+MIN_DISK_GB = float(os.environ.get("RUNPOD_MIN_DISK_GB", "1.0"))
 MIN_CUDA_VERSION = os.environ.get("RUNPOD_MIN_CUDA_VERSION", "11.8")
 NETWORK_CHECK_TIMEOUT = int(os.environ.get("RUNPOD_NETWORK_CHECK_TIMEOUT", "5"))
 GPU_BENCHMARK_TIMEOUT = int(os.environ.get("RUNPOD_GPU_BENCHMARK_TIMEOUT", "2"))
