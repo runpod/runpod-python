@@ -227,6 +227,119 @@ If the automatic GPU check fails, the worker exits immediately and is marked unh
 - Covers V100, T4, A100, and RTX GPU families
 - For detailed compilation information, see [GPU Binary Compilation Guide](./gpu_binary_compilation.md)
 
+## Built-in System Checks
+
+The following system resource checks run automatically on every worker startup. **No user action required** - these checks validate system readiness before accepting jobs.
+
+### Memory Availability
+
+Ensures sufficient RAM is available for job execution.
+
+- **Default**: 4GB minimum
+- **Configure**: `RUNPOD_MIN_MEMORY_GB=8.0`
+
+What it checks:
+- Total system memory
+- Available memory (accounting for caching/buffers)
+- Memory usage percentage
+
+Example log output:
+```
+Memory check passed: 12.00GB available (of 16.00GB total)
+```
+
+### Disk Space
+
+Verifies adequate disk space on root filesystem and /tmp (common for model downloads).
+
+- **Default**: 10GB minimum
+- **Configure**: `RUNPOD_MIN_DISK_GB=20.0`
+
+What it checks:
+- Root filesystem (/) free space
+- Temporary directory (/tmp) free space
+- Disk usage percentage
+
+Example log output:
+```
+Disk space check passed on /: 50.00GB free (25.0% used)
+```
+
+### Network Connectivity
+
+Tests basic internet connectivity for API calls and job processing.
+
+- **Default**: 5 second timeout to 8.8.8.8:53
+- **Configure**: `RUNPOD_NETWORK_CHECK_TIMEOUT=10`
+
+What it checks:
+- Connection to Google DNS (8.8.8.8 port 53)
+- Response latency
+- Overall internet accessibility
+
+Example log output:
+```
+Network connectivity passed: Connected to 8.8.8.8 (45ms)
+```
+
+### CUDA Version (GPU workers only)
+
+Validates CUDA driver version meets minimum requirements. Skips silently on CPU-only workers.
+
+- **Default**: CUDA 11.8+
+- **Configure**: `RUNPOD_MIN_CUDA_VERSION=12.0`
+
+What it checks:
+- CUDA driver version (via nvcc or nvidia-smi)
+- Version compatibility
+- GPU driver accessibility
+
+Example log output:
+```
+CUDA version check passed: 12.2 (minimum: 11.8)
+```
+
+### GPU Compute Benchmark (GPU workers only)
+
+Quick matrix multiplication to verify GPU compute functionality and responsiveness. Skips silently on CPU-only workers.
+
+- **Default**: 100ms maximum execution time
+- **Configure**: `RUNPOD_GPU_BENCHMARK_TIMEOUT=2`
+
+What it tests:
+- GPU compute capability (matrix multiplication)
+- GPU response time
+- Memory bandwidth to GPU
+
+If the operation takes longer than 100ms, the worker exits as the GPU is too slow for reliable job processing.
+
+Example log output:
+```
+GPU compute benchmark passed: Matrix multiply completed in 25ms
+```
+
+### Configuring Built-in Checks
+
+All thresholds are configurable via environment variables. For example:
+
+```dockerfile
+# In your Dockerfile or container config
+ENV RUNPOD_MIN_MEMORY_GB=8.0
+ENV RUNPOD_MIN_DISK_GB=20.0
+ENV RUNPOD_MIN_CUDA_VERSION=12.0
+ENV RUNPOD_NETWORK_CHECK_TIMEOUT=10
+ENV RUNPOD_GPU_BENCHMARK_TIMEOUT=2
+```
+
+Or in Python:
+
+```python
+import os
+
+os.environ["RUNPOD_MIN_MEMORY_GB"] = "8.0"
+os.environ["RUNPOD_MIN_DISK_GB"] = "20.0"
+```
+
 ## Behavior
 
 ### Execution Timing
