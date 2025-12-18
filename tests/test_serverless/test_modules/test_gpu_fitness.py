@@ -155,7 +155,7 @@ class TestBinaryPathResolution:
 
     def test_returns_none_if_binary_not_found(self):
         """Test returns None when binary not in package."""
-        with patch("runpod._binary_helpers.get_binary_path") as mock_get:
+        with patch("runpod.serverless.modules.rp_gpu_fitness.get_binary_path") as mock_get:
             mock_get.return_value = None
             path = _get_gpu_test_binary_path()
             assert path is None
