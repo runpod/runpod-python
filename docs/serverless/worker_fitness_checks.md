@@ -231,6 +231,11 @@ If the automatic GPU check fails, the worker exits immediately and is marked unh
 
 The following system resource checks run automatically on every worker startup. **No user action required** - these checks validate system readiness before accepting jobs.
 
+**Check Summary:**
+- **3 checks for all workers**: Memory, Disk Space, Network Connectivity
+- **3 additional checks for GPU workers**: CUDA Version, CUDA Device Initialization, GPU Compute Benchmark
+- **Total: 3-6 checks** depending on worker type
+
 ### Memory Availability
 
 Ensures sufficient RAM is available for job execution.
@@ -297,6 +302,29 @@ What it checks:
 Example log output:
 ```
 CUDA version check passed: 12.2 (minimum: 11.8)
+```
+
+### CUDA Device Initialization (GPU workers only)
+
+Verifies CUDA devices can be initialized and are accessible. This catches runtime failures where CUDA appears available but fails during actual use (out of memory, device busy, driver issues, etc.).
+
+What it checks:
+- CUDA device initialization succeeds
+- Device count is correct
+- Each device has accessible memory
+- Tensor allocation works on all devices
+- Device synchronization succeeds
+
+This check runs AFTER the CUDA version check to catch initialization failures early at startup rather than during job processing.
+
+Example log output:
+```
+CUDA initialization passed: 2 device(s) initialized successfully
+```
+
+**Failure scenario** (caught early):
+```
+ERROR  | Fitness check failed: _cuda_init_check | RuntimeError: Failed to initialize GPU 0: CUDA error: CUDA-capable device(s) is/are busy or unavailable
 ```
 
 ### GPU Compute Benchmark (GPU workers only)
