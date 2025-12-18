@@ -257,6 +257,93 @@ async def _check_cuda_versions() -> None:
     )
 
 
+async def _check_cuda_initialization() -> None:
+    """
+    Verify CUDA can be initialized and devices are accessible.
+
+    Tests actual device initialization, memory access, and device properties.
+    This catches issues where CUDA appears available but fails at runtime.
+    Skips silently on CPU-only workers.
+
+    Raises:
+        RuntimeError: If CUDA initialization or device access fails
+    """
+    # Skip on CPU-only workers
+    if not gpu_available():
+        log.debug("No GPU detected, skipping CUDA initialization check")
+        return
+
+    # Try PyTorch first (most common)
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            log.debug("CUDA not available in PyTorch, skipping initialization check")
+            return
+
+        # Reset CUDA state to ensure clean initialization
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.synchronize()
+
+        # Verify device count
+        device_count = torch.cuda.device_count()
+        if device_count == 0:
+            raise RuntimeError("No CUDA devices available despite cuda.is_available() being True")
+
+        # Test each device
+        for i in range(device_count):
+            try:
+                # Get device properties
+                props = torch.cuda.get_device_properties(i)
+                if props.total_memory == 0:
+                    raise RuntimeError(f"GPU {i} reports zero memory")
+
+                # Try allocating a small tensor on the device
+                _ = torch.zeros(1024, device=f"cuda:{i}")
+                torch.cuda.synchronize()
+
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize GPU {i}: {e}")
+
+        log.info(f"CUDA initialization passed: {device_count} device(s) initialized successfully")
+        return
+
+    except ImportError:
+        log.debug("PyTorch not available, trying CuPy...")
+    except Exception as e:
+        raise RuntimeError(f"CUDA initialization failed: {e}")
+
+    # Fallback: try CuPy
+    try:
+        import cupy as cp
+
+        # Reset CuPy state
+        cp.cuda.Device().synchronize()
+
+        # Verify devices
+        device_count = cp.cuda.runtime.getDeviceCount()
+        if device_count == 0:
+            raise RuntimeError("No CUDA devices available via CuPy")
+
+        # Test each device
+        for i in range(device_count):
+            try:
+                cp.cuda.Device(i).use()
+                # Try allocating memory
+                _ = cp.zeros(1024)
+                cp.cuda.Device().synchronize()
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize GPU {i} with CuPy: {e}")
+
+        log.info(f"CUDA initialization passed: {device_count} device(s) initialized successfully")
+        return
+
+    except ImportError:
+        log.debug("CuPy not available, skipping CUDA initialization check")
+    except Exception as e:
+        raise RuntimeError(f"CUDA initialization check failed: {e}")
+
+
 async def _check_gpu_compute_benchmark() -> None:
     """
     Quick GPU compute benchmark using matrix multiplication.
@@ -343,7 +430,7 @@ def auto_register_system_checks() -> None:
     Auto-register system resource fitness checks.
 
     Registers memory, disk, and network checks for all workers.
-    Registers CUDA and GPU benchmark checks only if GPU is detected.
+    Registers CUDA version, initialization, and GPU benchmark checks only if GPU is detected.
     """
     log.debug("Registering system resource fitness checks")
 
@@ -368,9 +455,14 @@ def auto_register_system_checks() -> None:
         log.debug("GPU detected, registering GPU-specific fitness checks")
 
         @register_fitness_check
-        async def _cuda_check() -> None:
+        async def _cuda_version_check() -> None:
             """CUDA version check."""
             await _check_cuda_versions()
+
+        @register_fitness_check
+        async def _cuda_init_check() -> None:
+            """CUDA device initialization check."""
+            await _check_cuda_initialization()
 
         @register_fitness_check
         async def _benchmark_check() -> None:
