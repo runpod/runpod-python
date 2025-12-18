@@ -257,7 +257,7 @@ Memory check passed: 12.00GB available (of 16.00GB total)
 
 Verifies adequate disk space on root filesystem and /tmp (common for model downloads).
 
-- **Default**: 10GB minimum
+- **Default**: 1GB minimum
 - **Configure**: `RUNPOD_MIN_DISK_GB=20.0`
 
 What it checks:
