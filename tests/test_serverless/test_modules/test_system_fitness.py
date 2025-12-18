@@ -241,10 +241,48 @@ class TestCudaVersionCheck:
         # First call (nvcc) fails, second call (nvidia-smi) succeeds
         mock_run.side_effect = [
             FileNotFoundError(),  # nvcc not found
-            MagicMock(returncode=0, stdout="545.23"),  # nvidia-smi output
+            MagicMock(
+                returncode=0,
+                stdout="""
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 565.57                 Driver Version: 565.57         CUDA Version: 12.7     |
+|--------------------------------------+------------------------+------------------------+
+"""
+            ),
         ]
         version = await _get_cuda_version()
         assert version is not None
+        assert "12.7" in version
+        assert "565" not in version  # Should NOT contain driver version
+
+    @pytest.mark.asyncio
+    @patch("subprocess.run")
+    async def test_get_cuda_version_nvidia_smi_no_cuda_in_output(self, mock_run):
+        """Test nvidia-smi output without CUDA version."""
+        mock_run.side_effect = [
+            FileNotFoundError(),  # nvcc not found
+            MagicMock(returncode=0, stdout="No CUDA info here\nSome other output"),
+        ]
+        version = await _get_cuda_version()
+        assert version is None
+
+    @pytest.mark.asyncio
+    @patch("subprocess.run")
+    async def test_get_cuda_version_extraction_from_nvidia_smi(self, mock_run):
+        """Test that CUDA version is correctly extracted from nvidia-smi."""
+        mock_run.side_effect = [
+            FileNotFoundError(),  # nvcc not found
+            MagicMock(
+                returncode=0,
+                stdout="NVIDIA-SMI 565.57    Driver Version: 565.57    CUDA Version: 12.2"
+            ),
+        ]
+        version = await _get_cuda_version()
+        assert version is not None
+        assert "12.2" in version
+        # Verify it's a CUDA version, not driver version
+        parsed = _parse_version(version)
+        assert parsed[0] in (11, 12, 13)  # Valid CUDA major versions
 
     @pytest.mark.asyncio
     async def test_get_cuda_version_unavailable(self):
