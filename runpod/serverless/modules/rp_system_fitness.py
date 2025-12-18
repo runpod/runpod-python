@@ -212,16 +212,25 @@ async def _get_cuda_version() -> Optional[str]:
     except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
         log.debug(f"nvcc not available: {e}")
 
-    # Fallback: try nvidia-smi
+    # Fallback: try nvidia-smi and parse CUDA version from output
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+            ["nvidia-smi"],
             capture_output=True,
             text=True,
             timeout=5,
         )
         if result.returncode == 0:
-            return result.stdout.strip()
+            # Parse CUDA version from header: "CUDA Version: 12.7"
+            for line in result.stdout.split('\n'):
+                if 'CUDA Version:' in line:
+                    # Extract version after "CUDA Version:"
+                    parts = line.split('CUDA Version:')
+                    if len(parts) > 1:
+                        # Get just the version number (e.g., "12.7")
+                        cuda_version = parts[1].strip().split()[0]
+                        return f"CUDA Version: {cuda_version}"
+            log.debug("nvidia-smi output found but couldn't parse CUDA version")
     except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
         log.debug(f"nvidia-smi not available: {e}")
 
