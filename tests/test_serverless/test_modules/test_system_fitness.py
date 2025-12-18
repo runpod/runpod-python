@@ -17,6 +17,7 @@ from runpod.serverless.modules.rp_system_fitness import (
     _check_disk_space,
     _check_network_connectivity,
     _check_cuda_versions,
+    _check_cuda_initialization,
     _check_gpu_compute_benchmark,
     _get_memory_info,
     _get_cuda_version,
@@ -255,6 +256,151 @@ class TestCudaVersionCheck:
 
 
 # ============================================================================
+# CUDA Initialization Tests
+# ============================================================================
+
+class TestCudaInitialization:
+    """Tests for CUDA device initialization checking."""
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_skips_cpu_only(self, mock_gpu_available):
+        """Test that initialization check skips on CPU-only workers."""
+        mock_gpu_available.return_value = False
+        # Should not raise, just skip
+        await _check_cuda_initialization()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_pytorch_success(self, mock_gpu_available):
+        """Test successful CUDA initialization with PyTorch."""
+        mock_gpu_available.return_value = True
+
+        # Mock PyTorch
+        mock_torch = MagicMock()
+        mock_cuda = MagicMock()
+        mock_cuda.is_available.return_value = True
+        mock_cuda.device_count.return_value = 2
+        mock_cuda.reset_peak_memory_stats = MagicMock()
+        mock_cuda.synchronize = MagicMock()
+
+        # Mock device properties
+        mock_props = MagicMock()
+        mock_props.total_memory = 16 * 1024**3
+        mock_cuda.get_device_properties.return_value = mock_props
+
+        # Mock tensor creation
+        mock_tensor = MagicMock()
+        mock_torch.zeros.return_value = mock_tensor
+        mock_torch.cuda = mock_cuda
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            # Should not raise
+            await _check_cuda_initialization()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_pytorch_no_devices(self, mock_gpu_available):
+        """Test CUDA initialization fails when no devices available."""
+        mock_gpu_available.return_value = True
+
+        mock_torch = MagicMock()
+        mock_cuda = MagicMock()
+        mock_cuda.is_available.return_value = True
+        mock_cuda.device_count.return_value = 0
+        mock_cuda.reset_peak_memory_stats = MagicMock()
+        mock_cuda.synchronize = MagicMock()
+        mock_torch.cuda = mock_cuda
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            with pytest.raises(RuntimeError, match="No CUDA devices"):
+                await _check_cuda_initialization()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_pytorch_zero_memory(self, mock_gpu_available):
+        """Test CUDA initialization fails when device reports zero memory."""
+        mock_gpu_available.return_value = True
+
+        mock_torch = MagicMock()
+        mock_cuda = MagicMock()
+        mock_cuda.is_available.return_value = True
+        mock_cuda.device_count.return_value = 1
+        mock_cuda.reset_peak_memory_stats = MagicMock()
+        mock_cuda.synchronize = MagicMock()
+
+        # Mock device with zero memory
+        mock_props = MagicMock()
+        mock_props.total_memory = 0
+        mock_cuda.get_device_properties.return_value = mock_props
+        mock_torch.cuda = mock_cuda
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            with pytest.raises(RuntimeError, match="zero memory"):
+                await _check_cuda_initialization()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_pytorch_allocation_fails(self, mock_gpu_available):
+        """Test CUDA initialization fails when tensor allocation fails."""
+        mock_gpu_available.return_value = True
+
+        mock_torch = MagicMock()
+        mock_cuda = MagicMock()
+        mock_cuda.is_available.return_value = True
+        mock_cuda.device_count.return_value = 1
+        mock_cuda.reset_peak_memory_stats = MagicMock()
+        mock_cuda.synchronize = MagicMock()
+
+        # Mock device properties
+        mock_props = MagicMock()
+        mock_props.total_memory = 16 * 1024**3
+        mock_cuda.get_device_properties.return_value = mock_props
+
+        # Mock tensor allocation failure
+        mock_torch.zeros.side_effect = RuntimeError("CUDA out of memory")
+        mock_torch.cuda = mock_cuda
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            with pytest.raises(RuntimeError, match="Failed to initialize GPU"):
+                await _check_cuda_initialization()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_cupy_fallback(self, mock_gpu_available):
+        """Test CUDA initialization fallback to CuPy when PyTorch unavailable."""
+        mock_gpu_available.return_value = True
+
+        # Mock CuPy
+        mock_cupy = MagicMock()
+        mock_cuda_module = MagicMock()
+        mock_device = MagicMock()
+        mock_device.synchronize = MagicMock()
+        mock_cuda_module.Device.return_value = mock_device
+        mock_cuda_module.runtime.getDeviceCount.return_value = 1
+        mock_cupy.cuda = mock_cuda_module
+        mock_cupy.zeros.return_value = MagicMock()
+
+        # Patch sys.modules so torch import fails but cupy succeeds
+        with patch.dict(
+            "sys.modules",
+            {"torch": None, "cupy": mock_cupy},
+        ):
+            # Should not raise
+            await _check_cuda_initialization()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_no_libraries(self, mock_gpu_available):
+        """Test CUDA initialization skips gracefully when no libraries available."""
+        mock_gpu_available.return_value = True
+
+        with patch.dict("sys.modules", {"torch": None, "cupy": None}):
+            # Should not raise, just skip
+            await _check_cuda_initialization()
+
+
+# ============================================================================
 # GPU Compute Benchmark Tests
 # ============================================================================
 
@@ -312,11 +458,11 @@ class TestAutoRegistration:
 
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
     def test_auto_register_all_checks_with_gpu(self, mock_gpu_available):
-        """Test that all 5 checks are registered on GPU worker."""
+        """Test that all 6 checks are registered on GPU worker."""
         mock_gpu_available.return_value = True
         auto_register_system_checks()
-        # Should register: memory, disk, network, cuda, benchmark
-        assert len(_fitness_checks) >= 5
+        # Should register: memory, disk, network, cuda_version, cuda_init, benchmark
+        assert len(_fitness_checks) >= 6
 
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
     def test_auto_register_cpu_only(self, mock_gpu_available):
