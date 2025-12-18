@@ -66,6 +66,18 @@ def clear_fitness_checks() -> None:
 
 
 _gpu_check_registered = False
+_system_checks_registered = False
+
+
+def _reset_registration_state() -> None:
+    """
+    Reset global registration state.
+
+    Used for testing to ensure clean state between tests.
+    """
+    global _gpu_check_registered, _system_checks_registered
+    _gpu_check_registered = False
+    _system_checks_registered = False
 
 
 def _ensure_gpu_check_registered() -> None:
@@ -92,6 +104,40 @@ def _ensure_gpu_check_registered() -> None:
     except Exception as e:
         # Don't fail fitness checks if auto-registration has issues
         log.warn(f"Failed to auto-register GPU fitness check: {e}")
+
+
+def _ensure_system_checks_registered() -> None:
+    """
+    Ensure system resource fitness checks are registered.
+
+    Deferred until first run to avoid circular import issues during module
+    initialization. Called from run_fitness_checks() on first invocation.
+    """
+    import os
+
+    global _system_checks_registered
+
+    if _system_checks_registered:
+        return
+
+    # Allow disabling system checks for testing
+    if os.environ.get("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "").lower() == "true":
+        log.debug("System fitness checks disabled via environment (RUNPOD_SKIP_AUTO_SYSTEM_CHECKS)")
+        _system_checks_registered = True
+        return
+
+    _system_checks_registered = True
+
+    try:
+        from .rp_system_fitness import auto_register_system_checks
+
+        auto_register_system_checks()
+    except ImportError:
+        # System fitness module not available
+        log.debug("System fitness check module not found, skipping auto-registration")
+    except Exception as e:
+        # Don't fail fitness checks if auto-registration has issues
+        log.warn(f"Failed to auto-register system fitness checks: {e}")
 
 
 async def run_fitness_checks() -> None:
@@ -124,6 +170,9 @@ async def run_fitness_checks() -> None:
     # Defer GPU check auto-registration until fitness checks are about to run
     # This avoids circular import issues during module initialization
     _ensure_gpu_check_registered()
+
+    # Defer system check auto-registration until fitness checks are about to run
+    _ensure_system_checks_registered()
 
     if not _fitness_checks:
         log.debug("No fitness checks registered, skipping.")
