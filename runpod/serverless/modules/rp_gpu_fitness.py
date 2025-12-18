@@ -187,7 +187,7 @@ def _run_gpu_test_fallback() -> None:
 
     try:
         # Use existing rp_cuda utility
-        from .rp_cuda import is_available
+        from ..utils.rp_cuda import is_available
 
         if not is_available():
             raise RuntimeError(
