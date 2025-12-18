@@ -65,22 +65,52 @@ def clear_fitness_checks() -> None:
     _fitness_checks.clear()
 
 
+_gpu_check_registered = False
+
+
+def _ensure_gpu_check_registered() -> None:
+    """
+    Ensure GPU fitness check is registered.
+
+    Deferred until first run to avoid circular import issues during module
+    initialization. Called from run_fitness_checks() on first invocation.
+    """
+    global _gpu_check_registered
+
+    if _gpu_check_registered:
+        return
+
+    _gpu_check_registered = True
+
+    try:
+        from .rp_gpu_fitness import auto_register_gpu_check
+
+        auto_register_gpu_check()
+    except ImportError:
+        # GPU fitness module not available
+        log.debug("GPU fitness check module not found, skipping auto-registration")
+    except Exception as e:
+        # Don't fail fitness checks if auto-registration has issues
+        log.warning(f"Failed to auto-register GPU fitness check: {e}")
+
+
 async def run_fitness_checks() -> None:
     """
     Execute all registered fitness checks sequentially at startup.
 
     Execution flow:
-    1. Check if registry is empty (early return if no checks)
-    2. Log start of fitness check phase
-    3. For each registered check:
+    1. Auto-register GPU check on first run (deferred to avoid circular imports)
+    2. Check if registry is empty (early return if no checks)
+    3. Log start of fitness check phase
+    4. For each registered check:
        - Auto-detect sync vs async using inspect.iscoroutinefunction()
        - Execute check (await if async, call if sync)
        - Log success or failure with check name
-    4. On any exception:
+    5. On any exception:
        - Log detailed error with check name, exception type, and message
        - Log traceback at DEBUG level
        - Call sys.exit(1) immediately (fail-fast)
-    5. On successful completion of all checks:
+    6. On successful completion of all checks:
        - Log completion message
 
     Note:
@@ -91,6 +121,10 @@ async def run_fitness_checks() -> None:
     Raises:
         SystemExit: Calls sys.exit(1) if any check fails.
     """
+    # Defer GPU check auto-registration until fitness checks are about to run
+    # This avoids circular import issues during module initialization
+    _ensure_gpu_check_registered()
+
     if not _fitness_checks:
         log.debug("No fitness checks registered, skipping.")
         return
@@ -128,16 +162,3 @@ async def run_fitness_checks() -> None:
             sys.exit(1)
 
     log.info("All fitness checks passed.")
-
-
-# Auto-register GPU fitness check on module import
-try:
-    from .rp_gpu_fitness import auto_register_gpu_check
-
-    auto_register_gpu_check()
-except ImportError:
-    # GPU fitness module not available (shouldn't happen, but defensive)
-    log.debug("GPU fitness check module not found, skipping auto-registration")
-except Exception as e:
-    # Don't fail worker startup if auto-registration has issues
-    log.warning(f"Failed to auto-register GPU fitness check: {e}")
