@@ -91,7 +91,7 @@ def _ensure_gpu_check_registered() -> None:
         log.debug("GPU fitness check module not found, skipping auto-registration")
     except Exception as e:
         # Don't fail fitness checks if auto-registration has issues
-        log.warning(f"Failed to auto-register GPU fitness check: {e}")
+        log.warn(f"Failed to auto-register GPU fitness check: {e}")
 
 
 async def run_fitness_checks() -> None:
