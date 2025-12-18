@@ -252,7 +252,7 @@ async def _check_gpu_health() -> None:
         log.debug(f"GPU binary not executable: {exc}")
         binary_error = exc
     except Exception as exc:
-        log.warning(f"GPU binary check failed: {exc}")
+        log.warn(f"GPU binary check failed: {exc}")
         binary_attempted = True
         binary_error = exc
 
