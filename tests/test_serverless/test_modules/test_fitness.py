@@ -7,6 +7,7 @@ fitness checks. Does NOT test integration with worker startup.
 """
 
 import asyncio
+import os
 import pytest
 from unittest.mock import patch, MagicMock, call
 
@@ -15,14 +16,19 @@ from runpod.serverless.modules.rp_fitness import (
     run_fitness_checks,
     clear_fitness_checks,
     _fitness_checks,
+    _reset_registration_state,
 )
 
 
 @pytest.fixture(autouse=True)
-def cleanup_fitness_checks():
+def cleanup_fitness_checks(monkeypatch):
     """Automatically clean up fitness checks before and after each test."""
+    # Disable auto-registration of system checks for isolated fitness check tests
+    monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
+    _reset_registration_state()
     clear_fitness_checks()
     yield
+    _reset_registration_state()
     clear_fitness_checks()
 
 
@@ -308,7 +314,8 @@ class TestFitnessLogging:
     async def test_logs_debug_when_no_checks(self, mock_log):
         """Test that debug log is emitted when no checks registered."""
         await run_fitness_checks()
-        mock_log.debug.assert_called_once()
+        # Should log at least twice: system checks disabled + no checks registered
+        assert mock_log.debug.call_count >= 2
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_fitness.log")
