@@ -6,9 +6,8 @@ initialization. Only tests registration, execution, and error handling of
 fitness checks. Does NOT test integration with worker startup.
 """
 
-import asyncio
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from runpod.serverless.modules.rp_fitness import (
     register_fitness_check,

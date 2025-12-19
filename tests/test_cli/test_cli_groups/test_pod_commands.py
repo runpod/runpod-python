@@ -1,7 +1,7 @@
 """ Test CLI pod commands """
 
 import unittest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 from prettytable import PrettyTable

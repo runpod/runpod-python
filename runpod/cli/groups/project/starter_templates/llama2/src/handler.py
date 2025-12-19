@@ -2,7 +2,6 @@
 
 # pylint: skip-file
 
-import inspect
 
 from transformers import HfApi
 
