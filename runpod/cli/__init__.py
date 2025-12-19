@@ -2,7 +2,7 @@
 
 import threading
 
-from .groups import config, ssh
+from .groups import config as config, ssh as ssh
 
 STOP_EVENT = threading.Event()
 
