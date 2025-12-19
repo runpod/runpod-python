@@ -196,7 +196,7 @@ class TestGpuFitnessIntegration:
                  patch(
                 "asyncio.wait_for",
                 side_effect=TimeoutError()
-            ) as mock_wait_for, \
+            ), \
                  patch(
                 "runpod.serverless.modules.rp_gpu_fitness._run_gpu_test_fallback"
             ) as mock_fallback:
@@ -256,7 +256,7 @@ class TestMultipleCheckExecution:
             with patch(
                 "runpod.serverless.modules.rp_gpu_fitness._get_gpu_test_binary_path"
             ) as mock_path, \
-                 patch("asyncio.create_subprocess_exec") as mock_exec, \
+                 patch("asyncio.create_subprocess_exec"), \
                  patch("os.access", return_value=True):
                 mock_path.return_value = None  # Force fallback
                 with patch(

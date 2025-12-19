@@ -17,5 +17,5 @@ try:
     )
 
     print(run_request)
-except TimeoutError as err:
+except TimeoutError:
     print("Job timed out.")
