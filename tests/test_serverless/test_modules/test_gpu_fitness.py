@@ -132,7 +132,7 @@ Unable to initialize CUDA
         result = _parse_gpu_test_output(output)
 
         assert result["success"] is False
-        assert len(result["errors"]) >= 3
+        assert len(result["errors"]) == 3
 
 
 # ============================================================================

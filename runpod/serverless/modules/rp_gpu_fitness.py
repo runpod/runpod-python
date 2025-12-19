@@ -84,6 +84,7 @@ def _parse_gpu_test_output(output: str) -> Dict[str, Any]:
                 found_gpus = int(line.split()[1])
                 result["found_gpus"] = found_gpus
             except (IndexError, ValueError):
+                # Line format doesn't match expected "Found N GPUs:" - skip parsing
                 pass
 
         # Check for success
