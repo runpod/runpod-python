@@ -379,15 +379,16 @@ async def _check_gpu_compute_benchmark() -> None:
         # Do computation
         A = torch.randn(size, size, device="cuda")
         B = torch.randn(size, size, device="cuda")
-        C = torch.matmul(A, B)
+        torch.matmul(A, B)
         torch.cuda.synchronize()  # Wait for GPU to finish
 
         elapsed_ms = (time.time() - start_time) * 1000
+        max_ms = GPU_BENCHMARK_TIMEOUT * 1000
 
-        if elapsed_ms > 100:
+        if elapsed_ms > max_ms:
             raise RuntimeError(
                 f"GPU compute too slow: Matrix multiply took {elapsed_ms:.0f}ms "
-                f"(max: 100ms)"
+                f"(max: {max_ms:.0f}ms)"
             )
 
         log.info(f"GPU compute benchmark passed: Matrix multiply completed in {elapsed_ms:.0f}ms")
@@ -407,15 +408,16 @@ async def _check_gpu_compute_benchmark() -> None:
 
         A = cp.random.randn(size, size)
         B = cp.random.randn(size, size)
-        C = cp.matmul(A, B)
+        cp.matmul(A, B)
         cp.cuda.Device().synchronize()
 
         elapsed_ms = (time.time() - start_time) * 1000
+        max_ms = GPU_BENCHMARK_TIMEOUT * 1000
 
-        if elapsed_ms > 100:
+        if elapsed_ms > max_ms:
             raise RuntimeError(
                 f"GPU compute too slow: Matrix multiply took {elapsed_ms:.0f}ms "
-                f"(max: 100ms)"
+                f"(max: {max_ms:.0f}ms)"
             )
 
         log.info(f"GPU compute benchmark passed: Matrix multiply completed in {elapsed_ms:.0f}ms")

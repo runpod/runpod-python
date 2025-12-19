@@ -501,7 +501,7 @@ class TestAutoRegistration:
         mock_gpu_available.return_value = True
         auto_register_system_checks()
         # Should register: memory, disk, network, cuda_version, cuda_init, benchmark
-        assert len(_fitness_checks) >= 6
+        assert len(_fitness_checks) == 6
 
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
     def test_auto_register_cpu_only(self, mock_gpu_available):
