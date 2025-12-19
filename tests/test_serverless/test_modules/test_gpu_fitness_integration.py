@@ -55,6 +55,7 @@ exit 0
     try:
         os.unlink(binary_path)
     except OSError:
+        # Best-effort cleanup: ignore if file already deleted or inaccessible
         pass
 
 
@@ -77,6 +78,7 @@ exit 0
     try:
         os.unlink(binary_path)
     except OSError:
+        # Best-effort cleanup: ignore if file already deleted or inaccessible
         pass
 
 
@@ -105,6 +107,7 @@ exit 0
     try:
         os.unlink(binary_path)
     except OSError:
+        # Best-effort cleanup: ignore if file already deleted or inaccessible
         pass
 
 

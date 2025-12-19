@@ -7,7 +7,6 @@ fitness checks. Does NOT test integration with worker startup.
 """
 
 import asyncio
-import os
 import pytest
 from unittest.mock import patch, MagicMock
 

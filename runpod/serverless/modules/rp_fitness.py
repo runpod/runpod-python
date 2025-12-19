@@ -8,7 +8,6 @@ exit with sys.exit(1), signaling unhealthy state to the container orchestrator.
 Fitness checks do NOT run in local development mode or testing mode.
 """
 
-import asyncio
 import inspect
 import sys
 import traceback

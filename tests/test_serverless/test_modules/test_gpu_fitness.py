@@ -16,7 +16,6 @@ from runpod.serverless.modules.rp_gpu_fitness import (
     _parse_gpu_test_output,
     _get_gpu_test_binary_path,
     _run_gpu_test_binary,
-    _run_gpu_test_fallback,
     _check_gpu_health,
     auto_register_gpu_check,
 )

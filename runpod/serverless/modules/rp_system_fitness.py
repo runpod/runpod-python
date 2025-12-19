@@ -16,7 +16,7 @@ import os
 import shutil
 import subprocess
 import time
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from .rp_fitness import register_fitness_check
 from .rp_logger import RunPodLogger
