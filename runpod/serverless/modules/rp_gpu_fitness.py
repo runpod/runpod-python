@@ -178,7 +178,7 @@ def _run_gpu_test_fallback() -> None:
     Python fallback for GPU testing using nvidia-smi.
 
     Less comprehensive than binary (doesn't test memory allocation) but validates
-    basic GPU availability.
+    basic GPU availability by checking GPU count.
 
     Raises:
         RuntimeError: If GPUs not available or unhealthy
@@ -186,16 +186,7 @@ def _run_gpu_test_fallback() -> None:
     log.debug("Running Python GPU fallback check")
 
     try:
-        # Use existing rp_cuda utility
-        from ..utils.rp_cuda import is_available
-
-        if not is_available():
-            raise RuntimeError(
-                "GPU not available (nvidia-smi check failed). "
-                "This is a fallback check - consider installing gpu_test binary."
-            )
-
-        # Additional check: Count GPUs
+        # List GPUs to verify availability and count
         result = subprocess.run(
             ["nvidia-smi", "--list-gpus"],
             capture_output=True,
@@ -207,7 +198,7 @@ def _run_gpu_test_fallback() -> None:
         if result.returncode != 0:
             raise RuntimeError(f"nvidia-smi --list-gpus failed: {result.stderr}")
 
-        gpu_lines = [l for l in result.stdout.split("\n") if l.strip()]
+        gpu_lines = [line for line in result.stdout.split("\n") if line.strip()]
         gpu_count = len(gpu_lines)
 
         if gpu_count == 0:
