@@ -242,5 +242,5 @@ def sync_pods(source_pod_id, dest_pod_id, source_workspace, dest_workspace):
         try:
             if 'local_temp_path' in locals():
                 os.unlink(local_temp_path)
-        except:
+        except OSError:
             pass

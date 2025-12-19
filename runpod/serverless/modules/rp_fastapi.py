@@ -17,7 +17,7 @@ from ...version import __version__ as runpod_version
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
 from .rp_ping import Heartbeat
-from .worker_state import Job, JobsProgress
+from .worker_state import JobsProgress
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
