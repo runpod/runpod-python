@@ -121,41 +121,33 @@ def _check_memory_availability() -> None:
 
 def _check_disk_space() -> None:
     """
-    Check disk space availability on root and /tmp.
+    Check disk space availability on root filesystem.
 
+    In containers, root (/) is typically the only filesystem.
     Requires free space to be at least MIN_DISK_PERCENT% of total disk size.
 
     Raises:
         RuntimeError: If insufficient disk space
     """
-    paths_to_check = ["/", "/tmp"]
+    try:
+        usage = shutil.disk_usage("/")
+        total_gb = usage.total / (1024**3)
+        free_gb = usage.free / (1024**3)
+        free_percent = 100 * (free_gb / total_gb)
 
-    for path in paths_to_check:
-        try:
-            usage = shutil.disk_usage(path)
-            total_gb = usage.total / (1024**3)
-            free_gb = usage.free / (1024**3)
-            used_percent = 100 * (1 - free_gb / total_gb)
-            free_percent = 100 * (free_gb / total_gb)
-
-            # Check if free space is below the required percentage
-            if free_percent < MIN_DISK_PERCENT:
-                raise RuntimeError(
-                    f"Insufficient disk space on {path}: {free_gb:.2f}GB free "
-                    f"({free_percent:.1f}%), {MIN_DISK_PERCENT}% required"
-                )
-
-            log.info(
-                f"Disk space check passed on {path}: {free_gb:.2f}GB free "
-                f"({free_percent:.1f}% available)"
+        # Check if free space is below the required percentage
+        if free_percent < MIN_DISK_PERCENT:
+            raise RuntimeError(
+                f"Insufficient disk space: {free_gb:.2f}GB free "
+                f"({free_percent:.1f}%), {MIN_DISK_PERCENT}% required"
             )
-        except FileNotFoundError:
-            # /tmp may not exist on some systems
-            if path == "/":
-                # Root always exists
-                raise
-            # Skip /tmp if it doesn't exist
-            log.debug(f"Path {path} not found, skipping disk check")
+
+        log.info(
+            f"Disk space check passed: {free_gb:.2f}GB free "
+            f"({free_percent:.1f}% available)"
+        )
+    except FileNotFoundError:
+        raise RuntimeError("Could not check disk space: / filesystem not found")
 
 
 async def _check_network_connectivity() -> None:
