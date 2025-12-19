@@ -257,17 +257,24 @@ Memory check passed: 12.00GB available (of 16.00GB total)
 
 Verifies adequate disk space on root filesystem and /tmp (common for model downloads).
 
-- **Default**: 1GB minimum
-- **Configure**: `RUNPOD_MIN_DISK_GB=20.0`
+Requires free space to be at least a percentage of total disk size, which automatically scales to different machine sizes.
+
+- **Default**: 10% of total disk must be free
+- **Configure**: `RUNPOD_MIN_DISK_PERCENT=15` (or any percentage 0-100)
 
 What it checks:
-- Root filesystem (/) free space
-- Temporary directory (/tmp) free space
-- Disk usage percentage
+- Root filesystem (/) free space percentage
+- Temporary directory (/tmp) free space percentage
+- Automatic scaling based on total disk size
+
+Scaling examples with 10% default:
+- 100GB disk: requires 10GB free
+- 1TB disk: requires 100GB free
+- 10TB disk: requires 1TB free
 
 Example log output:
 ```
-Disk space check passed on /: 50.00GB free (25.0% used)
+Disk space check passed on /: 50.00GB free (50.0% available)
 ```
 
 ### Network Connectivity
@@ -353,7 +360,7 @@ All thresholds are configurable via environment variables. For example:
 ```dockerfile
 # In your Dockerfile or container config
 ENV RUNPOD_MIN_MEMORY_GB=8.0
-ENV RUNPOD_MIN_DISK_GB=20.0
+ENV RUNPOD_MIN_DISK_PERCENT=15.0
 ENV RUNPOD_MIN_CUDA_VERSION=12.0
 ENV RUNPOD_NETWORK_CHECK_TIMEOUT=10
 ENV RUNPOD_GPU_BENCHMARK_TIMEOUT=2
@@ -365,7 +372,7 @@ Or in Python:
 import os
 
 os.environ["RUNPOD_MIN_MEMORY_GB"] = "8.0"
-os.environ["RUNPOD_MIN_DISK_GB"] = "20.0"
+os.environ["RUNPOD_MIN_DISK_PERCENT"] = "15.0"
 ```
 
 ## Behavior
