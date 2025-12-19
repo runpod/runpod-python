@@ -10,7 +10,7 @@ import os
 import subprocess
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock, call
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from runpod.serverless.modules.rp_gpu_fitness import (
     _parse_gpu_test_output,

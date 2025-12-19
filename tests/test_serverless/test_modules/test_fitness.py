@@ -9,7 +9,7 @@ fitness checks. Does NOT test integration with worker startup.
 import asyncio
 import os
 import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 from runpod.serverless.modules.rp_fitness import (
     register_fitness_check,

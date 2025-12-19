@@ -9,7 +9,6 @@ Auto-registers when GPUs are detected, skips silently on CPU-only workers.
 """
 
 import asyncio
-import inspect
 import os
 import subprocess
 from pathlib import Path
@@ -310,6 +309,7 @@ def auto_register_gpu_check() -> None:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         has_gpu = False
     except Exception:
+        # Catch any other exceptions and assume no GPU
         has_gpu = False
 
     if has_gpu:
