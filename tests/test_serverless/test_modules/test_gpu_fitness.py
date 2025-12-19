@@ -268,17 +268,9 @@ GPU 0 memory allocation test passed.
 
 
 # ============================================================================
-# Fallback Tests
+# Note: Fallback execution tests are covered by integration tests since
+# they involve subprocess calls that are difficult to mock cleanly.
 # ============================================================================
-
-class TestFallbackExecution:
-    """Tests for Python fallback GPU check.
-
-    Fallback tests are primarily covered by integration tests since
-    the fallback involves subprocess calls that are difficult to mock cleanly.
-    """
-    pass
-
 
 # ============================================================================
 # Health Check Logic Tests

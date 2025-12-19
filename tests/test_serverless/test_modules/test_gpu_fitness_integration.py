@@ -48,7 +48,7 @@ exit 0
 """)
         binary_path = f.name
 
-    os.chmod(binary_path, 0o755)
+    os.chmod(binary_path, 0o700)
     yield Path(binary_path)
 
     # Cleanup
@@ -70,7 +70,7 @@ exit 0
 """)
         binary_path = f.name
 
-    os.chmod(binary_path, 0o755)
+    os.chmod(binary_path, 0o700)
     yield Path(binary_path)
 
     # Cleanup
@@ -98,7 +98,7 @@ exit 0
 """)
         binary_path = f.name
 
-    os.chmod(binary_path, 0o755)
+    os.chmod(binary_path, 0o700)
     yield Path(binary_path)
 
     # Cleanup

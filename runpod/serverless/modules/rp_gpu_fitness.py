@@ -23,6 +23,7 @@ log = RunPodLogger()
 
 # Configuration via environment variables
 TIMEOUT_SECONDS = int(os.environ.get("RUNPOD_GPU_TEST_TIMEOUT", "30"))
+MAX_ERROR_MESSAGES = int(os.environ.get("RUNPOD_GPU_MAX_ERROR_MESSAGES", "10"))
 
 
 def _get_gpu_test_binary_path() -> Optional[Path]:
@@ -151,7 +152,7 @@ async def _run_gpu_test_binary() -> Dict[str, Any]:
         if not result["success"]:
             error_msg = "GPU memory allocation test failed"
             if result["errors"]:
-                error_msg += f": {'; '.join(result['errors'][:3])}"  # Limit to 3 errors
+                error_msg += f": {'; '.join(result['errors'][:MAX_ERROR_MESSAGES])}"
             raise RuntimeError(error_msg)
 
         log.info(
