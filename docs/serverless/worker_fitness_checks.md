@@ -255,16 +255,15 @@ Memory check passed: 12.00GB available (of 16.00GB total)
 
 ### Disk Space
 
-Verifies adequate disk space on root filesystem and /tmp (common for model downloads).
+Verifies adequate disk space on root filesystem.
 
-Requires free space to be at least a percentage of total disk size, which automatically scales to different machine sizes.
+In containers, the root (/) filesystem is typically the only mount point. The check requires free space to be at least a percentage of total disk size, which automatically scales to different machine sizes.
 
 - **Default**: 10% of total disk must be free
 - **Configure**: `RUNPOD_MIN_DISK_PERCENT=15` (or any percentage 0-100)
 
 What it checks:
 - Root filesystem (/) free space percentage
-- Temporary directory (/tmp) free space percentage
 - Automatic scaling based on total disk size
 
 Scaling examples with 10% default:
@@ -274,7 +273,7 @@ Scaling examples with 10% default:
 
 Example log output:
 ```
-Disk space check passed on /: 50.00GB free (50.0% available)
+Disk space check passed: 50.00GB free (50.0% available)
 ```
 
 ### Network Connectivity

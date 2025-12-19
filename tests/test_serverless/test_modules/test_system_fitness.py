@@ -125,8 +125,8 @@ class TestDiskSpaceCheck:
 
     @patch("runpod.serverless.modules.rp_system_fitness.MIN_DISK_PERCENT", 10.0)
     @patch("shutil.disk_usage")
-    def test_checks_both_root_and_tmp(self, mock_disk_usage):
-        """Test that both root and /tmp are checked."""
+    def test_checks_root_filesystem(self, mock_disk_usage):
+        """Test that root filesystem is checked."""
         mock_usage = MagicMock()
         # 100GB total, 50GB free (50% free) - should pass
         mock_usage.total = 100 * 1024**3
@@ -135,10 +135,8 @@ class TestDiskSpaceCheck:
 
         _check_disk_space()
 
-        # Verify both paths were checked
-        assert mock_disk_usage.call_count >= 2
-        paths_checked = [call[0][0] for call in mock_disk_usage.call_args_list]
-        assert "/" in paths_checked
+        # Verify root filesystem was checked
+        mock_disk_usage.assert_called_once_with("/")
 
 
 # ============================================================================
