@@ -8,7 +8,7 @@ and GPU compute benchmarking with various system scenarios.
 import asyncio
 import os
 import subprocess
-from unittest.mock import patch, MagicMock, AsyncMock, call
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
