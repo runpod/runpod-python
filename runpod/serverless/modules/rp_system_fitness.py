@@ -26,7 +26,7 @@ log = RunPodLogger()
 
 # Configuration via environment variables
 MIN_MEMORY_GB = float(os.environ.get("RUNPOD_MIN_MEMORY_GB", "4.0"))
-MIN_DISK_GB = float(os.environ.get("RUNPOD_MIN_DISK_GB", "1.0"))
+MIN_DISK_PERCENT = float(os.environ.get("RUNPOD_MIN_DISK_PERCENT", "10.0"))
 MIN_CUDA_VERSION = os.environ.get("RUNPOD_MIN_CUDA_VERSION", "11.8")
 NETWORK_CHECK_TIMEOUT = int(os.environ.get("RUNPOD_NETWORK_CHECK_TIMEOUT", "5"))
 GPU_BENCHMARK_TIMEOUT = int(os.environ.get("RUNPOD_GPU_BENCHMARK_TIMEOUT", "2"))
@@ -123,6 +123,8 @@ def _check_disk_space() -> None:
     """
     Check disk space availability on root and /tmp.
 
+    Requires free space to be at least MIN_DISK_PERCENT% of total disk size.
+
     Raises:
         RuntimeError: If insufficient disk space
     """
@@ -134,16 +136,18 @@ def _check_disk_space() -> None:
             total_gb = usage.total / (1024**3)
             free_gb = usage.free / (1024**3)
             used_percent = 100 * (1 - free_gb / total_gb)
+            free_percent = 100 * (free_gb / total_gb)
 
-            if free_gb < MIN_DISK_GB:
+            # Check if free space is below the required percentage
+            if free_percent < MIN_DISK_PERCENT:
                 raise RuntimeError(
-                    f"Insufficient disk space on {path}: {free_gb:.2f}GB free, "
-                    f"{MIN_DISK_GB}GB required"
+                    f"Insufficient disk space on {path}: {free_gb:.2f}GB free "
+                    f"({free_percent:.1f}%), {MIN_DISK_PERCENT}% required"
                 )
 
-            log.debug(
+            log.info(
                 f"Disk space check passed on {path}: {free_gb:.2f}GB free "
-                f"({used_percent:.1f}% used)"
+                f"({free_percent:.1f}% available)"
             )
         except FileNotFoundError:
             # /tmp may not exist on some systems

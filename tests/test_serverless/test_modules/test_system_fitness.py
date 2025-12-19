@@ -97,11 +97,12 @@ class TestMemoryCheck:
 class TestDiskSpaceCheck:
     """Tests for disk space checking."""
 
-    @patch("runpod.serverless.modules.rp_system_fitness.MIN_DISK_GB", 10.0)
+    @patch("runpod.serverless.modules.rp_system_fitness.MIN_DISK_PERCENT", 10.0)
     @patch("shutil.disk_usage")
     def test_sufficient_disk_passes(self, mock_disk_usage):
         """Test that sufficient disk space passes the check."""
         mock_usage = MagicMock()
+        # 100GB total, 50GB free (50% free) - should pass with 10% minimum
         mock_usage.total = 100 * 1024**3
         mock_usage.free = 50 * 1024**3
         mock_disk_usage.return_value = mock_usage
@@ -109,23 +110,25 @@ class TestDiskSpaceCheck:
         # Should not raise
         _check_disk_space()
 
-    @patch("runpod.serverless.modules.rp_system_fitness.MIN_DISK_GB", 10.0)
+    @patch("runpod.serverless.modules.rp_system_fitness.MIN_DISK_PERCENT", 10.0)
     @patch("shutil.disk_usage")
     def test_insufficient_disk_fails(self, mock_disk_usage):
         """Test that insufficient disk space fails the check."""
         mock_usage = MagicMock()
-        mock_usage.total = 20 * 1024**3
+        # 100GB total, 5GB free (5% free) - should fail with 10% minimum
+        mock_usage.total = 100 * 1024**3
         mock_usage.free = 5 * 1024**3
         mock_disk_usage.return_value = mock_usage
 
         with pytest.raises(RuntimeError, match="Insufficient disk space"):
             _check_disk_space()
 
-    @patch("runpod.serverless.modules.rp_system_fitness.MIN_DISK_GB", 10.0)
+    @patch("runpod.serverless.modules.rp_system_fitness.MIN_DISK_PERCENT", 10.0)
     @patch("shutil.disk_usage")
     def test_checks_both_root_and_tmp(self, mock_disk_usage):
         """Test that both root and /tmp are checked."""
         mock_usage = MagicMock()
+        # 100GB total, 50GB free (50% free) - should pass
         mock_usage.total = 100 * 1024**3
         mock_usage.free = 50 * 1024**3
         mock_disk_usage.return_value = mock_usage
