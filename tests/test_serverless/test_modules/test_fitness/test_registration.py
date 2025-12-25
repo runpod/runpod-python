@@ -452,3 +452,120 @@ class TestFitnessIntegration:
 
         # Only first check should have run
         assert results == ["one"]
+
+
+# ============================================================================
+# Timing Instrumentation Tests
+# ============================================================================
+
+class TestFitnessCheckTiming:
+    """Tests for fitness check timing instrumentation."""
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_fitness.log")
+    async def test_logs_individual_check_timing(self, mock_log):
+        """Test that individual check timings are logged."""
+        @register_fitness_check
+        def check():
+            pass
+
+        await run_fitness_checks()
+
+        # Verify timing is logged in debug output for the check
+        debug_calls = [str(call) for call in mock_log.debug.call_args_list]
+        # Should contain timing info like "(X.XXms)"
+        assert any("ms)" in call for call in debug_calls)
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_fitness.log")
+    async def test_logs_total_check_timing(self, mock_log):
+        """Test that total execution time is logged."""
+        @register_fitness_check
+        def check():
+            pass
+
+        await run_fitness_checks()
+
+        # Verify total timing is logged in final info message
+        info_calls = [str(call) for call in mock_log.info.call_args_list]
+        # Final message should be "All fitness checks passed. (X.XXms)"
+        assert any(
+            "All fitness checks passed" in call and "ms)" in call
+            for call in info_calls
+        )
+
+    @pytest.mark.asyncio
+    async def test_timing_is_reasonable(self):
+        """Test that check timing is reasonable (not negative, < 100ms for no-op)."""
+        timings = []
+
+        @register_fitness_check
+        def check():
+            pass
+
+        with patch("runpod.serverless.modules.rp_fitness.log") as mock_log:
+            await run_fitness_checks()
+
+            # Extract timing from debug logs
+            debug_calls = mock_log.debug.call_args_list
+            for call in debug_calls:
+                call_str = str(call)
+                # Look for format like "passed: check_name (X.XXms)"
+                if "passed:" in call_str and "ms)" in call_str:
+                    # Extract the timing value
+                    import re
+                    match = re.search(r"\((\d+\.\d+)ms\)", call_str)
+                    if match:
+                        timing_ms = float(match.group(1))
+                        timings.append(timing_ms)
+
+            # Should have at least one timing
+            assert len(timings) > 0
+            # Timings should be positive and reasonable
+            for timing in timings:
+                assert timing >= 0
+                assert timing < 100  # No-op should be < 100ms
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_fitness.log")
+    async def test_timing_with_multiple_checks(self, mock_log):
+        """Test that timing is logged for multiple checks."""
+        @register_fitness_check
+        def check_one():
+            pass
+
+        @register_fitness_check
+        def check_two():
+            pass
+
+        await run_fitness_checks()
+
+        # Should log timing for both checks
+        debug_calls = [str(call) for call in mock_log.debug.call_args_list]
+        timing_logs = [call for call in debug_calls if "ms)" in call]
+        # Should have at least 2 timing logs (one for each check)
+        assert len(timing_logs) >= 2
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_fitness.log")
+    async def test_timing_format_consistency(self, mock_log):
+        """Test that timing format is consistent (X.XXms)."""
+        import re
+
+        @register_fitness_check
+        def check():
+            pass
+
+        await run_fitness_checks()
+
+        # Check all timing messages follow the format pattern
+        all_calls = (
+            [str(call) for call in mock_log.debug.call_args_list]
+            + [str(call) for call in mock_log.info.call_args_list]
+        )
+        timing_calls = [call for call in all_calls if "ms)" in call]
+
+        # All timing entries should match format (X.XXms)
+        pattern = r"\(\d+\.\d{2}ms\)"
+        for call in timing_calls:
+            assert re.search(pattern, call), f"Timing format mismatch in: {call}"

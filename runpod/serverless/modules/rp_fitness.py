@@ -10,6 +10,7 @@ Fitness checks do NOT run in local development mode or testing mode.
 
 import inspect
 import sys
+import time
 import traceback
 from typing import Callable, List
 
@@ -149,19 +150,20 @@ async def run_fitness_checks() -> None:
     3. Log start of fitness check phase
     4. For each registered check:
        - Auto-detect sync vs async using inspect.iscoroutinefunction()
-       - Execute check (await if async, call if sync)
-       - Log success or failure with check name
+       - Execute check with timing instrumentation (await if async, call if sync)
+       - Log success or failure with check name and execution time
     5. On any exception:
        - Log detailed error with check name, exception type, and message
        - Log traceback at DEBUG level
        - Call sys.exit(1) immediately (fail-fast)
     6. On successful completion of all checks:
-       - Log completion message
+       - Log completion message with total execution time
 
     Note:
         Checks run in registration order (list preserves order).
         Sequential execution (not parallel) ensures clear error reporting
         and handles checks with dependencies correctly.
+        Timing uses high-precision perf_counter for accurate measurements.
 
     Raises:
         SystemExit: Calls sys.exit(1) if any check fails.
@@ -179,11 +181,14 @@ async def run_fitness_checks() -> None:
 
     log.info(f"Running {len(_fitness_checks)} fitness check(s)...")
 
+    total_start_time = time.perf_counter()
+
     for check_func in _fitness_checks:
         check_name = check_func.__name__
 
         try:
             log.debug(f"Executing fitness check: {check_name}")
+            check_start_time = time.perf_counter()
 
             # Auto-detect async vs sync using inspect
             if inspect.iscoroutinefunction(check_func):
@@ -191,7 +196,8 @@ async def run_fitness_checks() -> None:
             else:
                 check_func()
 
-            log.debug(f"Fitness check passed: {check_name}")
+            check_elapsed_ms = (time.perf_counter() - check_start_time) * 1000
+            log.debug(f"Fitness check passed: {check_name} ({check_elapsed_ms:.2f}ms)")
 
         except Exception as exc:
             # Log detailed error information
@@ -209,4 +215,5 @@ async def run_fitness_checks() -> None:
             log.error("Worker is unhealthy, exiting.")
             sys.exit(1)
 
-    log.info("All fitness checks passed.")
+    total_elapsed_ms = (time.perf_counter() - total_start_time) * 1000
+    log.info(f"All fitness checks passed. ({total_elapsed_ms:.2f}ms)")
