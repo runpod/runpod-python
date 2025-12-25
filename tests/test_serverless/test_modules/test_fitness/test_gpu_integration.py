@@ -14,8 +14,6 @@ from unittest.mock import patch
 from runpod.serverless.modules.rp_fitness import (
     register_fitness_check,
     run_fitness_checks,
-    clear_fitness_checks,
-    _reset_registration_state,
 )
 from runpod.serverless.modules.rp_gpu_fitness import _check_gpu_health
 
@@ -50,7 +48,9 @@ exit 0
 @pytest.fixture
 def mock_gpu_test_binary_failure():
     """Create a temporary mock gpu_test binary that outputs failure."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix="_gpu_test_fail", delete=False) as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix="_gpu_test_fail", delete=False
+    ) as f:
         f.write("""#!/bin/bash
 cat <<'EOF'
 Failed to initialize NVML: Driver/library version mismatch
@@ -73,7 +73,9 @@ exit 0
 @pytest.fixture
 def mock_gpu_test_binary_multi_gpu():
     """Create a temporary mock gpu_test binary with multiple GPUs."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix="_gpu_test_multi", delete=False) as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix="_gpu_test_multi", delete=False
+    ) as f:
         f.write("""#!/bin/bash
 cat <<'EOF'
 Linux Kernel Version: 5.15.0
@@ -121,7 +123,9 @@ class TestGpuFitnessIntegration:
         await run_fitness_checks()
 
     @pytest.mark.asyncio
-    async def test_fitness_check_with_failure_binary(self, mock_gpu_test_binary_failure):
+    async def test_fitness_check_with_failure_binary(
+        self, mock_gpu_test_binary_failure
+    ):
         """Test fitness check fails with broken binary output."""
         @register_fitness_check
         async def gpu_check():
