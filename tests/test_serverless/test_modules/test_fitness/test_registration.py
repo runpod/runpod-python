@@ -353,7 +353,10 @@ class TestFitnessLogging:
 
         # Should log error with check name and exception type
         error_calls = [str(call) for call in mock_log.error.call_args_list]
-        assert any("failing_check" in call and "RuntimeError" in call for call in error_calls)
+        has_error = any(
+            "failing_check" in call and "RuntimeError" in call for call in error_calls
+        )
+        assert has_error
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_fitness.log")

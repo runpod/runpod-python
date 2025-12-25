@@ -22,7 +22,7 @@ from runpod.serverless.modules.rp_system_fitness import (
     _parse_version,
     auto_register_system_checks,
 )
-from runpod.serverless.modules.rp_fitness import clear_fitness_checks, _fitness_checks
+from runpod.serverless.modules.rp_fitness import _fitness_checks
 
 
 # ============================================================================
@@ -230,16 +230,14 @@ class TestCudaVersionCheck:
     async def test_get_cuda_version_nvidia_smi_fallback(self, mock_run):
         """Test CUDA version retrieval fallback to nvidia-smi."""
         # First call (nvcc) fails, second call (nvidia-smi) succeeds
+        nvidia_smi_output = (
+            "\n+-----------------------------------------------------------------------+\n"
+            "| NVIDIA-SMI 565.57    Driver Version: 565.57   CUDA Version: 12.7    |\n"
+            "+-----------------------------------------------------------------------+\n"
+        )
         mock_run.side_effect = [
             FileNotFoundError(),  # nvcc not found
-            MagicMock(
-                returncode=0,
-                stdout="""
-+-----------------------------------------------------------------------------------------+
-| NVIDIA-SMI 565.57                 Driver Version: 565.57         CUDA Version: 12.7     |
-|--------------------------------------+------------------------+------------------------+
-"""
-            ),
+            MagicMock(returncode=0, stdout=nvidia_smi_output),
         ]
         version = await _get_cuda_version()
         assert version is not None
@@ -261,12 +259,12 @@ class TestCudaVersionCheck:
     @patch("subprocess.run")
     async def test_get_cuda_version_extraction_from_nvidia_smi(self, mock_run):
         """Test that CUDA version is correctly extracted from nvidia-smi."""
+        smi_output = (
+            "NVIDIA-SMI 565.57    Driver Version: 565.57    CUDA Version: 12.2"
+        )
         mock_run.side_effect = [
             FileNotFoundError(),  # nvcc not found
-            MagicMock(
-                returncode=0,
-                stdout="NVIDIA-SMI 565.57    Driver Version: 565.57    CUDA Version: 12.2"
-            ),
+            MagicMock(returncode=0, stdout=smi_output),
         ]
         version = await _get_cuda_version()
         assert version is not None
