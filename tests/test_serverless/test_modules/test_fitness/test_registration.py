@@ -1,5 +1,4 @@
-"""
-Tests for the fitness check system (rp_fitness module).
+"""Tests for the fitness check system (rp_fitness module).
 
 Fitness checks are used to validate worker health at startup before handler
 initialization. Only tests registration, execution, and error handling of
@@ -14,20 +13,7 @@ from runpod.serverless.modules.rp_fitness import (
     run_fitness_checks,
     clear_fitness_checks,
     _fitness_checks,
-    _reset_registration_state,
 )
-
-
-@pytest.fixture(autouse=True)
-def cleanup_fitness_checks(monkeypatch):
-    """Automatically clean up fitness checks before and after each test."""
-    # Disable auto-registration of system checks for isolated fitness check tests
-    monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
-    _reset_registration_state()
-    clear_fitness_checks()
-    yield
-    _reset_registration_state()
-    clear_fitness_checks()
 
 
 # ============================================================================
@@ -116,7 +102,6 @@ class TestFitnessRegistration:
 class TestFitnessExecutionSuccess:
     """Tests for successful fitness check execution."""
 
-
     @pytest.mark.asyncio
     async def test_empty_registry_no_op(self):
         """Test that empty registry results in no-op."""
@@ -204,7 +189,6 @@ class TestFitnessExecutionSuccess:
 
 class TestFitnessExecutionFailure:
     """Tests for fitness check execution failures."""
-
 
     @pytest.mark.asyncio
     async def test_sync_check_fails(self):
@@ -306,7 +290,6 @@ class TestFitnessExecutionFailure:
 class TestFitnessLogging:
     """Tests for fitness check logging behavior."""
 
-
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_fitness.log")
     async def test_logs_debug_when_no_checks(self, mock_log):
@@ -395,7 +378,6 @@ class TestFitnessLogging:
 class TestFitnessClearRegistry:
     """Tests for fitness check registry cleanup."""
 
-
     def test_clear_fitness_checks(self):
         """Test that clear_fitness_checks empties the registry."""
         @register_fitness_check
@@ -427,7 +409,6 @@ class TestFitnessClearRegistry:
 
 class TestFitnessIntegration:
     """Integration tests for fitness check system."""
-
 
     @pytest.mark.asyncio
     async def test_check_with_real_exception_message(self):

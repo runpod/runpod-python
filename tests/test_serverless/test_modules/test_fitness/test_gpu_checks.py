@@ -22,14 +22,6 @@ from runpod.serverless.modules.rp_gpu_fitness import (
 from runpod.serverless.modules.rp_fitness import clear_fitness_checks, _fitness_checks
 
 
-@pytest.fixture(autouse=True)
-def cleanup_fitness_checks():
-    """Automatically clean up fitness checks before and after each test."""
-    clear_fitness_checks()
-    yield
-    clear_fitness_checks()
-
-
 # ============================================================================
 # Output Parsing Tests
 # ============================================================================
