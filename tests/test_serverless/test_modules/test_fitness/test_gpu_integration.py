@@ -20,18 +20,6 @@ from runpod.serverless.modules.rp_fitness import (
 from runpod.serverless.modules.rp_gpu_fitness import _check_gpu_health
 
 
-@pytest.fixture(autouse=True)
-def cleanup_checks(monkeypatch):
-    """Clean fitness checks before and after each test."""
-    # Disable auto-registration of system checks for GPU fitness integration tests
-    monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
-    _reset_registration_state()
-    clear_fitness_checks()
-    yield
-    _reset_registration_state()
-    clear_fitness_checks()
-
-
 @pytest.fixture
 def mock_gpu_test_binary():
     """Create a temporary mock gpu_test binary that outputs success."""
