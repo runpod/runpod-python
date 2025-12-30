@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 import tomli as toml
+import tomlkit
 
 CREDENTIAL_FILE = os.path.expanduser("~/.runpod/config.toml")
 
@@ -30,16 +31,27 @@ def set_credentials(api_key: str, profile: str = "default", overwrite=False) -> 
     os.makedirs(os.path.dirname(CREDENTIAL_FILE), exist_ok=True)
     Path(CREDENTIAL_FILE).touch(exist_ok=True)
 
+    with open(CREDENTIAL_FILE, "r", encoding="UTF-8") as cred_file:
+        try:
+            content = cred_file.read()
+            config = (
+                tomlkit.parse(content)
+                if content.strip()
+                else tomlkit.document()
+            )
+        except tomlkit.exceptions.ParseError as exc:
+            raise ValueError("~/.runpod/config.toml is not a valid TOML file.") from exc
+
     if not overwrite:
-        with open(CREDENTIAL_FILE, "rb") as cred_file:
-            if profile in toml.load(cred_file):
-                raise ValueError(
-                    "Profile already exists. Use `update_credentials` instead."
-                )
+        if profile in config:
+            raise ValueError(
+                "Profile already exists. Use `update_credentials` instead."
+            )
+
+    config[profile] = {"api_key": api_key}
 
     with open(CREDENTIAL_FILE, "w", encoding="UTF-8") as cred_file:
-        cred_file.write("[" + profile + "]\n")
-        cred_file.write('api_key = "' + api_key + '"\n')
+        tomlkit.dump(config, cred_file)
 
 
 def check_credentials(profile: str = "default"):
