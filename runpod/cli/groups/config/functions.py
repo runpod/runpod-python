@@ -34,11 +34,7 @@ def set_credentials(api_key: str, profile: str = "default", overwrite=False) -> 
     with open(CREDENTIAL_FILE, "r", encoding="UTF-8") as cred_file:
         try:
             content = cred_file.read()
-            config = (
-                tomlkit.parse(content)
-                if content.strip()
-                else tomlkit.document()
-            )
+            config = tomlkit.parse(content) if content.strip() else tomlkit.document()
         except tomlkit.exceptions.ParseError as exc:
             raise ValueError("~/.runpod/config.toml is not a valid TOML file.") from exc
 
