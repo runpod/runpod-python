@@ -41,6 +41,16 @@ Changelog = "https://github.com/runpod/runpod-python/blob/main/CHANGELOG.md"
 "Bug Tracker" = "https://github.com/runpod/runpod-python/issues"
 
 
+[tool.setuptools]
+packages = ["runpod"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+runpod = [
+    "serverless/binaries/gpu_test",
+    "serverless/binaries/README.md",
+]
+
 [tool.setuptools_scm]
 version_file = "runpod/_version.py"
 local_scheme = "no-local-version"
@@ -75,4 +85,7 @@ dependencies = { file = ["requirements.txt"] }
 
 # Used by pytest coverage
 [tool.coverage.run]
-omit = ["runpod/_version.py",]
+omit = [
+    "runpod/_version.py",
+    "runpod/serverless/binaries/*",
+]
