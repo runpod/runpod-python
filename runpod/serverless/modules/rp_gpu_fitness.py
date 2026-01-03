@@ -166,10 +166,10 @@ async def _run_gpu_test_binary() -> Dict[str, Any]:
         raise RuntimeError(
             f"GPU test binary timed out after {TIMEOUT_SECONDS}s"
         ) from None
-    except FileNotFoundError as exc:
-        raise exc
-    except PermissionError as exc:
-        raise exc
+    except FileNotFoundError:
+        raise
+    except PermissionError:
+        raise
     except Exception as exc:
         raise RuntimeError(f"GPU test binary execution failed: {exc}") from exc
 
@@ -214,8 +214,8 @@ def _run_gpu_test_fallback() -> None:
         raise RuntimeError("nvidia-smi not found. Cannot validate GPU availability.") from None
     except subprocess.TimeoutExpired:
         raise RuntimeError("nvidia-smi timed out") from None
-    except Exception as exc:
-        raise exc
+    except RuntimeError:
+        raise
 
 
 async def _check_gpu_health() -> None:

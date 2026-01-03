@@ -161,11 +161,11 @@ async def _check_network_connectivity() -> None:
     port = 53
 
     try:
-        start_time = time.time()
+        start_time = time.perf_counter()
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port), timeout=NETWORK_CHECK_TIMEOUT
         )
-        elapsed_ms = (time.time() - start_time) * 1000
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
         writer.close()
         await writer.wait_closed()
 
@@ -374,7 +374,7 @@ async def _check_gpu_compute_benchmark() -> None:
 
         # Create small matrix on GPU
         size = 1024
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         # Do computation
         A = torch.randn(size, size, device="cuda")
@@ -382,7 +382,7 @@ async def _check_gpu_compute_benchmark() -> None:
         torch.matmul(A, B)
         torch.cuda.synchronize()  # Wait for GPU to finish
 
-        elapsed_ms = (time.time() - start_time) * 1000
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
         max_ms = GPU_BENCHMARK_TIMEOUT * 1000
 
         if elapsed_ms > max_ms:
@@ -404,14 +404,14 @@ async def _check_gpu_compute_benchmark() -> None:
         import cupy as cp
 
         size = 1024
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         A = cp.random.randn(size, size)
         B = cp.random.randn(size, size)
         cp.matmul(A, B)
         cp.cuda.Device().synchronize()
 
-        elapsed_ms = (time.time() - start_time) * 1000
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
         max_ms = GPU_BENCHMARK_TIMEOUT * 1000
 
         if elapsed_ms > max_ms:
