@@ -72,7 +72,19 @@ class JobScaler:
             self.jobs_handler = jobs_handler
 
     async def set_scale(self):
-        self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
+        # Concurrency modifier is user-provided and can return invalid values (e.g. None).
+        # Defensive validation prevents crashes like: TypeError: '<' not supported between 'int' and 'NoneType'
+        # when current_concurrency is used for queue sizing / task scheduling.
+        try:
+            new_concurrency = self.concurrency_modifier(self.current_concurrency)
+        except Exception as error:
+            log.warn(
+                f"JobScaler.set_scale | concurrency_modifier raised {type(error).__name__}: {error}. "
+                f"Keeping concurrency at {self.current_concurrency}."
+            )
+            new_concurrency = self.current_concurrency
+
+        self.current_concurrency = self._sanitize_concurrency(new_concurrency)
 
         if self.jobs_queue and (self.current_concurrency == self.jobs_queue.maxsize):
             # no need to resize
@@ -87,6 +99,34 @@ class JobScaler:
         log.debug(
             f"JobScaler.set_scale | New concurrency set to: {self.current_concurrency}"
         )
+
+    @staticmethod
+    def _sanitize_concurrency(value: Any) -> int:
+        """
+        Coerce a user-provided concurrency value into a safe integer >= 1.
+        """
+        # Reject common footguns explicitly.
+        if value is None or isinstance(value, bool) or isinstance(value, float):
+            log.warn(
+                f"JobScaler.set_scale | Invalid concurrency value: {value!r}. Defaulting to 1."
+            )
+            return 1
+
+        try:
+            v = int(value)
+        except Exception:
+            log.warn(
+                f"JobScaler.set_scale | Invalid concurrency value: {value!r}. Defaulting to 1."
+            )
+            return 1
+
+        if v < 1:
+            log.warn(
+                f"JobScaler.set_scale | Invalid concurrency value: {value!r}. Defaulting to 1."
+            )
+            return 1
+
+        return v
 
     def start(self):
         """
