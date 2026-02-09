@@ -2,6 +2,7 @@
 Unit tests for the rp_cuda module
 """
 
+import subprocess
 from unittest.mock import patch
 
 from runpod.serverless.utils import rp_cuda
@@ -15,7 +16,7 @@ def test_is_available_true():
         "subprocess.check_output", return_value=b"NVIDIA-SMI"
     ) as mock_check_output:
         assert rp_cuda.is_available() is True
-    mock_check_output.assert_called_once_with("nvidia-smi", shell=True)
+    mock_check_output.assert_called_once_with(["nvidia-smi"], stderr=subprocess.DEVNULL)
 
 
 def test_is_available_false():
@@ -26,7 +27,7 @@ def test_is_available_false():
         "subprocess.check_output", return_value=b"Not a GPU output"
     ) as mock_check_output:
         assert rp_cuda.is_available() is False
-    mock_check_output.assert_called_once_with("nvidia-smi", shell=True)
+    mock_check_output.assert_called_once_with(["nvidia-smi"], stderr=subprocess.DEVNULL)
 
 
 def test_is_available_exception():
@@ -37,4 +38,4 @@ def test_is_available_exception():
         "subprocess.check_output", side_effect=Exception("Bad Command")
     ) as mock_check:
         assert rp_cuda.is_available() is False
-    mock_check.assert_called_once_with("nvidia-smi", shell=True)
+    mock_check.assert_called_once_with(["nvidia-smi"], stderr=subprocess.DEVNULL)

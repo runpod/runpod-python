@@ -1,0 +1,4 @@
+include runpod/serverless/binaries/gpu_test
+include runpod/serverless/binaries/README.md
+include build_tools/gpu_test.c
+include build_tools/compile_gpu_test.sh

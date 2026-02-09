@@ -7,7 +7,6 @@ This directory is cleaned up after the job is complete.
 """
 
 import os
-import re
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor

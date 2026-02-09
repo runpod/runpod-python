@@ -10,7 +10,7 @@ def is_available():
     Returns True if CUDA is available, False otherwise.
     """
     try:
-        output = subprocess.check_output("nvidia-smi", shell=True)
+        output = subprocess.check_output(["nvidia-smi"], stderr=subprocess.DEVNULL)
         if "NVIDIA-SMI" in output.decode():
             return True
     except Exception:  # pylint: disable=broad-except

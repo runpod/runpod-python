@@ -127,7 +127,7 @@ async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dic
         async for stream_output in generator_output:
             log.debug(f"Stream output: {stream_output}", job["id"])
 
-            if type(stream_output.get("output")) == dict:
+            if isinstance(stream_output.get("output"), dict):
                 if stream_output["output"].get("error"):
                     stream_output = {"error": str(stream_output["output"]["error"])}
 

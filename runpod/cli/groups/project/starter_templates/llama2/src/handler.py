@@ -1,8 +1,8 @@
 """ A template for a Llama2 handler file. """
 
 # pylint: skip-file
+# ruff: noqa
 
-import inspect
 
 from transformers import HfApi
 
