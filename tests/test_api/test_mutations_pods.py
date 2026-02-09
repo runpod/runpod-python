@@ -60,6 +60,50 @@ class TestPodMutations(unittest.TestCase):
         self.assertIn("mutation", cpu_result)
         self.assertIn("deployCpuPod", cpu_result)
 
+    def test_generate_pod_deployment_mutation_with_encrypt_volume(self):
+        """
+        Test generate_pod_deployment_mutation with encrypt_volume parameter
+        """
+        # Test GPU pod deployment with encryption enabled
+        gpu_result_encrypted = pods.generate_pod_deployment_mutation(
+            name="test-encrypted",
+            image_name="test_image",
+            gpu_type_id="1",
+            cloud_type="cloud",
+            encrypt_volume=True
+        )
+
+        # Test CPU pod deployment with encryption enabled
+        cpu_result_encrypted = pods.generate_pod_deployment_mutation(
+            name="test-cpu-encrypted",
+            image_name="test_image",
+            cloud_type="cloud",
+            instance_id="cpu3c-2-4",
+            encrypt_volume=True
+        )
+
+        # Test GPU pod deployment with encryption explicitly disabled
+        gpu_result_no_encryption = pods.generate_pod_deployment_mutation(
+            name="test-no-encryption",
+            image_name="test_image",
+            gpu_type_id="1",
+            cloud_type="cloud",
+            encrypt_volume=False
+        )
+
+        # Check that encrypted mutations contain encryptVolume: true
+        self.assertIn("encryptVolume: true", gpu_result_encrypted)
+        self.assertIn("encryptVolume: true", cpu_result_encrypted)
+        
+        # Check that non-encrypted mutations do not contain encryptVolume
+        self.assertNotIn("encryptVolume", gpu_result_no_encryption)
+
+        # Check basic mutation structure is preserved
+        self.assertIn("mutation", gpu_result_encrypted)
+        self.assertIn("podFindAndDeployOnDemand", gpu_result_encrypted)
+        self.assertIn("mutation", cpu_result_encrypted)
+        self.assertIn("deployCpuPod", cpu_result_encrypted)
+
     def test_generate_pod_stop_mutation(self):
         """
         Test generate_pod_stop_mutation

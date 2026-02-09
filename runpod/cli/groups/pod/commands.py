@@ -38,8 +38,11 @@ def list_pods():
 @click.option(
     "--support-public-ip", default=True, help="Whether or not to support a public IP."
 )
+@click.option(
+    "--encrypt-volume/--no-encrypt-volume", default=False, help="Whether or not to encrypt the volume."
+)
 def create_new_pod(
-    name, image, gpu_type, gpu_count, support_public_ip
+    name, image, gpu_type, gpu_count, support_public_ip, encrypt_volume
 ):  # pylint: disable=too-many-arguments
     """
     Creates a pod.
@@ -47,6 +50,7 @@ def create_new_pod(
     kwargs = {
         "gpu_count": gpu_count,
         "support_public_ip": support_public_ip,
+        "encrypt_volume": encrypt_volume,
     }
 
     if not name:
