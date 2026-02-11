@@ -14,19 +14,31 @@ class TestConfig(unittest.TestCase):
     def setUp(self) -> None:
         self.sample_credentials = "[default]\n" 'api_key = "RUNPOD_API_KEY"\n'
 
-    @patch("runpod.cli.groups.config.functions.toml.load")
-    @patch("builtins.open", new_callable=mock_open())
-    def test_set_credentials(self, mock_file, mock_toml_load):
+    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
+    @patch("runpod.cli.groups.config.functions.tomlkit.document")
+    @patch("builtins.open", new_callable=mock_open, read_data="")
+    def test_set_credentials(self, mock_file, mock_document, mock_dump):
         """
         Tests the set_credentials function.
         """
-        mock_toml_load.return_value = ""
+        mock_document.side_effect = [{}, {"default": True}]
         functions.set_credentials("RUNPOD_API_KEY")
 
-        mock_file.assert_called_with(functions.CREDENTIAL_FILE, "w", encoding="UTF-8")
+        assert any(
+            call.args[0] == functions.CREDENTIAL_FILE
+            and call.args[1] == "r"
+            and call.kwargs.get("encoding") == "UTF-8"
+            for call in mock_file.call_args_list
+        )
+        assert any(
+            call.args[0] == functions.CREDENTIAL_FILE
+            and call.args[1] == "w"
+            and call.kwargs.get("encoding") == "UTF-8"
+            for call in mock_file.call_args_list
+        )
+        assert mock_dump.called
 
         with self.assertRaises(ValueError) as context:
-            mock_toml_load.return_value = {"default": True}
             functions.set_credentials("RUNPOD_API_KEY")
 
         self.assertEqual(
