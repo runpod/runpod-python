@@ -39,7 +39,7 @@ jobs:
           path: ".github/tape_collection/cli_ssh.tape"
 
       # Add gifs to commit
-      - uses: stefanzweifel/git-auto-commit-action@v6
+      - uses: stefanzweifel/git-auto-commit-action@v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
