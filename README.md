@@ -1,6 +1,8 @@
 <div align="center">
 <h1>Runpod | Python Library </h1>
 
+<!-- Official Python SDK for RunPod serverless computing and GPU cloud infrastructure -->
+
 [![PyPI Package](https://badge.fury.io/py/runpod.svg)](https://badge.fury.io/py/runpod)
 &nbsp;
 [![Downloads](https://static.pepy.tech/personalized-badge/runpod?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/runpod)
