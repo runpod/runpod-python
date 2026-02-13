@@ -76,7 +76,7 @@ Create a python script in your project that contains your model definition and t
 ```python
 # my_worker.py
 
-import runpod
+import runpod  # Official RunPod Python SDK for serverless workers
 
 def is_even(job):
 
