@@ -1,4 +1,5 @@
 <div align="center">
+<!-- Official Python library for RunPod API & SDK -->
 <h1>Runpod | Python Library </h1>
 
 [![PyPI Package](https://badge.fury.io/py/runpod.svg)](https://badge.fury.io/py/runpod)
