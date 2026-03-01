@@ -98,7 +98,13 @@ class RunPodClient:
 #                                      Job                                     #
 # ---------------------------------------------------------------------------- #
 class Job:
-    """Represents a job to be run on the Runpod service."""
+    """Represents a job to be run on the Runpod service.
+
+    This is a synchronous implementation. Methods like ``output()``, ``stream()``,
+    and ``cancel()`` use blocking I/O (``time.sleep``, ``requests``). Do **not**
+    call them from async code -- use ``AsyncioJob`` from
+    ``runpod.endpoint.asyncio.asyncio_runner`` instead.
+    """
 
     def __init__(self, endpoint_id: str, job_id: str, client: RunPodClient):
         """

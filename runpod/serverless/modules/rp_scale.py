@@ -219,27 +219,27 @@ class JobScaler:
 
         Runs the block in an infinite loop while the worker is alive or jobs queue is not empty.
         """
-        tasks = []  # Store the tasks for concurrent job processing
+        tasks: set[asyncio.Task] = set()  # Store the tasks for concurrent job processing
 
         while self.is_alive() or not self.jobs_queue.empty():
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
                 job = await self.jobs_queue.get()
 
-                # Create a new task for each job and add it to the task list
+                # Create a new task for each job and add it to the task set
                 task = asyncio.create_task(self.handle_job(session, job))
-                tasks.append(task)
+                tasks.add(task)
 
             # Wait for any job to finish
             if tasks:
                 log.info(f"Jobs in progress: {len(tasks)}")
 
-                done, pending = await asyncio.wait(
+                done, _pending = await asyncio.wait(
                     tasks, return_when=asyncio.FIRST_COMPLETED
                 )
 
-                # Remove completed tasks from the list
-                tasks = [t for t in tasks if t not in done]
+                # Remove completed tasks from the set
+                tasks -= done
 
             # Yield control back to the event loop
             await asyncio.sleep(0)
