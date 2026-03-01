@@ -3,6 +3,7 @@ runpod | serverless | rp_local.py
 Provides the local testing functionality for runpod serverless worker.
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -29,8 +30,12 @@ async def run_local(config: Dict[str, Any]) -> None:
             sys.exit(1)
 
         log.info("Using test_input.json as job input.")
-        with open("test_input.json", "r", encoding="UTF-8") as file:
-            local_job = json.loads(file.read())
+
+        def _read_test_input():
+            with open("test_input.json", "r", encoding="UTF-8") as file:
+                return json.loads(file.read())
+
+        local_job = await asyncio.to_thread(_read_test_input)
 
     if local_job.get("input", None) is None:
         log.error("Job has no input parameter. Unable to run.")

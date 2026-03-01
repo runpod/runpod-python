@@ -194,9 +194,8 @@ class JobsProgress(Set[Job]):
     def get_job_list(self) -> Optional[str]:
         """
         Returns the list of job IDs as comma-separated string.
+        Uses in-memory state (the singleton is already authoritative).
         """
-        self._load_state()
-
         if not len(self):
             return None
 

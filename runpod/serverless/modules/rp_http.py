@@ -25,14 +25,15 @@ JOB_STREAM_URL = JOB_STREAM_URL_TEMPLATE.replace("$RUNPOD_POD_ID", WORKER_ID)
 
 log = RunPodLogger()
 
+_RETRY_OPTIONS = FibonacciRetry(attempts=3)
+
 
 async def _transmit(client_session: ClientSession, url, job_data):
     """
     Wrapper for transmitting results via POST.
     """
-    retry_options = FibonacciRetry(attempts=3)
     retry_client = RetryClient(
-        client_session=client_session, retry_options=retry_options
+        client_session=client_session, retry_options=_RETRY_OPTIONS
     )
 
     kwargs = {

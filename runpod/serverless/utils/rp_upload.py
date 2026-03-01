@@ -96,13 +96,33 @@ def extract_region_from_url(endpoint_url):
 
 
 # --------------------------- S3 Bucket Connection --------------------------- #
+_boto_client_cache: dict = {}
+
+
 def get_boto_client(
     bucket_creds: Optional[dict] = None,
 ) -> Tuple[Optional["BaseClient"], Optional["TransferConfig"]]:
     """
     Returns a boto3 client and transfer config for the bucket.
     Lazy-loads boto3 to reduce initial import time.
+    Results are cached per unique set of credentials.
     """
+    if bucket_creds:
+        cache_key = (
+            bucket_creds["endpointUrl"],
+            bucket_creds["accessId"],
+            bucket_creds["accessSecret"],
+        )
+    else:
+        cache_key = (
+            os.environ.get("BUCKET_ENDPOINT_URL"),
+            os.environ.get("BUCKET_ACCESS_KEY_ID"),
+            os.environ.get("BUCKET_SECRET_ACCESS_KEY"),
+        )
+
+    if cache_key in _boto_client_cache:
+        return _boto_client_cache[cache_key]
+
     try:
         session, TransferConfig, Config = _import_boto3_dependencies()
     except ImportError:
@@ -125,14 +145,7 @@ def get_boto_client(
         use_threads=True,
     )
 
-    if bucket_creds:
-        endpoint_url = bucket_creds["endpointUrl"]
-        access_key_id = bucket_creds["accessId"]
-        secret_access_key = bucket_creds["accessSecret"]
-    else:
-        endpoint_url = os.environ.get("BUCKET_ENDPOINT_URL", None)
-        access_key_id = os.environ.get("BUCKET_ACCESS_KEY_ID", None)
-        secret_access_key = os.environ.get("BUCKET_SECRET_ACCESS_KEY", None)
+    endpoint_url, access_key_id, secret_access_key = cache_key
 
     if endpoint_url and access_key_id and secret_access_key:
         # Extract region from the endpoint URL
@@ -149,7 +162,9 @@ def get_boto_client(
     else:
         boto_client = None
 
-    return boto_client, transfer_config
+    result = boto_client, transfer_config
+    _boto_client_cache[cache_key] = result
+    return result
 
 
 # ---------------------------------------------------------------------------- #
@@ -238,34 +253,17 @@ def bucket_upload(job_id, file_list, bucket_creds):  # pragma: no cover
     """
     Uploads files to bucket storage.
     """
-    try:
-        session, _, Config = _import_boto3_dependencies()
-    except ImportError:
-        logger.error(
-            "boto3 not installed. Cannot upload to S3 bucket. "
-            "Install with: pip install boto3"
+    boto_client, _ = get_boto_client(bucket_creds)
+    if boto_client is None:
+        raise RuntimeError(
+            "Failed to create boto3 client. Check credentials and boto3 installation."
         )
-        raise
-
-    temp_bucket_session = session.Session()
-
-    temp_boto_config = Config(
-        signature_version="s3v4", retries={"max_attempts": 3, "mode": "standard"}
-    )
-
-    temp_boto_client = temp_bucket_session.client(
-        "s3",
-        endpoint_url=bucket_creds["endpointUrl"],
-        aws_access_key_id=bucket_creds["accessId"],
-        aws_secret_access_key=bucket_creds["accessSecret"],
-        config=temp_boto_config,
-    )
 
     bucket_urls = []
 
     for selected_file in file_list:
         with open(selected_file, "rb") as file_data:
-            temp_boto_client.put_object(
+            boto_client.put_object(
                 Bucket=str(bucket_creds["bucketName"]),
                 Key=f"{job_id}/{selected_file}",
                 Body=file_data,

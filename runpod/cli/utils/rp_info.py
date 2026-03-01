@@ -11,10 +11,12 @@ from runpod import get_pod
 def get_pod_ssh_ip_port(pod_id, timeout=300):
     """
     Returns the IP and port for SSH access to a pod.
+    Uses exponential backoff (1s -> 2s -> 4s -> ... capped at 15s) to reduce API pressure.
     """
     start_time = time.time()
     pod_ip = None
     pod_port = None
+    sleep_interval = 1
 
     while time.time() - start_time < timeout and (pod_ip is None or pod_port is None):
         pod = get_pod(pod_id)
@@ -28,7 +30,8 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
                     pod_port = int(port["publicPort"])
                     break
 
-        time.sleep(1)
+        time.sleep(sleep_interval)
+        sleep_interval = min(sleep_interval * 2, 15)
 
     if desired_status != "RUNNING":
         raise TimeoutError(

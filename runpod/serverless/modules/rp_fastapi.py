@@ -300,6 +300,28 @@ class WorkerAPI:
     #                             Simulation Endpoints                             #
     # ---------------------------------------------------------------------------- #
 
+    async def _execute_job(self, job_dict):
+        """Run a job through the handler, dispatching to generator or regular path."""
+        if is_generator(self.config["handler"]):
+            generator_output = run_job_generator(self.config["handler"], job_dict)
+            job_output = {"output": []}
+            async for stream_output in generator_output:
+                job_output["output"].append(stream_output["output"])
+        else:
+            job_output = await run_job(self.config["handler"], job_dict)
+        return job_output
+
+    @staticmethod
+    def _fire_webhook_if_set(webhook_url, payload):
+        """Send webhook notification in a background thread if a URL is configured."""
+        if webhook_url:
+            thread = threading.Thread(
+                target=_send_webhook,
+                args=(webhook_url, payload),
+                daemon=True,
+            )
+            thread.start()
+
     # ------------------------------------ run ----------------------------------- #
     async def _sim_run(self, job_request: DefaultRequest) -> JobOutput:
         """Development endpoint to simulate run behavior."""
@@ -317,26 +339,14 @@ class WorkerAPI:
         assigned_job_id = f"test-{uuid.uuid4()}"
         job = TestJob(id=assigned_job_id, input=job_request.input)
 
-        if is_generator(self.config["handler"]):
-            generator_output = run_job_generator(self.config["handler"], job.__dict__)
-            job_output = {"output": []}
-            async for stream_output in generator_output:
-                job_output["output"].append(stream_output["output"])
-        else:
-            job_output = await run_job(self.config["handler"], job.__dict__)
+        job_output = await self._execute_job(job.__dict__)
 
         if job_output.get("error", None):
             return jsonable_encoder(
                 {"id": job.id, "status": "FAILED", "error": job_output["error"]}
             )
 
-        if job_request.webhook:
-            thread = threading.Thread(
-                target=_send_webhook,
-                args=(job_request.webhook, job_output),
-                daemon=True,
-            )
-            thread.start()
+        self._fire_webhook_if_set(job_request.webhook, job_output)
 
         return jsonable_encoder(
             {"id": job.id, "status": "COMPLETED", "output": job_output["output"]}
@@ -392,13 +402,7 @@ class WorkerAPI:
 
         job = TestJob(id=stashed_job.id, input=stashed_job.input)
 
-        if is_generator(self.config["handler"]):
-            generator_output = run_job_generator(self.config["handler"], job.__dict__)
-            job_output = {"output": []}
-            async for stream_output in generator_output:
-                job_output["output"].append(stream_output["output"])
-        else:
-            job_output = await run_job(self.config["handler"], job.__dict__)
+        job_output = await self._execute_job(job.__dict__)
 
         job_list.remove(job.id)
 
@@ -407,13 +411,7 @@ class WorkerAPI:
                 {"id": job_id, "status": "FAILED", "error": job_output["error"]}
             )
 
-        if stashed_job.webhook:
-            thread = threading.Thread(
-                target=_send_webhook,
-                args=(stashed_job.webhook, job_output),
-                daemon=True,
-            )
-            thread.start()
+        self._fire_webhook_if_set(stashed_job.webhook, job_output)
 
         return jsonable_encoder(
             {"id": job_id, "status": "COMPLETED", "output": job_output["output"]}

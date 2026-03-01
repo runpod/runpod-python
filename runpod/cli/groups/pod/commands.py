@@ -13,6 +13,88 @@ from runpod import create_pod, get_pods
 from ...utils import ssh_cmd
 
 
+def _create_remote_archive(ssh_conn, source_workspace, archive_path):
+    """Create a tar.gz archive of the source workspace on the remote pod.
+
+    Returns the archive size string, or None if creation failed.
+    """
+    # Check if source directory exists
+    _, stdout, _ = ssh_conn.ssh.exec_command(
+        f"test -d {source_workspace} && echo 'exists' || echo 'not_found'"
+    )
+    if stdout.read().decode().strip() != "exists":
+        click.echo(
+            f"Error: Source workspace {source_workspace} does not exist on pod"
+        )
+        return None
+
+    # Create tar.gz archive of the workspace
+    click.echo(f"Creating archive of {source_workspace}...")
+    tar_command = (
+        f"cd {os.path.dirname(source_workspace)} && "
+        f"tar -czf {archive_path} {os.path.basename(source_workspace)}"
+    )
+    ssh_conn.run_commands([tar_command])
+
+    # Verify archive was created
+    _, stdout, _ = ssh_conn.ssh.exec_command(
+        f"test -f {archive_path} && echo 'created' || echo 'failed'"
+    )
+    if stdout.read().decode().strip() != "created":
+        click.echo("Error: Failed to create archive on source pod")
+        return None
+
+    # Get archive size
+    _, stdout, _ = ssh_conn.ssh.exec_command(f"du -h {archive_path} | cut -f1")
+    return stdout.read().decode().strip()
+
+
+def _download_to_local(ssh_conn, archive_path):
+    """Download archive from remote pod to a local temp file.
+
+    Returns the local temp file path.
+    """
+    click.echo("Downloading archive to local machine...")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz") as temp_file:
+        local_temp_path = temp_file.name
+        ssh_conn.get_file(archive_path, local_temp_path)
+
+    # Clean up archive on source pod
+    ssh_conn.run_commands([f"rm -f {archive_path}"])
+    return local_temp_path
+
+
+def _upload_and_extract(ssh_conn, local_temp_path, dest_workspace, dest_folder,
+                        temp_zip_name):
+    """Upload archive to destination pod and extract it.
+
+    Returns the number of extracted files as a string.
+    """
+    ssh_conn.run_commands([f"mkdir -p {dest_workspace}"])
+
+    click.echo("Uploading archive to destination pod...")
+    dest_archive_path = f"/tmp/{temp_zip_name}"
+    ssh_conn.put_file(local_temp_path, dest_archive_path)
+
+    # Extract archive in destination workspace
+    click.echo(f"Extracting archive to {dest_workspace}/{dest_folder}...")
+    extract_command = (
+        f"cd {dest_workspace} && mkdir -p {dest_folder} && "
+        f"cd {dest_folder} && tar -xzf {dest_archive_path} --strip-components=1"
+    )
+    ssh_conn.run_commands([extract_command])
+
+    # Verify extraction and count files
+    _, stdout, _ = ssh_conn.ssh.exec_command(
+        f"find {dest_workspace}/{dest_folder} -type f | wc -l"
+    )
+    dest_file_count = stdout.read().decode().strip()
+
+    # Clean up archive on destination pod
+    ssh_conn.run_commands([f"rm -f {dest_archive_path}"])
+    return dest_file_count
+
+
 @click.group("pod", help="Manage and interact with pods.")
 def pod_cli():
     """A collection of CLI functions for Pod."""
@@ -127,120 +209,77 @@ def sync_pods(source_pod_id, dest_pod_id, source_workspace, dest_workspace):
         from ...groups.ssh.functions import get_user_pub_keys
         user_keys = get_user_pub_keys()
         if not user_keys:
-            click.echo("❌ No SSH keys found in your Runpod account!")
+            click.echo("No SSH keys found in your Runpod account!")
             click.echo("")
-            click.echo("🔑 To create an SSH key, run:")
+            click.echo("To create an SSH key, run:")
             click.echo("   runpod ssh add-key")
             click.echo("")
-            click.echo("📖 For more help, see:")
+            click.echo("For more help, see:")
             click.echo("   runpod ssh add-key --help")
             return
         else:
-            click.echo(f"✅ Found {len(user_keys)} SSH key(s) in your account")
+            click.echo(f"Found {len(user_keys)} SSH key(s) in your account")
     except Exception as e:
-        click.echo(f"⚠️  Warning: Could not verify SSH keys: {str(e)}")
+        click.echo(f"Warning: Could not verify SSH keys: {str(e)}")
         click.echo("Continuing with sync attempt...")
-    
-    click.echo(f"🔄 Syncing from {source_pod_id}:{source_workspace} to {dest_pod_id}:{dest_workspace}")
-    
+
+    click.echo(f"Syncing from {source_pod_id}:{source_workspace} to {dest_pod_id}:{dest_workspace}")
+
     # Generate unique folder name to avoid conflicts
     transfer_id = str(uuid.uuid4())[:8]
     temp_zip_name = f"sync_{transfer_id}.tar.gz"
     dest_folder = f"sync_{transfer_id}"
-    
+    local_temp_path = None
+
     try:
-        # Connect to source pod
-        click.echo(f"📡 Connecting to source pod {source_pod_id}...")
+        # Connect to source pod and create archive
+        click.echo(f"Connecting to source pod {source_pod_id}...")
         with ssh_cmd.SSHConnection(source_pod_id) as source_ssh:
-            
             # Count files in source directory
-            click.echo(f"📊 Counting files in {source_workspace}...")
-            _, stdout, _ = source_ssh.ssh.exec_command(f"find {source_workspace} -type f | wc -l")
+            _, stdout, _ = source_ssh.ssh.exec_command(
+                f"find {source_workspace} -type f | wc -l"
+            )
             file_count = stdout.read().decode().strip()
-            click.echo(f"📁 Found {file_count} files in source workspace")
-            
-            # Check if source directory exists
-            _, stdout, stderr = source_ssh.ssh.exec_command(f"test -d {source_workspace} && echo 'exists' || echo 'not_found'")
-            result = stdout.read().decode().strip()
-            if result != 'exists':
-                click.echo(f"❌ Error: Source workspace {source_workspace} does not exist on pod {source_pod_id}")
-                return
-            
-            # Create tar.gz archive of the workspace
-            click.echo(f"📦 Creating archive of {source_workspace}...")
+            click.echo(f"Found {file_count} files in source workspace")
+
             archive_path = f"/tmp/{temp_zip_name}"
-            tar_command = f"cd {os.path.dirname(source_workspace)} && tar -czf {archive_path} {os.path.basename(source_workspace)}"
-            source_ssh.run_commands([tar_command])
-            
-            # Check if archive was created successfully
-            _, stdout, _ = source_ssh.ssh.exec_command(f"test -f {archive_path} && echo 'created' || echo 'failed'")
-            archive_result = stdout.read().decode().strip()
-            if archive_result != 'created':
-                click.echo(f"❌ Error: Failed to create archive on source pod")
+            archive_size = _create_remote_archive(
+                source_ssh, source_workspace, archive_path
+            )
+            if archive_size is None:
                 return
-            
-            # Get archive size for progress indication
-            _, stdout, _ = source_ssh.ssh.exec_command(f"du -h {archive_path} | cut -f1")
-            archive_size = stdout.read().decode().strip()
-            click.echo(f"✅ Archive created successfully ({archive_size})")
-            
-            # Download archive to local temp file
-            click.echo("⬇️  Downloading archive to local machine...")
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz") as temp_file:
-                local_temp_path = temp_file.name
-                source_ssh.get_file(archive_path, local_temp_path)
-            
-            # Clean up archive on source pod
-            source_ssh.run_commands([f"rm -f {archive_path}"])
-        
-        # Connect to destination pod
-        click.echo(f"📡 Connecting to destination pod {dest_pod_id}...")
+
+            click.echo(f"Archive created successfully ({archive_size})")
+            local_temp_path = _download_to_local(source_ssh, archive_path)
+
+        # Connect to destination pod, upload, and extract
+        click.echo(f"Connecting to destination pod {dest_pod_id}...")
         with ssh_cmd.SSHConnection(dest_pod_id) as dest_ssh:
-            
-            # Check if destination directory exists, create if not
-            click.echo(f"📂 Preparing destination workspace {dest_workspace}...")
-            dest_ssh.run_commands([f"mkdir -p {dest_workspace}"])
-            
-            # Upload archive to destination pod
-            click.echo("⬆️  Uploading archive to destination pod...")
-            dest_archive_path = f"/tmp/{temp_zip_name}"
-            dest_ssh.put_file(local_temp_path, dest_archive_path)
-            
-            # Extract archive in destination workspace
-            click.echo(f"📦 Extracting archive to {dest_workspace}/{dest_folder}...")
-            extract_command = f"cd {dest_workspace} && mkdir -p {dest_folder} && cd {dest_folder} && tar -xzf {dest_archive_path} --strip-components=1"
-            dest_ssh.run_commands([extract_command])
-            
-            # Verify extraction and count files
-            _, stdout, _ = dest_ssh.ssh.exec_command(f"find {dest_workspace}/{dest_folder} -type f | wc -l")
-            dest_file_count = stdout.read().decode().strip()
-            click.echo(f"📁 Extracted {dest_file_count} files to destination")
-            
-            # Clean up archive on destination pod
-            dest_ssh.run_commands([f"rm -f {dest_archive_path}"])
-            
-            # Show final destination path
+            dest_file_count = _upload_and_extract(
+                dest_ssh, local_temp_path, dest_workspace, dest_folder, temp_zip_name
+            )
+            click.echo(f"Extracted {dest_file_count} files to destination")
             click.echo("")
-            click.echo("🎉 Sync completed successfully!")
-            click.echo(f"📊 Files transferred: {file_count}")
-            click.echo(f"📍 Destination location: {dest_pod_id}:{dest_workspace}/{dest_folder}")
+            click.echo("Sync completed successfully!")
+            click.echo(f"Files transferred: {file_count}")
+            click.echo(f"Destination location: {dest_pod_id}:{dest_workspace}/{dest_folder}")
             click.echo("")
-            click.echo("💡 To access the synced files:")
+            click.echo("To access the synced files:")
             click.echo(f"   runpod ssh {dest_pod_id}")
             click.echo(f"   cd {dest_workspace}/{dest_folder}")
-    
+
     except Exception as e:
-        click.echo(f"❌ Error during sync: {str(e)}")
+        click.echo(f"Error during sync: {str(e)}")
         click.echo("")
-        click.echo("🔧 Troubleshooting tips:")
-        click.echo("• Ensure both pods have SSH access enabled")
-        click.echo("• Check that your SSH key is added to your Runpod account: runpod ssh list-keys")
-        click.echo("• For running pods, you may need to add PUBLIC_KEY env var and restart")
-        click.echo("• Verify the source and destination paths exist")
+        click.echo("Troubleshooting tips:")
+        click.echo("- Ensure both pods have SSH access enabled")
+        click.echo("- Check that your SSH key is added to your Runpod account: runpod ssh list-keys")
+        click.echo("- For running pods, you may need to add PUBLIC_KEY env var and restart")
+        click.echo("- Verify the source and destination paths exist")
     finally:
         # Clean up local temp file
-        try:
-            if 'local_temp_path' in locals():
+        if local_temp_path:
+            try:
                 os.unlink(local_temp_path)
-        except:
-            pass
+            except OSError:
+                pass
