@@ -100,6 +100,46 @@ class TestSSHConnection(unittest.TestCase):
         self.ssh_connection.rsync("local_path", "remote_path", quiet=True)
         mock_subprocess.assert_called_once()
 
+    def test_exec_command_capture(self):
+        """Test that exec_command_capture returns (stdout, stderr, exit_code)."""
+        mock_stdout = MagicMock()
+        mock_stdout.read.return_value = b"output line\n"
+        mock_stdout.channel.recv_exit_status.return_value = 0
+
+        mock_stderr = MagicMock()
+        mock_stderr.read.return_value = b""
+
+        self.mock_ssh_client.exec_command.return_value = (None, mock_stdout, mock_stderr)
+
+        stdout, stderr, exit_code = self.ssh_connection.exec_command_capture("echo hello")
+
+        self.assertEqual(stdout, "output line\n")
+        self.assertEqual(stderr, "")
+        self.assertEqual(exit_code, 0)
+        self.mock_ssh_client.exec_command.assert_called_once()
+
+        # Verify the command includes environment sourcing
+        called_command = self.mock_ssh_client.exec_command.call_args[0][0]
+        self.assertIn("source /root/.bashrc", called_command)
+        self.assertIn("echo hello", called_command)
+
+    def test_exec_command_capture_nonzero_exit(self):
+        """Test exec_command_capture with a failing command."""
+        mock_stdout = MagicMock()
+        mock_stdout.read.return_value = b""
+        mock_stdout.channel.recv_exit_status.return_value = 1
+
+        mock_stderr = MagicMock()
+        mock_stderr.read.return_value = b"error message\n"
+
+        self.mock_ssh_client.exec_command.return_value = (None, mock_stdout, mock_stderr)
+
+        stdout, stderr, exit_code = self.ssh_connection.exec_command_capture("bad_cmd")
+
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr, "error message\n")
+        self.assertEqual(exit_code, 1)
+
     # Test that the signal handler closes the connection.
     @patch("runpod.cli.utils.ssh_cmd.SSHConnection.close")
     def test_signal_handler(self, mock_close):

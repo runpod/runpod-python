@@ -73,6 +73,33 @@ class SSHConnection:
         STOP_EVENT.set()
         sys.exit(0)
 
+    def exec_command_capture(self, command, timeout=30):
+        """Execute a command and return (stdout, stderr, exit_code).
+
+        Unlike run_commands() which prints output via threads, this captures
+        stdout/stderr as strings for programmatic use.
+
+        Args:
+            command: Shell command to execute.
+            timeout: Seconds to wait for command completion.
+
+        Returns:
+            Tuple of (stdout_text, stderr_text, exit_code).
+        """
+        full_command = " && ".join(
+            [
+                "source /root/.bashrc",
+                "source /etc/rp_environment",
+                'while IFS= read -r -d \'\' line; do export "$line"; done < /proc/1/environ',
+                command,
+            ]
+        )
+        _, stdout, stderr = self.ssh.exec_command(full_command, timeout=timeout)
+        exit_code = stdout.channel.recv_exit_status()
+        stdout_text = stdout.read().decode("utf-8", errors="replace")
+        stderr_text = stderr.read().decode("utf-8", errors="replace")
+        return stdout_text, stderr_text, exit_code
+
     def run_commands(self, commands):
         """Runs a list of bash commands over SSH."""
 

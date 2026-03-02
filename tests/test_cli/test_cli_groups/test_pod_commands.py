@@ -318,3 +318,100 @@ class TestPodCommands(unittest.TestCase):
         
         # Verify the default workspace path is used
         mock_echo.assert_any_call("🔄 Syncing from source_pod:/workspace to dest_pod:/workspace")
+
+
+class TestPodLogsCommand(unittest.TestCase):
+    """Test CLI pod logs command"""
+
+    @patch("runpod.cli.groups.pod.commands.get_pod_logs")
+    def test_basic_invocation(self, mock_get_pod_logs):
+        mock_get_pod_logs.return_value = {
+            "pod_id": "POD_123",
+            "logs": "line 1\nline 2\n",
+            "source": "ssh",
+        }
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "logs", "POD_123"])
+
+        assert result.exit_code == 0, result.output
+        mock_get_pod_logs.assert_called_once_with("POD_123", tail=None, since=None)
+        assert "line 1" in result.output
+        assert "line 2" in result.output
+
+    @patch("runpod.cli.groups.pod.commands.get_pod_logs")
+    def test_tail_option(self, mock_get_pod_logs):
+        mock_get_pod_logs.return_value = {
+            "pod_id": "POD_123",
+            "logs": "last line\n",
+            "source": "ssh",
+        }
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "logs", "POD_123", "--tail", "50"])
+
+        assert result.exit_code == 0, result.output
+        mock_get_pod_logs.assert_called_once_with("POD_123", tail=50, since=None)
+
+    @patch("runpod.cli.groups.pod.commands.get_pod_logs")
+    def test_since_option(self, mock_get_pod_logs):
+        mock_get_pod_logs.return_value = {
+            "pod_id": "POD_123",
+            "logs": "recent logs\n",
+            "source": "ssh",
+        }
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "logs", "POD_123", "--since", "1h"])
+
+        assert result.exit_code == 0, result.output
+        mock_get_pod_logs.assert_called_once_with("POD_123", tail=None, since="1h")
+
+    @patch("runpod.cli.groups.pod.commands.get_pod_logs")
+    def test_short_tail_flag(self, mock_get_pod_logs):
+        mock_get_pod_logs.return_value = {
+            "pod_id": "POD_123",
+            "logs": "logs\n",
+            "source": "ssh",
+        }
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "logs", "POD_123", "-n", "10"])
+
+        assert result.exit_code == 0, result.output
+        mock_get_pod_logs.assert_called_once_with("POD_123", tail=10, since=None)
+
+    @patch("runpod.cli.groups.pod.commands.get_pod_logs")
+    def test_connection_error_display(self, mock_get_pod_logs):
+        mock_get_pod_logs.side_effect = ConnectionError("SSH connection failed")
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "logs", "POD_123"])
+
+        assert result.exit_code != 0
+        assert "SSH connection failed" in result.output
+
+    @patch("runpod.cli.groups.pod.commands.get_pod_logs")
+    def test_runtime_error_display(self, mock_get_pod_logs):
+        mock_get_pod_logs.side_effect = RuntimeError("command not found")
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "logs", "POD_123"])
+
+        assert result.exit_code != 0
+        assert "command not found" in result.output
+
+    @patch("runpod.cli.groups.pod.commands.ssh_cmd.SSHConnection")
+    def test_follow_mode(self, mock_ssh_cls):
+        mock_ssh = MagicMock()
+        mock_ssh_cls.return_value.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "logs", "POD_123", "--follow"])
+
+        assert result.exit_code == 0, result.output
+        mock_ssh_cls.assert_called_once_with("POD_123")
+        # Verify run_commands was called with a journalctl -f command
+        call_args = mock_ssh.run_commands.call_args[0][0]
+        assert any("journalctl" in cmd and "-f" in cmd for cmd in call_args)

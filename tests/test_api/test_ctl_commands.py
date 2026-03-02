@@ -1,7 +1,7 @@
 """ Tests for ctl_commands.py """
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from runpod.api import ctl_commands
 
@@ -413,3 +413,87 @@ class TestCTL(unittest.TestCase):
         self.assertIn("REGISTRY_NAME", graphql_query)
         self.assertIn("username", graphql_query)
         self.assertIn("password", graphql_query)
+
+
+class TestBuildLogCommand(unittest.TestCase):
+    """Tests for _build_log_command helper."""
+
+    def test_defaults(self):
+        cmd = ctl_commands._build_log_command()
+        self.assertIn("journalctl --no-pager", cmd)
+        self.assertNotIn("-n ", cmd)
+        self.assertNotIn("--since", cmd)
+        # Fallback path present
+        self.assertIn("cat /var/log/syslog", cmd)
+
+    def test_with_tail(self):
+        cmd = ctl_commands._build_log_command(tail=100)
+        self.assertIn("-n 100", cmd)
+        self.assertIn("tail -n 100", cmd)
+
+    def test_with_since(self):
+        cmd = ctl_commands._build_log_command(since="1h")
+        self.assertIn('--since="1h"', cmd)
+
+    def test_with_both(self):
+        cmd = ctl_commands._build_log_command(tail=50, since="30m")
+        self.assertIn("-n 50", cmd)
+        self.assertIn('--since="30m"', cmd)
+        self.assertIn("tail -n 50", cmd)
+
+
+class TestGetPodLogs(unittest.TestCase):
+    """Tests for get_pod_logs."""
+
+    def setUp(self):
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
+
+    @patch("runpod.cli.utils.ssh_cmd.SSHConnection")
+    def test_success(self, mock_ssh_cls):
+        mock_ssh = MagicMock()
+        mock_ssh.exec_command_capture.return_value = ("log line 1\nlog line 2\n", "", 0)
+        mock_ssh_cls.return_value.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = ctl_commands.get_pod_logs("POD_ID")
+
+        self.assertEqual(result["pod_id"], "POD_ID")
+        self.assertEqual(result["logs"], "log line 1\nlog line 2\n")
+        self.assertEqual(result["source"], "ssh")
+
+    @patch("runpod.cli.utils.ssh_cmd.SSHConnection")
+    def test_tail_and_since_pass_through(self, mock_ssh_cls):
+        mock_ssh = MagicMock()
+        mock_ssh.exec_command_capture.return_value = ("logs", "", 0)
+        mock_ssh_cls.return_value.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        ctl_commands.get_pod_logs("POD_ID", tail=50, since="1h")
+
+        command_arg = mock_ssh.exec_command_capture.call_args[0][0]
+        self.assertIn("-n 50", command_arg)
+        self.assertIn('--since="1h"', command_arg)
+
+    @patch("runpod.cli.utils.ssh_cmd.SSHConnection")
+    def test_connection_error_on_ssh_failure(self, mock_ssh_cls):
+        mock_ssh_cls.side_effect = SystemExit(1)
+
+        with self.assertRaises(ConnectionError) as ctx:
+            ctl_commands.get_pod_logs("POD_ID")
+
+        self.assertIn("POD_ID", str(ctx.exception))
+        self.assertIn("SSH", str(ctx.exception))
+
+    @patch("runpod.cli.utils.ssh_cmd.SSHConnection")
+    def test_runtime_error_on_nonzero_exit(self, mock_ssh_cls):
+        mock_ssh = MagicMock()
+        mock_ssh.exec_command_capture.return_value = ("", "command not found", 127)
+        mock_ssh_cls.return_value.__enter__ = MagicMock(return_value=mock_ssh)
+        mock_ssh_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            ctl_commands.get_pod_logs("POD_ID")
+
+        self.assertIn("exit code 127", str(ctx.exception))
+        self.assertIn("command not found", str(ctx.exception))

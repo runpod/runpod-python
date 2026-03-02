@@ -8,7 +8,7 @@ import uuid
 import click
 from prettytable import PrettyTable
 
-from runpod import create_pod, get_pods
+from runpod import create_pod, get_pod_logs, get_pods
 
 from ...utils import ssh_cmd
 
@@ -74,6 +74,83 @@ def connect_to_pod(pod_id):
     click.echo(f"Connecting to pod {pod_id}...")
     ssh = ssh_cmd.SSHConnection(pod_id)
     ssh.launch_terminal()
+
+
+def _fetch_pod_logs(pod_id, tail, since):
+    """Fetch logs in batch mode and print to stdout."""
+    try:
+        result = get_pod_logs(pod_id, tail=tail, since=since)
+        click.echo(result["logs"], nl=False)
+    except ConnectionError as err:
+        click.echo(f"Error: {err}", err=True)
+        click.echo("", err=True)
+        click.echo("Troubleshooting tips:", err=True)
+        click.echo("- Ensure the pod is running and SSH is enabled", err=True)
+        click.echo("- Check your SSH key: runpod ssh list-keys", err=True)
+        click.echo(
+            "- For running pods, you may need to add PUBLIC_KEY env var and restart",
+            err=True,
+        )
+        raise SystemExit(1)
+    except RuntimeError as err:
+        click.echo(f"Error: {err}", err=True)
+        raise SystemExit(1)
+
+
+def _stream_pod_logs(pod_id, tail, since):
+    """Stream logs in real-time via SSH journalctl -f."""
+    journalctl_args = ["journalctl", "--no-pager", "-f"]
+    if tail is not None:
+        journalctl_args.append(f"-n {tail}")
+    if since is not None:
+        journalctl_args.append(f'--since="{since}"')
+    command = " ".join(journalctl_args)
+
+    try:
+        with ssh_cmd.SSHConnection(pod_id) as ssh:
+            click.echo(f"Streaming logs from pod {pod_id} (Ctrl+C to stop)...")
+            ssh.run_commands([command])
+    except SystemExit:
+        pass
+    except Exception as err:
+        click.echo(f"Error: {err}", err=True)
+        click.echo("", err=True)
+        click.echo("Troubleshooting tips:", err=True)
+        click.echo("- Ensure the pod is running and SSH is enabled", err=True)
+        click.echo("- Check your SSH key: runpod ssh list-keys", err=True)
+        raise SystemExit(1)
+
+
+@pod_cli.command("logs")
+@click.argument("pod_id")
+@click.option("--tail", "-n", type=int, default=None, help="Number of recent lines to show.")
+@click.option("--since", type=str, default=None, help='Time filter, e.g. "1h", "30m", "2024-01-01".')
+@click.option("--follow", "-f", is_flag=True, default=False, help="Stream logs in real-time.")
+def pod_logs(pod_id, tail, since, follow):
+    """Retrieve logs from a running pod.
+
+    Connects via SSH and reads system logs using journalctl, with a fallback
+    to syslog/dmesg on pods without systemd.
+
+    PREREQUISITES:
+
+    \b
+    1. The pod must be running with SSH enabled.
+    2. An SSH key must be configured: runpod ssh add-key
+
+    EXAMPLES:
+
+    \b
+        runpod pod logs POD_ID
+        runpod pod logs POD_ID --tail 100
+        runpod pod logs POD_ID --since "1h"
+        runpod pod logs POD_ID --follow
+        runpod pod logs POD_ID -f -n 50
+    """
+    if follow:
+        _stream_pod_logs(pod_id, tail, since)
+    else:
+        _fetch_pod_logs(pod_id, tail, since)
 
 
 @pod_cli.command("sync")

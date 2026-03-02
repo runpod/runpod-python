@@ -12,6 +12,7 @@ runpod ssh add-key
 runpod pod list
 runpod pod create
 runpod pod connect
+runpod pod logs
 
 runpod exec python file.py
 ```
@@ -42,4 +43,13 @@ runpod launch pod --template-file template.yaml
 ```bash
 runpod launch endpoint --help
 runpod launch endpoint --template-file template.yaml
+```
+
+### Pod Logs
+
+```bash
+runpod pod logs <pod_id>
+runpod pod logs <pod_id> --tail 100
+runpod pod logs <pod_id> --since "1h"
+runpod pod logs <pod_id> --follow
 ```

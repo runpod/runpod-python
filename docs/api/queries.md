@@ -33,3 +33,20 @@ print(gpu)
 ```json
 {'id': 'NVIDIA A100 80GB PCIe', 'displayName': 'A100 80GB', 'memoryInGb': 80, 'secureCloud': True, 'communityCloud': True, 'lowestPrice': {'minimumBidPrice': 1.158, 'uninterruptablePrice': 1.89}}
 ```
+
+## get_pod_logs
+
+```python
+import runpod
+
+runpod.api_key = "your_runpod_api_key"
+
+result = runpod.get_pod_logs("POD_ID", tail=50)
+print(result["logs"])
+```
+
+### get_pod_logs Output
+
+```json
+{"pod_id": "abc123", "logs": "2024-01-15 10:30:00 Starting server...\n2024-01-15 10:30:01 Server ready.", "source": "stdout"}
+```

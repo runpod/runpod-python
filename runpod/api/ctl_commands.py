@@ -457,3 +457,72 @@ def delete_container_registry_auth(registry_auth_id: str):
         )
     )
     return raw_response["data"]["deleteRegistryAuth"]
+
+
+def _build_log_command(tail=None, since=None):
+    """Build shell command for log retrieval.
+
+    Uses journalctl with fallback to syslog/dmesg for pods that don't
+    have systemd.
+
+    Args:
+        tail: Number of recent lines to return.
+        since: Time filter for journalctl (e.g., "1h", "30m", "2024-01-01").
+
+    Returns:
+        Shell command string.
+    """
+    journalctl_args = ["journalctl", "--no-pager"]
+    if tail is not None:
+        journalctl_args.append(f"-n {tail}")
+    if since is not None:
+        journalctl_args.append(f'--since="{since}"')
+
+    fallback_args = ["cat /var/log/syslog 2>/dev/null || dmesg"]
+    if tail is not None:
+        fallback_args.append(f"| tail -n {tail}")
+
+    journalctl_cmd = " ".join(journalctl_args)
+    fallback_cmd = " ".join(fallback_args)
+
+    return f"{{ {journalctl_cmd}; }} 2>/dev/null || {{ {fallback_cmd}; }}"
+
+
+def get_pod_logs(pod_id: str, tail=None, since=None, api_key=None):
+    """Retrieve logs from a running pod via SSH.
+
+    Args:
+        pod_id: The ID of the pod to get logs from.
+        tail: Number of recent log lines to return.
+        since: Time filter (e.g., "1h", "30m"). Only works with journalctl.
+        api_key: Unused, reserved for future GraphQL-based implementation.
+
+    Returns:
+        Dict with keys: pod_id, logs, source.
+
+    Raises:
+        ConnectionError: If SSH connection fails.
+        RuntimeError: If the log command fails on the pod.
+    """
+    # Lazy import to avoid circular dependency — SSHConnection is in the CLI
+    # layer while this module is in the API layer.
+    from runpod.cli.utils.ssh_cmd import SSHConnection
+
+    command = _build_log_command(tail=tail, since=since)
+
+    try:
+        with SSHConnection(pod_id) as ssh:
+            stdout_text, stderr_text, exit_code = ssh.exec_command_capture(command)
+    except SystemExit:
+        raise ConnectionError(
+            f"Failed to establish SSH connection to pod {pod_id}. "
+            "Ensure the pod is running and SSH is enabled."
+        )
+
+    if exit_code != 0:
+        raise RuntimeError(
+            f"Log retrieval failed on pod {pod_id} (exit code {exit_code}): "
+            f"{stderr_text.strip()}"
+        )
+
+    return {"pod_id": pod_id, "logs": stdout_text, "source": "ssh"}

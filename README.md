@@ -245,6 +245,10 @@ runpod.resume_pod(pod.id)
 
 # Terminate the pod
 runpod.terminate_pod(pod.id)
+
+# Get logs from a running pod
+logs = runpod.get_pod_logs(pod.id, tail=100)
+print(logs["logs"])
 ```
 
 ## 📁 | Directory
