@@ -8,11 +8,13 @@ Provides comprehensive GPU health checking using:
 Auto-registers when GPUs are detected, skips silently on CPU-only workers.
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from runpod._binary_helpers import get_binary_path
 from .rp_fitness import register_fitness_check
@@ -25,7 +27,7 @@ TIMEOUT_SECONDS = int(os.environ.get("RUNPOD_GPU_TEST_TIMEOUT", "30"))
 MAX_ERROR_MESSAGES = int(os.environ.get("RUNPOD_GPU_MAX_ERROR_MESSAGES", "10"))
 
 
-def _get_gpu_test_binary_path() -> Optional[Path]:
+def _get_gpu_test_binary_path() -> Path | None:
     """
     Locate gpu_test binary in package.
 
@@ -35,7 +37,7 @@ def _get_gpu_test_binary_path() -> Optional[Path]:
     return get_binary_path("gpu_test")
 
 
-def _parse_gpu_test_output(output: str) -> Dict[str, Any]:
+def _parse_gpu_test_output(output: str) -> dict[str, Any]:
     """
     Parse gpu_test binary output and detect success/failure.
 
@@ -92,9 +94,7 @@ def _parse_gpu_test_output(output: str) -> Dict[str, Any]:
             passed_count += 1
 
         # Check for errors
-        if any(
-            err in line.lower() for err in ["failed", "error", "cannot", "unable"]
-        ):
+        if any(err in line.lower() for err in ["failed", "error", "cannot", "unable"]):
             result["errors"].append(line)
 
     result["gpu_count"] = passed_count
@@ -105,7 +105,7 @@ def _parse_gpu_test_output(output: str) -> Dict[str, Any]:
     return result
 
 
-async def _run_gpu_test_binary() -> Dict[str, Any]:
+async def _run_gpu_test_binary() -> dict[str, Any]:
     """
     Execute gpu_test binary and parse output.
 
@@ -211,11 +211,15 @@ def _run_gpu_test_fallback() -> None:
         )
 
     except FileNotFoundError:
-        raise RuntimeError("nvidia-smi not found. Cannot validate GPU availability.") from None
+        raise RuntimeError(
+            "nvidia-smi not found. Cannot validate GPU availability."
+        ) from None
     except subprocess.TimeoutExpired:
         raise RuntimeError("nvidia-smi timed out") from None
     except RuntimeError:
         raise
+    except Exception as e:
+        raise RuntimeError(f"nvidia-smi fallback check failed: {e}") from e
 
 
 async def _check_gpu_health() -> None:

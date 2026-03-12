@@ -8,18 +8,20 @@ exit with sys.exit(1), signaling unhealthy state to the container orchestrator.
 Fitness checks do NOT run in local development mode or testing mode.
 """
 
+from __future__ import annotations
+
 import inspect
 import sys
 import time
 import traceback
-from typing import Callable, List
+from collections.abc import Callable
 
 from .rp_logger import RunPodLogger
 
 log = RunPodLogger()
 
 # Global registry for fitness check functions, preserves registration order
-_fitness_checks: List[Callable] = []
+_fitness_checks: list[Callable] = []
 
 
 def register_fitness_check(func: Callable) -> Callable:
@@ -99,11 +101,7 @@ def _ensure_gpu_check_registered() -> None:
 
         auto_register_gpu_check()
     except ImportError:
-        # GPU fitness module not available
         log.debug("GPU fitness check module not found, skipping auto-registration")
-    except Exception as e:
-        # Don't fail fitness checks if auto-registration has issues
-        log.warn(f"Failed to auto-register GPU fitness check: {e}")
 
 
 def _ensure_system_checks_registered() -> None:
@@ -122,7 +120,9 @@ def _ensure_system_checks_registered() -> None:
 
     # Allow disabling system checks for testing
     if os.environ.get("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "").lower() == "true":
-        log.debug("System fitness checks disabled via environment (RUNPOD_SKIP_AUTO_SYSTEM_CHECKS)")
+        log.debug(
+            "System fitness checks disabled via environment (RUNPOD_SKIP_AUTO_SYSTEM_CHECKS)"
+        )
         _system_checks_registered = True
         return
 
@@ -133,11 +133,7 @@ def _ensure_system_checks_registered() -> None:
 
         auto_register_system_checks()
     except ImportError:
-        # System fitness module not available
         log.debug("System fitness check module not found, skipping auto-registration")
-    except Exception as e:
-        # Don't fail fitness checks if auto-registration has issues
-        log.warn(f"Failed to auto-register system fitness checks: {e}")
 
 
 async def run_fitness_checks() -> None:
@@ -206,8 +202,7 @@ async def run_fitness_checks() -> None:
             full_traceback = traceback.format_exc()
 
             log.error(
-                f"Fitness check failed: {check_name} | "
-                f"{error_type}: {error_message}"
+                f"Fitness check failed: {check_name} | {error_type}: {error_message}"
             )
             log.debug(f"Traceback:\n{full_traceback}")
 

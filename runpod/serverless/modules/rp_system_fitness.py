@@ -11,12 +11,13 @@ Provides comprehensive checks for:
 Auto-registers when worker starts, ensuring system readiness before accepting jobs.
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
+import re
 import shutil
-import subprocess
 import time
-from typing import Dict, Optional
 
 from .rp_fitness import register_fitness_check
 from .rp_logger import RunPodLogger
@@ -32,7 +33,7 @@ NETWORK_CHECK_TIMEOUT = int(os.environ.get("RUNPOD_NETWORK_CHECK_TIMEOUT", "5"))
 GPU_BENCHMARK_TIMEOUT = int(os.environ.get("RUNPOD_GPU_BENCHMARK_TIMEOUT", "2"))
 
 
-def _parse_version(version_string: str) -> tuple:
+def _parse_version(version_string: str) -> tuple[int, int]:
     """
     Parse version string to tuple for comparison.
 
@@ -42,8 +43,6 @@ def _parse_version(version_string: str) -> tuple:
     Returns:
         Tuple of ints like (12, 2) for comparison
     """
-    import re
-
     # Extract numeric version
     match = re.search(r"(\d+)\.(\d+)", version_string)
     if match:
@@ -51,7 +50,7 @@ def _parse_version(version_string: str) -> tuple:
     return (0, 0)
 
 
-def _get_memory_info() -> Dict[str, float]:
+def _get_memory_info() -> dict[str, float]:
     """
     Get system memory information.
 
@@ -78,14 +77,17 @@ def _get_memory_info() -> Dict[str, float]:
         # Fallback: parse /proc/meminfo
         try:
             with open("/proc/meminfo") as f:
-                meminfo = {}
+                meminfo_kb: dict[str, int] = {}
                 for line in f:
                     key, value = line.split(":", 1)
-                    meminfo[key.strip()] = int(value.split()[0]) / (1024**2)
+                    meminfo_kb[key.strip()] = int(value.split()[0])
 
-                total_gb = meminfo.get("MemTotal", 0) / 1024
-                available_gb = meminfo.get("MemAvailable", 0) / 1024
-                used_percent = 100 * (1 - available_gb / total_gb) if total_gb > 0 else 0
+                # /proc/meminfo values are in kB; convert to GB
+                total_gb = meminfo_kb.get("MemTotal", 0) / (1024**2)
+                available_gb = meminfo_kb.get("MemAvailable", 0) / (1024**2)
+                used_percent = (
+                    100 * (1 - available_gb / total_gb) if total_gb > 0 else 0
+                )
 
                 return {
                     "total_gb": total_gb,
@@ -93,7 +95,7 @@ def _get_memory_info() -> Dict[str, float]:
                     "used_percent": used_percent,
                 }
         except Exception as e:
-            raise RuntimeError(f"Failed to read memory info: {e}")
+            raise RuntimeError(f"Failed to read memory info: {e}") from e
 
 
 def _check_memory_availability() -> None:
@@ -133,7 +135,7 @@ def _check_disk_space() -> None:
         usage = shutil.disk_usage("/")
         total_gb = usage.total / (1024**3)
         free_gb = usage.free / (1024**3)
-        free_percent = 100 * (free_gb / total_gb)
+        free_percent = 100 * (free_gb / total_gb) if total_gb > 0 else 0
 
         # Check if free space is below the required percentage
         if free_percent < MIN_DISK_PERCENT:
@@ -147,7 +149,9 @@ def _check_disk_space() -> None:
             f"({free_percent:.1f}% available)"
         )
     except FileNotFoundError:
-        raise RuntimeError("Could not check disk space: / filesystem not found")
+        raise RuntimeError(
+            "Could not check disk space: / filesystem not found"
+        ) from None
 
 
 async def _check_network_connectivity() -> None:
@@ -169,19 +173,23 @@ async def _check_network_connectivity() -> None:
         writer.close()
         await writer.wait_closed()
 
-        log.info(f"Network connectivity passed: Connected to {host} ({elapsed_ms:.0f}ms)")
+        log.info(
+            f"Network connectivity passed: Connected to {host} ({elapsed_ms:.0f}ms)"
+        )
     except asyncio.TimeoutError:
         raise RuntimeError(
             f"Network connectivity failed: Timeout connecting to {host}:{port} "
             f"({NETWORK_CHECK_TIMEOUT}s)"
-        )
+        ) from None
     except ConnectionRefusedError:
-        raise RuntimeError(f"Network connectivity failed: Connection refused to {host}:{port}")
+        raise RuntimeError(
+            f"Network connectivity failed: Connection refused to {host}:{port}"
+        ) from None
     except Exception as e:
-        raise RuntimeError(f"Network connectivity check failed: {e}")
+        raise RuntimeError(f"Network connectivity check failed: {e}") from e
 
 
-async def _get_cuda_version() -> Optional[str]:
+async def _get_cuda_version() -> str | None:
     """
     Get CUDA version from system.
 
@@ -193,41 +201,39 @@ async def _get_cuda_version() -> Optional[str]:
     """
     # Try nvcc first
     try:
-        result = subprocess.run(
-            ["nvcc", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
+        process = await asyncio.create_subprocess_exec(
+            "nvcc",
+            "--version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        if result.returncode == 0:
-            # Output: "nvcc: NVIDIA (R) Cuda compiler driver\n..."
-            # Look for version pattern
-            for line in result.stdout.split("\n"):
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
+        if process.returncode == 0:
+            output = stdout.decode("utf-8", errors="replace")
+            for line in output.split("\n"):
                 if "release" in line.lower() or "version" in line.lower():
                     return line.strip()
-    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+    except Exception as e:
         log.debug(f"nvcc not available: {e}")
 
     # Fallback: try nvidia-smi and parse CUDA version from output
     try:
-        result = subprocess.run(
-            ["nvidia-smi"],
-            capture_output=True,
-            text=True,
-            timeout=5,
+        process = await asyncio.create_subprocess_exec(
+            "nvidia-smi",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        if result.returncode == 0:
-            # Parse CUDA version from header: "CUDA Version: 12.7"
-            for line in result.stdout.split('\n'):
-                if 'CUDA Version:' in line:
-                    # Extract version after "CUDA Version:"
-                    parts = line.split('CUDA Version:')
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
+        if process.returncode == 0:
+            output = stdout.decode("utf-8", errors="replace")
+            for line in output.split("\n"):
+                if "CUDA Version:" in line:
+                    parts = line.split("CUDA Version:")
                     if len(parts) > 1:
-                        # Get just the version number (e.g., "12.7")
                         cuda_version = parts[1].strip().split()[0]
                         return f"CUDA Version: {cuda_version}"
             log.debug("nvidia-smi output found but couldn't parse CUDA version")
-    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+    except Exception as e:
         log.debug(f"nvidia-smi not available: {e}")
 
     return None
@@ -293,7 +299,9 @@ async def _check_cuda_initialization() -> None:
         # Verify device count
         device_count = torch.cuda.device_count()
         if device_count == 0:
-            raise RuntimeError("No CUDA devices available despite cuda.is_available() being True")
+            raise RuntimeError(
+                "No CUDA devices available despite cuda.is_available() being True"
+            )
 
         # Test each device
         for i in range(device_count):
@@ -308,15 +316,17 @@ async def _check_cuda_initialization() -> None:
                 torch.cuda.synchronize()
 
             except Exception as e:
-                raise RuntimeError(f"Failed to initialize GPU {i}: {e}")
+                raise RuntimeError(f"Failed to initialize GPU {i}: {e}") from e
 
-        log.info(f"CUDA initialization passed: {device_count} device(s) initialized successfully")
+        log.info(
+            f"CUDA initialization passed: {device_count} device(s) initialized successfully"
+        )
         return
 
     except ImportError:
         log.debug("PyTorch not available, trying CuPy...")
     except Exception as e:
-        raise RuntimeError(f"CUDA initialization failed: {e}")
+        raise RuntimeError(f"CUDA initialization failed: {e}") from e
 
     # Fallback: try CuPy
     try:
@@ -338,15 +348,19 @@ async def _check_cuda_initialization() -> None:
                 _ = cp.zeros(1024)
                 cp.cuda.Device().synchronize()
             except Exception as e:
-                raise RuntimeError(f"Failed to initialize GPU {i} with CuPy: {e}")
+                raise RuntimeError(
+                    f"Failed to initialize GPU {i} with CuPy: {e}"
+                ) from e
 
-        log.info(f"CUDA initialization passed: {device_count} device(s) initialized successfully")
+        log.info(
+            f"CUDA initialization passed: {device_count} device(s) initialized successfully"
+        )
         return
 
     except ImportError:
         log.debug("CuPy not available, skipping CUDA initialization check")
     except Exception as e:
-        raise RuntimeError(f"CUDA initialization check failed: {e}")
+        raise RuntimeError(f"CUDA initialization check failed: {e}") from e
 
 
 async def _check_gpu_compute_benchmark() -> None:
@@ -391,13 +405,17 @@ async def _check_gpu_compute_benchmark() -> None:
                 f"(max: {max_ms:.0f}ms)"
             )
 
-        log.info(f"GPU compute benchmark passed: Matrix multiply completed in {elapsed_ms:.0f}ms")
+        log.info(
+            f"GPU compute benchmark passed: Matrix multiply completed in {elapsed_ms:.0f}ms"
+        )
         return
 
     except ImportError:
         log.debug("PyTorch not available, trying CuPy...")
+    except RuntimeError:
+        raise  # Benchmark failure is what we're testing for
     except Exception as e:
-        log.warn(f"PyTorch GPU benchmark failed: {e}")
+        log.warn(f"PyTorch GPU benchmark setup failed: {e}")
 
     # Fallback: try CuPy
     try:
@@ -420,16 +438,22 @@ async def _check_gpu_compute_benchmark() -> None:
                 f"(max: {max_ms:.0f}ms)"
             )
 
-        log.info(f"GPU compute benchmark passed: Matrix multiply completed in {elapsed_ms:.0f}ms")
+        log.info(
+            f"GPU compute benchmark passed: Matrix multiply completed in {elapsed_ms:.0f}ms"
+        )
         return
 
     except ImportError:
         log.debug("CuPy not available, skipping GPU benchmark")
+    except RuntimeError:
+        raise  # Benchmark failure is what we're testing for
     except Exception as e:
-        log.warn(f"CuPy GPU benchmark failed: {e}")
+        log.warn(f"CuPy GPU benchmark setup failed: {e}")
 
     # If we get here, neither library is available
-    log.debug("PyTorch/CuPy not available for GPU benchmark, relying on gpu_test binary")
+    log.debug(
+        "PyTorch/CuPy not available for GPU benchmark, relying on gpu_test binary"
+    )
 
 
 def auto_register_system_checks() -> None:

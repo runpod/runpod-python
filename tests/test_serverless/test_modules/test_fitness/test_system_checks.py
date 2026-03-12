@@ -25,9 +25,20 @@ from runpod.serverless.modules.rp_system_fitness import (
 from runpod.serverless.modules.rp_fitness import _fitness_checks
 
 
+def _make_async_process(returncode=0, stdout="", stderr=""):
+    """Create a mock async subprocess for testing async subprocess calls."""
+    mock_process = AsyncMock()
+    mock_process.returncode = returncode
+    mock_process.communicate = AsyncMock(
+        return_value=(stdout.encode(), stderr.encode())
+    )
+    return mock_process
+
+
 # ============================================================================
 # Memory Check Tests
 # ============================================================================
+
 
 class TestMemoryCheck:
     """Tests for memory availability checking."""
@@ -84,6 +95,7 @@ class TestMemoryCheck:
 # Disk Space Check Tests
 # ============================================================================
 
+
 class TestDiskSpaceCheck:
     """Tests for disk space checking."""
 
@@ -133,6 +145,7 @@ class TestDiskSpaceCheck:
 # Network Connectivity Tests
 # ============================================================================
 
+
 class TestNetworkConnectivityCheck:
     """Tests for network connectivity checking."""
 
@@ -171,6 +184,7 @@ class TestNetworkConnectivityCheck:
 # CUDA Version Check Tests
 # ============================================================================
 
+
 class TestCudaVersionCheck:
     """Tests for CUDA version checking."""
 
@@ -182,102 +196,115 @@ class TestCudaVersionCheck:
         assert _parse_version("invalid") == (0, 0)
 
     @pytest.mark.asyncio
-    @patch("subprocess.run")
     @patch("runpod.serverless.modules.rp_system_fitness.MIN_CUDA_VERSION", "11.8")
-    async def test_cuda_version_sufficient(self, mock_run):
+    async def test_cuda_version_sufficient(self):
         """Test that sufficient CUDA version passes."""
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="nvcc: NVIDIA (R) Cuda compiler driver\nRelease 12.2, V12.2.140",
-        )
-        # Should not raise
-        await _check_cuda_versions()
-
-    @pytest.mark.asyncio
-    @patch("subprocess.run")
-    @patch("runpod.serverless.modules.rp_system_fitness.MIN_CUDA_VERSION", "12.0")
-    async def test_cuda_version_insufficient(self, mock_run):
-        """Test that insufficient CUDA version fails."""
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="nvcc: NVIDIA (R) Cuda compiler driver\nRelease 11.8, V11.8.89",
-        )
-        with pytest.raises(RuntimeError, match="too old"):
+        nvcc_output = "nvcc: NVIDIA (R) Cuda compiler driver\nRelease 12.2, V12.2.140"
+        mock_proc = _make_async_process(returncode=0, stdout=nvcc_output)
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             await _check_cuda_versions()
 
     @pytest.mark.asyncio
-    @patch("subprocess.run")
-    async def test_cuda_not_available(self, mock_run):
+    @patch("runpod.serverless.modules.rp_system_fitness.MIN_CUDA_VERSION", "12.0")
+    async def test_cuda_version_insufficient(self):
+        """Test that insufficient CUDA version fails."""
+        nvcc_output = "nvcc: NVIDIA (R) Cuda compiler driver\nRelease 11.8, V11.8.89"
+        mock_proc = _make_async_process(returncode=0, stdout=nvcc_output)
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with pytest.raises(RuntimeError, match="too old"):
+                await _check_cuda_versions()
+
+    @pytest.mark.asyncio
+    async def test_cuda_not_available(self):
         """Test graceful handling when CUDA is not available."""
-        mock_run.side_effect = FileNotFoundError()
-        # Should not raise, just skip
-        await _check_cuda_versions()
+        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError()):
+            await _check_cuda_versions()
 
     @pytest.mark.asyncio
-    @patch("subprocess.run")
-    async def test_get_cuda_version_nvcc(self, mock_run):
+    async def test_get_cuda_version_nvcc(self):
         """Test CUDA version retrieval from nvcc."""
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="nvcc: NVIDIA (R) Cuda compiler driver\nRelease 12.2",
-        )
-        version = await _get_cuda_version()
-        assert version is not None
-        assert "Release 12.2" in version
+        nvcc_output = "nvcc: NVIDIA (R) Cuda compiler driver\nRelease 12.2"
+        mock_proc = _make_async_process(returncode=0, stdout=nvcc_output)
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            version = await _get_cuda_version()
+            assert version is not None
+            assert "Release 12.2" in version
 
     @pytest.mark.asyncio
-    @patch("subprocess.run")
-    async def test_get_cuda_version_nvidia_smi_fallback(self, mock_run):
+    async def test_get_cuda_version_nvidia_smi_fallback(self):
         """Test CUDA version retrieval fallback to nvidia-smi."""
-        # First call (nvcc) fails, second call (nvidia-smi) succeeds
         nvidia_smi_output = (
             "\n+-----------------------------------------------------------------------+\n"
             "| NVIDIA-SMI 565.57    Driver Version: 565.57   CUDA Version: 12.7    |\n"
             "+-----------------------------------------------------------------------+\n"
         )
-        mock_run.side_effect = [
-            FileNotFoundError(),  # nvcc not found
-            MagicMock(returncode=0, stdout=nvidia_smi_output),
-        ]
-        version = await _get_cuda_version()
-        assert version is not None
-        assert "12.7" in version
-        assert "565" not in version  # Should NOT contain driver version
+        # First call (nvcc) fails, second call (nvidia-smi) succeeds
+        smi_proc = _make_async_process(returncode=0, stdout=nvidia_smi_output)
+        call_count = 0
+
+        async def mock_create_subprocess(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise FileNotFoundError("nvcc not found")
+            return smi_proc
+
+        with patch(
+            "asyncio.create_subprocess_exec", side_effect=mock_create_subprocess
+        ):
+            version = await _get_cuda_version()
+            assert version is not None
+            assert "12.7" in version
+            assert "565" not in version  # Should NOT contain driver version
 
     @pytest.mark.asyncio
-    @patch("subprocess.run")
-    async def test_get_cuda_version_nvidia_smi_no_cuda_in_output(self, mock_run):
+    async def test_get_cuda_version_nvidia_smi_no_cuda_in_output(self):
         """Test nvidia-smi output without CUDA version."""
-        mock_run.side_effect = [
-            FileNotFoundError(),  # nvcc not found
-            MagicMock(returncode=0, stdout="No CUDA info here\nSome other output"),
-        ]
-        version = await _get_cuda_version()
-        assert version is None
+        smi_proc = _make_async_process(
+            returncode=0, stdout="No CUDA info here\nSome other output"
+        )
+        call_count = 0
+
+        async def mock_create_subprocess(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise FileNotFoundError("nvcc not found")
+            return smi_proc
+
+        with patch(
+            "asyncio.create_subprocess_exec", side_effect=mock_create_subprocess
+        ):
+            version = await _get_cuda_version()
+            assert version is None
 
     @pytest.mark.asyncio
-    @patch("subprocess.run")
-    async def test_get_cuda_version_extraction_from_nvidia_smi(self, mock_run):
+    async def test_get_cuda_version_extraction_from_nvidia_smi(self):
         """Test that CUDA version is correctly extracted from nvidia-smi."""
-        smi_output = (
-            "NVIDIA-SMI 565.57    Driver Version: 565.57    CUDA Version: 12.2"
-        )
-        mock_run.side_effect = [
-            FileNotFoundError(),  # nvcc not found
-            MagicMock(returncode=0, stdout=smi_output),
-        ]
-        version = await _get_cuda_version()
-        assert version is not None
-        assert "12.2" in version
-        # Verify it's a CUDA version, not driver version
-        parsed = _parse_version(version)
-        assert parsed[0] in (11, 12, 13)  # Valid CUDA major versions
+        smi_output = "NVIDIA-SMI 565.57    Driver Version: 565.57    CUDA Version: 12.2"
+        smi_proc = _make_async_process(returncode=0, stdout=smi_output)
+        call_count = 0
+
+        async def mock_create_subprocess(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise FileNotFoundError("nvcc not found")
+            return smi_proc
+
+        with patch(
+            "asyncio.create_subprocess_exec", side_effect=mock_create_subprocess
+        ):
+            version = await _get_cuda_version()
+            assert version is not None
+            assert "12.2" in version
+            parsed = _parse_version(version)
+            assert parsed[0] in (11, 12, 13)  # Valid CUDA major versions
 
     @pytest.mark.asyncio
     async def test_get_cuda_version_unavailable(self):
         """Test when CUDA is completely unavailable."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = FileNotFoundError()
+        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError()):
             version = await _get_cuda_version()
             assert version is None
 
@@ -285,6 +312,7 @@ class TestCudaVersionCheck:
 # ============================================================================
 # CUDA Initialization Tests
 # ============================================================================
+
 
 class TestCudaInitialization:
     """Tests for CUDA device initialization checking."""
@@ -431,6 +459,7 @@ class TestCudaInitialization:
 # GPU Compute Benchmark Tests
 # ============================================================================
 
+
 class TestGpuComputeBenchmark:
     """Tests for GPU compute benchmark."""
 
@@ -480,6 +509,7 @@ class TestGpuComputeBenchmark:
 # Auto-Registration Tests
 # ============================================================================
 
+
 class TestAutoRegistration:
     """Tests for auto-registration of system checks."""
 
@@ -514,6 +544,7 @@ class TestAutoRegistration:
 # ============================================================================
 # Integration Tests
 # ============================================================================
+
 
 class TestIntegration:
     """Integration tests for system fitness checks."""

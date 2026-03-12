@@ -2,12 +2,13 @@
 Helper utilities for locating package-bundled binaries.
 """
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
-from typing import Optional
 
 
-def get_binary_path(binary_name: str) -> Optional[Path]:
+def get_binary_path(binary_name: str) -> Path | None:
     """
     Locate a binary file within the runpod package.
 
