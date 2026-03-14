@@ -1,0 +1,47 @@
+name: CI-e2e-nightly
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 6 AM UTC daily
+  workflow_dispatch:
+
+jobs:
+  e2e-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          pip install runpod-flash
+          pip install -e . --force-reinstall --no-deps
+          python -c "import runpod; print(f'runpod: {runpod.__version__} from {runpod.__file__}')"
+          pip install pytest pytest-asyncio pytest-timeout httpx
+
+      - name: Run full e2e tests
+        run: |
+          source .venv/bin/activate
+          pytest tests/e2e/ -v -p no:xdist --timeout=600 -o "addopts="
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          # Nightly always tests main. Branch-specific LB testing
+          # requires manual workflow_dispatch with a branch override.
+          RUNPOD_PYTHON_BRANCH: main
+
+      - name: Cleanup flash resources
+        if: always()
+        run: |
+          source .venv/bin/activate
+          pkill -f "flash run" || true
+          cd tests/e2e/fixtures/all_in_one
+          flash undeploy --force 2>/dev/null || true
