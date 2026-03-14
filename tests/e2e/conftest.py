@@ -95,8 +95,8 @@ def require_api_key():
         pytest.skip("RUNPOD_API_KEY not set")
 
 
-@pytest.fixture(autouse=True)
-def _patch_runpod_globals(flash_server):
+@pytest.fixture
+def patch_runpod_globals(flash_server):
     """Point the SDK Endpoint client at the local flash server and set API key."""
     original_url = runpod.endpoint_url_base
     original_key = runpod.api_key
