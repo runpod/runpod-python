@@ -36,6 +36,7 @@ jobs:
           pytest tests/e2e/ -v -m "qb or cold_start" -p no:xdist --timeout=180 --reruns 1 --reruns-delay 5 --log-cli-level=INFO -o "addopts="
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          RUNPOD_SDK_GIT_REF: ${{ github.head_ref || github.ref_name }}
 
       - name: Cleanup flash resources
         if: always()

@@ -31,12 +31,10 @@ jobs:
       - name: Run full e2e tests
         run: |
           source .venv/bin/activate
-          pytest tests/e2e/ -v -p no:xdist --timeout=180 --reruns 1 --reruns-delay 5 -o "addopts="
+          pytest tests/e2e/ -v -p no:xdist --timeout=180 --reruns 1 --reruns-delay 5 --log-cli-level=INFO -o "addopts="
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
-          # Nightly always tests main. Branch-specific LB testing
-          # requires manual workflow_dispatch with a branch override.
-          RUNPOD_PYTHON_BRANCH: main
+          RUNPOD_SDK_GIT_REF: ${{ github.ref_name }}
 
       - name: Cleanup flash resources
         if: always()
