@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e2e-test-fixture"
+version = "0.1.0"
+description = "Purpose-built fixture for runpod-python e2e tests"
+requires-python = ">=3.11"
+dependencies = [
+    "runpod-flash",
+]
