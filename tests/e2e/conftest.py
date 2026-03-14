@@ -85,9 +85,12 @@ def require_api_key():
 
 
 @pytest.fixture(autouse=True)
-def _patch_runpod_base_url(flash_server):
-    """Point the SDK Endpoint client at the local flash server."""
-    original = runpod.endpoint_url_base
+def _patch_runpod_globals(flash_server):
+    """Point the SDK Endpoint client at the local flash server and set API key."""
+    original_url = runpod.endpoint_url_base
+    original_key = runpod.api_key
     runpod.endpoint_url_base = flash_server["base_url"]
+    runpod.api_key = os.environ.get("RUNPOD_API_KEY", "test-key")
     yield
-    runpod.endpoint_url_base = original
+    runpod.endpoint_url_base = original_url
+    runpod.api_key = original_key

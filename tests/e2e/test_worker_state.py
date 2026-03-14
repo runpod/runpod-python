@@ -15,14 +15,14 @@ async def test_state_persists_across_calls(flash_server, http_client):
         url,
         json={"input": {"action": "set", "key": test_key, "value": "hello"}},
     )
-    assert set_resp.status_code == 200
+    assert set_resp.status_code == 200, f"Set failed: {set_resp.text}"
     assert set_resp.json()["output"]["stored"] is True
 
     get_resp = await http_client.post(
         url,
         json={"input": {"action": "get", "key": test_key}},
     )
-    assert get_resp.status_code == 200
+    assert get_resp.status_code == 200, f"Get failed: {get_resp.text}"
     assert get_resp.json()["output"]["value"] == "hello"
 
 
@@ -37,13 +37,13 @@ async def test_state_independent_keys(flash_server, http_client):
         url,
         json={"input": {"action": "set", "key": key_a, "value": "alpha"}},
     )
-    assert set_a.status_code == 200
+    assert set_a.status_code == 200, f"Set key_a failed: {set_a.text}"
 
     set_b = await http_client.post(
         url,
         json={"input": {"action": "set", "key": key_b, "value": "beta"}},
     )
-    assert set_b.status_code == 200
+    assert set_b.status_code == 200, f"Set key_b failed: {set_b.text}"
 
     resp_a = await http_client.post(
         url,
