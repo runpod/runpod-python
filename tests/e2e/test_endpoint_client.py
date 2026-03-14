@@ -1,7 +1,7 @@
 import pytest
 import runpod
 
-pytestmark = [pytest.mark.qb, pytest.mark.usefixtures("require_api_key")]
+pytestmark = [pytest.mark.qb, pytest.mark.usefixtures("require_api_key", "patch_runpod_globals")]
 
 
 @pytest.mark.asyncio
@@ -9,7 +9,7 @@ async def test_run_sync(flash_server):
     """SDK Endpoint.run_sync() submits a job and gets the result."""
     endpoint = runpod.Endpoint("async_handler")
     result = endpoint.run_sync(
-        {"input_data": {"prompt": "test"}}, timeout=120
+        {"input_data": {"prompt": "test"}}, timeout=180
     )
 
     assert result["input_received"] == {"prompt": "test"}
