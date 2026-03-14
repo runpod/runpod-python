@@ -1,7 +1,6 @@
 import os
 
 import pytest
-import runpod
 
 pytestmark = pytest.mark.lb
 
