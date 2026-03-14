@@ -9,7 +9,7 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +33,9 @@ jobs:
       - name: Run QB e2e tests
         run: |
           source .venv/bin/activate
-          pytest tests/e2e/ -v -m "qb or cold_start" -p no:xdist --timeout=300 -o "addopts="
+          pytest tests/e2e/ -v -m "qb or cold_start" -p no:xdist --timeout=600 -o "addopts="
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
 
       - name: Cleanup flash resources
         if: always()

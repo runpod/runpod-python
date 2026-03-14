@@ -1,8 +1,10 @@
 import pytest
 import runpod
-from runpod.endpoint.asyncio import asyncio_runner
+from runpod.http_client import ClientSession
 
-pytestmark = pytest.mark.qb
+from runpod.endpoint.asyncio.asyncio_runner import Endpoint as AsyncEndpoint
+
+pytestmark = [pytest.mark.qb, pytest.mark.usefixtures("require_api_key")]
 
 
 @pytest.fixture(autouse=True)
@@ -17,15 +19,16 @@ def _patch_runpod_base_url(flash_server):
 @pytest.mark.asyncio
 async def test_async_run(flash_server):
     """Async SDK client submits a job and polls for output."""
-    endpoint = asyncio_runner.Job("async_handler")
-    await endpoint.run({"input_data": {"prompt": "async-test"}})
+    async with ClientSession() as session:
+        endpoint = AsyncEndpoint("async_handler", session)
+        job = await endpoint.run({"input_data": {"prompt": "async-test"}})
 
-    status = await endpoint.status()
-    assert status in ("IN_QUEUE", "IN_PROGRESS", "COMPLETED")
+        status = await job.status()
+        assert status in ("IN_QUEUE", "IN_PROGRESS", "COMPLETED")
 
-    output = await endpoint.output(timeout=30)
-    assert output["input_received"] == {"prompt": "async-test"}
-    assert output["status"] == "ok"
+        output = await job.output(timeout=120)
+        assert output["input_received"] == {"prompt": "async-test"}
+        assert output["status"] == "ok"
 
 
 @pytest.mark.asyncio

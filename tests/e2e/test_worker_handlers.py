@@ -1,13 +1,15 @@
 import pytest
 
-pytestmark = pytest.mark.qb
+pytestmark = [pytest.mark.qb, pytest.mark.usefixtures("require_api_key")]
 
 
 @pytest.mark.asyncio
 async def test_sync_handler(flash_server, http_client):
     """Sync QB handler receives input and returns expected output."""
     url = f"{flash_server['base_url']}/sync_handler/runsync"
-    resp = await http_client.post(url, json={"input": {"prompt": "hello"}})
+    resp = await http_client.post(
+        url, json={"input": {"input_data": {"prompt": "hello"}}}
+    )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -20,7 +22,9 @@ async def test_sync_handler(flash_server, http_client):
 async def test_async_handler(flash_server, http_client):
     """Async QB handler receives input and returns expected output."""
     url = f"{flash_server['base_url']}/async_handler/runsync"
-    resp = await http_client.post(url, json={"input": {"prompt": "hello"}})
+    resp = await http_client.post(
+        url, json={"input": {"input_data": {"prompt": "hello"}}}
+    )
 
     assert resp.status_code == 200
     body = resp.json()

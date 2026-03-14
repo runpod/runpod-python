@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-pytestmark = pytest.mark.qb
+pytestmark = [pytest.mark.qb, pytest.mark.usefixtures("require_api_key")]
 
 
 @pytest.mark.asyncio
