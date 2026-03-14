@@ -77,7 +77,6 @@ async def flash_server(verify_local_runpod):
         await asyncio.gather(
             _warmup("sync_handler", {"input_data": {}}),
             _warmup("async_handler", {"input_data": {}}),
-            _warmup("stateful_handler", {"action": "get", "key": "warmup"}),
         )
 
     yield {"base_url": base_url, "process": proc}
