@@ -1,5 +1,6 @@
 """E2E test fixtures: provision real endpoints, configure SDK, clean up."""
 
+import asyncio
 import logging
 import os
 
@@ -49,7 +50,19 @@ def endpoints(require_api_key, test_cases):
     eps = provision_endpoints(test_cases)
     for key, ep in eps.items():
         log.info("Endpoint ready: name=%s image=%s template.dockerArgs=%s", ep.name, ep.image, ep.template.dockerArgs if ep.template else "N/A")
-    return eps
+    yield eps
+
+    # Undeploy all provisioned endpoints and templates
+    log.info("Cleaning up %d provisioned endpoints", len(eps))
+    for key, ep in eps.items():
+        resource_config = ep._build_resource_config()
+        try:
+            result = asyncio.get_event_loop().run_until_complete(
+                resource_config.undeploy()
+            )
+            log.info("Undeployed endpoint=%s result=%s", ep.name, result)
+        except Exception as exc:
+            log.warning("Failed to undeploy endpoint=%s: %s", ep.name, exc)
 
 
 @pytest.fixture(scope="session")
