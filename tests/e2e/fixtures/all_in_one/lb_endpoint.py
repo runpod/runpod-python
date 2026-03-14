@@ -7,7 +7,7 @@ branch = os.environ.get("RUNPOD_PYTHON_BRANCH", "main")
 template = PodTemplate(
     startScript=(
         f"pip install git+https://github.com/runpod/runpod-python@{branch} "
-        f"--no-cache-dir && python3 -u /src/handler.py"
+        f"--no-cache-dir --force-reinstall --no-deps"
     ),
 )
 

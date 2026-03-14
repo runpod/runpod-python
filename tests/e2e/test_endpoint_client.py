@@ -1,7 +1,7 @@
 import pytest
 import runpod
 
-pytestmark = pytest.mark.qb
+pytestmark = [pytest.mark.qb, pytest.mark.usefixtures("require_api_key")]
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,7 @@ async def test_run_async_poll(flash_server):
     status = run_request.status()
     assert status in ("IN_QUEUE", "IN_PROGRESS", "COMPLETED")
 
-    output = run_request.output(timeout=30)
+    output = run_request.output(timeout=120)
     assert output["input_received"] == {"prompt": "poll-test"}
     assert output["status"] == "ok"
 

@@ -17,7 +17,7 @@ async def _wait_for_ready(url: str, timeout: float = 60) -> None:
                 resp = await client.get(url)
                 if resp.status_code == 200:
                     return
-            except httpx.ConnectError:
+            except (httpx.ConnectError, httpx.ConnectTimeout):
                 pass
             await asyncio.sleep(1)
     raise TimeoutError(f"Server not ready at {url} after {timeout}s")
@@ -66,8 +66,8 @@ async def flash_server(verify_local_runpod):
 
 @pytest_asyncio.fixture
 async def http_client():
-    """Async HTTP client with 30s timeout for test requests."""
-    async with httpx.AsyncClient(timeout=30) as client:
+    """Async HTTP client with extended timeout for remote dispatch."""
+    async with httpx.AsyncClient(timeout=120) as client:
         yield client
 
 
