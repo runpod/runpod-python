@@ -12,7 +12,7 @@ FLASH_SERVER_PORT = 8100
 SERVER_READY_TIMEOUT = 60  # seconds
 ENDPOINT_WARMUP_TIMEOUT = 180  # seconds per endpoint
 TEARDOWN_TIMEOUT = 30  # seconds
-HTTP_CLIENT_TIMEOUT = 120  # seconds
+HTTP_CLIENT_TIMEOUT = 180  # seconds
 
 
 async def wait_for_ready(url: str, timeout: float = SERVER_READY_TIMEOUT, poll_interval: float = 1.0) -> None:

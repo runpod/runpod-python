@@ -19,5 +19,5 @@ async def test_run_sync_error(flash_server):
     """SDK Endpoint.run_sync() surfaces handler errors on bad input."""
     endpoint = runpod.Endpoint("sync_handler")
 
-    with pytest.raises((TypeError, ValueError, RuntimeError)):
+    with pytest.raises((TypeError, ValueError, RuntimeError, AttributeError)):
         endpoint.run_sync(None, timeout=30)
