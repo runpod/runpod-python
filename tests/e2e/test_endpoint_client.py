@@ -4,15 +4,6 @@ import runpod
 pytestmark = [pytest.mark.qb, pytest.mark.usefixtures("require_api_key")]
 
 
-@pytest.fixture(autouse=True)
-def _patch_runpod_base_url(flash_server):
-    """Point the SDK Endpoint client at the local flash server."""
-    original = runpod.endpoint_url_base
-    runpod.endpoint_url_base = flash_server["base_url"]
-    yield
-    runpod.endpoint_url_base = original
-
-
 @pytest.mark.asyncio
 async def test_run_sync(flash_server):
     """SDK Endpoint.run_sync() submits a job and gets the result."""
@@ -39,8 +30,8 @@ async def test_run_async_poll(flash_server):
 
 @pytest.mark.asyncio
 async def test_run_sync_error(flash_server):
-    """SDK Endpoint.run_sync() surfaces handler errors."""
+    """SDK Endpoint.run_sync() surfaces handler errors on bad input."""
     endpoint = runpod.Endpoint("sync_handler")
 
-    with pytest.raises(Exception):
+    with pytest.raises((TypeError, ValueError, RuntimeError)):
         endpoint.run_sync(None)

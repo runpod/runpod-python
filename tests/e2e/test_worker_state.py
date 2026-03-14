@@ -33,14 +33,17 @@ async def test_state_independent_keys(flash_server, http_client):
     key_a = f"key-a-{uuid.uuid4().hex[:8]}"
     key_b = f"key-b-{uuid.uuid4().hex[:8]}"
 
-    await http_client.post(
+    set_a = await http_client.post(
         url,
         json={"input": {"action": "set", "key": key_a, "value": "alpha"}},
     )
-    await http_client.post(
+    assert set_a.status_code == 200
+
+    set_b = await http_client.post(
         url,
         json={"input": {"action": "set", "key": key_b, "value": "beta"}},
     )
+    assert set_b.status_code == 200
 
     resp_a = await http_client.post(
         url,

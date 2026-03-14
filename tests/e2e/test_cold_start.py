@@ -1,50 +1,16 @@
 import asyncio
 import os
-import re
 import signal
 import time
 
-import httpx
 import pytest
+
+from tests.e2e.conftest import wait_for_ready
 
 pytestmark = pytest.mark.cold_start
 
 COLD_START_PORT = 8199
 COLD_START_THRESHOLD = 60  # seconds
-
-
-async def _wait_for_ready(url: str, timeout: float = 60) -> None:
-    deadline = time.monotonic() + timeout
-    async with httpx.AsyncClient() as client:
-        while time.monotonic() < deadline:
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    return
-            except (httpx.ConnectError, httpx.ConnectTimeout):
-                pass
-            await asyncio.sleep(0.5)
-    raise TimeoutError(f"Server not ready at {url} after {timeout}s")
-
-
-async def _read_actual_port(proc: asyncio.subprocess.Process, requested_port: int) -> int:
-    """Read flash run stdout to find the actual port (flash may auto-increment)."""
-    deadline = time.monotonic() + 10
-    port = requested_port
-    while time.monotonic() < deadline:
-        line = await asyncio.wait_for(proc.stderr.readline(), timeout=5)
-        text = line.decode().strip()
-        if f"localhost:{requested_port}" in text:
-            return requested_port
-        match = re.search(r"localhost:(\d+)", text)
-        if match:
-            port = int(match.group(1))
-            return port
-        if "Visit http://" in text:
-            match = re.search(r"localhost:(\d+)", text)
-            if match:
-                return int(match.group(1))
-    return port
 
 
 @pytest.mark.asyncio
@@ -62,9 +28,10 @@ async def test_cold_start_under_threshold():
 
     start = time.monotonic()
     try:
-        await _wait_for_ready(
+        await wait_for_ready(
             f"http://localhost:{COLD_START_PORT}/docs",
             timeout=COLD_START_THRESHOLD,
+            poll_interval=0.5,
         )
         elapsed = time.monotonic() - start
         assert elapsed < COLD_START_THRESHOLD, (

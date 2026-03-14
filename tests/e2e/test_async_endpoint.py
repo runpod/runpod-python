@@ -7,15 +7,6 @@ from runpod.endpoint.asyncio.asyncio_runner import Endpoint as AsyncEndpoint
 pytestmark = [pytest.mark.qb, pytest.mark.usefixtures("require_api_key")]
 
 
-@pytest.fixture(autouse=True)
-def _patch_runpod_base_url(flash_server):
-    """Point the SDK Endpoint client at the local flash server."""
-    original = runpod.endpoint_url_base
-    runpod.endpoint_url_base = flash_server["base_url"]
-    yield
-    runpod.endpoint_url_base = original
-
-
 @pytest.mark.asyncio
 async def test_async_run(flash_server):
     """Async SDK client submits a job and polls for output."""
