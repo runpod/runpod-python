@@ -33,7 +33,7 @@ jobs:
       - name: Run QB e2e tests
         run: |
           source .venv/bin/activate
-          pytest tests/e2e/ -v -m "qb or cold_start" -p no:xdist --timeout=180 --reruns 1 --reruns-delay 5 -o "addopts="
+          pytest tests/e2e/ -v -m "qb or cold_start" -p no:xdist --timeout=180 --reruns 1 --reruns-delay 5 --log-cli-level=INFO -o "addopts="
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
 
