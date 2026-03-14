@@ -3,9 +3,8 @@ import os
 import signal
 import time
 
+import httpx
 import pytest
-
-from tests.e2e.conftest import wait_for_ready
 
 pytestmark = pytest.mark.cold_start
 
@@ -13,11 +12,26 @@ COLD_START_PORT = 8199
 COLD_START_THRESHOLD = 60  # seconds
 
 
+async def _wait_for_ready(url: str, timeout: float, poll_interval: float = 0.5) -> None:
+    """Poll a URL until it returns 200 or timeout is reached."""
+    deadline = time.monotonic() + timeout
+    async with httpx.AsyncClient() as client:
+        while time.monotonic() < deadline:
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                pass
+            await asyncio.sleep(poll_interval)
+    raise TimeoutError(f"Server not ready at {url} after {timeout}s")
+
+
 @pytest.mark.asyncio
 async def test_cold_start_under_threshold():
     """flash run reaches health within 60 seconds."""
     fixture_dir = os.path.join(
-        os.path.dirname(__file__), "fixtures", "all_in_one"
+        os.path.dirname(__file__), "fixtures", "cold_start"
     )
     proc = await asyncio.create_subprocess_exec(
         "flash", "run", "--port", str(COLD_START_PORT),
@@ -28,10 +42,9 @@ async def test_cold_start_under_threshold():
 
     start = time.monotonic()
     try:
-        await wait_for_ready(
+        await _wait_for_ready(
             f"http://localhost:{COLD_START_PORT}/docs",
             timeout=COLD_START_THRESHOLD,
-            poll_interval=0.5,
         )
         elapsed = time.monotonic() - start
         assert elapsed < COLD_START_THRESHOLD, (
