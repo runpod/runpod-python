@@ -61,23 +61,15 @@ async def flash_server(verify_local_runpod):
         await proc.wait()
         pytest.fail(f"flash run did not become ready within {SERVER_READY_TIMEOUT}s")
 
-    # Warm up QB endpoints — first request triggers remote provisioning (~60s each).
-    # Without this, early tests fail with 500 because endpoints aren't provisioned yet.
-    # Run concurrently to reduce total warmup time.
+    # Warm up the QB endpoint — first request triggers remote provisioning (~60s).
+    # Without this, the first test fails with 500 because the endpoint isn't provisioned.
     async with httpx.AsyncClient(timeout=ENDPOINT_WARMUP_TIMEOUT) as client:
-
-        async def _warmup(handler: str, payload: dict) -> None:
-            url = f"{base_url}/{handler}/runsync"
-            try:
-                resp = await client.post(url, json={"input": payload})
-                print(f"Warmup {handler}: {resp.status_code}")
-            except httpx.TimeoutException:
-                print(f"Warmup {handler}: timed out")
-
-        await asyncio.gather(
-            _warmup("sync_handler", {"input_data": {}}),
-            _warmup("async_handler", {"input_data": {}}),
-        )
+        url = f"{base_url}/async_handler/runsync"
+        try:
+            resp = await client.post(url, json={"input": {"input_data": {}}})
+            print(f"Warmup async_handler: {resp.status_code}")
+        except httpx.TimeoutException:
+            print("Warmup async_handler: timed out")
 
     yield {"base_url": base_url, "process": proc}
 
