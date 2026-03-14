@@ -1,0 +1,46 @@
+import pytest
+import runpod
+
+pytestmark = pytest.mark.qb
+
+
+@pytest.fixture(autouse=True)
+def _patch_runpod_base_url(flash_server):
+    """Point the SDK Endpoint client at the local flash server."""
+    original = runpod.endpoint_url_base
+    runpod.endpoint_url_base = flash_server["base_url"]
+    yield
+    runpod.endpoint_url_base = original
+
+
+@pytest.mark.asyncio
+async def test_run_sync(flash_server):
+    """SDK Endpoint.run_sync() submits a job and gets the result."""
+    endpoint = runpod.Endpoint("sync_handler")
+    result = endpoint.run_sync({"input_data": {"prompt": "test"}})
+
+    assert result["input_received"] == {"prompt": "test"}
+    assert result["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_run_async_poll(flash_server):
+    """SDK Endpoint.run() submits async job, poll status, get output."""
+    endpoint = runpod.Endpoint("sync_handler")
+    run_request = endpoint.run({"input_data": {"prompt": "poll-test"}})
+
+    status = run_request.status()
+    assert status in ("IN_QUEUE", "IN_PROGRESS", "COMPLETED")
+
+    output = run_request.output(timeout=30)
+    assert output["input_received"] == {"prompt": "poll-test"}
+    assert output["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_run_sync_error(flash_server):
+    """SDK Endpoint.run_sync() surfaces handler errors."""
+    endpoint = runpod.Endpoint("sync_handler")
+
+    with pytest.raises(Exception):
+        endpoint.run_sync(None)
