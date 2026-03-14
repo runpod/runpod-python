@@ -7,9 +7,12 @@ the branch under test.
 """
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 # Force Flash to use ServerlessEndpoint (deploy mode) instead of LiveServerless.
 # LiveServerless forcefully overwrites imageName with Flash's base image,
@@ -83,6 +86,9 @@ def provision_endpoints(
         Dict of hardware_key -> Endpoint instance.
     """
     git_ref = os.environ.get("RUNPOD_SDK_GIT_REF")
+    log.info("RUNPOD_SDK_GIT_REF=%s", git_ref or "(not set)")
+    log.info("FLASH_IS_LIVE_PROVISIONING=%s", os.environ.get("FLASH_IS_LIVE_PROVISIONING"))
+    log.info("Loading %d test cases from %s", len(test_cases), TESTS_JSON)
     seen: dict[str, Endpoint] = {}
 
     for tc in test_cases:
@@ -100,8 +106,13 @@ def provision_endpoints(
         gpu_ids = endpoint_config.get("gpuIds", "ADA_24")
         gpus = _parse_gpu_ids(gpu_ids)
 
+        ep_name = endpoint_config.get("name", f"rp-python-e2e-{len(seen)}")
+        log.info(
+            "Provisioning endpoint: name=%s image=%s gpus=%s dockerArgs=%s",
+            ep_name, MOCK_WORKER_IMAGE, [g.value for g in gpus], docker_args,
+        )
         ep = Endpoint(
-            name=endpoint_config.get("name", f"rp-python-e2e-{len(seen)}"),
+            name=ep_name,
             image=MOCK_WORKER_IMAGE,
             gpu=gpus,
             template=PodTemplate(dockerArgs=docker_args),
@@ -110,4 +121,5 @@ def provision_endpoints(
         )
         seen[key] = ep
 
+    log.info("Provisioned %d unique endpoints", len(seen))
     return seen
