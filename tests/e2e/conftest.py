@@ -50,7 +50,7 @@ async def flash_server(verify_local_runpod):
         "flash", "run", "--port", str(FLASH_SERVER_PORT),
         cwd=fixture_dir,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stderr=None,  # let flash provisioning logs flow to CI output
     )
 
     base_url = f"http://localhost:{FLASH_SERVER_PORT}"
