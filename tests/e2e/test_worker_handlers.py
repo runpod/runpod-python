@@ -11,7 +11,7 @@ async def test_sync_handler(flash_server, http_client):
         url, json={"input": {"input_data": {"prompt": "hello"}}}
     )
 
-    assert resp.status_code == 200
+    assert resp.status_code == 200, f"sync_handler returned {resp.status_code}: {resp.text}"
     body = resp.json()
     assert body["status"] == "COMPLETED"
     assert body["output"]["input_received"] == {"prompt": "hello"}
@@ -26,7 +26,7 @@ async def test_async_handler(flash_server, http_client):
         url, json={"input": {"input_data": {"prompt": "hello"}}}
     )
 
-    assert resp.status_code == 200
+    assert resp.status_code == 200, f"async_handler returned {resp.status_code}: {resp.text}"
     body = resp.json()
     assert body["status"] == "COMPLETED"
     assert body["output"]["input_received"] == {"prompt": "hello"}
