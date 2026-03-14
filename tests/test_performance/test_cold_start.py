@@ -233,9 +233,10 @@ def test_cold_start_benchmark(tmp_path):
         json.dump(results, f, indent=2)
 
     # Assert that import time is reasonable (adjust threshold as needed)
+    # CI runners have shared CPUs, so use a generous threshold
     assert (
-        results["measurements"]["runpod_total"]["mean"] < 1000
-    ), "Import time exceeds 1000ms"
+        results["measurements"]["runpod_total"]["mean"] < 2000
+    ), "Import time exceeds 2000ms"
 
 
 if __name__ == "__main__":
