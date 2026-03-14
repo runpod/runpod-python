@@ -86,8 +86,7 @@ def _parse_gpu_test_output(output: str) -> dict[str, Any]:
                 found_gpus = int(line.split()[1])
                 result["found_gpus"] = found_gpus
             except (IndexError, ValueError):
-                # Line format doesn't match expected "Found N GPUs:" - skip parsing
-                pass
+                pass  # Line format doesn't match expected "Found N GPUs:" - skip
 
         # Check for success
         if "memory allocation test passed" in line.lower():
@@ -163,6 +162,8 @@ async def _run_gpu_test_binary() -> dict[str, Any]:
         return result
 
     except asyncio.TimeoutError:
+        process.kill()
+        await process.wait()
         raise RuntimeError(
             f"GPU test binary timed out after {TIMEOUT_SECONDS}s"
         ) from None
@@ -280,11 +281,8 @@ def auto_register_gpu_check() -> None:
     It detects GPU presence via nvidia-smi and registers the check if found.
     On CPU-only workers, the check is skipped silently.
 
-    The check cannot be disabled when GPUs are present - this is a required
-    health check for GPU workers.
-
     Environment variables:
-    - RUNPOD_SKIP_GPU_CHECK: Set to "true" to skip auto-registration (for testing)
+    - RUNPOD_SKIP_GPU_CHECK: Set to "true" to skip auto-registration
     """
     # Allow skipping during tests
     if os.environ.get("RUNPOD_SKIP_GPU_CHECK", "").lower() == "true":

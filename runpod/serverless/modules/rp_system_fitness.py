@@ -166,7 +166,7 @@ async def _check_network_connectivity() -> None:
 
     try:
         start_time = time.perf_counter()
-        reader, writer = await asyncio.wait_for(
+        _, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port), timeout=NETWORK_CHECK_TIMEOUT
         )
         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -200,6 +200,7 @@ async def _get_cuda_version() -> str | None:
         RuntimeError: If CUDA check fails critically
     """
     # Try nvcc first
+    process = None
     try:
         process = await asyncio.create_subprocess_exec(
             "nvcc",
@@ -214,9 +215,13 @@ async def _get_cuda_version() -> str | None:
                 if "release" in line.lower() or "version" in line.lower():
                     return line.strip()
     except Exception as e:
+        if process and process.returncode is None:
+            process.kill()
+            await process.wait()
         log.debug(f"nvcc not available: {e}")
 
     # Fallback: try nvidia-smi and parse CUDA version from output
+    process = None
     try:
         process = await asyncio.create_subprocess_exec(
             "nvidia-smi",
@@ -234,6 +239,9 @@ async def _get_cuda_version() -> str | None:
                         return f"CUDA Version: {cuda_version}"
             log.debug("nvidia-smi output found but couldn't parse CUDA version")
     except Exception as e:
+        if process and process.returncode is None:
+            process.kill()
+            await process.wait()
         log.debug(f"nvidia-smi not available: {e}")
 
     return None

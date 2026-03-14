@@ -16,6 +16,7 @@ def cleanup_fitness_checks(monkeypatch):
     with fitness check framework tests.
     """
     monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
+    monkeypatch.setenv("RUNPOD_SKIP_GPU_CHECK", "true")
     _reset_registration_state()
     clear_fitness_checks()
     yield

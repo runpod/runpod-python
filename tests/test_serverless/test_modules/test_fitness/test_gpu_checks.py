@@ -157,8 +157,8 @@ class TestBinaryPathResolution:
         """Test environment variable override takes precedence."""
         with patch("pathlib.Path.exists", return_value=True), \
              patch("pathlib.Path.is_file", return_value=True):
-            # When env var is set and path exists, it should be used
-            pass
+            path = _get_gpu_test_binary_path()
+            assert path == Path("/custom/gpu_test")
 
 
 # ============================================================================
@@ -297,6 +297,7 @@ class TestGpuHealthCheck:
 class TestAutoRegistration:
     """Tests for GPU check auto-registration."""
 
+    @patch.dict(os.environ, {"RUNPOD_SKIP_GPU_CHECK": ""})
     def test_auto_register_gpu_found(self):
         """Test auto-registration when GPU detected."""
         with patch("subprocess.run") as mock_run:

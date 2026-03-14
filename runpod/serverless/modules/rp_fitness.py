@@ -67,8 +67,8 @@ def clear_fitness_checks() -> None:
     _fitness_checks.clear()
 
 
-_gpu_check_registered = False
-_system_checks_registered = False
+_gpu_check_registered = False  # used via global in _ensure_gpu_check_registered
+_system_checks_registered = False  # used via global in _ensure_system_checks_registered
 
 
 def _reset_registration_state() -> None:
