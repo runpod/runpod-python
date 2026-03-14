@@ -1,5 +1,6 @@
 """E2E test fixtures: provision real endpoints, configure SDK, clean up."""
 
+import logging
 import os
 
 import pytest
@@ -7,12 +8,14 @@ import runpod
 
 from tests.e2e.e2e_provisioner import load_test_cases, provision_endpoints
 
+log = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 300  # seconds per job request
 
 
 @pytest.fixture(scope="session", autouse=True)
 def verify_local_runpod():
     """Fail fast if the local runpod-python is not installed."""
+    log.info("runpod version=%s path=%s", runpod.__version__, runpod.__file__)
     if "runpod-python" not in runpod.__file__:
         pytest.fail(
             f"Expected local runpod-python but got {runpod.__file__}. "
@@ -23,14 +26,18 @@ def verify_local_runpod():
 @pytest.fixture(scope="session")
 def require_api_key():
     """Skip entire session if RUNPOD_API_KEY is not set."""
-    if not os.environ.get("RUNPOD_API_KEY"):
+    key = os.environ.get("RUNPOD_API_KEY")
+    if not key:
         pytest.skip("RUNPOD_API_KEY not set")
+    log.info("RUNPOD_API_KEY is set (length=%d)", len(key))
 
 
 @pytest.fixture(scope="session")
 def test_cases():
     """Load test cases from tests.json."""
-    return load_test_cases()
+    cases = load_test_cases()
+    log.info("Loaded %d test cases: %s", len(cases), [c.get("id") for c in cases])
+    return cases
 
 
 @pytest.fixture(scope="session")
@@ -39,7 +46,10 @@ def endpoints(require_api_key, test_cases):
 
     Endpoints deploy lazily on first .run()/.runsync() call.
     """
-    return provision_endpoints(test_cases)
+    eps = provision_endpoints(test_cases)
+    for key, ep in eps.items():
+        log.info("Endpoint ready: name=%s image=%s template.dockerArgs=%s", ep.name, ep.image, ep.template.dockerArgs if ep.template else "N/A")
+    return eps
 
 
 @pytest.fixture(scope="session")
