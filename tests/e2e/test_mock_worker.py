@@ -1,18 +1,19 @@
 """E2E tests against real Runpod serverless endpoints running mock-worker.
 
-Tests are parametrized from tests.json. Each test sends a job via Flash's
-Endpoint client, polls for completion, and asserts the output matches expected.
+Submits all jobs concurrently across provisioned endpoints, then asserts
+each result matches the expected output from tests.json.
 """
 
+import asyncio
 import json
 import logging
 from pathlib import Path
 
 import pytest
 
-log = logging.getLogger(__name__)
-
 from tests.e2e.e2e_provisioner import hardware_config_key
+
+log = logging.getLogger(__name__)
 
 TESTS_JSON = Path(__file__).parent / "tests.json"
 REQUEST_TIMEOUT = 300  # seconds
@@ -22,14 +23,8 @@ def _load_test_cases():
     return json.loads(TESTS_JSON.read_text())
 
 
-def _test_ids():
-    return [tc.get("id", f"test_{i}") for i, tc in enumerate(_load_test_cases())]
-
-
-@pytest.mark.parametrize("test_case", _load_test_cases(), ids=_test_ids())
-@pytest.mark.asyncio
-async def test_mock_worker_job(test_case, endpoints, api_key):
-    """Submit a job to the provisioned endpoint and verify the output."""
+async def _run_single_case(test_case: dict, endpoints: dict, api_key: str) -> None:
+    """Submit one job, wait for completion, and assert output."""
     test_id = test_case.get("id", "unknown")
     hw_key = hardware_config_key(test_case["hardwareConfig"])
     ep = endpoints[hw_key]
@@ -44,10 +39,27 @@ async def test_mock_worker_job(test_case, endpoints, api_key):
         test_id, job.id, job.done, job.output, job.error,
     )
 
-    assert job.done, f"Job {job.id} did not reach terminal status"
-    assert job.error is None, f"Job {job.id} failed: {job.error}"
+    assert job.done, f"[{test_id}] Job {job.id} did not reach terminal status"
+    assert job.error is None, f"[{test_id}] Job {job.id} failed: {job.error}"
 
     if "expected_output" in test_case:
         assert job.output == test_case["expected_output"], (
-            f"Expected {test_case['expected_output']}, got {job.output}"
+            f"[{test_id}] Expected {test_case['expected_output']}, got {job.output}"
         )
+
+
+@pytest.mark.asyncio
+async def test_mock_worker_jobs(endpoints, api_key):
+    """Submit all test jobs concurrently and verify outputs."""
+    test_cases = _load_test_cases()
+    results = await asyncio.gather(
+        *[_run_single_case(tc, endpoints, api_key) for tc in test_cases],
+        return_exceptions=True,
+    )
+
+    failures = []
+    for tc, result in zip(test_cases, results):
+        if isinstance(result, Exception):
+            failures.append(f"[{tc.get('id', '?')}] {result}")
+
+    assert not failures, f"{len(failures)} job(s) failed:\n" + "\n".join(failures)
