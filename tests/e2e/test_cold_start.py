@@ -22,7 +22,7 @@ async def _wait_for_ready(url: str, timeout: float, poll_interval: float = 0.5) 
                 if resp.status_code == 200:
                     return
             except (httpx.ConnectError, httpx.ConnectTimeout):
-                pass
+                pass  # expected while server is starting up
             await asyncio.sleep(poll_interval)
     raise TimeoutError(f"Server not ready at {url} after {timeout}s")
 
@@ -36,8 +36,8 @@ async def test_cold_start_under_threshold():
     proc = await asyncio.create_subprocess_exec(
         "flash", "run", "--port", str(COLD_START_PORT),
         cwd=fixture_dir,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
 
     start = time.monotonic()
@@ -51,9 +51,10 @@ async def test_cold_start_under_threshold():
             f"Cold start took {elapsed:.1f}s, expected < {COLD_START_THRESHOLD}s"
         )
     finally:
-        proc.send_signal(signal.SIGINT)
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=30)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
+        if proc.returncode is None:
+            proc.send_signal(signal.SIGINT)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=30)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()

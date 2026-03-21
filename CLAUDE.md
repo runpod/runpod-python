@@ -1,6 +1,6 @@
 # Runpod-python - build/flash-based-e2e-tests Worktree
 
-> This worktree inherits patterns from main. See: /Users/deanquinanola/Github/python/flash-project/runpod-python/main/CLAUDE.md
+> This worktree inherits patterns from main. See the main worktree CLAUDE.md for shared development patterns.
 
 ## Branch Context
 
