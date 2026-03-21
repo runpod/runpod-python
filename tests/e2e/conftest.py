@@ -1,8 +1,8 @@
 """E2E test fixtures: provision real endpoints, configure SDK, clean up."""
 
-import asyncio
 import logging
 import os
+import subprocess
 
 import pytest
 import runpod
@@ -52,17 +52,20 @@ def endpoints(require_api_key, test_cases):
         log.info("Endpoint ready: name=%s image=%s template.dockerArgs=%s", ep.name, ep.image, ep.template.dockerArgs if ep.template else "N/A")
     yield eps
 
-    # Undeploy all provisioned endpoints and templates
-    log.info("Cleaning up %d provisioned endpoints", len(eps))
-    for key, ep in eps.items():
-        resource_config = ep._build_resource_config()
-        try:
-            result = asyncio.get_event_loop().run_until_complete(
-                resource_config.undeploy()
-            )
-            log.info("Undeployed endpoint=%s result=%s", ep.name, result)
-        except Exception as exc:
-            log.warning("Failed to undeploy endpoint=%s: %s", ep.name, exc)
+    # Undeploy all provisioned endpoints via CLI
+    log.info("Cleaning up %d provisioned endpoints via flash undeploy", len(eps))
+    try:
+        result = subprocess.run(
+            ["flash", "undeploy", "--all", "--force"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        log.info("flash undeploy stdout: %s", result.stdout)
+        if result.returncode != 0:
+            log.warning("flash undeploy failed (rc=%d): %s", result.returncode, result.stderr)
+    except Exception:
+        log.exception("Failed to run flash undeploy")
 
 
 @pytest.fixture(scope="session")
