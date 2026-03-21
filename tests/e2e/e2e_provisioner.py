@@ -66,8 +66,16 @@ def load_test_cases() -> list[dict[str, Any]]:
 
 
 def hardware_config_key(hw: dict) -> str:
-    """Stable string key for grouping tests by hardware config."""
-    return json.dumps(hw, sort_keys=True)
+    """Stable string key for grouping tests by hardware config.
+
+    Excludes endpoint name so tests with identical GPU and template
+    settings share a single provisioned endpoint.
+    """
+    normalized = {
+        "gpuIds": hw.get("endpointConfig", {}).get("gpuIds", ""),
+        "dockerArgs": hw.get("templateConfig", {}).get("dockerArgs", ""),
+    }
+    return json.dumps(normalized, sort_keys=True)
 
 
 def provision_endpoints(
