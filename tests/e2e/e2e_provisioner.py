@@ -14,9 +14,9 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-# Force Flash to use ServerlessEndpoint (deploy mode) instead of LiveServerless.
-# LiveServerless forcefully overwrites imageName with Flash's base image,
-# ignoring the mock-worker image we need to deploy.
+# Must be set before importing runpod_flash — Flash reads this env var at
+# import time to decide between LiveServerless (overwrites imageName with
+# Flash's base image) and ServerlessEndpoint (preserves our mock-worker image).
 os.environ["FLASH_IS_LIVE_PROVISIONING"] = "false"
 
 from runpod_flash import Endpoint, GpuGroup, PodTemplate  # noqa: E402
@@ -70,6 +70,11 @@ def hardware_config_key(hw: dict) -> str:
 
     Excludes endpoint name so tests with identical GPU and template
     settings share a single provisioned endpoint.
+
+    Only gpuIds and dockerArgs are included because they determine worker
+    behaviour.  Other templateConfig fields (env, image, scalerConfig)
+    are constant across our tests.json entries — if future tests vary
+    those fields, add them here.
     """
     normalized = {
         "gpuIds": hw.get("endpointConfig", {}).get("gpuIds", ""),
