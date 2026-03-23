@@ -3,7 +3,7 @@ name = "runpod"
 dynamic = ["version", "dependencies"]
 description = "🐍 | Python library for Runpod API and serverless worker SDK."
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = { text = "MIT License" }
 authors = [
     { name = "Runpod", email = "engineer@runpod.io" },
@@ -25,10 +25,9 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
 ]
