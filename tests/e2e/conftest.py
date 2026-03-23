@@ -1,8 +1,9 @@
 """E2E test fixtures: provision real endpoints, configure SDK, clean up."""
 
+import json
 import logging
 import os
-import subprocess
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,48 @@ REQUEST_TIMEOUT = 300  # seconds per job request
 
 # Repo root: tests/e2e/conftest.py -> ../../
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+_GRAPHQL_URL = "https://api.runpod.io/graphql"
+
+
+def _graphql(api_key: str, query: str, variables: dict | None = None) -> dict:
+    """Execute a Runpod GraphQL query."""
+    payload = json.dumps({"query": query, "variables": variables or {}}).encode()
+    req = urllib.request.Request(
+        f"{_GRAPHQL_URL}?api_key={api_key}",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read())
+
+
+def _delete_endpoints_by_name(api_key: str, names: list[str]) -> None:
+    """Delete endpoints matching the given names via GraphQL API."""
+    result = _graphql(api_key, """
+        query { myself { endpoints { id name } } }
+    """)
+    all_endpoints = result.get("data", {}).get("myself", {}).get("endpoints", [])
+    name_set = set(names)
+    targets = [ep for ep in all_endpoints if ep.get("name") in name_set]
+
+    if not targets:
+        log.warning("No matching endpoints found for names: %s", names)
+        return
+
+    for ep in targets:
+        try:
+            resp = _graphql(
+                api_key,
+                "mutation($id: String!) { deleteEndpoint(id: $id) }",
+                {"id": ep["id"]},
+            )
+            if "errors" in resp:
+                log.warning("Failed to delete %s (%s): %s", ep["name"], ep["id"], resp["errors"])
+            else:
+                log.info("Deleted endpoint %s (%s)", ep["name"], ep["id"])
+        except Exception:
+            log.exception("Error deleting endpoint %s (%s)", ep["name"], ep["id"])
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -57,22 +100,10 @@ def endpoints(require_api_key, test_cases):
         log.info("Endpoint ready: name=%s image=%s template.dockerArgs=%s", ep.name, ep.image, ep.template.dockerArgs if ep.template else "N/A")
     yield eps
 
-    # Undeploy only the endpoints provisioned by this test run.
-    # Uses by-name undeploy to avoid tearing down unrelated endpoints
-    # sharing the same API key (parallel CI runs, developer endpoints).
+    # Delete provisioned endpoints via GraphQL API directly.
+    # flash undeploy relies on .runpod/resources.pkl which doesn't exist in CI.
+    api_key = os.environ.get("RUNPOD_API_KEY", "")
     endpoint_names = [ep.name for ep in eps.values()]
     log.info("Cleaning up %d provisioned endpoints: %s", len(endpoint_names), endpoint_names)
-    for name in endpoint_names:
-        try:
-            result = subprocess.run(
-                ["flash", "undeploy", name, "--force"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode == 0:
-                log.info("Undeployed %s", name)
-            else:
-                log.warning("flash undeploy %s failed (rc=%d): %s", name, result.returncode, result.stderr)
-        except Exception:
-            log.exception("Failed to undeploy %s", name)
+    if api_key and endpoint_names:
+        _delete_endpoints_by_name(api_key, endpoint_names)
