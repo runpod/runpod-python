@@ -71,9 +71,3 @@ def endpoints(require_api_key, test_cases):
             log.warning("flash undeploy failed (rc=%d): %s", result.returncode, result.stderr)
     except Exception:
         log.exception("Failed to run flash undeploy")
-
-
-@pytest.fixture(scope="session")
-def api_key():
-    """Return the RUNPOD_API_KEY."""
-    return os.environ.get("RUNPOD_API_KEY", "")

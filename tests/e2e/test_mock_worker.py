@@ -23,7 +23,7 @@ def _load_test_cases():
     return json.loads(TESTS_JSON.read_text())
 
 
-async def _run_single_case(test_case: dict, endpoints: dict, api_key: str) -> None:
+async def _run_single_case(test_case: dict, endpoints: dict) -> None:
     """Submit one job, wait for completion, and assert output."""
     test_id = test_case.get("id", "unknown")
     hw_key = hardware_config_key(test_case["hardwareConfig"])
@@ -49,11 +49,11 @@ async def _run_single_case(test_case: dict, endpoints: dict, api_key: str) -> No
 
 
 @pytest.mark.asyncio
-async def test_mock_worker_jobs(endpoints, api_key):
+async def test_mock_worker_jobs(endpoints):
     """Submit all test jobs concurrently and verify outputs."""
     test_cases = _load_test_cases()
     results = await asyncio.gather(
-        *[_run_single_case(tc, endpoints, api_key) for tc in test_cases],
+        *[_run_single_case(tc, endpoints) for tc in test_cases],
         return_exceptions=True,
     )
 

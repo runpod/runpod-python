@@ -9,6 +9,7 @@ the branch under test.
 import json
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,10 @@ from runpod_flash import Endpoint, GpuGroup, PodTemplate  # noqa: E402
 MOCK_WORKER_IMAGE = "runpod/mock-worker:latest"
 DEFAULT_CMD = "python -u /handler.py"
 TESTS_JSON = Path(__file__).parent / "tests.json"
+
+# Short unique suffix to avoid endpoint name collisions across parallel CI
+# runs sharing the same API key.
+_RUN_ID = uuid.uuid4().hex[:8]
 
 # Map gpuIds strings from tests.json to GpuGroup enum values
 _GPU_MAP: dict[str, GpuGroup] = {g.value: g for g in GpuGroup}
@@ -119,7 +124,8 @@ def provision_endpoints(
         gpu_ids = endpoint_config.get("gpuIds", "ADA_24")
         gpus = _parse_gpu_ids(gpu_ids)
 
-        ep_name = endpoint_config.get("name", f"rp-python-e2e-{len(seen)}")
+        base_name = endpoint_config.get("name", f"rp-python-e2e-{len(seen)}")
+        ep_name = f"{base_name}-{_RUN_ID}"
         log.info(
             "Provisioning endpoint: name=%s image=%s gpus=%s dockerArgs=%s",
             ep_name, MOCK_WORKER_IMAGE, [g.value for g in gpus], docker_args,
