@@ -22,7 +22,8 @@ async def _wait_for_ready(url: str, timeout: float, poll_interval: float = 0.5) 
                 if resp.status_code == 200:
                     return
             except (httpx.ConnectError, httpx.ConnectTimeout):
-                pass  # expected while server is starting up
+                # Expected while server is booting — retry until deadline.
+                continue
             await asyncio.sleep(poll_interval)
     raise TimeoutError(f"Server not ready at {url} after {timeout}s")
 
