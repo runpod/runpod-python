@@ -1,0 +1,110 @@
+name: Cleanup stale endpoints
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List endpoints without deleting (true/false)"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      name_filter:
+        description: "Only delete endpoints whose name contains this string (empty = all)"
+        required: false
+        default: ""
+
+jobs:
+  cleanup:
+    if: github.repository == 'runpod/runpod-python'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Cleanup endpoints
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          NAME_FILTER: ${{ inputs.name_filter }}
+        run: |
+          python3 - <<'SCRIPT'
+          import json
+          import os
+          import urllib.request
+
+          API_URL = "https://api.runpod.io/graphql"
+          API_KEY = os.environ["RUNPOD_API_KEY"]
+          DRY_RUN = os.environ.get("DRY_RUN", "true") == "true"
+          NAME_FILTER = os.environ.get("NAME_FILTER", "").strip()
+
+          def graphql(query, variables=None):
+              payload = json.dumps({"query": query, "variables": variables or {}}).encode()
+              req = urllib.request.Request(
+                  f"{API_URL}?api_key={API_KEY}",
+                  data=payload,
+                  headers={"Content-Type": "application/json"},
+              )
+              with urllib.request.urlopen(req) as resp:
+                  return json.loads(resp.read())
+
+          # List all endpoints
+          result = graphql("""
+              query {
+                  myself {
+                      endpoints {
+                          id
+                          name
+                          workersMin
+                          workersMax
+                          createdAt
+                      }
+                  }
+              }
+          """)
+
+          endpoints = result.get("data", {}).get("myself", {}).get("endpoints", [])
+          if not endpoints:
+              print("No endpoints found.")
+              raise SystemExit(0)
+
+          # Filter if requested
+          if NAME_FILTER:
+              targets = [ep for ep in endpoints if NAME_FILTER in ep.get("name", "")]
+              print(f"Filter '{NAME_FILTER}' matched {len(targets)}/{len(endpoints)} endpoints")
+          else:
+              targets = endpoints
+              print(f"Found {len(targets)} total endpoints (no filter applied)")
+
+          print(f"\n{'DRY RUN — ' if DRY_RUN else ''}{'Listing' if DRY_RUN else 'Deleting'} {len(targets)} endpoint(s):\n")
+          for ep in sorted(targets, key=lambda e: e.get("createdAt", "")):
+              print(f"  {ep['id']}  {ep.get('name', '(unnamed)'):<40}  "
+                    f"workers={ep.get('workersMin', '?')}-{ep.get('workersMax', '?')}  "
+                    f"created={ep.get('createdAt', 'unknown')}")
+
+          if DRY_RUN:
+              print(f"\nDry run complete. Re-run with dry_run=false to delete.")
+              raise SystemExit(0)
+
+          # Delete each endpoint
+          deleted = 0
+          failed = 0
+          for ep in targets:
+              ep_id = ep["id"]
+              ep_name = ep.get("name", "(unnamed)")
+              try:
+                  resp = graphql(
+                      "mutation deleteEndpoint($id: String!) { deleteEndpoint(id: $id) }",
+                      {"id": ep_id},
+                  )
+                  if "errors" in resp:
+                      print(f"  FAILED  {ep_id}  {ep_name}: {resp['errors']}")
+                      failed += 1
+                  else:
+                      print(f"  DELETED {ep_id}  {ep_name}")
+                      deleted += 1
+              except Exception as exc:
+                  print(f"  ERROR   {ep_id}  {ep_name}: {exc}")
+                  failed += 1
+
+          print(f"\nDone: {deleted} deleted, {failed} failed, {len(endpoints) - len(targets)} skipped (filtered)")
+          SCRIPT
