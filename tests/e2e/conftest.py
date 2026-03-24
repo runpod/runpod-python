@@ -106,4 +106,7 @@ def endpoints(require_api_key, test_cases):
     endpoint_names = [ep.name for ep in eps.values()]
     log.info("Cleaning up %d provisioned endpoints: %s", len(endpoint_names), endpoint_names)
     if api_key and endpoint_names:
-        _delete_endpoints_by_name(api_key, endpoint_names)
+        try:
+            _delete_endpoints_by_name(api_key, endpoint_names)
+        except Exception:
+            log.exception("Endpoint cleanup failed (API key may lack GraphQL access)")
