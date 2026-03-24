@@ -9,14 +9,15 @@ the branch under test.
 import json
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
 
-# Force Flash to use ServerlessEndpoint (deploy mode) instead of LiveServerless.
-# LiveServerless forcefully overwrites imageName with Flash's base image,
-# ignoring the mock-worker image we need to deploy.
+# Must be set before importing runpod_flash — Flash reads this env var at
+# import time to decide between LiveServerless (overwrites imageName with
+# Flash's base image) and ServerlessEndpoint (preserves our mock-worker image).
 os.environ["FLASH_IS_LIVE_PROVISIONING"] = "false"
 
 from runpod_flash import Endpoint, GpuGroup, PodTemplate  # noqa: E402
@@ -24,6 +25,10 @@ from runpod_flash import Endpoint, GpuGroup, PodTemplate  # noqa: E402
 MOCK_WORKER_IMAGE = "runpod/mock-worker:latest"
 DEFAULT_CMD = "python -u /handler.py"
 TESTS_JSON = Path(__file__).parent / "tests.json"
+
+# Short unique suffix to avoid endpoint name collisions across parallel CI
+# runs sharing the same API key.
+_RUN_ID = uuid.uuid4().hex[:8]
 
 # Map gpuIds strings from tests.json to GpuGroup enum values
 _GPU_MAP: dict[str, GpuGroup] = {g.value: g for g in GpuGroup}
@@ -70,6 +75,11 @@ def hardware_config_key(hw: dict) -> str:
 
     Excludes endpoint name so tests with identical GPU and template
     settings share a single provisioned endpoint.
+
+    Only gpuIds and dockerArgs are included because they determine worker
+    behaviour.  Other templateConfig fields (env, image, scalerConfig)
+    are constant across our tests.json entries — if future tests vary
+    those fields, add them here.
     """
     normalized = {
         "gpuIds": hw.get("endpointConfig", {}).get("gpuIds", ""),
@@ -114,7 +124,8 @@ def provision_endpoints(
         gpu_ids = endpoint_config.get("gpuIds", "ADA_24")
         gpus = _parse_gpu_ids(gpu_ids)
 
-        ep_name = endpoint_config.get("name", f"rp-python-e2e-{len(seen)}")
+        base_name = endpoint_config.get("name", f"rp-python-e2e-{len(seen)}")
+        ep_name = f"{base_name}-{_RUN_ID}"
         log.info(
             "Provisioning endpoint: name=%s image=%s gpus=%s dockerArgs=%s",
             ep_name, MOCK_WORKER_IMAGE, [g.value for g in gpus], docker_args,

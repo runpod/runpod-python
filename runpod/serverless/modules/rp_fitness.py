@@ -67,8 +67,10 @@ def clear_fitness_checks() -> None:
     _fitness_checks.clear()
 
 
-_gpu_check_registered = False  # used via global in _ensure_gpu_check_registered
-_system_checks_registered = False  # used via global in _ensure_system_checks_registered
+_registration_state: dict[str, bool] = {
+    "gpu_check": False,
+    "system_checks": False,
+}
 
 
 def _reset_registration_state() -> None:
@@ -77,9 +79,8 @@ def _reset_registration_state() -> None:
 
     Used for testing to ensure clean state between tests.
     """
-    global _gpu_check_registered, _system_checks_registered
-    _gpu_check_registered = False
-    _system_checks_registered = False
+    _registration_state["gpu_check"] = False
+    _registration_state["system_checks"] = False
 
 
 def _ensure_gpu_check_registered() -> None:
@@ -89,12 +90,10 @@ def _ensure_gpu_check_registered() -> None:
     Deferred until first run to avoid circular import issues during module
     initialization. Called from run_fitness_checks() on first invocation.
     """
-    global _gpu_check_registered
-
-    if _gpu_check_registered:
+    if _registration_state["gpu_check"]:
         return
 
-    _gpu_check_registered = True
+    _registration_state["gpu_check"] = True
 
     try:
         from .rp_gpu_fitness import auto_register_gpu_check
@@ -113,9 +112,7 @@ def _ensure_system_checks_registered() -> None:
     """
     import os
 
-    global _system_checks_registered
-
-    if _system_checks_registered:
+    if _registration_state["system_checks"]:
         return
 
     # Allow disabling system checks for testing
@@ -123,10 +120,10 @@ def _ensure_system_checks_registered() -> None:
         log.debug(
             "System fitness checks disabled via environment (RUNPOD_SKIP_AUTO_SYSTEM_CHECKS)"
         )
-        _system_checks_registered = True
+        _registration_state["system_checks"] = True
         return
 
-    _system_checks_registered = True
+    _registration_state["system_checks"] = True
 
     try:
         from .rp_system_fitness import auto_register_system_checks

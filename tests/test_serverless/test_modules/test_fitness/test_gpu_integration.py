@@ -41,7 +41,8 @@ exit 0
     try:
         os.unlink(binary_path)
     except OSError:
-        pass  # Best-effort cleanup: ignore if file already deleted
+        # Best-effort cleanup: ignore if file already deleted
+        pass
 
 
 @pytest.fixture
@@ -65,7 +66,8 @@ exit 0
     try:
         os.unlink(binary_path)
     except OSError:
-        pass  # Best-effort cleanup: ignore if file already deleted
+        # Best-effort cleanup: ignore if file already deleted
+        pass
 
 
 @pytest.fixture
@@ -95,7 +97,8 @@ exit 0
     try:
         os.unlink(binary_path)
     except OSError:
-        pass  # Best-effort cleanup: ignore if file already deleted
+        # Best-effort cleanup: ignore if file already deleted
+        pass
 
 
 # ============================================================================

@@ -14,9 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v6
 
       - uses: actions/setup-python@v5
         with:
@@ -26,7 +24,7 @@ jobs:
         run: |
           uv venv
           source .venv/bin/activate
-          uv pip install -e ".[test]" 2>/dev/null || uv pip install -e .
+          uv pip install -e ".[test]" --quiet || uv pip install -e .
           uv pip install runpod-flash pytest pytest-asyncio pytest-timeout pytest-rerunfailures httpx
           uv pip install -e . --reinstall --no-deps
           python -c "import runpod; print(f'runpod: {runpod.__version__} from {runpod.__file__}')"

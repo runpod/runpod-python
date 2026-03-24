@@ -86,7 +86,8 @@ def _parse_gpu_test_output(output: str) -> dict[str, Any]:
                 found_gpus = int(line.split()[1])
                 result["found_gpus"] = found_gpus
             except (IndexError, ValueError):
-                pass  # Line format doesn't match expected "Found N GPUs:" - skip
+                # Line format doesn't match expected "Found N GPUs:" — skip
+                pass
 
         # Check for success
         if "memory allocation test passed" in line.lower():

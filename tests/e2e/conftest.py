@@ -3,6 +3,7 @@
 import logging
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 import runpod
@@ -12,14 +13,18 @@ from tests.e2e.e2e_provisioner import load_test_cases, provision_endpoints
 log = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 300  # seconds per job request
 
+# Repo root: tests/e2e/conftest.py -> ../../
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 @pytest.fixture(scope="session", autouse=True)
 def verify_local_runpod():
     """Fail fast if the local runpod-python is not installed."""
     log.info("runpod version=%s path=%s", runpod.__version__, runpod.__file__)
-    if "runpod-python" not in runpod.__file__:
+    runpod_path = Path(runpod.__file__).resolve()
+    if not runpod_path.is_relative_to(_REPO_ROOT):
         pytest.fail(
-            f"Expected local runpod-python but got {runpod.__file__}. "
+            f"Expected runpod installed from {_REPO_ROOT} but got {runpod_path}. "
             "Run: pip install -e . --force-reinstall --no-deps"
         )
 
@@ -52,8 +57,7 @@ def endpoints(require_api_key, test_cases):
         log.info("Endpoint ready: name=%s image=%s template.dockerArgs=%s", ep.name, ep.image, ep.template.dockerArgs if ep.template else "N/A")
     yield eps
 
-    # Undeploy all provisioned endpoints via CLI
-    log.info("Cleaning up %d provisioned endpoints via flash undeploy", len(eps))
+    log.info("Cleaning up all provisioned endpoints")
     try:
         result = subprocess.run(
             ["flash", "undeploy", "--all", "--force"],
@@ -61,14 +65,9 @@ def endpoints(require_api_key, test_cases):
             text=True,
             timeout=120,
         )
-        log.info("flash undeploy stdout: %s", result.stdout)
-        if result.returncode != 0:
-            log.warning("flash undeploy failed (rc=%d): %s", result.returncode, result.stderr)
+        if result.returncode == 0:
+            log.info("Undeployed all endpoints")
+        else:
+            log.warning("flash undeploy --all --force failed (rc=%d): %s", result.returncode, result.stderr)
     except Exception:
-        log.exception("Failed to run flash undeploy")
-
-
-@pytest.fixture(scope="session")
-def api_key():
-    """Return the RUNPOD_API_KEY."""
-    return os.environ.get("RUNPOD_API_KEY", "")
+        log.exception("Failed to undeploy endpoints")
