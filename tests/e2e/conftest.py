@@ -57,22 +57,17 @@ def endpoints(require_api_key, test_cases):
         log.info("Endpoint ready: name=%s image=%s template.dockerArgs=%s", ep.name, ep.image, ep.template.dockerArgs if ep.template else "N/A")
     yield eps
 
-    # Undeploy only the endpoints provisioned by this test run.
-    # Uses by-name undeploy to avoid tearing down unrelated endpoints
-    # sharing the same API key (parallel CI runs, developer endpoints).
-    endpoint_names = [ep.name for ep in eps.values()]
-    log.info("Cleaning up %d provisioned endpoints: %s", len(endpoint_names), endpoint_names)
-    for name in endpoint_names:
-        try:
-            result = subprocess.run(
-                ["flash", "undeploy", name, "--force"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode == 0:
-                log.info("Undeployed %s", name)
-            else:
-                log.warning("flash undeploy %s failed (rc=%d): %s", name, result.returncode, result.stderr)
-        except Exception:
-            log.exception("Failed to undeploy %s", name)
+    log.info("Cleaning up all provisioned endpoints")
+    try:
+        result = subprocess.run(
+            ["flash", "undeploy", "--all", "--force"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            log.info("Undeployed all endpoints")
+        else:
+            log.warning("flash undeploy --all --force failed (rc=%d): %s", result.returncode, result.stderr)
+    except Exception:
+        log.exception("Failed to undeploy endpoints")
