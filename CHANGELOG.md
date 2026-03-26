@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.2](https://github.com/runpod/runpod-python/compare/v1.8.1...v1.8.2) (2026-03-24)
+
+
+### Bug Fixes
+
+* **config:** handle corrupted config.toml in credential functions ([#481](https://github.com/runpod/runpod-python/issues/481)) ([9894894](https://github.com/runpod/runpod-python/commit/9894894ee2022e7db0777c9dd24c23208e52f90c))
+* use flashBootType instead of appending -fb ([#484](https://github.com/runpod/runpod-python/issues/484)) ([7938936](https://github.com/runpod/runpod-python/commit/7938936158c351d6e00caebbf4242e085f7565ae))
+
 ## [1.8.1](https://github.com/runpod/runpod-python/compare/v1.8.0...v1.8.1) (2025-11-19)
 
 
