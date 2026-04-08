@@ -106,6 +106,49 @@ You can also test your worker locally before deploying it to Runpod. This is use
 python my_worker.py --rp_serve_api
 ```
 
+### Worker Fitness Checks
+
+Fitness checks allow you to validate your worker environment at startup before processing jobs. If any check fails, the worker exits immediately, allowing your orchestrator to restart it.
+
+```python
+# my_worker.py
+
+import runpod
+import torch
+
+# Register fitness checks using the decorator
+@runpod.serverless.register_fitness_check
+def check_gpu_available():
+    """Verify GPU is available."""
+    if not torch.cuda.is_available():
+        raise RuntimeError("GPU not available")
+
+@runpod.serverless.register_fitness_check
+def check_disk_space():
+    """Verify sufficient disk space."""
+    import shutil
+    stat = shutil.disk_usage("/")
+    free_gb = stat.free / (1024**3)
+    if free_gb < 10:
+        raise RuntimeError(f"Insufficient disk space: {free_gb:.2f}GB free")
+
+def handler(job):
+    job_input = job["input"]
+    # Your handler code here
+    return {"output": "success"}
+
+# Fitness checks run before handler initialization (production only)
+runpod.serverless.start({"handler": handler})
+```
+
+**Key Features:**
+- Supports both synchronous and asynchronous check functions
+- Checks run only once at worker startup (production mode)
+- Runs before handler initialization and job processing begins
+- Any check failure exits with code 1 (worker marked unhealthy)
+
+See [Worker Fitness Checks](https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker_fitness_checks.md) documentation for more examples and best practices.
+
 ## 📚 | API Language Library (GraphQL Wrapper)
 
 When interacting with the Runpod API you can use this library to make requests to the API.
