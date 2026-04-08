@@ -135,7 +135,7 @@ def provision_endpoints(
             image=MOCK_WORKER_IMAGE,
             gpu=gpus,
             template=PodTemplate(dockerArgs=docker_args),
-            workers=(0, 1),
+            workers=(0, 3),
             idle_timeout=5,
         )
         seen[key] = ep
