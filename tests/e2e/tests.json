@@ -1,0 +1,61 @@
+[
+  {
+    "id": "basic",
+    "hardwareConfig": {
+      "endpointConfig": {
+        "name": "rp-python-e2e-basic",
+        "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
+      }
+    },
+    "input": {
+      "mock_return": "this worked!"
+    },
+    "expected_output": "this worked!"
+  },
+  {
+    "id": "delay",
+    "hardwareConfig": {
+      "endpointConfig": {
+        "name": "rp-python-e2e-delay",
+        "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
+      }
+    },
+    "input": {
+      "mock_return": "Delay test successful.",
+      "mock_delay": 10
+    },
+    "expected_output": "Delay test successful."
+  },
+  {
+    "id": "generator",
+    "hardwareConfig": {
+      "endpointConfig": {
+        "name": "rp-python-e2e-generator",
+        "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
+      },
+      "templateConfig": {
+        "dockerArgs": "python3 -u /handler.py --generator --return_aggregate_stream"
+      }
+    },
+    "input": {
+      "mock_return": ["value1", "value2", "value3"]
+    },
+    "expected_output": ["value1", "value2", "value3"]
+  },
+  {
+    "id": "async_generator",
+    "hardwareConfig": {
+      "endpointConfig": {
+        "name": "rp-python-e2e-async-gen",
+        "gpuIds": "ADA_24,AMPERE_16,AMPERE_24,AMPERE_48,AMPERE_80"
+      },
+      "templateConfig": {
+        "dockerArgs": "python3 -u /handler.py --async_generator --return_aggregate_stream"
+      }
+    },
+    "input": {
+      "mock_return": ["value1", "value2", "value3"]
+    },
+    "expected_output": ["value1", "value2", "value3"]
+  }
+]

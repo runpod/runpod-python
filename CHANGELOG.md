@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.8.2](https://github.com/runpod/runpod-python/compare/v1.8.1...v1.8.2) (2026-03-24)
+
+
+### Bug Fixes
+
+* **config:** handle corrupted config.toml in credential functions ([#481](https://github.com/runpod/runpod-python/issues/481)) ([9894894](https://github.com/runpod/runpod-python/commit/9894894ee2022e7db0777c9dd24c23208e52f90c))
+* use flashBootType instead of appending -fb ([#484](https://github.com/runpod/runpod-python/issues/484)) ([7938936](https://github.com/runpod/runpod-python/commit/7938936158c351d6e00caebbf4242e085f7565ae))
+
+## [1.8.1](https://github.com/runpod/runpod-python/compare/v1.8.0...v1.8.1) (2025-11-19)
+
+
+### Bug Fixes
+
+* prevent PyPI local version rejection ([#468](https://github.com/runpod/runpod-python/issues/468)) ([c3cd473](https://github.com/runpod/runpod-python/commit/c3cd4730f6faf93fe2b454f1c18c884b3d41afb9))
+
+## [1.8.0](https://github.com/runpod/runpod-python/compare/v1.7.13...v1.8.0) (2025-11-13)
+
+
+### Features
+
+* add manual workflow dispatch for PyPI publishing ([05b2d72](https://github.com/runpod/runpod-python/commit/05b2d720f725390cddbf1aebfcbbe1c5385827e7))
+
+
+### Bug Fixes
+
+* pypi package verification ([95015dc](https://github.com/runpod/runpod-python/commit/95015dcdcfefaeec1f52c7f39e5c15d3ddcdfab1))
+* PyPI publishing issues ([6992b10](https://github.com/runpod/runpod-python/commit/6992b102977924dc00bd847681ab94f559942576))
+
+
+### Performance Improvements
+
+* **serverless:** lazy-load boto3, fastapi, and pydantic to reduce cold start time ([#466](https://github.com/runpod/runpod-python/issues/466)) ([cc05a5b](https://github.com/runpod/runpod-python/commit/cc05a5bec7a81fd809b3a40c73e47f4316de1de4))
+
 ## [1.7.13](https://github.com/runpod/runpod-python/compare/1.7.12...v1.7.13) (2025-07-17)
 
 ### Bug Fixes
