@@ -42,4 +42,4 @@ class TestGenerateEndpointMutation(unittest.TestCase):
         self.assertIn("scalerValue: 5", result)
         self.assertIn("workersMin: 2", result)
         self.assertIn("workersMax: 4", result)
-        self.assertIn('flashBootType: "FLASHBOOT"', result)
+        self.assertIn("flashBootType: FLASHBOOT", result)
