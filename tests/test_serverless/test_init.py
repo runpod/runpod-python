@@ -22,7 +22,8 @@ class TestServerlessInit:
         """Test that expected public symbols are in __all__."""
         expected_symbols = {
             'start',
-            'progress_update', 
+            'progress_update',
+            'register_fitness_check',
             'runpod_version'
         }
         actual_symbols = set(runpod.serverless.__all__)
@@ -46,6 +47,19 @@ class TestServerlessInit:
         """Test that runpod_version is accessible."""
         assert hasattr(runpod.serverless, 'runpod_version')
         assert isinstance(runpod.serverless.runpod_version, str)
+
+    def test_register_fitness_check_accessible(self):
+        """Test that register_fitness_check is accessible and callable."""
+        assert hasattr(runpod.serverless, 'register_fitness_check')
+        assert callable(runpod.serverless.register_fitness_check)
+
+        # Verify it's a decorator (can be used with @)
+        @runpod.serverless.register_fitness_check
+        def dummy_check():
+            pass
+
+        # Should not raise
+        assert dummy_check is not None
 
     def test_private_symbols_not_exported(self):
         """Test that private symbols are not in __all__."""
@@ -84,5 +98,5 @@ class TestServerlessInit:
         assert all_symbols.issubset(public_attrs), f"__all__ contains non-public symbols: {all_symbols - public_attrs}"
         
         # Expected public API should be exactly what's in __all__
-        expected_public_api = {'start', 'progress_update', 'runpod_version'}
+        expected_public_api = {'start', 'progress_update', 'register_fitness_check', 'runpod_version'}
         assert all_symbols == expected_public_api, f"Expected {expected_public_api}, got {all_symbols}"
