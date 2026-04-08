@@ -84,13 +84,13 @@ class TestWorker(IsolatedAsyncioTestCase):
         with patch(
             "argparse.ArgumentParser.parse_known_args"
         ) as mock_parse_known_args, patch(
-            "runpod.serverless.rp_fastapi"
-        ) as mock_fastapi:
+            "runpod.serverless.modules.rp_fastapi.WorkerAPI"
+        ) as mock_worker_api:
 
             mock_parse_known_args.return_value = known_args, []
             runpod.serverless.start({"handler": self.mock_handler})
 
-            assert mock_fastapi.WorkerAPI.called
+            assert mock_worker_api.called
 
     @patch("runpod.serverless.log")
     @patch("runpod.serverless.sys.exit")
@@ -544,7 +544,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
         assert sys.excepthook == _handle_uncaught_exception
 
     @patch("runpod.serverless.signal.signal")
-    @patch("runpod.serverless.rp_fastapi.WorkerAPI.start_uvicorn")
+    @patch("runpod.serverless.modules.rp_fastapi.WorkerAPI.start_uvicorn")
     @patch("runpod.serverless._set_config_args")
     def test_start_does_not_set_excepthook(self, mock_set_config_args, _, __):
         mock_set_config_args.return_value = self.config

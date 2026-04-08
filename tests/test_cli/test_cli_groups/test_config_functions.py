@@ -97,3 +97,53 @@ class TestConfig(unittest.TestCase):
         assert result is None
         assert mock_open_call.called
         assert mock_exists.called
+
+    @patch("runpod.cli.groups.config.functions.os.path.exists", return_value=True)
+    @patch(
+        "runpod.cli.groups.config.functions.toml.load",
+        side_effect=ValueError("Invalid value"),
+    )
+    @patch("builtins.open", new_callable=mock_open)
+    def test_get_credentials_corrupted_toml(
+        self, _mock_open_call, _mock_toml_load, _mock_exists
+    ):
+        """get_credentials returns None when config.toml contains invalid TOML."""
+        result = functions.get_credentials("default")
+        assert result is None
+
+    @patch("runpod.cli.groups.config.functions.os.path.exists", return_value=True)
+    @patch(
+        "runpod.cli.groups.config.functions.toml.load",
+        side_effect=TypeError("bad type"),
+    )
+    @patch("builtins.open", new_callable=mock_open)
+    def test_get_credentials_type_error(
+        self, _mock_open_call, _mock_toml_load, _mock_exists
+    ):
+        """get_credentials returns None on TypeError from corrupted file."""
+        result = functions.get_credentials("default")
+        assert result is None
+
+    @patch("runpod.cli.groups.config.functions.Path.touch")
+    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("runpod.cli.groups.config.functions.toml.load")
+    @patch("builtins.open", new_callable=mock_open())
+    def test_set_credentials_corrupted_toml_allows_overwrite(
+        self, _mock_file, mock_toml_load, _mock_makedirs, _mock_touch
+    ):
+        """set_credentials with overwrite=True ignores corrupted existing file."""
+        mock_toml_load.side_effect = ValueError("Invalid TOML")
+        # overwrite=True skips the toml.load check entirely
+        functions.set_credentials("NEW_KEY", overwrite=True)
+
+    @patch("runpod.cli.groups.config.functions.Path.touch")
+    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("runpod.cli.groups.config.functions.toml.load")
+    @patch("builtins.open", new_callable=mock_open())
+    def test_set_credentials_corrupted_toml_no_overwrite(
+        self, _mock_file, mock_toml_load, _mock_makedirs, _mock_touch
+    ):
+        """set_credentials without overwrite treats corrupted file as empty."""
+        mock_toml_load.side_effect = ValueError("Invalid TOML")
+        # Should not raise — corrupted file is treated as having no profiles
+        functions.set_credentials("NEW_KEY", overwrite=False)
