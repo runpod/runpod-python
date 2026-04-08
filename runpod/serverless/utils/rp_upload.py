@@ -10,18 +10,73 @@ import shutil
 import threading
 import time
 import uuid
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 from urllib.parse import urlparse
 
-import boto3
-from boto3 import session
-from boto3.s3.transfer import TransferConfig
-from botocore.config import Config
 from tqdm_loggable.auto import tqdm
+
+if TYPE_CHECKING:
+    from boto3.s3.transfer import TransferConfig
+    from botocore.client import BaseClient
 
 logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
 logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHandler()])
+
+
+def _import_boto3_dependencies():
+    """
+    Lazy-load boto3 dependencies.
+    Returns tuple of (session, TransferConfig, Config) or raises ImportError.
+    """
+    try:
+        from boto3 import session
+        from boto3.s3.transfer import TransferConfig
+        from botocore.config import Config
+        return session, TransferConfig, Config
+    except ImportError as e:
+        raise ImportError(
+            "boto3 is required for S3 upload functionality. "
+            "Install with: pip install boto3"
+        ) from e
+
+
+def _save_to_local_fallback(
+    file_name: str,
+    source_path: Optional[str] = None,
+    file_data: Optional[bytes] = None,
+    directory: str = "local_upload"
+) -> str:
+    """
+    Save file to local directory as fallback when S3 is unavailable.
+
+    Args:
+        file_name: Name of the file to save
+        source_path: Path to source file to copy (for file-based uploads)
+        file_data: Bytes to write (for in-memory uploads)
+        directory: Local directory to save to (default: 'local_upload')
+
+    Returns:
+        Path to the saved local file
+    """
+    logger.warning(
+        f"No bucket endpoint set, saving to disk folder '{directory}'. "
+        "If this is a live endpoint, please reference: "
+        "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
+    )
+
+    os.makedirs(directory, exist_ok=True)
+    local_upload_location = f"{directory}/{file_name}"
+
+    if source_path:
+        shutil.copyfile(source_path, local_upload_location)
+    elif file_data is not None:
+        with open(local_upload_location, "wb") as file_output:
+            file_output.write(file_data)
+    else:
+        raise ValueError("Either source_path or file_data must be provided")
+
+    return local_upload_location
 
 
 def extract_region_from_url(endpoint_url):
@@ -43,12 +98,20 @@ def extract_region_from_url(endpoint_url):
 # --------------------------- S3 Bucket Connection --------------------------- #
 def get_boto_client(
     bucket_creds: Optional[dict] = None,
-) -> Tuple[
-    boto3.client, TransferConfig
-]:  # pragma: no cover # pylint: disable=line-too-long
+) -> Tuple[Optional["BaseClient"], Optional["TransferConfig"]]:
     """
     Returns a boto3 client and transfer config for the bucket.
+    Lazy-loads boto3 to reduce initial import time.
     """
+    try:
+        session, TransferConfig, Config = _import_boto3_dependencies()
+    except ImportError:
+        logger.warning(
+            "boto3 not installed. S3 upload functionality disabled. "
+            "Install with: pip install boto3"
+        )
+        return None, None
+
     bucket_session = session.Session()
 
     boto_config = Config(
@@ -111,18 +174,13 @@ def upload_image(
         output = input_file.read()
 
     if boto_client is None:
-        # Save the output to a file
-        print("No bucket endpoint set, saving to disk folder 'simulated_uploaded'")
-        print("If this is a live endpoint, please reference the following:")
-        print(
-            "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
-        )  # pylint: disable=line-too-long
-
-        os.makedirs("simulated_uploaded", exist_ok=True)
-        sim_upload_location = f"simulated_uploaded/{image_name}{file_extension}"
-
-        with open(sim_upload_location, "wb") as file_output:
-            file_output.write(output)
+        # Save the output to a file using fallback helper
+        file_name_with_ext = f"{image_name}{file_extension}"
+        sim_upload_location = _save_to_local_fallback(
+            file_name_with_ext,
+            file_data=output,
+            directory="simulated_uploaded"
+        )
 
         if results_list is not None:
             results_list[result_index] = sim_upload_location
@@ -180,6 +238,15 @@ def bucket_upload(job_id, file_list, bucket_creds):  # pragma: no cover
     """
     Uploads files to bucket storage.
     """
+    try:
+        session, _, Config = _import_boto3_dependencies()
+    except ImportError:
+        logger.error(
+            "boto3 not installed. Cannot upload to S3 bucket. "
+            "Install with: pip install boto3"
+        )
+        raise
+
     temp_bucket_session = session.Session()
 
     temp_boto_config = Config(
@@ -231,17 +298,7 @@ def upload_file_to_bucket(
     key = f"{prefix}/{file_name}" if prefix else file_name
 
     if boto_client is None:
-        print("No bucket endpoint set, saving to disk folder 'local_upload'")
-        print("If this is a live endpoint, please reference the following:")
-        print(
-            "https://github.com/runpod/runpod-python/blob/main/docs/serverless/utils/rp_upload.md"
-        )  # pylint: disable=line-too-long
-
-        os.makedirs("local_upload", exist_ok=True)
-        local_upload_location = f"local_upload/{file_name}"
-        shutil.copyfile(file_location, local_upload_location)
-
-        return local_upload_location
+        return _save_to_local_fallback(file_name, source_path=file_location)
 
     file_size = os.path.getsize(file_location)
     with tqdm(
@@ -284,6 +341,9 @@ def upload_in_memory_object(
         bucket_name = time.strftime("%m-%y")
 
     key = f"{prefix}/{file_name}" if prefix else file_name
+
+    if boto_client is None:
+        return _save_to_local_fallback(file_name, file_data=file_data)
 
     file_size = len(file_data)
     with tqdm(
