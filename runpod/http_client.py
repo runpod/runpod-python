@@ -29,8 +29,8 @@ def get_auth_header():
         "Content-Type": "application/json",
         "Authorization": auth,
         "User-Agent": USER_AGENT,
+        "Accept-Encoding": "gzip, deflate",
     }
-
 
 def AsyncClientSession(*args, **kwargs):  # pylint: disable=invalid-name
     """

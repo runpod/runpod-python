@@ -1,5 +1,5 @@
 """
-runpd | error.py
+runpod | error.py
 
 This file contains the error classes for the runpod package.
 """

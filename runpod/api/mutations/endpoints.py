@@ -1,4 +1,4 @@
-""" Runpod | API Wrapper | Mutations | Endpoints """
+f"""Runpod | API Wrapper | Mutations | Endpoints"""
 
 # pylint: disable=too-many-arguments
 
@@ -23,7 +23,7 @@ def generate_endpoint_mutation(
 
     # ------------------------------ Required Fields ----------------------------- #
     if flashboot:
-        name = name + "-fb"
+        input_fields.append('flashBootType: FLASHBOOT')
 
     input_fields.append(f'name: "{name}"')
     input_fields.append(f'templateId: "{template_id}"')
@@ -75,10 +75,10 @@ def generate_endpoint_mutation(
             workersMax
             allowedCudaVersions
             gpuCount
+            flashBootType
         }}
     }}
     """
-
 
 
 def update_endpoint_template_mutation(endpoint_id: str, template_id: str):

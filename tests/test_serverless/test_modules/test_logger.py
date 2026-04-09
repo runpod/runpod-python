@@ -20,9 +20,9 @@ class TestLogger(unittest.TestCase):
         """
         Tests that the default log level is DEBUG
         """
-        defult_logger = rp_logger.RunPodLogger()
+        default_logger = rp_logger.RunPodLogger()
 
-        self.assertEqual(defult_logger.level, "DEBUG")
+        self.assertEqual(default_logger.level, "DEBUG")
 
     def test_singleton(self):
         """

@@ -9,6 +9,11 @@ from runpod.api import ctl_commands
 class TestCTL(unittest.TestCase):
     """Tests for CTL Commands"""
 
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
+
     def test_get_user(self):
         """
         Tests get_user
@@ -457,7 +462,7 @@ class TestCTL(unittest.TestCase):
         """
         Tests create_container_registry_auth by mocking the run_graphql_query function
         """
-        # Setup the mock to return a predefined response
+        # Set up the mock to return a predefined response
         mock_run_graphql_query.return_value = {
             "data": {
                 "saveRegistryAuth": {"id": "REGISTRY_AUTH_ID", "name": "REGISTRY_NAME"}

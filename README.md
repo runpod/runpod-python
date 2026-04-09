@@ -30,18 +30,37 @@ Welcome to the official Python library for Runpod API &amp; SDK.
 
 ## 💻 | Installation
 
+### Install from PyPI (Stable Release)
+
 ```bash
-# Install the latest release version
+# Install with pip
 pip install runpod
 
-# Using uv (faster alternative)
+# Install with uv (faster alternative)
 uv add runpod
+```
 
-# Install the latest development version (main branch)
+### Install from GitHub (Latest Changes)
+
+To get the latest changes that haven't been released to PyPI yet:
+
+```bash
+# Install latest development version from main branch with pip
 pip install git+https://github.com/runpod/runpod-python.git
 
-# Or with uv
+# Install with uv
 uv add git+https://github.com/runpod/runpod-python.git
+
+# Install a specific branch
+pip install git+https://github.com/runpod/runpod-python.git@branch-name
+
+# Install a specific tag/release
+pip install git+https://github.com/runpod/runpod-python.git@v1.0.0
+
+# Install in editable mode for development
+git clone https://github.com/runpod/runpod-python.git
+cd runpod-python
+pip install -e .
 ```
 
 *Python 3.8 or higher is required to use the latest version of this package.*
@@ -77,7 +96,7 @@ runpod.serverless.start({"handler": is_even})
 
 Make sure that this file is ran when your container starts. This can be accomplished by calling it in the docker command when you set up a template at [console.runpod.io/serverless/user/templates](https://console.runpod.io/serverless/user/templates) or by setting it as the default command in your Dockerfile.
 
-See our [blog post](https://www.runpod.io/blog/serverless-create-a-basic-api) for creating a basic Serverless API, or view the [details docs](https://docs.runpod.io/serverless-ai/custom-apis) for more information.
+See our [blog post](https://www.runpod.io/blog/build-basic-serverless-api) for creating a basic Serverless API, or view the [details docs](https://docs.runpod.io/serverless-ai/custom-apis) for more information.
 
 ### Local Test Worker
 
@@ -86,6 +105,49 @@ You can also test your worker locally before deploying it to Runpod. This is use
 ```bash
 python my_worker.py --rp_serve_api
 ```
+
+### Worker Fitness Checks
+
+Fitness checks allow you to validate your worker environment at startup before processing jobs. If any check fails, the worker exits immediately, allowing your orchestrator to restart it.
+
+```python
+# my_worker.py
+
+import runpod
+import torch
+
+# Register fitness checks using the decorator
+@runpod.serverless.register_fitness_check
+def check_gpu_available():
+    """Verify GPU is available."""
+    if not torch.cuda.is_available():
+        raise RuntimeError("GPU not available")
+
+@runpod.serverless.register_fitness_check
+def check_disk_space():
+    """Verify sufficient disk space."""
+    import shutil
+    stat = shutil.disk_usage("/")
+    free_gb = stat.free / (1024**3)
+    if free_gb < 10:
+        raise RuntimeError(f"Insufficient disk space: {free_gb:.2f}GB free")
+
+def handler(job):
+    job_input = job["input"]
+    # Your handler code here
+    return {"output": "success"}
+
+# Fitness checks run before handler initialization (production only)
+runpod.serverless.start({"handler": handler})
+```
+
+**Key Features:**
+- Supports both synchronous and asynchronous check functions
+- Checks run only once at worker startup (production mode)
+- Runs before handler initialization and job processing begins
+- Any check failure exits with code 1 (worker marked unhealthy)
+
+See [Worker Fitness Checks](https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker_fitness_checks.md) documentation for more examples and best practices.
 
 ## 📚 | API Language Library (GraphQL Wrapper)
 
@@ -100,6 +162,8 @@ runpod.api_key = "your_runpod_api_key_found_under_settings"
 ### Endpoints
 
 You can interact with Runpod endpoints via a `run` or `run_sync` method.
+
+#### Basic Usage
 
 ```python
 endpoint = runpod.Endpoint("ENDPOINT_ID")
@@ -124,6 +188,77 @@ run_request = endpoint.run_sync(
 
 # Returns the job results if completed within 90 seconds, otherwise, returns the job status.
 print(run_request )
+```
+
+#### API Key Management
+
+The SDK supports multiple ways to set API keys:
+
+**1. Global API Key** (Default)
+```python
+import runpod
+
+# Set global API key
+runpod.api_key = "your_runpod_api_key"
+
+# All endpoints will use this key by default
+endpoint = runpod.Endpoint("ENDPOINT_ID")
+result = endpoint.run_sync({"input": "data"})
+```
+
+**2. Endpoint-Specific API Key**
+```python
+# Create endpoint with its own API key
+endpoint = runpod.Endpoint("ENDPOINT_ID", api_key="specific_api_key")
+
+# This endpoint will always use the provided API key
+result = endpoint.run_sync({"input": "data"})
+```
+
+#### API Key Precedence
+
+The SDK uses this precedence order (highest to lowest):
+1. Endpoint instance API key (if provided to `Endpoint()`)
+2. Global API key (set via `runpod.api_key`)
+
+```python
+import runpod
+
+# Example showing precedence
+runpod.api_key = "GLOBAL_KEY"
+
+# This endpoint uses GLOBAL_KEY
+endpoint1 = runpod.Endpoint("ENDPOINT_ID")
+
+# This endpoint uses ENDPOINT_KEY (overrides global)
+endpoint2 = runpod.Endpoint("ENDPOINT_ID", api_key="ENDPOINT_KEY")
+
+# All requests from endpoint2 will use ENDPOINT_KEY
+result = endpoint2.run_sync({"input": "data"})
+```
+
+#### Thread-Safe Operations
+
+Each `Endpoint` instance maintains its own API key, making concurrent operations safe:
+
+```python
+import threading
+import runpod
+
+def process_request(api_key, endpoint_id, input_data):
+    # Each thread gets its own Endpoint instance
+    endpoint = runpod.Endpoint(endpoint_id, api_key=api_key)
+    return endpoint.run_sync(input_data)
+
+# Safe concurrent usage with different API keys
+threads = []
+for customer in customers:
+    t = threading.Thread(
+        target=process_request,
+        args=(customer["api_key"], customer["endpoint_id"], customer["input"])
+    )
+    threads.append(t)
+    t.start()
 ```
 
 ### GPU Cloud (Pods)

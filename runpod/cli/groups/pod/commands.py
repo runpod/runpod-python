@@ -180,7 +180,7 @@ def sync_pods(source_pod_id, dest_pod_id, source_workspace, dest_workspace):
             _, stdout, _ = source_ssh.ssh.exec_command(f"test -f {archive_path} && echo 'created' || echo 'failed'")
             archive_result = stdout.read().decode().strip()
             if archive_result != 'created':
-                click.echo(f"❌ Error: Failed to create archive on source pod")
+                click.echo("❌ Error: Failed to create archive on source pod")
                 return
             
             # Get archive size for progress indication
@@ -246,5 +246,6 @@ def sync_pods(source_pod_id, dest_pod_id, source_workspace, dest_workspace):
         try:
             if 'local_temp_path' in locals():
                 os.unlink(local_temp_path)
-        except:
+        except OSError:
+            # Best-effort cleanup of temp file
             pass
