@@ -1,5 +1,5 @@
 """
-RunPod | API Wrapper | Queries | GPUs
+Runpod | API Wrapper | Queries | GPUs
 """
 
 QUERY_POD = """

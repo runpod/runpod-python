@@ -1,5 +1,5 @@
 """
-RunPod Tips
+Runpod Tips
 """
 
 import sys

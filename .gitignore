@@ -8,6 +8,7 @@ test_logging.py
 /example_project
 IGNORE.py
 /quick-test
+/local-test
 .DS_Store
 
 # Byte-compiled / optimized / DLL files
@@ -137,3 +138,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 runpod/_version.py
+.runpod_jobs.pkl
+
+*.lock
+benchmark_results/

@@ -9,6 +9,11 @@ from runpod.api import ctl_commands
 class TestCTL(unittest.TestCase):
     """Tests for CTL Commands"""
 
+    def setUp(self):
+        """Set up test fixtures"""
+        import runpod
+        runpod.api_key = "MOCK_API_KEY"
+
     def test_get_user(self):
         """
         Tests get_user
@@ -134,6 +139,18 @@ class TestCTL(unittest.TestCase):
             self.assertEqual(
                 str(context.exception),
                 "cloud_type must be one of ALL, COMMUNITY or SECURE",
+            )
+
+            with self.assertRaises(ValueError) as context:
+                pod = ctl_commands.create_pod(
+                    name="POD_NAME",
+                    gpu_type_id="NVIDIA A100 80GB PCIe",
+                    network_volume_id="NETWORK_VOLUME_ID",
+                )
+
+            self.assertEqual(
+                str(context.exception),
+                "Either image_name or template_id must be provided",
             )
 
     def test_stop_pod(self):
@@ -367,7 +384,7 @@ class TestCTL(unittest.TestCase):
         """
         Tests create_container_registry_auth by mocking the run_graphql_query function
         """
-        # Setup the mock to return a predefined response
+        # Set up the mock to return a predefined response
         mock_run_graphql_query.return_value = {
             "data": {
                 "saveRegistryAuth": {"id": "REGISTRY_AUTH_ID", "name": "REGISTRY_NAME"}

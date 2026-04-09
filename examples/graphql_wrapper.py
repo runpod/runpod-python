@@ -1,5 +1,5 @@
 """'
-GraphQL wrapper for the RunPod API
+GraphQL wrapper for the Runpod API
 """
 
 import time

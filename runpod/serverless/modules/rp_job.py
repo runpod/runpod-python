@@ -127,7 +127,7 @@ async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dic
         async for stream_output in generator_output:
             log.debug(f"Stream output: {stream_output}", job["id"])
 
-            if type(stream_output.get("output")) == dict:
+            if isinstance(stream_output.get("output"), dict):
                 if stream_output["output"].get("error"):
                     stream_output = {"error": str(stream_output["output"]["error"])}
 
@@ -149,7 +149,7 @@ async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dic
         job_result["stopPod"] = True
 
     # If rp_debugger is set, debugger output will be returned.
-    if config["rp_args"].get("rp_debugger", False) and isinstance(job_result, dict):
+    if config.get("rp_args", {}).get("rp_debugger", False) and isinstance(job_result, dict):
         job_result["output"]["rp_debugger"] = rp_debugger.get_debugger_output()
         log.debug("rp_debugger | Flag set, returning debugger output.", job["id"])
 

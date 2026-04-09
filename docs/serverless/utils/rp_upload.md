@@ -4,6 +4,14 @@ The upload utility provides functions to upload files and in-memory objects to a
 
 *Note: The upload utility utilizes the Virtual-hosted-style URL with the bucket name in the host name. For example, `https: // bucket-name.s3.amazonaws.com`.*
 
+## Requirements
+
+The upload utility requires [boto3](https://pypi.org/project/boto3/) for S3 functionality. boto3 is lazy-loaded to minimize initial import time and memory footprint.
+
+If you attempt to use S3 upload features without boto3 installed or S3 credentials are not configured, files will be saved to local disk instead:
+- `upload_image()` saves to `simulated_uploaded/` directory
+- `upload_file_to_bucket()` and `upload_in_memory_object()` save to `local_upload/` directory
+
 ## Bucket Credentials
 
 You can set your S3 bucket credentials in the following ways:
@@ -17,9 +25,9 @@ BUCKET_ACCESS_KEY_ID =  # S3 bucket access key id
 BUCKET_SECRET_ACCESS_KEY =  # S3 bucket secret access key
 ```
 
-The credentials can be set in your Docker image using `ENV`, however, it is recommended to set them in the RunPod template using the `Environment Variables` property for security.
+The credentials can be set in your Docker image using `ENV`, however, it is recommended to set them in the Runpod template using the `Environment Variables` property for security.
 
-![RunPod Template Location](.docs/images/../../../../images/env_var_location.png)
+![Runpod Template Location](.docs/images/../../../../images/env_var_location.png)
 
 ### Passed as a Dictionary
 

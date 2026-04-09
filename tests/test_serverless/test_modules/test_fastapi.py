@@ -90,7 +90,6 @@ class TestFastAPI(unittest.TestCase):
         """
         Tests the _run() method.
         """
-        loop = asyncio.get_event_loop()
 
         module_location = "runpod.serverless.modules.rp_fastapi"
         with patch(
@@ -133,14 +132,12 @@ class TestFastAPI(unittest.TestCase):
             )
             assert generator_run_return == {"id": "test-123", "status": "IN_PROGRESS"}
 
-        loop.close()
 
     @pytest.mark.asyncio
     def test_runsync(self):
         """
         Tests the _runsync() method.
         """
-        loop = asyncio.get_event_loop()
 
         module_location = "runpod.serverless.modules.rp_fastapi"
         with patch(f"{module_location}.FastAPI", Mock()), patch(
@@ -195,14 +192,12 @@ class TestFastAPI(unittest.TestCase):
             asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
             assert mock_threading.Thread.called
 
-        loop.close()
 
     @pytest.mark.asyncio
     def test_stream(self):
         """
         Tests the _stream() method.
         """
-        loop = asyncio.get_event_loop()
 
         module_location = "runpod.serverless.modules.rp_fastapi"
         with patch(f"{module_location}.FastAPI", Mock()), patch(
@@ -260,14 +255,12 @@ class TestFastAPI(unittest.TestCase):
             asyncio.run(generator_worker_api._sim_stream("test-123"))
             assert mock_threading.Thread.called
 
-        loop.close()
 
     @pytest.mark.asyncio
     def test_status(self):
         """
         Tests the _status() method.
         """
-        loop = asyncio.get_event_loop()
 
         module_location = "runpod.serverless.modules.rp_fastapi"
         with patch(f"{module_location}.FastAPI", Mock()), patch(
@@ -332,4 +325,3 @@ class TestFastAPI(unittest.TestCase):
             error_status_return = asyncio.run(error_worker_api._sim_status("test-123"))
             assert "error" in error_status_return
 
-        loop.close()

@@ -1,6 +1,6 @@
 """
 runpod-python | setup.py
-Called to setup the runpod-python package.
+Called to set up the runpod-python package.
 """
 
 from setuptools import find_packages, setup
@@ -35,10 +35,10 @@ if __name__ == "__main__":
         extras_require=extras_require,
         packages=find_packages(),
         python_requires=">=3.8",
-        description="🐍 | Python library for RunPod API and serverless worker SDK.",
+        description="🐍 | Python library for Runpod API and serverless worker SDK.",
         long_description=long_description,
         long_description_content_type="text/markdown",
-        author="RunPod",
+        author="Runpod",
         author_email="engineer@runpod.io",
         url="https://runpod.io",
         project_urls={
@@ -58,6 +58,12 @@ if __name__ == "__main__":
             "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
         ],
         include_package_data=True,
+        package_data={
+            "runpod": [
+                "serverless/binaries/gpu_test",
+                "serverless/binaries/README.md",
+            ]
+        },
         entry_points={"console_scripts": ["runpod = runpod.cli.entry:runpod_cli"]},
         keywords=[
             "runpod",

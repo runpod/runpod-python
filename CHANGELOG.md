@@ -1,4 +1,214 @@
-# Change Log
+# Changelog
+
+## [1.9.0](https://github.com/runpod/runpod-python/compare/v1.8.2...v1.9.0) (2026-04-08)
+
+
+### Features
+
+* **fitness:** comprehensive system fitness checks for worker startup validation ([#472](https://github.com/runpod/runpod-python/issues/472)) ([781ed27](https://github.com/runpod/runpod-python/commit/781ed27cd0ad4c778e6ed1f19c2cf48569a023ab))
+
+
+### Bug Fixes
+
+* **e2e:** increase workerMax from 1 to 3 for provisioned endpoints ([#490](https://github.com/runpod/runpod-python/issues/490)) ([93dbe40](https://github.com/runpod/runpod-python/commit/93dbe405e920b3b9a7779196b6d22f241c305efd))
+* **test:** update flashBootType assertion to match enum value ([#491](https://github.com/runpod/runpod-python/issues/491)) ([16a9b41](https://github.com/runpod/runpod-python/commit/16a9b41627601b8a886dbd8605a2353fae4f8c4f))
+
+## [1.8.2](https://github.com/runpod/runpod-python/compare/v1.8.1...v1.8.2) (2026-03-24)
+
+
+### Bug Fixes
+
+* **config:** handle corrupted config.toml in credential functions ([#481](https://github.com/runpod/runpod-python/issues/481)) ([9894894](https://github.com/runpod/runpod-python/commit/9894894ee2022e7db0777c9dd24c23208e52f90c))
+* use flashBootType instead of appending -fb ([#484](https://github.com/runpod/runpod-python/issues/484)) ([7938936](https://github.com/runpod/runpod-python/commit/7938936158c351d6e00caebbf4242e085f7565ae))
+
+## [1.8.1](https://github.com/runpod/runpod-python/compare/v1.8.0...v1.8.1) (2025-11-19)
+
+
+### Bug Fixes
+
+* prevent PyPI local version rejection ([#468](https://github.com/runpod/runpod-python/issues/468)) ([c3cd473](https://github.com/runpod/runpod-python/commit/c3cd4730f6faf93fe2b454f1c18c884b3d41afb9))
+
+## [1.8.0](https://github.com/runpod/runpod-python/compare/v1.7.13...v1.8.0) (2025-11-13)
+
+
+### Features
+
+* add manual workflow dispatch for PyPI publishing ([05b2d72](https://github.com/runpod/runpod-python/commit/05b2d720f725390cddbf1aebfcbbe1c5385827e7))
+
+
+### Bug Fixes
+
+* pypi package verification ([95015dc](https://github.com/runpod/runpod-python/commit/95015dcdcfefaeec1f52c7f39e5c15d3ddcdfab1))
+* PyPI publishing issues ([6992b10](https://github.com/runpod/runpod-python/commit/6992b102977924dc00bd847681ab94f559942576))
+
+
+### Performance Improvements
+
+* **serverless:** lazy-load boto3, fastapi, and pydantic to reduce cold start time ([#466](https://github.com/runpod/runpod-python/issues/466)) ([cc05a5b](https://github.com/runpod/runpod-python/commit/cc05a5bec7a81fd809b3a40c73e47f4316de1de4))
+
+## [1.7.13](https://github.com/runpod/runpod-python/compare/1.7.12...v1.7.13) (2025-07-17)
+
+### Bug Fixes
+
+* allowedCudaVersions is treated as float without the quotes ([#431](https://github.com/runpod/runpod-python/issues/431)) ([b2bf0ce](https://github.com/runpod/runpod-python/commit/b2bf0ce68c38d5a6ade1365634aa83266d882ece))
+* label creation permission ([#445](https://github.com/runpod/runpod-python/issues/445)) ([0ca6da2](https://github.com/runpod/runpod-python/commit/0ca6da29919a1274567f5bd1d4c6cae56bc5c47e))
+* No module named 'fcntl' ([#434](https://github.com/runpod/runpod-python/issues/434)) ([88d2e4a](https://github.com/runpod/runpod-python/commit/88d2e4a2edc366ead08039691e43f1ebeeae843b))
+* proper public exports by __all__ ([#437](https://github.com/runpod/runpod-python/issues/437)) ([0a52c70](https://github.com/runpod/runpod-python/commit/0a52c70868685ee633ebfef160ab5d914dc79369))
+
+---
+
+## Release 1.7.12 (2024-06-16)
+
+### Fixed
+
+- Resolved multiprocess local development issue.
+
+---
+
+## Release 1.7.11 (2024-06-12)
+
+### Added
+
+- Added sync function for workspace copying.
+
+### Changed
+
+- README.md name update.
+- Dependency updates.
+
+### Fixed
+
+- Fixed ping failures.
+
+---
+
+## Release 1.7.10 (2024-05-28)
+
+### Fixed
+
+- Corrected CUDA versions typing.
+- Improved Content-Disposition parsing.
+- Dependency updates.
+
+---
+
+## Release 1.7.9 (2024-04-09)
+
+### Added
+
+- CPU Pod Creation support.
+
+### Changed
+
+- Retired sls-core.
+- Improved exception handling.
+
+---
+
+## Release 1.7.8 (2024-04-05)
+
+### Added
+
+- Added allowed CUDA versions parameter.
+- Improved async job streaming.
+
+### Changed
+
+- Enhanced error handling for Serverless workers.
+- Updated GraphQL API key authorization.
+
+---
+
+## Release 1.7.7 (2024-12-10)
+
+### Added
+
+- Added utility function for model-cache paths.
+
+### Changed
+
+- Dependency updates.
+
+### Fixed
+
+- Fixed streamed error handling.
+
+---
+
+## Release 1.7.6 (2024-12-05)
+
+### Fixed
+
+- Resolved JobScaler request failures.
+- Improved input validation.
+
+---
+
+## Release 1.7.5 (2024-11-20)
+
+### Fixed
+
+- Addressed race conditions in job queue.
+
+---
+
+## Release 1.7.4 (2024-10-24)
+
+### Added
+
+- Added minimum network speed parameters for pod creation.
+
+### Fixed
+
+- Fixed long-running jobs crash.
+
+---
+
+## Release 1.7.3 (2024-10-15)
+
+### Fixed
+
+- Performance improvements and bug fixes.
+
+---
+
+## Release 1.7.2 (2024-10-07)
+
+### Fixed
+
+- Additional stability improvements.
+
+---
+
+## Release 1.7.1 (2024-09-26)
+
+### Fixed
+
+- Bug fixes and improvements.
+
+---
+
+## Release 1.7.0 (2024-08-07)
+
+### Added
+
+- Major version release with new features.
+
+### Changed
+
+- Breaking changes and improvements.
+
+---
+
+## Release 1.6.3 (2/14/24)
+
+### Fixed
+
+- Bug fixes and stability improvements.
+
+---
+
+## Change Log
 
 ## Release 1.6.2 (2/12/24)
 
@@ -54,14 +264,14 @@
 
 ### Fixed
 
-- Edge case when using RunPod Serverless Core that return `None` for function output.
+- Edge case when using Runpod Serverless Core that return `None` for function output.
 - Missing Job ID for logging.
 - Concurrency modifier not adhering to the maximum concurrency.
 - Improved in progress job tracking and counting.
 
 ### Added
 
-- Expanded RunPod Serverless Core testing.
+- Expanded Runpod Serverless Core testing.
 
 ---
 

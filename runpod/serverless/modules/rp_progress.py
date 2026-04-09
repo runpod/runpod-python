@@ -1,5 +1,5 @@
 """
-RunPod Progress Module
+Runpod Progress Module
 """
 
 import asyncio

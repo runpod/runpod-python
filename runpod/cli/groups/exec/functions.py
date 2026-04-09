@@ -1,5 +1,5 @@
 """
-RunPod | CLI | Exec | Functions
+Runpod | CLI | Exec | Functions
 """
 
 from runpod.cli.utils import ssh_cmd
