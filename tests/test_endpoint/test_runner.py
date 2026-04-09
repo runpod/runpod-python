@@ -59,14 +59,14 @@ class TestRunPodClient(unittest.TestCase):
         self.assertEqual(client.api_key, custom_key)
     
 
-    @patch.object(requests.Session, "post")
-    def test_post_with_401(self, mock_post):
+    @patch.object(requests.Session, "request")
+    def test_post_with_401(self, mock_request):
         """
         Tests RunPodClient.post with 401 status code
         """
         mock_response = Mock()
         mock_response.status_code = 401
-        mock_post.return_value = mock_response
+        mock_request.return_value = mock_response
 
         with self.assertRaises(RuntimeError):
             runpod.api_key = "MOCK_API_KEY"
@@ -89,14 +89,14 @@ class TestRunPodClient(unittest.TestCase):
 
         self.assertEqual(response, {"id": "123"})
 
-    @patch.object(requests.Session, "get")
-    def test_get_with_401(self, mock_get):
+    @patch.object(requests.Session, "request")
+    def test_get_with_401(self, mock_request):
         """
         Tests RunPodClient.get with 401 status code
         """
         mock_response = Mock()
         mock_response.status_code = 401
-        mock_get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         with self.assertRaises(RuntimeError):
             runpod.api_key = "MOCK_API_KEY"
@@ -207,20 +207,20 @@ class TestEndpoint(unittest.TestCase):
 
     def test_missing_api_key(self):
         """
-        Tests Endpoint.run without api_key
+        Tests Endpoint creation without api_key raises RuntimeError.
         """
+        runpod.api_key = None
         with self.assertRaises(RuntimeError):
-            runpod.api_key = None
-            self.endpoint.run(self.MODEL_INPUT)
+            Endpoint(self.ENDPOINT_ID)
 
-    @patch.object(requests.Session, "post")
-    def test_run_with_401(self, mock_post):
+    @patch.object(requests.Session, "request")
+    def test_run_with_401(self, mock_request):
         """
         Tests Endpoint.run with 401 status code
         """
         mock_response = Mock()
         mock_response.status_code = 401
-        mock_post.return_value = mock_response
+        mock_request.return_value = mock_response
 
         endpoint = runpod.Endpoint("ENDPOINT_ID")
         request_data = {"YOUR_MODEL_INPUT_JSON": "YOUR_MODEL_INPUT_VALUE"}

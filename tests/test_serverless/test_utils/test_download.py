@@ -175,7 +175,7 @@ class FileDownloaderTestCase(unittest.TestCase):
 
     @patch("runpod.serverless.utils.rp_download.SyncClientSession.get")
     @patch("builtins.open", new_callable=mock_open)
-    def test_download_file(self, mock_file, mock_get):
+    def test_download_file_with_content_disposition(self, mock_file, mock_get):
         """
         Tests download_file using filename from Content-Disposition
         """

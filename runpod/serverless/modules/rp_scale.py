@@ -99,7 +99,7 @@ class JobScaler:
             signal.signal(signal.SIGTERM, self.handle_shutdown)
             signal.signal(signal.SIGINT, self.handle_shutdown)
         except ValueError:
-            log.warning("Signal handling is only supported in the main thread.")
+            log.warn("Signal handling is only supported in the main thread.")
 
         # Start the main loop
         # Run forever until the worker is signalled to shut down.
@@ -192,7 +192,7 @@ class JobScaler:
 
             except TooManyRequests:
                 log.debug(
-                    f"JobScaler.get_jobs | Too many requests. Debounce for 5 seconds."
+                    "JobScaler.get_jobs | Too many requests. Debounce for 5 seconds."
                 )
                 await asyncio.sleep(5)  # debounce for 5 seconds
             except asyncio.CancelledError:

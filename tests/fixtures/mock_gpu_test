@@ -1,0 +1,13 @@
+#!/bin/bash
+# Mock gpu_test binary for CI testing
+# Outputs successful GPU test results
+
+cat <<'EOF'
+Linux Kernel Version: 5.15.0-mock
+CUDA Driver Version: 12.2.mock
+Found 1 GPUs:
+GPU 0: MOCK GPU (UUID: GPU-mock-000)
+GPU 0 memory allocation test passed.
+EOF
+
+exit 0

@@ -212,8 +212,6 @@ def create_pod(
         )
     )
 
-    print(f"raw_response: {raw_response}")
-
     if gpu_type_id is not None:
         cleaned_response = raw_response["data"]["podFindAndDeployOnDemand"]
     else:
