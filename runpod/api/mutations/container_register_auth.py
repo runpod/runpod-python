@@ -1,4 +1,4 @@
-""" RunPod | API Wrapper | Mutations | Container Registry Auth """
+""" Runpod | API Wrapper | Mutations | Container Registry Auth """
 
 
 def generate_container_registry_auth(name: str, username: str, password: str):

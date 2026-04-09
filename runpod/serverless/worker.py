@@ -8,6 +8,7 @@ import os
 from typing import Any, Dict
 
 from runpod.serverless.modules import rp_logger, rp_local, rp_ping, rp_scale
+from runpod.serverless.modules.rp_fitness import run_fitness_checks
 
 log = rp_logger.RunPodLogger()
 heartbeat = rp_ping.Heartbeat()
@@ -29,13 +30,16 @@ def run_worker(config: Dict[str, Any]) -> None:
     """
     Starts the worker loop for multi-processing.
 
-    This function is called when the worker is running on RunPod. This function
+    This function is called when the worker is running on Runpod. This function
     starts a loop that runs indefinitely until the worker is killed.
 
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
-    # Start pinging RunPod to show that the worker is alive.
+    # Run fitness checks before starting worker (production only)
+    asyncio.run(run_fitness_checks())
+
+    # Start pinging Runpod to show that the worker is alive.
     heartbeat.start_ping()
 
     # Create a JobScaler responsible for adjusting the concurrency
@@ -45,9 +49,9 @@ def run_worker(config: Dict[str, Any]) -> None:
 
 def main(config: Dict[str, Any]) -> None:
     """
-    Checks if the worker is running locally or on RunPod.
+    Checks if the worker is running locally or on Runpod.
     If running locally, the test job is run and the worker exits.
-    If running on RunPod, the worker loop is created.
+    If running on Runpod, the worker loop is created.
     """
     if _is_local(config):
         asyncio.run(rp_local.run_local(config))

@@ -35,6 +35,11 @@ Here is a quick guide on how to contribute code to this project:
 6. Run tests to ensure that your changes do not break any existing functionality. You can run tests using the following command:
 
     ```bash
+    # Using uv (recommended - faster)
+    uv sync --group test
+    uv run pytest
+    
+    # Or using pip
     pip install '.[test]'
     pytest
     ```

@@ -1,5 +1,5 @@
 """
-RunPod | CLI | SSH | Functions
+Runpod | CLI | SSH | Functions
 """
 
 import base64
@@ -83,7 +83,7 @@ def generate_ssh_key_pair(filename):
 
 
 def add_ssh_key(public_key):
-    """Add an SSH public key to the current user's RunPod account.
+    """Add an SSH public key to the current user's Runpod account.
     Checks if the key already exists before adding it.
     """
     user = get_user()

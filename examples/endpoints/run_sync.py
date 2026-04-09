@@ -1,5 +1,5 @@
 """
-Example of calling an endpoint using the RunPod Python Language Library.
+Example of calling an endpoint using the Runpod Python Language Library.
 """
 
 import runpod
@@ -17,5 +17,5 @@ try:
     )
 
     print(run_request)
-except TimeoutError as err:
+except TimeoutError:
     print("Job timed out.")

@@ -1,11 +1,11 @@
 # Project File
 
-Project files are stored as a `runpod.toml` file in the root of your project. This file contains all the information needed to run your project on the RunPod platform.
+Project files are stored as a `runpod.toml` file in the root of your project. This file contains all the information needed to run your project on the Runpod platform.
 
 ## Example
 
 ```toml
-# RunPod Project Configuration
+# Runpod Project Configuration
 
 title = "My Project"
 

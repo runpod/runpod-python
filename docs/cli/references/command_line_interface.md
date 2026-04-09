@@ -1,4 +1,4 @@
-# RunPod CLI
+# Runpod CLI
 
 Note: This CLI is not the same as runpodctl and provides a different set of features.
 
@@ -27,7 +27,7 @@ runpod --help
 ```bash
 $ runpod config
 Profile [default]:
-RunPod API Key [None]: YOUR_RUNPOD_API_KEY
+Runpod API Key [None]: YOUR_RUNPOD_API_KEY
 ```
 
 ### Launch Pod

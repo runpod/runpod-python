@@ -1,5 +1,5 @@
 """
-Contains the main entrypoint for the RunPod Serverless Worker.
+Contains the main entrypoint for the Runpod Serverless Worker.
 
 Arguments can be passed in when the worker is started, and will be passed to the worker.
 """
@@ -14,9 +14,16 @@ from typing import Any, Dict
 
 from ..version import __version__ as runpod_version
 from . import worker
-from .modules import rp_fastapi
 from .modules.rp_logger import RunPodLogger
 from .modules.rp_progress import progress_update
+from .modules.rp_fitness import register_fitness_check
+
+__all__ = [
+    "start",
+    "progress_update",
+    "register_fitness_check",
+    "runpod_version"
+]
 
 log = RunPodLogger()
 
@@ -149,6 +156,7 @@ def start(config: Dict[str, Any]):
 
     if config["rp_args"]["rp_serve_api"]:
         log.info("Starting API server.")
+        from .modules import rp_fastapi
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(
@@ -160,6 +168,7 @@ def start(config: Dict[str, Any]):
 
     if realtime_port:
         log.info(f"Starting API server for realtime on port {realtime_port}.")
+        from .modules import rp_fastapi
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(

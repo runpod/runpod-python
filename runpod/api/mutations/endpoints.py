@@ -1,4 +1,4 @@
-""" RunPod | API Wrapper | Mutations | Endpoints """
+f"""Runpod | API Wrapper | Mutations | Endpoints"""
 
 # pylint: disable=too-many-arguments
 
@@ -15,7 +15,7 @@ def generate_endpoint_mutation(
     workers_min: int = 0,
     workers_max: int = 3,
     flashboot=False,
-    allowed_cuda_versions: str = "12.1,12.2,12.3,12.4,12.5",
+    allowed_cuda_versions: str = None,
     gpu_count: int = None,
 ):
     """Generate a string for a GraphQL mutation to create a new endpoint."""
@@ -23,7 +23,7 @@ def generate_endpoint_mutation(
 
     # ------------------------------ Required Fields ----------------------------- #
     if flashboot:
-        name = name + "-fb"
+        input_fields.append('flashBootType: FLASHBOOT')
 
     input_fields.append(f'name: "{name}"')
     input_fields.append(f'templateId: "{template_id}"')
@@ -46,9 +46,9 @@ def generate_endpoint_mutation(
     input_fields.append(f"workersMin: {workers_min}")
     input_fields.append(f"workersMax: {workers_max}")
 
-    if allowed_cuda_versions is not None:
+    if allowed_cuda_versions:
         input_fields.append(f'allowedCudaVersions: "{allowed_cuda_versions}"')
-    
+
     if gpu_count is not None:
         input_fields.append(f"gpuCount: {gpu_count}")
 
@@ -75,10 +75,10 @@ def generate_endpoint_mutation(
             workersMax
             allowedCudaVersions
             gpuCount
+            flashBootType
         }}
     }}
     """
-
 
 
 def update_endpoint_template_mutation(endpoint_id: str, template_id: str):
