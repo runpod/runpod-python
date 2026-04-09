@@ -31,11 +31,15 @@ def set_credentials(api_key: str, profile: str = "default", overwrite=False) -> 
     Path(CREDENTIAL_FILE).touch(exist_ok=True)
 
     if not overwrite:
-        with open(CREDENTIAL_FILE, "rb") as cred_file:
-            if profile in toml.load(cred_file):
-                raise ValueError(
-                    "Profile already exists. Use `update_credentials` instead."
-                )
+        try:
+            with open(CREDENTIAL_FILE, "rb") as cred_file:
+                existing = toml.load(cred_file)
+        except (TypeError, ValueError):
+            existing = {}
+        if profile in existing:
+            raise ValueError(
+                "Profile already exists. Use `update_credentials` instead."
+            )
 
     with open(CREDENTIAL_FILE, "w", encoding="UTF-8") as cred_file:
         cred_file.write("[" + profile + "]\n")
@@ -72,12 +76,18 @@ def check_credentials(profile: str = "default"):
 def get_credentials(profile="default"):
     """
     Returns the credentials for the specified profile from ~/.runpod/config.toml
+
+    Returns None if the file does not exist, is not valid TOML, or does not
+    contain the requested profile.
     """
     if not os.path.exists(CREDENTIAL_FILE):
         return None
 
-    with open(CREDENTIAL_FILE, "rb") as cred_file:
-        credentials = toml.load(cred_file)
+    try:
+        with open(CREDENTIAL_FILE, "rb") as cred_file:
+            credentials = toml.load(cred_file)
+    except (TypeError, ValueError):
+        return None
 
     if profile not in credentials:
         return None

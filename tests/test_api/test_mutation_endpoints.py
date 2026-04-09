@@ -32,7 +32,7 @@ class TestGenerateEndpointMutation(unittest.TestCase):
             4,
             True,
         )
-        self.assertIn('name: "test_name-fb"', result)
+        self.assertIn('name: "test_name"', result)
         self.assertIn('templateId: "test_template_id"', result)
         self.assertIn('gpuIds: "AMPERE_20"', result)
         self.assertIn('networkVolumeId: "test_volume_id"', result)
@@ -42,3 +42,4 @@ class TestGenerateEndpointMutation(unittest.TestCase):
         self.assertIn("scalerValue: 5", result)
         self.assertIn("workersMin: 2", result)
         self.assertIn("workersMax: 4", result)
+        self.assertIn("flashBootType: FLASHBOOT", result)
