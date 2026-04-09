@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.0](https://github.com/runpod/runpod-python/compare/v1.8.2...v1.9.0) (2026-04-08)
+
+
+### Features
+
+* **fitness:** comprehensive system fitness checks for worker startup validation ([#472](https://github.com/runpod/runpod-python/issues/472)) ([781ed27](https://github.com/runpod/runpod-python/commit/781ed27cd0ad4c778e6ed1f19c2cf48569a023ab))
+
+
+### Bug Fixes
+
+* **e2e:** increase workerMax from 1 to 3 for provisioned endpoints ([#490](https://github.com/runpod/runpod-python/issues/490)) ([93dbe40](https://github.com/runpod/runpod-python/commit/93dbe405e920b3b9a7779196b6d22f241c305efd))
+* **test:** update flashBootType assertion to match enum value ([#491](https://github.com/runpod/runpod-python/issues/491)) ([16a9b41](https://github.com/runpod/runpod-python/commit/16a9b41627601b8a886dbd8605a2353fae4f8c4f))
+
 ## [1.8.2](https://github.com/runpod/runpod-python/compare/v1.8.1...v1.8.2) (2026-03-24)
 
 
