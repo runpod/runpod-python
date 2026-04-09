@@ -88,11 +88,11 @@ def compare_benchmarks(baseline_file: str, optimized_file: str):
         total_diff = baseline_counts["total"] - opt_counts["total"]
         filtered_diff = baseline_counts["filtered"] - opt_counts["filtered"]
 
-        print(f"Total modules loaded:")
+        print("Total modules loaded:")
         print(
             f"  Baseline:  {baseline_counts['total']:>4}  Optimized: {opt_counts['total']:>4}  Δ: {total_diff:>4}"
         )
-        print(f"Runpod modules loaded:")
+        print("Runpod modules loaded:")
         print(
             f"  Baseline:  {baseline_counts['filtered']:>4}  Optimized: {opt_counts['filtered']:>4}  Δ: {filtered_diff:>4}"
         )
