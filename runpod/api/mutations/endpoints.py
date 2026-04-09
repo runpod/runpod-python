@@ -23,7 +23,7 @@ def generate_endpoint_mutation(
 
     # ------------------------------ Required Fields ----------------------------- #
     if flashboot:
-        input_fields.append('flashBootType: "FLASHBOOT"')
+        input_fields.append('flashBootType: FLASHBOOT')
 
     input_fields.append(f'name: "{name}"')
     input_fields.append(f'templateId: "{template_id}"')

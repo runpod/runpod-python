@@ -8,6 +8,7 @@ import os
 from typing import Any, Dict
 
 from runpod.serverless.modules import rp_logger, rp_local, rp_ping, rp_scale
+from runpod.serverless.modules.rp_fitness import run_fitness_checks
 
 log = rp_logger.RunPodLogger()
 heartbeat = rp_ping.Heartbeat()
@@ -35,6 +36,9 @@ def run_worker(config: Dict[str, Any]) -> None:
     Args:
         config (Dict[str, Any]): Configuration parameters for the worker.
     """
+    # Run fitness checks before starting worker (production only)
+    asyncio.run(run_fitness_checks())
+
     # Start pinging Runpod to show that the worker is alive.
     heartbeat.start_ping()
 
