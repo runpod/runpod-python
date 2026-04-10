@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/runpod/runpod-python/compare/v1.9.0...v1.9.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* fix config credential updates preserving profiles ([#474](https://github.com/runpod/runpod-python/issues/474)) ([7272cd7](https://github.com/runpod/runpod-python/commit/7272cd770fe243a95f3b42bbf1083a014a079835))
+
 ## [1.9.0](https://github.com/runpod/runpod-python/compare/v1.8.2...v1.9.0) (2026-04-08)
 
 
