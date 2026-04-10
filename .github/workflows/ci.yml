@@ -36,9 +36,13 @@ jobs:
 
       - name: Setup dependencies
         run: make setup
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}
 
       - name: Run tests
         run: make test
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}
 
   e2e:
     if: github.event_name != 'schedule' && github.repository == 'runpod/runpod-python'
