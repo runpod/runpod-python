@@ -14,25 +14,69 @@ class TestConfig(unittest.TestCase):
     def setUp(self) -> None:
         self.sample_credentials = "[default]\n" 'api_key = "RUNPOD_API_KEY"\n'
 
-    @patch("runpod.cli.groups.config.functions.toml.load")
-    @patch("builtins.open", new_callable=mock_open())
-    def test_set_credentials(self, mock_file, mock_toml_load):
+    @patch("runpod.cli.groups.config.functions.os.replace")
+    @patch("runpod.cli.groups.config.functions.os.unlink")
+    @patch("runpod.cli.groups.config.functions.os.fdopen", new_callable=mock_open)
+    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
+    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
+    @patch("runpod.cli.groups.config.functions.tomlkit.document")
+    @patch("runpod.cli.groups.config.functions.Path.touch")
+    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("builtins.open", new_callable=mock_open, read_data="")
+    def test_set_credentials(
+        self, mock_file, _mock_makedirs, _mock_touch, mock_document,
+        mock_dump, mock_mkstemp, _mock_fdopen, _mock_unlink, _mock_replace,
+    ):
         """
         Tests the set_credentials function.
         """
-        mock_toml_load.return_value = ""
+        mock_mkstemp.return_value = (99, "/tmp/cred.toml")
+        mock_document.side_effect = [{}, {"default": True}]
         functions.set_credentials("RUNPOD_API_KEY")
 
-        mock_file.assert_called_with(functions.CREDENTIAL_FILE, "w", encoding="UTF-8")
+        assert any(
+            call.args[0] == functions.CREDENTIAL_FILE
+            and call.args[1] == "r"
+            and call.kwargs.get("encoding") == "UTF-8"
+            for call in mock_file.call_args_list
+        )
+        assert mock_dump.called
 
         with self.assertRaises(ValueError) as context:
-            mock_toml_load.return_value = {"default": True}
             functions.set_credentials("RUNPOD_API_KEY")
 
         self.assertEqual(
             str(context.exception),
-            "Profile already exists. Use `update_credentials` instead.",
+            "Profile already exists. Use set_credentials(overwrite=True) to update.",
         )
+
+    @patch("runpod.cli.groups.config.functions.os.replace")
+    @patch("runpod.cli.groups.config.functions.os.unlink")
+    @patch("runpod.cli.groups.config.functions.os.fdopen", new_callable=mock_open)
+    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
+    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
+    @patch("runpod.cli.groups.config.functions.Path.touch")
+    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='[default]\napi_key = "EXISTING_KEY"\n\n[profile1]\napi_key = "KEY1"\n',
+    )
+    def test_set_credentials_preserves_existing_profiles(
+        self, _mock_file, _mock_makedirs, _mock_touch, mock_dump,
+        mock_mkstemp, _mock_fdopen, _mock_unlink, _mock_replace,
+    ):
+        """Adding a new profile must preserve all existing profiles."""
+        mock_mkstemp.return_value = (99, "/tmp/cred.toml")
+        functions.set_credentials("NEW_KEY", profile="profile2")
+
+        dumped_config = mock_dump.call_args[0][0]
+        assert "default" in dumped_config
+        assert dumped_config["default"]["api_key"] == "EXISTING_KEY"
+        assert "profile1" in dumped_config
+        assert dumped_config["profile1"]["api_key"] == "KEY1"
+        assert "profile2" in dumped_config
+        assert dumped_config["profile2"]["api_key"] == "NEW_KEY"
 
     @patch("builtins.open", new_callable=mock_open())
     @patch("runpod.cli.groups.config.functions.toml.load")
@@ -124,26 +168,62 @@ class TestConfig(unittest.TestCase):
         result = functions.get_credentials("default")
         assert result is None
 
+    @patch("runpod.cli.groups.config.functions.os.replace")
+    @patch("runpod.cli.groups.config.functions.os.unlink")
+    @patch("runpod.cli.groups.config.functions.os.fdopen", new_callable=mock_open)
+    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
+    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
     @patch("runpod.cli.groups.config.functions.Path.touch")
     @patch("runpod.cli.groups.config.functions.os.makedirs")
-    @patch("runpod.cli.groups.config.functions.toml.load")
-    @patch("builtins.open", new_callable=mock_open())
-    def test_set_credentials_corrupted_toml_allows_overwrite(
-        self, _mock_file, mock_toml_load, _mock_makedirs, _mock_touch
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='[default]\napi_key = "OLD_KEY"\n',
+    )
+    def test_set_credentials_overwrite_replaces_existing_profile(
+        self, _mock_file, _mock_makedirs, _mock_touch, mock_dump,
+        mock_mkstemp, _mock_fdopen, _mock_unlink, _mock_replace,
     ):
-        """set_credentials with overwrite=True ignores corrupted existing file."""
-        mock_toml_load.side_effect = ValueError("Invalid TOML")
-        # overwrite=True skips the toml.load check entirely
-        functions.set_credentials("NEW_KEY", overwrite=True)
+        """overwrite=True replaces an existing profile's api_key."""
+        mock_mkstemp.return_value = (99, "/tmp/cred.toml")
+        functions.set_credentials("NEW_KEY", profile="default", overwrite=True)
 
+        dumped_config = mock_dump.call_args[0][0]
+        assert dumped_config["default"]["api_key"] == "NEW_KEY"
+
+    @patch("runpod.cli.groups.config.functions.os.replace")
+    @patch("runpod.cli.groups.config.functions.os.unlink")
+    @patch("runpod.cli.groups.config.functions.os.fdopen", new_callable=mock_open)
+    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
+    @patch("runpod.cli.groups.config.functions.tomlkit.dump", side_effect=OSError("disk full"))
     @patch("runpod.cli.groups.config.functions.Path.touch")
     @patch("runpod.cli.groups.config.functions.os.makedirs")
-    @patch("runpod.cli.groups.config.functions.toml.load")
-    @patch("builtins.open", new_callable=mock_open())
-    def test_set_credentials_corrupted_toml_no_overwrite(
-        self, _mock_file, mock_toml_load, _mock_makedirs, _mock_touch
+    @patch("builtins.open", new_callable=mock_open, read_data="")
+    def test_set_credentials_cleans_up_temp_on_dump_failure(
+        self, _mock_file, _mock_makedirs, _mock_touch, _mock_dump,
+        mock_mkstemp, _mock_fdopen, mock_unlink, mock_replace,
     ):
-        """set_credentials without overwrite treats corrupted file as empty."""
-        mock_toml_load.side_effect = ValueError("Invalid TOML")
-        # Should not raise — corrupted file is treated as having no profiles
-        functions.set_credentials("NEW_KEY", overwrite=False)
+        """Temp file is removed and original config untouched when dump fails."""
+        mock_mkstemp.return_value = (99, "/tmp/cred.toml")
+        with self.assertRaises(OSError):
+            functions.set_credentials("KEY")
+
+        mock_unlink.assert_called_once_with("/tmp/cred.toml")
+        mock_replace.assert_not_called()
+
+    @patch("runpod.cli.groups.config.functions.os.replace")
+    @patch("runpod.cli.groups.config.functions.os.unlink")
+    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
+    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
+    @patch("runpod.cli.groups.config.functions.Path.touch")
+    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("builtins.open", new_callable=mock_open, read_data="not valid toml {{{")
+    def test_set_credentials_corrupted_toml_raises(
+        self, _mock_file, _mock_makedirs, _mock_touch, _mock_dump,
+        _mock_mkstemp, _mock_unlink, _mock_replace,
+    ):
+        """set_credentials raises ValueError on corrupted TOML regardless of overwrite."""
+        with self.assertRaises(ValueError):
+            functions.set_credentials("NEW_KEY", overwrite=True)
+        with self.assertRaises(ValueError):
+            functions.set_credentials("NEW_KEY", overwrite=False)
