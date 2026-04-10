@@ -73,7 +73,7 @@ jobs:
   pypi-publish:
     name: PyPI Publish
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true') }}
+    if: ${{ always() && (needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true')) }}
     runs-on: ubuntu-latest
     environment:
       name: pypi-production
