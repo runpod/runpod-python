@@ -43,17 +43,13 @@ def release_asset_urls(version: str) -> ReleaseAssetUrls:
     Accepts either '1.9.0' or 'v1.9.0' — the leading 'v' is optional.
     """
     clean = version.lstrip("v")
-    base = (
-        f"https://github.com/{GITHUB_REPO}/releases/download/v{clean}/gpu_test"
-    )
+    base = f"https://github.com/{GITHUB_REPO}/releases/download/v{clean}/gpu_test"
     return ReleaseAssetUrls(binary=base, checksum=f"{base}.sha256")
 
 
 def _fetch(url: str) -> bytes:
     try:
-        with urllib.request.urlopen(
-            url, timeout=DOWNLOAD_TIMEOUT_SECONDS
-        ) as response:
+        with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
             return response.read()
     except urllib.error.HTTPError as exc:
         raise BinaryDownloadError(
@@ -99,9 +95,7 @@ def download_gpu_test_binary(version: str, dest: Path) -> Path:
         )
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        dir=dest.parent, delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as tmp:
         tmp.write(binary_body)
         tmp_path = Path(tmp.name)
 
