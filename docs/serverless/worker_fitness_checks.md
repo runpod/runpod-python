@@ -169,9 +169,18 @@ GPU workers automatically run a built-in fitness check that validates GPU memory
 The check:
 - Tests actual GPU memory allocation (cudaMalloc) to ensure GPUs are accessible
 - Enumerates all detected GPUs and validates each one
-- Uses a native CUDA binary for comprehensive testing
-- Falls back to Python-based checks if the binary is unavailable
+- Uses a native CUDA binary for comprehensive testing (opt-in; see below)
+- Falls back to an `nvidia-smi` availability check if the binary is unavailable
 - Skips silently on CPU-only workers (allows same code for CPU/GPU)
+
+**Installing the native binary**: as of v1.10.0 the `gpu_test` binary is not
+bundled in the PyPI wheel. Runpod GPU worker Dockerfiles should add:
+
+```dockerfile
+RUN pip install runpod && runpod install-gpu-test
+```
+
+See [GPU Binary Compilation](./gpu_binary_compilation.md) for details.
 
 ```python
 import runpod

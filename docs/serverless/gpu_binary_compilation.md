@@ -11,6 +11,23 @@ You typically **do not need to rebuild** the binary. A pre-compiled version is i
 - Adding support for new GPU architectures
 - Fixing compilation issues for your specific environment
 
+## Installing from a release
+
+As of v1.10.0, the `gpu_test` binary is **not bundled** in the PyPI wheel so the package stays platform-agnostic (fixes [#498](https://github.com/runpod/runpod-python/issues/498) — Nix / non-glibc builds).
+
+Runpod GPU workers that want the native CUDA memory-allocation test back should run:
+
+```bash
+pip install runpod
+runpod install-gpu-test
+```
+
+This downloads `gpu_test` from the GitHub release matching the installed runpod version, verifies its sha256, and places it at `runpod/serverless/binaries/gpu_test` inside the installed package.
+
+If the binary is missing, the runtime falls back to an `nvidia-smi`-based availability check (no memory-allocation test).
+
+Advanced users can override the binary path with the `RUNPOD_BINARY_GPU_TEST_PATH` environment variable.
+
 ## Prerequisites
 
 You need Docker installed to build the binary:

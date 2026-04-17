@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **gpu_test binary no longer bundled in the PyPI wheel.** Fixes installs on
+  Nix and other non-glibc platforms ([#498](https://github.com/runpod/runpod-python/issues/498)).
+  Runtime falls back to an `nvidia-smi`-based availability check when the
+  binary is missing. Runpod GPU workers should add
+  `RUN runpod install-gpu-test` after `pip install runpod` to restore the
+  native CUDA memory-allocation test.
+
+### Added
+
+- `runpod install-gpu-test` CLI command — downloads the `gpu_test` binary
+  from the GitHub release matching the installed runpod version, verifies
+  sha256, and installs it into the package's `serverless/binaries/` directory.
+
 ## [1.9.0](https://github.com/runpod/runpod-python/compare/v1.8.2...v1.9.0) (2026-04-08)
 
 
