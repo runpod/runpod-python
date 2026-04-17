@@ -102,6 +102,41 @@ jobs:
         with:
           verbose: true
 
+  upload-gpu-test-asset:
+    name: Upload gpu_test binary to release
+    needs: [release-please, pypi-publish]
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Compile gpu_test binary
+        run: |
+          cd build_tools
+          ./compile_gpu_test.sh
+          cd ..
+          test -f runpod/serverless/binaries/gpu_test
+
+      - name: Generate sha256 checksum
+        working-directory: runpod/serverless/binaries
+        run: |
+          sha256sum gpu_test > gpu_test.sha256
+          cat gpu_test.sha256
+
+      - name: Upload binary to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.release-please.outputs.tag_name }}" \
+            runpod/serverless/binaries/gpu_test \
+            runpod/serverless/binaries/gpu_test.sha256 \
+            --clobber
+
   # TODO: Re-enable after optimizing (17 parallel jobs each sleeping 5min is wasteful).
   #        Consider a single job that sleeps once then dispatches sequentially.
   # notify-workers:
