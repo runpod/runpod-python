@@ -1,0 +1,142 @@
+name: CD
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: "Force publish without release-please"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  issues: write
+  id-token: write
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Staging: TestPyPI
+  # ──────────────────────────────────────────────
+
+  test-publish:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    environment: test-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11.10
+        run: uv python install 3.11.10
+
+      - name: Build package
+        run: uv build
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  # ──────────────────────────────────────────────
+  # Production: Release + PyPI + Worker notifications
+  # ──────────────────────────────────────────────
+
+  release-please:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: google-github-actions/release-please-action@v3
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-type: python
+          package-name: runpod
+
+  pypi-publish:
+    name: PyPI Publish
+    needs: release-please
+    if: ${{ always() && (needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true')) }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-production
+      url: https://pypi.org/project/runpod/
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11.10
+        run: uv python install 3.11.10
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Build and verify package
+        run: make verify
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+
+  # TODO: Re-enable after optimizing (17 parallel jobs each sleeping 5min is wasteful).
+  #        Consider a single job that sleeps once then dispatches sequentially.
+  # notify-workers:
+  #   name: Notify workers
+  #   needs: [release-please, pypi-publish]
+  #   if: ${{ needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true') }}
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       repo:
+  #         - runpod-workers/worker-faster_whisper
+  #         - runpod-workers/worker-stable_diffusion_v1
+  #         - runpod-workers/worker-kandinsky
+  #         - runpod-workers/worker-stable_diffusion_v2
+  #         - runpod-workers/worker-template
+  #         - runpod-workers/worker-whisper
+  #         - runpod-workers/worker-esrgan
+  #         - runpod-workers/worker-github_runner
+  #         - runpod-workers/worker-a1111
+  #         - runpod-workers/worker-dreambooth
+  #         - runpod-workers/worker-bark
+  #         - runpod-workers/worker-gpt
+  #         - runpod-workers/worker-iseven
+  #         - runpod-workers/worker-controlnet
+  #         - runpod-workers/worker-blip
+  #         - runpod-workers/worker-deforum
+  #         - runpod-workers/mock-worker
+  #   steps:
+  #     - name: Wait for PyPI propagation
+  #       run: sleep 300s
+  #       shell: bash
+  #
+  #     - name: Repository Dispatch
+  #       uses: peter-evans/repository-dispatch@v4
+  #       with:
+  #         token: ${{ secrets.RUNPOD_WORKERS_PAT }}
+  #         repository: ${{ matrix.repo }}
+  #         event-type: python-package-release
