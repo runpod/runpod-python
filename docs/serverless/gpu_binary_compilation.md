@@ -4,7 +4,7 @@ This document explains how to rebuild the `gpu_test` binary for GPU health check
 
 ## When to Rebuild
 
-You typically **do not need to rebuild** the binary. A pre-compiled version is included in the runpod-python package and works across most GPU environments. Rebuild only when:
+You typically **do not need to rebuild** the binary. A pre-compiled version is published as a GitHub release asset and can be installed with `runpod install-gpu-test` (see next section). Rebuild only when:
 
 - You need to modify the GPU test logic (in `build_tools/gpu_test.c`)
 - Targeting specific new CUDA versions
