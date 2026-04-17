@@ -142,3 +142,6 @@ runpod/_version.py
 
 *.lock
 benchmark_results/
+
+# Locally-compiled CUDA test binary — CI compiles per-release
+runpod/serverless/binaries/gpu_test

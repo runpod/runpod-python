@@ -105,7 +105,7 @@ jobs:
   upload-gpu-test-asset:
     name: Upload gpu_test binary to release
     needs: [release-please, pypi-publish]
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ always() && (needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -114,6 +114,13 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Login to Docker Hub (optional)
+        if: ${{ vars.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Compile gpu_test binary
         run: |
