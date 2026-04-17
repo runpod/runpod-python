@@ -72,8 +72,8 @@ class TestDownloadGpuTestBinary:
 
         assert result == dest
         assert dest.read_bytes() == binary_body
-        # 0o755 after chmod (owner rwx, group/others r-x)
-        assert dest.stat().st_mode & 0o777 == 0o755
+        # 0o750 after chmod (owner rwx, group r-x, others no access)
+        assert dest.stat().st_mode & 0o777 == 0o750
 
     def test_raises_on_checksum_mismatch(self, tmp_path: Path):
         binary_body = b"real payload"

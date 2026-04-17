@@ -100,7 +100,7 @@ def download_gpu_test_binary(version: str, dest: Path) -> Path:
         tmp_path = Path(tmp.name)
 
     try:
-        os.chmod(tmp_path, 0o755)
+        os.chmod(tmp_path, 0o750)
         os.replace(tmp_path, dest)
     except OSError:
         tmp_path.unlink(missing_ok=True)
