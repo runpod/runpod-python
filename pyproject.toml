@@ -49,8 +49,15 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 runpod = [
-    "serverless/binaries/gpu_test",
     "serverless/binaries/README.md",
+]
+
+[tool.setuptools.exclude-package-data]
+runpod = [
+    "serverless/binaries/gpu_test",
+]
+"runpod.serverless.binaries" = [
+    "gpu_test",
 ]
 
 [tool.setuptools_scm]

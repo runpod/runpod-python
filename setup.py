@@ -60,9 +60,16 @@ if __name__ == "__main__":
         include_package_data=True,
         package_data={
             "runpod": [
-                "serverless/binaries/gpu_test",
                 "serverless/binaries/README.md",
             ]
+        },
+        exclude_package_data={
+            "runpod": [
+                "serverless/binaries/gpu_test",
+            ],
+            "runpod.serverless.binaries": [
+                "gpu_test",
+            ],
         },
         entry_points={"console_scripts": ["runpod = runpod.cli.entry:runpod_cli"]},
         keywords=[
