@@ -161,3 +161,63 @@ class TestDownloadGpuTestBinaryErrorPaths:
         msg = str(exc_info.value)
         assert "/v1.9.0/gpu_test" in msg, "error must cite the release URL"
         assert f"{len(binary_body)} bytes" in msg, "error must cite download size"
+
+
+from click.testing import CliRunner
+
+from runpod.cli.groups.install.commands import install_gpu_test_cli
+
+
+class TestInstallGpuTestCommand:
+    def test_command_calls_download_with_resolved_dest(self, tmp_path: Path):
+        """Command resolves destination via _binary_helpers and passes installed version."""
+        fake_dest = tmp_path / "runpod" / "serverless" / "binaries" / "gpu_test"
+
+        with patch(
+            "runpod.cli.groups.install.commands.download_gpu_test_binary"
+        ) as mock_download, patch(
+            "runpod.cli.groups.install.commands._default_install_path",
+            return_value=fake_dest,
+        ), patch(
+            "runpod.cli.groups.install.commands.get_version",
+            return_value="1.9.0",
+        ):
+            mock_download.return_value = fake_dest
+            runner = CliRunner()
+            result = runner.invoke(install_gpu_test_cli, [])
+
+        assert result.exit_code == 0, result.output
+        mock_download.assert_called_once_with(version="1.9.0", dest=fake_dest)
+
+    def test_command_honors_version_override(self, tmp_path: Path):
+        fake_dest = tmp_path / "gpu_test"
+        with patch(
+            "runpod.cli.groups.install.commands.download_gpu_test_binary"
+        ) as mock_download, patch(
+            "runpod.cli.groups.install.commands._default_install_path",
+            return_value=fake_dest,
+        ):
+            mock_download.return_value = fake_dest
+            runner = CliRunner()
+            result = runner.invoke(install_gpu_test_cli, ["--version", "1.8.0"])
+
+        assert result.exit_code == 0
+        mock_download.assert_called_once_with(version="1.8.0", dest=fake_dest)
+
+    def test_command_exits_nonzero_on_download_error(self, tmp_path: Path):
+        fake_dest = tmp_path / "gpu_test"
+        with patch(
+            "runpod.cli.groups.install.commands.download_gpu_test_binary",
+            side_effect=BinaryDownloadError("HTTP 404"),
+        ), patch(
+            "runpod.cli.groups.install.commands._default_install_path",
+            return_value=fake_dest,
+        ), patch(
+            "runpod.cli.groups.install.commands.get_version",
+            return_value="1.9.0",
+        ):
+            runner = CliRunner()
+            result = runner.invoke(install_gpu_test_cli, [])
+
+        assert result.exit_code == 1
+        assert "HTTP 404" in result.output
