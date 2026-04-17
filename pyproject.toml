@@ -52,14 +52,6 @@ runpod = [
     "serverless/binaries/README.md",
 ]
 
-[tool.setuptools.exclude-package-data]
-runpod = [
-    "serverless/binaries/gpu_test",
-]
-"runpod.serverless.binaries" = [
-    "gpu_test",
-]
-
 [tool.setuptools_scm]
 version_file = "runpod/_version.py"
 local_scheme = "no-local-version"
