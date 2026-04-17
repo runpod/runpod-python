@@ -15,7 +15,9 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
+from click.testing import CliRunner
 
+from runpod.cli.groups.install.commands import install_gpu_test_cli
 from runpod.cli.groups.install.functions import (
     BinaryChecksumMismatch,
     BinaryDownloadError,
@@ -37,8 +39,7 @@ class TestReleaseAssetUrls:
     def test_urls_use_installed_version(self):
         urls = release_asset_urls(version="1.9.0")
         assert urls.binary == (
-            "https://github.com/runpod/runpod-python/releases/download/"
-            "v1.9.0/gpu_test"
+            "https://github.com/runpod/runpod-python/releases/download/v1.9.0/gpu_test"
         )
         assert urls.checksum == (
             "https://github.com/runpod/runpod-python/releases/download/"
@@ -163,11 +164,6 @@ class TestDownloadGpuTestBinaryErrorPaths:
         assert f"{len(binary_body)} bytes" in msg, "error must cite download size"
 
 
-from click.testing import CliRunner
-
-from runpod.cli.groups.install.commands import install_gpu_test_cli
-
-
 class TestInstallGpuTestCommand:
     def test_command_calls_download_with_resolved_dest(self, tmp_path: Path):
         """Command resolves destination via _binary_helpers and passes installed version."""
@@ -221,3 +217,35 @@ class TestInstallGpuTestCommand:
 
         assert result.exit_code == 1
         assert "HTTP 404" in result.output
+
+    def test_command_honors_dest_override(self, tmp_path: Path):
+        """--dest should bypass _default_install_path and be forwarded verbatim."""
+        custom_dest = tmp_path / "custom" / "gpu_test"
+
+        with patch(
+            "runpod.cli.groups.install.commands.download_gpu_test_binary"
+        ) as mock_download, patch(
+            "runpod.cli.groups.install.commands.get_version",
+            return_value="1.9.0",
+        ), patch(
+            "runpod.cli.groups.install.commands._default_install_path"
+        ) as mock_default:
+            mock_download.return_value = custom_dest
+            runner = CliRunner()
+            result = runner.invoke(install_gpu_test_cli, ["--dest", str(custom_dest)])
+
+        assert result.exit_code == 0, result.output
+        mock_default.assert_not_called()
+        mock_download.assert_called_once_with(version="1.9.0", dest=custom_dest)
+
+    def test_command_errors_when_version_unknown(self):
+        """If get_version() returns 'unknown', command exits with actionable hint."""
+        with patch(
+            "runpod.cli.groups.install.commands.get_version",
+            return_value="unknown",
+        ):
+            runner = CliRunner()
+            result = runner.invoke(install_gpu_test_cli, [])
+
+        assert result.exit_code == 1
+        assert "--version" in result.output
