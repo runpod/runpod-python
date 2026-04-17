@@ -60,7 +60,9 @@ def _fetch(url: str) -> bytes:
             f"HTTP {exc.code} fetching {url}: {exc.reason}"
         ) from exc
     except urllib.error.URLError as exc:
-        raise BinaryDownloadError(f"Network error fetching {url}: {exc}") from exc
+        raise BinaryDownloadError(
+            f"Network error fetching {url}: {exc.reason!r}"
+        ) from exc
 
 
 def _parse_sha256(checksum_body: bytes) -> str:
@@ -91,7 +93,9 @@ def download_gpu_test_binary(version: str, dest: Path) -> Path:
     actual_sha = hashlib.sha256(binary_body).hexdigest()
     if actual_sha != expected_sha:
         raise BinaryChecksumMismatch(
-            f"sha256 mismatch for gpu_test: expected {expected_sha}, got {actual_sha}"
+            f"sha256 mismatch for {urls.binary} "
+            f"({len(binary_body)} bytes): "
+            f"expected {expected_sha}, got {actual_sha}"
         )
 
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -101,6 +105,10 @@ def download_gpu_test_binary(version: str, dest: Path) -> Path:
         tmp.write(binary_body)
         tmp_path = Path(tmp.name)
 
-    os.chmod(tmp_path, 0o755)
-    os.replace(tmp_path, dest)
+    try:
+        os.chmod(tmp_path, 0o755)
+        os.replace(tmp_path, dest)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
     return dest

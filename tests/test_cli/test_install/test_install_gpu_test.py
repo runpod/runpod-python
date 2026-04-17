@@ -110,3 +110,54 @@ class TestDownloadGpuTestBinary:
         ):
             with pytest.raises(BinaryDownloadError, match="404"):
                 download_gpu_test_binary(version="9.9.9", dest=dest)
+
+
+class TestDownloadGpuTestBinaryErrorPaths:
+    """Coverage for failure modes added in response to code review."""
+
+    def test_cleans_up_temp_file_on_replace_failure(self, tmp_path: Path):
+        binary_body = b"payload"
+        expected_sha = hashlib.sha256(binary_body).hexdigest()
+        checksum_body = f"{expected_sha}  gpu_test\n".encode()
+        dest = tmp_path / "sub" / "gpu_test"
+
+        def fake_urlopen(url, timeout):  # noqa: ARG001
+            if url.endswith(".sha256"):
+                return _fake_http_response(checksum_body)
+            return _fake_http_response(binary_body)
+
+        with patch(
+            "runpod.cli.groups.install.functions.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ), patch(
+            "runpod.cli.groups.install.functions.os.replace",
+            side_effect=OSError("simulated replace failure"),
+        ):
+            with pytest.raises(OSError, match="simulated replace failure"):
+                download_gpu_test_binary(version="1.9.0", dest=dest)
+
+        assert not dest.exists(), "final dest must not exist on failure"
+        leftover = list(dest.parent.glob("tmp*"))
+        assert leftover == [], f"temp file leaked: {leftover}"
+
+    def test_checksum_error_includes_url_and_byte_count(self, tmp_path: Path):
+        binary_body = b"payload bytes"
+        wrong_sha = "0" * 64
+        checksum_body = f"{wrong_sha}  gpu_test\n".encode()
+        dest = tmp_path / "gpu_test"
+
+        def fake_urlopen(url, timeout):  # noqa: ARG001
+            if url.endswith(".sha256"):
+                return _fake_http_response(checksum_body)
+            return _fake_http_response(binary_body)
+
+        with patch(
+            "runpod.cli.groups.install.functions.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            with pytest.raises(BinaryChecksumMismatch) as exc_info:
+                download_gpu_test_binary(version="1.9.0", dest=dest)
+
+        msg = str(exc_info.value)
+        assert "/v1.9.0/gpu_test" in msg, "error must cite the release URL"
+        assert f"{len(binary_body)} bytes" in msg, "error must cite download size"
