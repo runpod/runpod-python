@@ -14,7 +14,7 @@ psutil >= 5.9.0
 py-cpuinfo >= 9.0.0
 inquirerpy == 0.3.4
 requests >= 2.31.0
-tomli >= 2.0.1
+tomli >= 2.4.1
 tomlkit >= 0.12.2
 tqdm-loggable >= 0.1.4
 urllib3 >= 1.26.6
