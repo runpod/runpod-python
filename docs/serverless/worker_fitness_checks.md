@@ -199,6 +199,12 @@ os.environ["RUNPOD_GPU_TEST_TIMEOUT"] = "60"
 
 # Override binary path (for custom/patched versions)
 os.environ["RUNPOD_BINARY_GPU_TEST_PATH"] = "/custom/path/gpu_test"
+
+# Cap the number of error messages parsed from gpu_test output (default: 10)
+os.environ["RUNPOD_GPU_MAX_ERROR_MESSAGES"] = "20"
+
+# Skip auto-registration of this check (primarily for testing)
+os.environ["RUNPOD_SKIP_GPU_CHECK"] = "true"
 ```
 
 **What it tests**:
@@ -373,6 +379,27 @@ import os
 os.environ["RUNPOD_MIN_MEMORY_GB"] = "8.0"
 os.environ["RUNPOD_MIN_DISK_PERCENT"] = "15.0"
 ```
+
+### Disabling Built-in Checks
+
+For testing or specialized deployments, built-in checks can be disabled via environment variables. These are not recommended for production use.
+
+| Env var | Effect |
+|---|---|
+| `RUNPOD_SKIP_AUTO_SYSTEM_CHECKS=true` | Skips auto-registration of memory, disk, network, CUDA version, CUDA init, and GPU benchmark checks |
+| `RUNPOD_SKIP_GPU_CHECK=true` | Skips auto-registration of the native GPU memory allocation test (`gpu_test` binary) |
+
+```python
+import os
+
+# Disable all auto-registered system checks (testing only)
+os.environ["RUNPOD_SKIP_AUTO_SYSTEM_CHECKS"] = "true"
+
+# Disable the automatic GPU memory allocation test
+os.environ["RUNPOD_SKIP_GPU_CHECK"] = "true"
+```
+
+User-registered checks via `@register_fitness_check` still run regardless of these flags.
 
 ## Behavior
 

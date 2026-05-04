@@ -6,9 +6,11 @@ Configurations are TOML files located under ~/.runpod/
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 import tomli as toml
+import tomlkit
 
 CREDENTIAL_FILE = os.path.expanduser("~/.runpod/config.toml")
 
@@ -16,7 +18,7 @@ CREDENTIAL_FILE = os.path.expanduser("~/.runpod/config.toml")
 def set_credentials(api_key: str, profile: str = "default", overwrite=False) -> None:
     """
     Sets the user's credentials in ~/.runpod/config.toml
-    If profile already exists user must use `update_credentials` instead.
+    If profile already exists user must pass overwrite=True.
 
     Args:
         api_key (str): The user's API key.
@@ -27,23 +29,37 @@ def set_credentials(api_key: str, profile: str = "default", overwrite=False) -> 
     [default]
     api_key = "RUNPOD_API_KEY"
     """
-    os.makedirs(os.path.dirname(CREDENTIAL_FILE), exist_ok=True)
+    cred_dir = os.path.dirname(CREDENTIAL_FILE)
+    os.makedirs(cred_dir, exist_ok=True)
     Path(CREDENTIAL_FILE).touch(exist_ok=True)
 
-    if not overwrite:
+    with open(CREDENTIAL_FILE, "r", encoding="UTF-8") as cred_file:
         try:
-            with open(CREDENTIAL_FILE, "rb") as cred_file:
-                existing = toml.load(cred_file)
-        except (TypeError, ValueError):
-            existing = {}
-        if profile in existing:
+            content = cred_file.read()
+            config = (
+                tomlkit.parse(content)
+                if content.strip()
+                else tomlkit.document()
+            )
+        except tomlkit.exceptions.ParseError as exc:
+            raise ValueError("~/.runpod/config.toml is not a valid TOML file.") from exc
+
+    if not overwrite:
+        if profile in config:
             raise ValueError(
-                "Profile already exists. Use `update_credentials` instead."
+                "Profile already exists. Use set_credentials(overwrite=True) to update."
             )
 
-    with open(CREDENTIAL_FILE, "w", encoding="UTF-8") as cred_file:
-        cred_file.write("[" + profile + "]\n")
-        cred_file.write('api_key = "' + api_key + '"\n')
+    config[profile] = {"api_key": api_key}
+
+    fd, tmp_path = tempfile.mkstemp(dir=cred_dir, suffix=".toml")
+    try:
+        with os.fdopen(fd, "w", encoding="UTF-8") as tmp_file:
+            tomlkit.dump(config, tmp_file)
+        os.replace(tmp_path, CREDENTIAL_FILE)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
 
 
 def check_credentials(profile: str = "default"):
