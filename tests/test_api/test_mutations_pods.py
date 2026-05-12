@@ -15,7 +15,7 @@ class TestPodMutations(unittest.TestCase):
         # Test GPU pod deployment
         gpu_result = pods.generate_pod_deployment_mutation(
             name="test",
-            image_name="test_image", 
+            image_name="test_image",
             gpu_type_id="1",
             cloud_type="cloud",
             data_center_id="1",
@@ -32,6 +32,15 @@ class TestPodMutations(unittest.TestCase):
             support_public_ip=True,
             template_id="abcde",
             allowed_cuda_versions=["11.8", "12.0"],
+        )
+
+        # Test GPU pod deployment with container registry auth
+        gpu_result_with_auth = pods.generate_pod_deployment_mutation(
+            name="test",
+            image_name="test_image",
+            gpu_type_id="1",
+            cloud_type="ALL",
+            container_registry_auth_id="auth123",
         )
 
         # Test CPU pod deployment
@@ -55,10 +64,16 @@ class TestPodMutations(unittest.TestCase):
         # Check GPU pod mutation structure
         self.assertIn("mutation", gpu_result)
         self.assertIn("podFindAndDeployOnDemand", gpu_result)
-        
-        # Check CPU pod mutation structure  
+        self.assertNotIn("containerRegistryAuthId", gpu_result)
+
+        # Check containerRegistryAuthId is included when provided, absent when not
+        self.assertIn("containerRegistryAuthId", gpu_result_with_auth)
+        self.assertIn('"auth123"', gpu_result_with_auth)
+
+        # Check CPU pod mutation structure
         self.assertIn("mutation", cpu_result)
         self.assertIn("deployCpuPod", cpu_result)
+        self.assertNotIn("containerRegistryAuthId", cpu_result)
 
     def test_generate_pod_stop_mutation(self):
         """
