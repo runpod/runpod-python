@@ -51,5 +51,36 @@ class TestConstructUserAgent(unittest.TestCase):
         assert mock_system.called
 
 
+    @patch("runpod.user_agent.platform.system", return_value="Linux")
+    @patch("runpod.user_agent.platform.release", return_value="5.4")
+    @patch("runpod.user_agent.platform.machine", return_value="x86_64")
+    @patch("runpod.user_agent.platform.python_version", return_value="3.9.5")
+    @patch.dict(os.environ, {"CLAUDECODE": "1"}, clear=False)
+    def test_user_agent_with_claude_code(
+        self, mock_python_version, mock_machine, mock_release, mock_system
+    ):
+        """Test the User-Agent string includes claude-code agent tag."""
+        if "RUNPOD_UA_INTEGRATION" in os.environ:
+            del os.environ["RUNPOD_UA_INTEGRATION"]
+
+        expected_ua = f"RunPod-Python-SDK/{runpod_version} (Linux 5.4; x86_64) Language/Python 3.9.5 (via claude-code)"
+        self.assertEqual(construct_user_agent(), expected_ua)
+
+    @patch("runpod.user_agent.platform.system", return_value="Linux")
+    @patch("runpod.user_agent.platform.release", return_value="5.4")
+    @patch("runpod.user_agent.platform.machine", return_value="x86_64")
+    @patch("runpod.user_agent.platform.python_version", return_value="3.9.5")
+    def test_user_agent_without_claude_code(
+        self, mock_python_version, mock_machine, mock_release, mock_system
+    ):
+        """Test the User-Agent string excludes agent tag when env var is not set."""
+        for key in ("RUNPOD_UA_INTEGRATION", "CLAUDECODE"):
+            if key in os.environ:
+                del os.environ[key]
+
+        ua = construct_user_agent()
+        self.assertNotIn("via claude-code", ua)
+
+
 if __name__ == "__main__":
     unittest.main()
