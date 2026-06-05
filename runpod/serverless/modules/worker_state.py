@@ -207,3 +207,104 @@ class JobsProgress(Set[Job]):
         Returns the number of jobs.
         """
         return len(self)
+
+
+# ---------------------------------------------------------------------------- #
+#                                  Stop Signals                                #
+# ---------------------------------------------------------------------------- #
+class JobsToStop(Set[str]):
+    """Track job ids that have been signalled to stop.
+
+    The heartbeat process records stop signals received from the Runpod
+    server here, and the worker loop reads them to stop the matching
+    in-progress jobs. State is persisted so it can cross the process
+    boundary between the heartbeat and the worker loop.
+    """
+
+    _instance = None
+    _STATE_DIR = os.getcwd()
+    _STATE_FILE = os.path.join(_STATE_DIR, ".runpod_jobs_to_stop.pkl")
+
+    def __new__(cls):
+        if JobsToStop._instance is None:
+            os.makedirs(cls._STATE_DIR, exist_ok=True)
+            JobsToStop._instance = set.__new__(cls)
+            set.__init__(JobsToStop._instance)
+            JobsToStop._instance._load_state()
+        return JobsToStop._instance
+
+    def __init__(self):
+        # singleton, never clear data on re-init
+        pass
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}>: {sorted(self)}"
+
+    def _load_state(self):
+        """Load stop signals from pickle file with file locking."""
+        try:
+            if (
+                os.path.exists(self._STATE_FILE)
+                and os.path.getsize(self._STATE_FILE) > 0
+            ):
+                with FileLock(self._STATE_FILE + ".lock"):
+                    with open(self._STATE_FILE, "rb") as f:
+                        try:
+                            loaded = pickle.load(f)
+                            super().clear()
+                            for job_id in loaded:
+                                set.add(self, job_id)
+                        except (EOFError, pickle.UnpicklingError):
+                            log.debug(
+                                "JobsToStop: Failed to load state file, starting empty"
+                            )
+        except FileNotFoundError:
+            log.debug("JobsToStop: No state file found, starting empty")
+
+    def _save_state(self):
+        """Save stop signals to pickle file with atomic write and file locking."""
+        try:
+            with FileLock(self._STATE_FILE + ".lock"):
+                with tempfile.NamedTemporaryFile(
+                    dir=self._STATE_DIR, delete=False, mode="wb"
+                ) as temp_f:
+                    pickle.dump(set(self), temp_f)
+                os.replace(temp_f.name, self._STATE_FILE)
+        except Exception as e:
+            log.error(f"Failed to save stop signal state: {e}")
+
+    def clear(self) -> None:
+        super().clear()
+        self._save_state()
+
+    def add(self, element: Any):
+        """Records a stop signal for the given job id."""
+        if isinstance(element, Job):
+            element = element.id
+
+        if not isinstance(element, str):
+            raise TypeError("Only job id strings can be added to JobsToStop.")
+
+        result = super().add(element)
+        self._save_state()
+        return result
+
+    def remove(self, element: Any):
+        """Removes a stop signal for the given job id."""
+        if isinstance(element, Job):
+            element = element.id
+
+        if not isinstance(element, str):
+            raise TypeError("Only job id strings can be removed from JobsToStop.")
+
+        result = super().discard(element)
+        self._save_state()
+        return result
+
+    def pop_all(self) -> Set[str]:
+        """Returns all pending stop signals and clears them."""
+        self._load_state()
+        pending = set(self)
+        if pending:
+            self.clear()
+        return pending

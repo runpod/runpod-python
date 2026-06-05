@@ -274,6 +274,76 @@ class TestHeartbeat:
             "Ping Request Error: Connection error, attempting to restart ping."
         )
 
+    def test_send_ping_records_stop_signals(self, mock_env, mock_worker_id, mock_session, mock_jobs):
+        """Stop signals in the ping response are recorded for the worker loop"""
+        heartbeat = Heartbeat()
+
+        mock_response = MagicMock()
+        mock_response.url = "https://test.com/ping/test_worker_123"
+        mock_response.status_code = 200
+        mock_response.content = b'{"jobsToStop": ["job1", "job2"]}'
+        mock_response.json.return_value = {"jobsToStop": ["job1", "job2"]}
+        mock_session.get.return_value = mock_response
+
+        with patch("runpod.serverless.modules.rp_ping.JobsToStop") as mock_stop:
+            with patch("runpod.serverless.modules.rp_ping.runpod_version", "1.0.0"):
+                heartbeat._send_ping()
+
+            instance = mock_stop.return_value
+            instance.add.assert_any_call("job1")
+            instance.add.assert_any_call("job2")
+
+    def test_send_ping_no_stop_signals(self, mock_env, mock_worker_id, mock_session, mock_jobs):
+        """Empty or missing stop signals do not touch the stop store"""
+        heartbeat = Heartbeat()
+
+        mock_response = MagicMock()
+        mock_response.url = "https://test.com/ping/test_worker_123"
+        mock_response.status_code = 200
+        mock_response.content = b"{}"
+        mock_response.json.return_value = {}
+        mock_session.get.return_value = mock_response
+
+        with patch("runpod.serverless.modules.rp_ping.JobsToStop") as mock_stop:
+            with patch("runpod.serverless.modules.rp_ping.runpod_version", "1.0.0"):
+                heartbeat._send_ping()
+
+            mock_stop.return_value.add.assert_not_called()
+
+    def test_send_ping_ignores_invalid_json(self, mock_env, mock_worker_id, mock_session, mock_jobs):
+        """A non-JSON ping body is ignored without error"""
+        heartbeat = Heartbeat()
+
+        mock_response = MagicMock()
+        mock_response.url = "https://test.com/ping/test_worker_123"
+        mock_response.status_code = 200
+        mock_response.content = b"not json"
+        mock_response.json.side_effect = ValueError("no json")
+        mock_session.get.return_value = mock_response
+
+        with patch("runpod.serverless.modules.rp_ping.JobsToStop") as mock_stop:
+            with patch("runpod.serverless.modules.rp_ping.runpod_version", "1.0.0"):
+                heartbeat._send_ping()
+
+            mock_stop.return_value.add.assert_not_called()
+
+    def test_send_ping_ignores_non_dict_payload(self, mock_env, mock_worker_id, mock_session, mock_jobs):
+        """A JSON list payload does not trigger stop handling"""
+        heartbeat = Heartbeat()
+
+        mock_response = MagicMock()
+        mock_response.url = "https://test.com/ping/test_worker_123"
+        mock_response.status_code = 200
+        mock_response.content = b"[]"
+        mock_response.json.return_value = []
+        mock_session.get.return_value = mock_response
+
+        with patch("runpod.serverless.modules.rp_ping.JobsToStop") as mock_stop:
+            with patch("runpod.serverless.modules.rp_ping.runpod_version", "1.0.0"):
+                heartbeat._send_ping()
+
+            mock_stop.return_value.add.assert_not_called()
+
     def test_custom_pool_connections(self, mock_env, mock_worker_id, mock_session):
         """Test initialization with custom pool connections and retries"""
         heartbeat = Heartbeat(pool_connections=20, retries=5)

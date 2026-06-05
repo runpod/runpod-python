@@ -58,6 +58,12 @@ For more complex operations where you are downloading files or making changes to
                 return {"output": "Job completed successfully"}
         ```
 
+## Stopping Individual Jobs
+
+A worker can process more than one job concurrently. When a single request expires or times out, the Runpod server signals the worker to stop just that request without affecting the worker's other in-progress jobs. The worker receives these signals on its heartbeat and cancels the task running the matching job, so a stopped job no longer consumes worker time.
+
+No handler changes are required to support this. Handlers that hold resources can perform cleanup by catching `asyncio.CancelledError` in async handlers.
+
 ## See Also
 
 - [Worker Fitness Checks](./worker_fitness_checks.md) - Validate your worker environment at startup

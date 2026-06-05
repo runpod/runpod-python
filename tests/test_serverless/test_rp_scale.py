@@ -239,6 +239,71 @@ async def test_workers_process_jobs(job_scaler: PatchScaler):
     scaler.kill_worker()
 
 @pytest.mark.asyncio
+async def test_stop_job_cancels_inflight_task(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    job_started = asyncio.Event()
+    cancelled = []
+
+    async def handler(_session, _config, job):
+        job_started.set()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            cancelled.append(job["id"])
+            raise
+
+    scaler.jobs_handler = handler
+    scaler.current_concurrency = 1
+    scaler.jobs_queue = asyncio.Queue(maxsize=1)
+    run_task = asyncio.create_task(scaler.run_jobs(None))
+
+    await scaler.jobs_queue.put(generate_job("stop-me"))
+    await asyncio.wait_for(job_started.wait(), timeout=2)
+
+    assert "stop-me" in scaler.jobs_tasks
+    assert await scaler.stop_job("stop-me") is True
+
+    scaler.kill_worker()
+    await asyncio.wait_for(run_task, timeout=2)
+
+    assert cancelled == ["stop-me"]
+    assert "stop-me" not in scaler.jobs_tasks
+    assert job_scaler.progress.count == 0
+
+    scaler.kill_worker()
+
+
+@pytest.mark.asyncio
+async def test_stop_job_unknown_id_returns_false(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    assert await scaler.stop_job("does-not-exist") is False
+    scaler.kill_worker()
+
+
+@pytest.mark.asyncio
+async def test_stop_jobs_consumes_stop_signals(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    stopped = []
+
+    async def fake_stop_job(job_id):
+        stopped.append(job_id)
+        return True
+
+    scaler.stop_job = fake_stop_job
+    scaler.jobs_to_stop.clear()
+    scaler.jobs_to_stop.add("job-a")
+    scaler.jobs_to_stop.add("job-b")
+
+    stop_task = asyncio.create_task(scaler.stop_jobs())
+    await asyncio.sleep(0.05)
+    scaler.kill_worker()
+    await asyncio.wait_for(stop_task, timeout=2)
+
+    assert sorted(stopped) == ["job-a", "job-b"]
+    assert scaler.jobs_to_stop.pop_all() == set()
+
+
+@pytest.mark.asyncio
 async def test_get_jobs_feeds_workers_end_to_end(job_scaler: PatchScaler):
     scaler = job_scaler.scaler
     handled = []

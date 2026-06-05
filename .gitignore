@@ -139,6 +139,7 @@ dmypy.json
 .pyre/
 runpod/_version.py
 .runpod_jobs.pkl
+.runpod_jobs_to_stop.pkl
 
 *.lock
 benchmark_results/
