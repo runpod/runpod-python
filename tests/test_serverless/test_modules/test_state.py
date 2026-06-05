@@ -6,7 +6,6 @@ import unittest
 from runpod.serverless.modules.worker_state import (
     Job,
     JobsProgress,
-    JobsToStop,
     IS_LOCAL_TEST,
     WORKER_ID,
 )
@@ -224,58 +223,3 @@ class TestJobsProgress(unittest.IsolatedAsyncioTestCase):
         # Verify that no jobs remain
         assert jobs2.get_job_count() == 0, "Jobs should be cleared in persistent state"
         assert jobs2.get_job_list() is None, "Job list should be None after clear"
-
-
-class TestJobsToStop(unittest.IsolatedAsyncioTestCase):
-    """Tests for JobsToStop class"""
-
-    async def asyncSetUp(self):
-        self.stops = JobsToStop()
-        self.stops.clear()
-
-    def test_singleton(self):
-        stops2 = JobsToStop()
-        self.assertEqual(self.stops, stops2)
-
-    async def test_add_and_pop_all(self):
-        assert not len(self.stops)
-
-        self.stops.add("job-1")
-        self.stops.add("job-2")
-        assert len(self.stops) == 2
-
-        pending = self.stops.pop_all()
-        assert pending == {"job-1", "job-2"}
-        assert not len(self.stops)
-
-    async def test_add_job_object(self):
-        self.stops.add(Job(id="job-3"))
-        assert self.stops.pop_all() == {"job-3"}
-
-    async def test_add_rejects_non_string(self):
-        with self.assertRaises(TypeError):
-            self.stops.add(123)
-
-    async def test_remove(self):
-        self.stops.add("job-4")
-        self.stops.remove("job-4")
-        assert not len(self.stops)
-
-    async def test_remove_rejects_non_string(self):
-        with self.assertRaises(TypeError):
-            self.stops.remove(123)
-
-    async def test_repr(self):
-        self.stops.add("job-5")
-        assert "job-5" in repr(self.stops)
-
-    async def test_pop_all_empty(self):
-        assert self.stops.pop_all() == set()
-
-    async def test_state_persistence(self):
-        self.stops.add("persist-1")
-
-        JobsToStop._instance = None
-        stops2 = JobsToStop()
-
-        assert stops2.pop_all() == {"persist-1"}

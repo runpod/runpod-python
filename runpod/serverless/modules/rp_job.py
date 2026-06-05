@@ -26,6 +26,62 @@ log = RunPodLogger()
 job_progress = JobsProgress()
 
 
+def _job_stop_url() -> Optional[str]:
+    """
+    Prepare the URL for the worker's dedicated stop channel.
+
+    Derived from the job-take URL so it points at the same endpoint and worker.
+    Returns None when the job-take URL is not in the expected form.
+    """
+    base_url = JOB_GET_URL.split("?")[0]
+    if "/job-take/" not in base_url:
+        return None
+    return base_url.replace("/job-take/", "/job-stop/")
+
+
+async def get_stop_signals(session: ClientSession) -> List[str]:
+    """
+    Long-poll the dedicated stop channel for request ids the worker should stop.
+
+    The server holds the request open until a stop signal is available or the
+    poll times out, so cancellations and timeouts reach the worker without
+    waiting for the next heartbeat.
+
+    Returns:
+        A list of request ids to stop. Empty when the poll returned no signals.
+    """
+    stop_url = _job_stop_url()
+    if not stop_url:
+        return []
+
+    async with session.get(stop_url) as response:
+        if response.status == 204:
+            return []
+
+        if response.status == 429:
+            raise TooManyRequests(
+                response.request_info,
+                response.history,
+                status=response.status,
+                message=response.reason,
+            )
+
+        response.raise_for_status()
+
+        if response.content_type != "application/json":
+            return []
+
+        try:
+            payload = await response.json()
+        except (aiohttp.ContentTypeError, ValueError):
+            return []
+
+        if not isinstance(payload, dict):
+            return []
+
+        return [job_id for job_id in payload.get("jobsToStop", []) if isinstance(job_id, str)]
+
+
 def _job_get_url(batch_size: int = 1):
     """
     Prepare the URL for making a 'get' request to the serverless API (sls).

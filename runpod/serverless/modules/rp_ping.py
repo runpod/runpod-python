@@ -11,7 +11,7 @@ from urllib3.util.retry import Retry
 
 from runpod.http_client import SyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from runpod.serverless.modules.worker_state import WORKER_ID, JobsProgress, JobsToStop
+from runpod.serverless.modules.worker_state import WORKER_ID, JobsProgress
 from runpod.version import __version__ as runpod_version
 
 log = RunPodLogger()
@@ -108,37 +108,5 @@ class Heartbeat:
             log.debug(
                 f"Heartbeat Sent | URL: {result.url} | Status: {result.status_code}"
             )
-
-            self._handle_stop_signals(result)
         except requests.RequestException as err:
             log.error(f"Ping Request Error: {err}, attempting to restart ping.")
-
-    @staticmethod
-    def _handle_stop_signals(result):
-        """
-        Records any per-job stop signals returned by the Runpod server.
-
-        The server may include a `jobsToStop` list of request ids in the ping
-        response when a request expires or times out. Those ids are persisted
-        so the worker loop can stop the matching in-progress jobs.
-        """
-        if result.status_code != 200 or not result.content:
-            return
-
-        try:
-            payload = result.json()
-        except ValueError:
-            return
-
-        if not isinstance(payload, dict):
-            return
-
-        job_ids = payload.get("jobsToStop") or []
-        if not job_ids:
-            return
-
-        jobs_to_stop = JobsToStop()
-        for job_id in job_ids:
-            if isinstance(job_id, str):
-                jobs_to_stop.add(job_id)
-                log.debug(f"Heartbeat | Stop signal received for job {job_id}")

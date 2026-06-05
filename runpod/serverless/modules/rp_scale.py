@@ -10,9 +10,9 @@ import traceback
 from typing import Any, Dict, Set
 
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
-from .rp_job import get_job, handle_job
+from .rp_job import get_job, get_stop_signals, handle_job
 from .rp_logger import RunPodLogger
-from .worker_state import JobsProgress, JobsToStop, IS_LOCAL_TEST
+from .worker_state import JobsProgress, IS_LOCAL_TEST
 
 log = RunPodLogger()
 
@@ -47,11 +47,12 @@ class JobScaler:
         self.current_concurrency = 1
         self.config = config
         self.job_progress = JobsProgress()  # Cache the singleton instance
-        self.jobs_to_stop = JobsToStop()  # Cache the singleton instance
 
         # maps in-progress job ids to their running tasks so individual jobs
         # can be stopped without killing the whole worker
         self.jobs_tasks: Dict[str, asyncio.Task] = {}
+
+        self.stop_signals_fetcher = get_stop_signals
 
         self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
 
@@ -75,6 +76,9 @@ class JobScaler:
 
         if jobs_handler := self.config.get("jobs_handler"):
             self.jobs_handler = jobs_handler
+
+        if stop_signals_fetcher := self.config.get("stop_signals_fetcher"):
+            self.stop_signals_fetcher = stop_signals_fetcher
 
     async def set_scale(self):
         self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
@@ -133,7 +137,7 @@ class JobScaler:
             # Create tasks for getting and running jobs.
             jobtake_task = asyncio.create_task(self.get_jobs(session))
             jobrun_task = asyncio.create_task(self.run_jobs(session))
-            jobstop_task = asyncio.create_task(self.stop_jobs())
+            jobstop_task = asyncio.create_task(self.monitor_stop_signals(session))
 
             tasks = [jobtake_task, jobrun_task, jobstop_task]
 
@@ -259,18 +263,29 @@ class JobScaler:
         # Ensure all remaining tasks finish before stopping
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def stop_jobs(self):
+    async def monitor_stop_signals(self, session: ClientSession):
         """
-        Watches for stop signals and stops the matching in-progress jobs.
+        Long-polls the dedicated stop channel and stops signalled jobs.
 
-        Runs in an infinite loop while the worker is alive. Stop signals are
-        recorded by the heartbeat when the Runpod server flags a request to
-        be stopped (for example when it expires or times out).
+        Runs in an infinite loop while the worker is alive. The Runpod server
+        signals a request to be stopped (for example when it is cancelled or
+        times out) and this loop stops just that in-progress job, leaving the
+        worker's other jobs running.
         """
         while self.is_alive():
-            for job_id in self.jobs_to_stop.pop_all():
-                await self.stop_job(job_id)
-            await asyncio.sleep(1)
+            try:
+                job_ids = await self.stop_signals_fetcher(session)
+                for job_id in job_ids:
+                    await self.stop_job(job_id)
+            except TooManyRequests:
+                await asyncio.sleep(5)  # debounce
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                log.debug(f"JobScaler.monitor_stop_signals | Error: {error}.")
+                await asyncio.sleep(1)  # don't spin on persistent errors
+            finally:
+                await asyncio.sleep(0)
 
     async def stop_job(self, job_id: str) -> bool:
         """

@@ -281,7 +281,7 @@ async def test_stop_job_unknown_id_returns_false(job_scaler: PatchScaler):
 
 
 @pytest.mark.asyncio
-async def test_stop_jobs_consumes_stop_signals(job_scaler: PatchScaler):
+async def test_monitor_stop_signals_stops_jobs(job_scaler: PatchScaler):
     scaler = job_scaler.scaler
     stopped = []
 
@@ -289,18 +289,39 @@ async def test_stop_jobs_consumes_stop_signals(job_scaler: PatchScaler):
         stopped.append(job_id)
         return True
 
-    scaler.stop_job = fake_stop_job
-    scaler.jobs_to_stop.clear()
-    scaler.jobs_to_stop.add("job-a")
-    scaler.jobs_to_stop.add("job-b")
+    async def fetcher(_session):
+        if not stopped:
+            return ["job-a", "job-b"]
+        return []
 
-    stop_task = asyncio.create_task(scaler.stop_jobs())
+    scaler.stop_job = fake_stop_job
+    scaler.stop_signals_fetcher = fetcher
+
+    monitor_task = asyncio.create_task(scaler.monitor_stop_signals(AsyncMock()))
     await asyncio.sleep(0.05)
     scaler.kill_worker()
-    await asyncio.wait_for(stop_task, timeout=2)
+    await asyncio.wait_for(monitor_task, timeout=2)
 
     assert sorted(stopped) == ["job-a", "job-b"]
-    assert scaler.jobs_to_stop.pop_all() == set()
+
+
+@pytest.mark.asyncio
+async def test_monitor_stop_signals_survives_errors(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    calls = {"value": 0}
+
+    async def fetcher(_session):
+        calls["value"] += 1
+        raise RuntimeError("boom")
+
+    scaler.stop_signals_fetcher = fetcher
+
+    monitor_task = asyncio.create_task(scaler.monitor_stop_signals(AsyncMock()))
+    await asyncio.sleep(0.05)
+    scaler.kill_worker()
+    await asyncio.wait_for(monitor_task, timeout=2)
+
+    assert calls["value"] >= 1
 
 
 @pytest.mark.asyncio
