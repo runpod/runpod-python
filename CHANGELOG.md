@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.1](https://github.com/runpod/runpod-python/compare/v1.9.0...v1.9.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* fix config credential updates preserving profiles ([#474](https://github.com/runpod/runpod-python/issues/474)) ([7272cd7](https://github.com/runpod/runpod-python/commit/7272cd770fe243a95f3b42bbf1083a014a079835))
+* poll for jobs while tasks are running ([#473](https://github.com/runpod/runpod-python/issues/473)) ([13e25e7](https://github.com/runpod/runpod-python/commit/13e25e7c1b2beb0878b51fea2dc7a38c5d20b704))
+
+
+### Documentation
+
+* **serverless:** document missing fitness-check env vars ([#497](https://github.com/runpod/runpod-python/issues/497)) ([a786a89](https://github.com/runpod/runpod-python/commit/a786a892747160447ccc189402d3e866d60cf4b5))
+
 ## [1.9.0](https://github.com/runpod/runpod-python/compare/v1.8.2...v1.9.0) (2026-04-08)
 
 
