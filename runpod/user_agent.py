@@ -25,6 +25,9 @@ def construct_user_agent():
     if integration_method:
         ua_components.append(f"Integration/{integration_method}")
 
+    if os.getenv("CLAUDECODE") == "1":
+        ua_components.append("(via claude-code)")
+
     user_agent = " ".join(ua_components)
     return user_agent
 
