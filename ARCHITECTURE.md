@@ -1,6 +1,6 @@
 # Runpod Serverless Module Architecture
 
-**Last Updated**: 2025-12-13
+**Last Updated**: 2026-06-18
 **Module**: `runpod/serverless/`
 **Python Support**: 3.10-3.14
 
@@ -1467,4 +1467,4 @@ stateDiagram-v2
 ---
 
 **Document Version**: 1.0
-**Last Updated**: 2025-12-13
+**Last Updated**: 2026-06-18
