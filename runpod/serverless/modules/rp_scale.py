@@ -7,7 +7,7 @@ import asyncio
 import signal
 import sys
 import traceback
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
 from .rp_job import get_job, handle_job
@@ -219,30 +219,35 @@ class JobScaler:
 
         Runs the block in an infinite loop while the worker is alive or jobs queue is not empty.
         """
-        tasks = []  # Store the tasks for concurrent job processing
+        tasks: Set[asyncio.Task] = set()
 
+        last_task_count = 0
         while self.is_alive() or not self.jobs_queue.empty():
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
                 job = await self.jobs_queue.get()
-
                 # Create a new task for each job and add it to the task list
                 task = asyncio.create_task(self.handle_job(session, job))
-                tasks.append(task)
+                tasks.add(task)
 
             # Wait for any job to finish
             if tasks:
-                log.info(f"Jobs in progress: {len(tasks)}")
+                current_task_count = len(tasks)
+                if current_task_count != last_task_count:
+                    log.info(f"Jobs in progress: {current_task_count}")
+                    last_task_count = current_task_count
 
                 done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
+                    tasks, return_when=asyncio.FIRST_COMPLETED, timeout=0.1
                 )
 
                 # Remove completed tasks from the list
-                tasks = [t for t in tasks if t not in done]
+                tasks.difference_update(done)
 
-            # Yield control back to the event loop
-            await asyncio.sleep(0)
+            else:
+                # don't busy wait
+                await asyncio.sleep(0.1)
+
 
         # Ensure all remaining tasks finish before stopping
         await asyncio.gather(*tasks)
