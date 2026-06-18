@@ -70,7 +70,6 @@ dev = [
 ]
 test = [
     "asynctest",
-    "nest_asyncio",
     "faker",
     "pytest-asyncio",
     "pytest-cov",
