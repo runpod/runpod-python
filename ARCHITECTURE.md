@@ -2,7 +2,7 @@
 
 **Last Updated**: 2025-12-13
 **Module**: `runpod/serverless/`
-**Python Support**: 3.8-3.11
+**Python Support**: 3.10-3.14
 
 ---
 
