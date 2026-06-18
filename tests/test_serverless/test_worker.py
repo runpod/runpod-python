@@ -6,7 +6,7 @@ import argparse
 import os
 import sys
 from unittest import mock
-from unittest.mock import patch, mock_open, Mock, MagicMock
+from unittest.mock import patch, mock_open, Mock, MagicMock, AsyncMock
 
 from unittest import IsolatedAsyncioTestCase
 import nest_asyncio
@@ -181,6 +181,16 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
+
+        # Fitness checks probe real host resources (e.g. available memory) and
+        # exit the process when unmet; they have dedicated coverage in
+        # tests/test_serverless/test_modules/test_fitness/. Stub them here so
+        # run_worker tests are deterministic regardless of host state.
+        fitness_patcher = patch(
+            "runpod.serverless.worker.run_fitness_checks", new=AsyncMock()
+        )
+        fitness_patcher.start()
+        self.addCleanup(fitness_patcher.stop)
 
         # Set up the config
         self.config = {
