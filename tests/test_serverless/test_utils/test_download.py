@@ -95,10 +95,14 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
 
         self.assertEqual(len(downloaded_files), len(urls))
 
-        for index, url in enumerate(urls):
-            # Check that the url was called with SyncClientSession.get
-            self.assertIn(url, mock_get.call_args_list[index][0])
+        # Downloads run in parallel threads, so the order of get() calls is
+        # non-deterministic; assert the set of requested URLs instead of order.
+        requested_urls = {call.args[0] for call in mock_get.call_args_list}
+        self.assertEqual(requested_urls, set(urls))
 
+        # executor.map preserves input order in results, so downloaded_files
+        # still aligns positionally with urls.
+        for index in range(len(urls)):
             # Check that the file has the correct extension
             self.assertTrue(downloaded_files[index].endswith(".jpg"))
 
