@@ -6,23 +6,19 @@ import argparse
 import os
 import sys
 from unittest import mock
-from unittest.mock import patch, mock_open, Mock, MagicMock
-
-from unittest import IsolatedAsyncioTestCase
-import nest_asyncio
+from unittest import TestCase
+from unittest.mock import patch, mock_open, Mock, MagicMock, AsyncMock
 
 import runpod
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from runpod.serverless.modules.rp_scale import _handle_uncaught_exception
 from runpod.serverless import _signal_handler
 
-nest_asyncio.apply()
 
-
-class TestWorker(IsolatedAsyncioTestCase):
+class TestWorker(TestCase):
     """Tests for Runpod serverless worker."""
 
-    async def asyncSetUp(self):
+    def setUp(self):
         self.mock_handler = mock.Mock(return_value="test")
         self.mock_config = {
             "handler": self.mock_handler,
@@ -105,10 +101,10 @@ class TestWorker(IsolatedAsyncioTestCase):
         assert mock_logger.info.called
 
 
-class TestWorkerTestInput(IsolatedAsyncioTestCase):
+class TestWorkerTestInput(TestCase):
     """Tests for runpod | serverless| worker"""
 
-    async def asyncSetUp(self):
+    def setUp(self):
         self.mock_handler = Mock()
         self.mock_handler.return_value = {}
 
@@ -176,11 +172,21 @@ def test_generator_handler_exception():
         assert True, "Exception was caught as expected"
 
 
-class TestRunWorker(IsolatedAsyncioTestCase):
+class TestRunWorker(TestCase):
     """Tests for runpod | serverless| worker"""
 
-    async def asyncSetUp(self):
+    def setUp(self):
         os.environ["RUNPOD_WEBHOOK_GET_JOB"] = "https://test.com"
+
+        # run_worker() runs real fitness checks (GPU/memory probes) that exit the
+        # process when unmet; they have dedicated coverage in
+        # test_modules/test_fitness/. Stub them so these tests are deterministic
+        # regardless of host state.
+        fitness_patcher = patch(
+            "runpod.serverless.worker.run_fitness_checks", new=AsyncMock()
+        )
+        fitness_patcher.start()
+        self.addCleanup(fitness_patcher.stop)
 
         # Set up the config
         self.config = {
@@ -189,7 +195,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
             "rp_args": {"rp_debugger": True, "rp_log_level": "DEBUG"},
         }
 
-    async def asyncTearDown(self):
+    def tearDown(self):
         sys.excepthook = sys.__excepthook__
 
     @patch("runpod.serverless.modules.rp_scale.AsyncClientSession")
@@ -197,7 +203,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
     @patch("runpod.serverless.modules.rp_job.send_result")
-    async def test_run_worker(
+    def test_run_worker(
         self,
         mock_send_result,
         mock_stream_result,
@@ -228,7 +234,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
     @patch("runpod.serverless.modules.rp_job.send_result")
-    async def test_run_worker_generator_handler(
+    def test_run_worker_generator_handler(
         self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job
     ):
         """
@@ -258,7 +264,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
     @patch("runpod.serverless.modules.rp_job.send_result")
-    async def test_run_worker_generator_handler_exception(
+    def test_run_worker_generator_handler_exception(
         self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job
     ):
         """
@@ -303,7 +309,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
     @patch("runpod.serverless.modules.rp_job.send_result")
-    async def test_run_worker_generator_aggregate_handler(
+    def test_run_worker_generator_aggregate_handler(
         self, mock_send_result, mock_stream_result, mock_run_job, mock_get_job
     ):
         """
@@ -343,7 +349,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
     @patch("runpod.serverless.modules.rp_job.send_result")
-    async def test_run_worker_concurrency(
+    def test_run_worker_concurrency(
         self,
         mock_send_result,
         mock_stream_result,
@@ -420,7 +426,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
     @patch("runpod.serverless.modules.rp_job.run_job")
     @patch("runpod.serverless.modules.rp_job.stream_result")
     @patch("runpod.serverless.modules.rp_job.send_result")
-    async def test_run_worker_multi_processing(
+    def test_run_worker_multi_processing(
         self,
         mock_send_result,
         mock_stream_result,
@@ -480,7 +486,7 @@ class TestRunWorker(IsolatedAsyncioTestCase):
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.modules.rp_job.run_job")
-    async def test_run_worker_multi_processing_scaling_up(
+    def test_run_worker_multi_processing_scaling_up(
         self, mock_run_job, mock_get_job
     ):
         """
