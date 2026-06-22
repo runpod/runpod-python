@@ -157,7 +157,9 @@ class TestGetStopSignals(IsolatedAsyncioTestCase):
 
     def test_job_stop_url_derived_from_job_take(self):
         with patch("runpod.serverless.modules.rp_job.JOB_GET_URL", self.STOP_TAKE_URL):
-            assert rp_job._job_stop_url() == "http://mock.url/v2/ep/job-stop/pod"
+            assert (
+                rp_job._job_stop_url() == "http://mock.url/v2/ep/job-stop/pod?gpu=x"
+            )
 
     def test_job_stop_url_none_when_not_job_take(self):
         with patch("runpod.serverless.modules.rp_job.JOB_GET_URL", "http://mock.url/other"):
@@ -218,6 +220,58 @@ class TestGetStopSignals(IsolatedAsyncioTestCase):
             mock_session.get.return_value.__aenter__.return_value = response
             result = await rp_job.get_stop_signals(mock_session)
             self.assertEqual(result, [])
+
+    async def test_get_stop_signals_jobs_to_stop_not_list(self):
+        response = Mock(ClientResponse)
+        response.status = 200
+        response.content_type = "application/json"
+        response.json = make_mocked_coro(return_value={"jobsToStop": None})
+
+        with patch("aiohttp.ClientSession") as mock_session, patch(
+            "runpod.serverless.modules.rp_job.JOB_GET_URL", self.STOP_TAKE_URL
+        ):
+            mock_session.get.return_value.__aenter__.return_value = response
+            result = await rp_job.get_stop_signals(mock_session)
+            self.assertEqual(result, [])
+
+    async def test_get_stop_signals_invalid_content_type(self):
+        response = Mock(ClientResponse)
+        response.status = 200
+        response.content_type = "text/html"
+
+        with patch("aiohttp.ClientSession") as mock_session, patch(
+            "runpod.serverless.modules.rp_job.JOB_GET_URL", self.STOP_TAKE_URL
+        ):
+            mock_session.get.return_value.__aenter__.return_value = response
+            result = await rp_job.get_stop_signals(mock_session)
+            self.assertEqual(result, [])
+
+    async def test_get_stop_signals_parse_failure(self):
+        response = Mock(ClientResponse)
+        response.status = 200
+        response.content_type = "application/json"
+        response.json = make_mocked_coro(raise_exception=ValueError("bad json"))
+
+        with patch("aiohttp.ClientSession") as mock_session, patch(
+            "runpod.serverless.modules.rp_job.JOB_GET_URL", self.STOP_TAKE_URL
+        ):
+            mock_session.get.return_value.__aenter__.return_value = response
+            result = await rp_job.get_stop_signals(mock_session)
+            self.assertEqual(result, [])
+
+    async def test_get_stop_signals_server_error_raises(self):
+        response = Mock(ClientResponse)
+        response.status = 500
+        response.raise_for_status.side_effect = ClientResponseError(
+            Mock(), (), status=500, message="server error"
+        )
+
+        with patch("aiohttp.ClientSession") as mock_session, patch(
+            "runpod.serverless.modules.rp_job.JOB_GET_URL", self.STOP_TAKE_URL
+        ):
+            mock_session.get.return_value.__aenter__.return_value = response
+            with self.assertRaises(ClientResponseError):
+                await rp_job.get_stop_signals(mock_session)
 
 
 class TestRunJob(IsolatedAsyncioTestCase):

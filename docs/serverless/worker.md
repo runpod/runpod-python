@@ -60,9 +60,9 @@ For more complex operations where you are downloading files or making changes to
 
 ## Stopping Individual Jobs
 
-A worker can process more than one job concurrently. When a single request is cancelled, expires, or times out, the Runpod server signals the worker to stop just that request without affecting the worker's other in-progress jobs. The worker long-polls a dedicated stop channel so these signals arrive with low latency, and it cancels the task running the matching job, so a stopped job no longer consumes worker time.
+A worker can process more than one job concurrently. When a single request is cancelled, expires, or times out, the Runpod server signals the worker to stop just that request without affecting the worker's other in-progress jobs. The worker continuously polls a dedicated stop channel; the server is expected to hold each request open (long-poll) until a stop signal is available or the poll times out. When a signal arrives, the worker cancels the task running the matching job, so a stopped job no longer consumes worker time.
 
-No handler changes are required to support this. Handlers that hold resources can perform cleanup by catching `asyncio.CancelledError` in async handlers.
+No handler changes are required to support this. Async handlers that hold resources can perform cleanup by catching `asyncio.CancelledError`, but they **must re-raise** it after cleaning up. Swallowing the cancellation makes the worker report the job as completed instead of stopped.
 
 ## See Also
 

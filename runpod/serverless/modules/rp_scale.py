@@ -10,7 +10,7 @@ import traceback
 from typing import Any, Dict, Set
 
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
-from .rp_job import get_job, get_stop_signals, handle_job
+from .rp_job import _job_stop_url, get_job, get_stop_signals, handle_job
 from .rp_logger import RunPodLogger
 from .worker_state import JobsProgress, IS_LOCAL_TEST
 
@@ -53,6 +53,7 @@ class JobScaler:
         self.jobs_tasks: Dict[str, asyncio.Task] = {}
 
         self.stop_signals_fetcher = get_stop_signals
+        self.stop_signals_fetcher_timeout = 90
 
         self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
 
@@ -79,6 +80,9 @@ class JobScaler:
 
         if stop_signals_fetcher := self.config.get("stop_signals_fetcher"):
             self.stop_signals_fetcher = stop_signals_fetcher
+
+        if stop_signals_fetcher_timeout := self.config.get("stop_signals_fetcher_timeout"):
+            self.stop_signals_fetcher_timeout = stop_signals_fetcher_timeout
 
     async def set_scale(self):
         self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
@@ -134,14 +138,14 @@ class JobScaler:
     async def run(self):
         # Create an async session that will be closed when the worker is killed.
         async with AsyncClientSession() as session:
-            # Create tasks for getting and running jobs.
+            # Create the worker's concurrent loops.
             jobtake_task = asyncio.create_task(self.get_jobs(session))
             jobrun_task = asyncio.create_task(self.run_jobs(session))
             jobstop_task = asyncio.create_task(self.monitor_stop_signals(session))
 
             tasks = [jobtake_task, jobrun_task, jobstop_task]
 
-            # Concurrently run both tasks and wait for both to finish.
+            # Run the worker's concurrent loops until shutdown.
             await asyncio.gather(*tasks)
 
     def is_alive(self):
@@ -260,8 +264,13 @@ class JobScaler:
                 await asyncio.sleep(0.1)
 
 
-        # Ensure all remaining tasks finish before stopping
-        await asyncio.gather(*tasks, return_exceptions=True)
+        # Ensure all remaining tasks finish before stopping. Stopped jobs raise
+        # CancelledError during this drain, which is expected, but a genuine
+        # handler error must not be silently discarded.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                log.error(f"JobScaler.run_jobs | Task failed during shutdown drain: {result}")
 
     async def monitor_stop_signals(self, session: ClientSession):
         """
@@ -272,17 +281,39 @@ class JobScaler:
         times out) and this loop stops just that in-progress job, leaving the
         worker's other jobs running.
         """
+        if self.stop_signals_fetcher is get_stop_signals and _job_stop_url() is None:
+            log.warn(
+                "JobScaler.monitor_stop_signals | Stop channel could not be derived "
+                "from the job-take URL; per-job stop is disabled for this worker."
+            )
+            return
+
         while self.is_alive():
             try:
-                job_ids = await self.stop_signals_fetcher(session)
+                # Bound the long-poll so shutdown is not blocked by the shared
+                # session's much longer default timeout.
+                job_ids = await asyncio.wait_for(
+                    self.stop_signals_fetcher(session),
+                    timeout=self.stop_signals_fetcher_timeout,
+                )
                 for job_id in job_ids:
                     await self.stop_job(job_id)
+
+                if not job_ids:
+                    # floor delay so the loop can't busy-spin when the server
+                    # returns immediately instead of holding the poll open
+                    await asyncio.sleep(1)
             except TooManyRequests:
                 await asyncio.sleep(5)  # debounce
             except asyncio.CancelledError:
-                raise
+                log.debug("JobScaler.monitor_stop_signals | Request was cancelled.")
+                raise  # CancelledError is a BaseException
+            except asyncio.TimeoutError:
+                log.debug("JobScaler.monitor_stop_signals | Stop poll timed out. Retrying.")
             except Exception as error:
-                log.debug(f"JobScaler.monitor_stop_signals | Error: {error}.")
+                log.error(
+                    f"JobScaler.monitor_stop_signals | Error Type: {type(error).__name__} | Error Message: {str(error)}"
+                )
                 await asyncio.sleep(1)  # don't spin on persistent errors
             finally:
                 await asyncio.sleep(0)
@@ -319,12 +350,12 @@ class JobScaler:
             if self.config.get("refresh_worker", False):
                 self.kill_worker()
 
-        except Exception as err:
-            log.error(f"Error handling job: {err}", job["id"])
-            raise err
-
         except asyncio.CancelledError:
             log.info("Job stopped.", job["id"])
+            raise  # CancelledError is a BaseException
+
+        except Exception as err:
+            log.error(f"Error handling job: {err}", job["id"])
             raise
 
         finally:

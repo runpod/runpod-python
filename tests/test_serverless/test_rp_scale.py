@@ -1,9 +1,10 @@
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 from dataclasses import dataclass
 
 import pytest
 
+from runpod.http_client import TooManyRequests
 from runpod.serverless.modules import rp_scale
 
 
@@ -322,6 +323,95 @@ async def test_monitor_stop_signals_survives_errors(job_scaler: PatchScaler):
     await asyncio.wait_for(monitor_task, timeout=2)
 
     assert calls["value"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_monitor_stop_signals_real_stop_job_cancels_task(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    started = asyncio.Event()
+    cancelled = []
+
+    async def long_task():
+        started.set()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+
+    task = asyncio.create_task(long_task())
+    await asyncio.wait_for(started.wait(), timeout=2)
+    scaler.jobs_tasks["job-x"] = task
+
+    sent = {"value": False}
+
+    async def fetcher(_session):
+        if not sent["value"]:
+            sent["value"] = True
+            return ["job-x"]
+        return []
+
+    scaler.stop_signals_fetcher = fetcher
+
+    monitor_task = asyncio.create_task(scaler.monitor_stop_signals(AsyncMock()))
+    await asyncio.sleep(0.05)
+    scaler.kill_worker()
+    await asyncio.wait_for(monitor_task, timeout=2)
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert task.cancelled()
+    assert cancelled == [True]
+
+
+@pytest.mark.asyncio
+async def test_monitor_stop_signals_debounces_too_many_requests(
+    job_scaler: PatchScaler, monkeypatch
+):
+    scaler = job_scaler.scaler
+    sleeps = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+        await real_sleep(0)
+
+    async def fetcher(_session):
+        raise TooManyRequests(Mock(), (), status=429, message="rate limited")
+
+    scaler.stop_signals_fetcher = fetcher
+    monkeypatch.setattr(rp_scale.asyncio, "sleep", fake_sleep)
+
+    monitor_task = asyncio.create_task(scaler.monitor_stop_signals(AsyncMock()))
+    await real_sleep(0.05)
+    scaler.kill_worker()
+    await asyncio.wait_for(monitor_task, timeout=2)
+
+    assert 5 in sleeps
+
+
+@pytest.mark.asyncio
+async def test_monitor_stop_signals_reraises_cancelled(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+
+    async def fetcher(_session):
+        raise asyncio.CancelledError()
+
+    scaler.stop_signals_fetcher = fetcher
+
+    monitor_task = asyncio.create_task(scaler.monitor_stop_signals(AsyncMock()))
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(monitor_task, timeout=2)
+
+
+@pytest.mark.asyncio
+async def test_monitor_stop_signals_disabled_without_stop_url(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    scaler.stop_signals_fetcher = rp_scale.get_stop_signals
+
+    with patch.object(rp_scale, "_job_stop_url", return_value=None):
+        await asyncio.wait_for(scaler.monitor_stop_signals(AsyncMock()), timeout=1)
 
 
 @pytest.mark.asyncio
