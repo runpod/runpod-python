@@ -44,8 +44,17 @@ class RunPodClient:
             raise RuntimeError(API_KEY_NOT_SET_MSG)
 
         self.rp_session = requests.Session()
-        retries = Retry(total=5, backoff_factor=1, status_forcelist=[408, 429])
-        self.rp_session.mount("http://", HTTPAdapter(max_retries=retries))
+        retries = Retry(
+            total=5,
+            backoff_factor=1,
+            status_forcelist=[408, 429, 500, 502, 503, 504],
+            allowed_methods=frozenset(["GET", "POST"]),
+        )
+        adapter = HTTPAdapter(max_retries=retries)
+        # The production API is served over https; mount on both schemes so the
+        # retry/backoff policy actually applies to real traffic.
+        self.rp_session.mount("https://", adapter)
+        self.rp_session.mount("http://", adapter)
 
         self.headers = {
             "Content-Type": "application/json",
