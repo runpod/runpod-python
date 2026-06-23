@@ -3,6 +3,7 @@
 import os
 import platform
 
+from runpod import agent
 from runpod.version import __version__ as runpod_version
 
 
@@ -25,8 +26,9 @@ def construct_user_agent():
     if integration_method:
         ua_components.append(f"Integration/{integration_method}")
 
-    if os.getenv("CLAUDECODE") == "1":
-        ua_components.append("(via claude-code)")
+    agent_id = agent.detect()
+    if agent_id:
+        ua_components.append(f"(via {agent_id})")
 
     user_agent = " ".join(ua_components)
     return user_agent
