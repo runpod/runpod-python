@@ -49,6 +49,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 runpod = [
+    "py.typed",
     "serverless/binaries/gpu_test",
     "serverless/binaries/README.md",
 ]
@@ -68,7 +69,6 @@ dev = [
     "twine>=6.1.0",
 ]
 test = [
-    "asynctest",
     "nest_asyncio",
     "faker",
     "pytest-asyncio",
