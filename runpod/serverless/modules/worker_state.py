@@ -2,14 +2,11 @@
 Handles getting stuff from environment variables and updating the global state like job id.
 """
 
+import multiprocessing
 import os
 import time
 import uuid
-import pickle
-import tempfile
 from typing import Any, Dict, Optional, Set
-
-from filelock import FileLock
 
 from .rp_logger import RunPodLogger
 
@@ -19,6 +16,8 @@ log = RunPodLogger()
 REF_COUNT_ZERO = time.perf_counter()  # Used for benchmarking with the debugger.
 
 WORKER_ID = os.environ.get("RUNPOD_POD_ID", str(uuid.uuid4()))
+
+PING_MIRROR_CAPACITY = 65536  # bytes; ample headroom for a job-id snapshot
 
 
 # ----------------------------------- Flags ---------------------------------- #
@@ -63,87 +62,32 @@ class Job:
 
 
 # ---------------------------------------------------------------------------- #
-#                                    Tracker                                   #
+#                                    Tracker                                    #
 # ---------------------------------------------------------------------------- #
 class JobsProgress(Set[Job]):
-    """Track the state of current jobs in progress with persistent state."""
+    """Track the state of current jobs in progress (in-memory, per process)."""
 
     _instance = None
-    _STATE_DIR = os.getcwd()
-    _STATE_FILE = os.path.join(_STATE_DIR, ".runpod_jobs.pkl")
 
     def __new__(cls):
         if JobsProgress._instance is None:
-            os.makedirs(cls._STATE_DIR, exist_ok=True)
             JobsProgress._instance = set.__new__(cls)
-            # Initialize as empty set before loading state
             set.__init__(JobsProgress._instance)
-            JobsProgress._instance._load_state()
         return JobsProgress._instance
 
     def __init__(self):
-        # This should never clear data in a singleton
-        # Don't call parent __init__ as it would clear the set
+        # Singleton: never re-initialize, it would clear the set.
         pass
-    
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
-
-    def _load_state(self):
-        """Load jobs state from pickle file with file locking."""
-        try:
-            if (
-                os.path.exists(self._STATE_FILE)
-                and os.path.getsize(self._STATE_FILE) > 0
-            ):
-                with FileLock(self._STATE_FILE + '.lock'):
-                    with open(self._STATE_FILE, "rb") as f:
-                        try:
-                            loaded_jobs = pickle.load(f)
-                            # Clear current state and add loaded jobs
-                            super().clear()
-                            for job in loaded_jobs:
-                                set.add(
-                                    self, job
-                                )  # Use set.add to avoid triggering _save_state
-
-                        except (EOFError, pickle.UnpicklingError):
-                            # Handle empty or corrupted file
-                            log.debug(
-                                "JobsProgress: Failed to load state file, starting with empty state"
-                            )
-                            pass
-
-        except FileNotFoundError:
-            log.debug("JobsProgress: No state file found, starting with empty state")
-            pass
-
-    def _save_state(self):
-        """Save jobs state to pickle file with atomic write and file locking."""
-        try:
-            # Use temporary file for atomic write
-            with FileLock(self._STATE_FILE + '.lock'):
-                with tempfile.NamedTemporaryFile(
-                    dir=self._STATE_DIR, delete=False, mode="wb"
-                ) as temp_f:
-                    pickle.dump(set(self), temp_f)
-                
-                # Atomically replace the state file
-                os.replace(temp_f.name, self._STATE_FILE)
-        except Exception as e:
-            log.error(f"Failed to save job state: {e}")
-
-    def clear(self) -> None:
-        super().clear()
-        self._save_state()
 
     def add(self, element: Any):
         """
         Adds a Job object to the set.
 
-        If the added element is a string, then `Job(id=element)` is added
-        
-        If the added element is a dict, that `Job(**element)` is added
+        If the added element is a string, then `Job(id=element)` is added.
+        If the added element is a dict, then `Job(**element)` is added.
         """
         if isinstance(element, str):
             element = Job(id=element)
@@ -154,17 +98,14 @@ class JobsProgress(Set[Job]):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
-        result = super().add(element)
-        self._save_state()
-        return result
+        return super().add(element)
 
     def remove(self, element: Any):
         """
         Removes a Job object from the set.
 
-        If the element is a string, then `Job(id=element)` is removed
-        
-        If the element is a dict, then `Job(**element)` is removed
+        If the element is a string, then `Job(id=element)` is removed.
+        If the element is a dict, then `Job(**element)` is removed.
         """
         if isinstance(element, str):
             element = Job(id=element)
@@ -175,9 +116,7 @@ class JobsProgress(Set[Job]):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
-        result = super().discard(element)
-        self._save_state()
-        return result
+        return super().discard(element)
 
     def get(self, element: Any) -> Optional[Job]:
         if isinstance(element, str):
@@ -193,10 +132,8 @@ class JobsProgress(Set[Job]):
 
     def get_job_list(self) -> Optional[str]:
         """
-        Returns the list of job IDs as comma-separated string.
+        Returns the list of job IDs as a comma-separated string, or None if empty.
         """
-        self._load_state()
-
         if not len(self):
             return None
 
@@ -207,3 +144,53 @@ class JobsProgress(Set[Job]):
         Returns the number of jobs.
         """
         return len(self)
+
+
+# ---------------------------------------------------------------------------- #
+#                              Ping Job Mirror                                  #
+# ---------------------------------------------------------------------------- #
+class PingJobMirror:
+    """
+    One-way snapshot of in-progress job ids from the worker (main) process to
+    the separate ping process.
+
+    Backed by a fixed-size shared-memory buffer created in the main process and
+    passed to the ping process via ``Process(args=...)``. It lives only in this
+    worker's own process tree, so it cannot be shared across workers and never
+    touches the filesystem. All operations are best-effort and never raise into
+    the caller (a failure here must not break job processing or kill the ping).
+    """
+
+    def __init__(self, capacity: int = PING_MIRROR_CAPACITY, ctx=None):
+        ctx = ctx or multiprocessing
+        self._capacity = capacity
+        self._buffer = ctx.Array("c", capacity)  # SynchronizedString with .get_lock()
+
+    def set(self, job_ids: Optional[str]) -> None:
+        """Write the current job-id snapshot. Best-effort; never raises."""
+        try:
+            data = (job_ids or "").encode("utf-8")
+            limit = self._capacity - 1  # reserve a byte for the NUL terminator
+            if len(data) > limit:
+                data = data[:limit]
+                cut = data.rfind(b",")
+                if cut != -1:
+                    data = data[:cut]
+                log.warn(
+                    f"PingJobMirror: job-id snapshot exceeded {limit} bytes; truncated"
+                )
+            with self._buffer.get_lock():
+                self._buffer.value = data
+        except Exception as err:  # never break job processing
+            log.error(f"PingJobMirror.set failed: {err}")
+
+    def get(self) -> Optional[str]:
+        """Read the current job-id snapshot. Best-effort; never raises."""
+        try:
+            with self._buffer.get_lock():
+                data = self._buffer.value
+            text = data.decode("utf-8")
+            return text or None
+        except Exception as err:  # never kill the ping loop
+            log.debug(f"PingJobMirror.get failed: {err}")
+            return None
