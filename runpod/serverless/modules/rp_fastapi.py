@@ -17,7 +17,7 @@ from ...version import __version__ as runpod_version
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
 from .rp_ping import Heartbeat
-from .worker_state import JobsProgress
+from .worker_state import JobsProgress, PingJobMirror
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
 
@@ -184,8 +184,14 @@ class WorkerAPI:
         2. Initializes the FastAPI web server.
         3. Sets the handler for processing jobs.
         """
-        # Start the heartbeat thread.
-        heartbeat.start_ping()
+        # One per-worker mirror so the separate ping process reports the
+        # in-progress job ids tracked here. Attaching to job_list means every
+        # add/remove syncs it automatically.
+        mirror = PingJobMirror()
+        job_list.set_mirror(mirror)
+
+        # Start the heartbeat process.
+        heartbeat.start_ping(mirror)
 
         self.config = config
 

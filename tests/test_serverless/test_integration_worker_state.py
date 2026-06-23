@@ -67,6 +67,50 @@ class TestJobsProgressInMemory:
         assert worker_b.get_job_list() is None
 
 
+class TestJobsProgressMirrorSync:
+    """An attached mirror tracks the in-progress set on every mutation."""
+
+    def setup_method(self):
+        _reset_singleton()
+
+    def teardown_method(self):
+        _reset_singleton()
+
+    def test_set_mirror_pushes_current_state(self):
+        jp = JobsProgress()
+        jp.add("job_1")
+
+        mirror = PingJobMirror()
+        jp.set_mirror(mirror)  # initial push of existing state
+        assert "job_1" in mirror.get()
+
+    def test_add_and_remove_sync_the_mirror(self):
+        jp = JobsProgress()
+        mirror = PingJobMirror()
+        jp.set_mirror(mirror)
+
+        jp.add("job_1")
+        assert "job_1" in mirror.get()
+
+        jp.remove("job_1")
+        assert mirror.get() is None
+
+    def test_clear_syncs_the_mirror(self):
+        jp = JobsProgress()
+        mirror = PingJobMirror()
+        jp.set_mirror(mirror)
+
+        jp.add("job_1")
+        jp.clear()
+        assert mirror.get() is None
+
+    def test_mutation_without_mirror_does_not_raise(self):
+        jp = JobsProgress()  # no mirror attached
+        jp.add("job_1")
+        jp.remove("job_1")
+        jp.clear()
+
+
 class TestPingJobMirror:
     def test_set_get_roundtrip(self):
         mirror = PingJobMirror()

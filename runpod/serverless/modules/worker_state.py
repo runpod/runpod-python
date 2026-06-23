@@ -73,6 +73,9 @@ class JobsProgress(Set[Job]):
         if JobsProgress._instance is None:
             JobsProgress._instance = set.__new__(cls)
             set.__init__(JobsProgress._instance)
+            # One-way snapshot to the ping process; attached in the main
+            # process via set_mirror(). Stays None off-Runpod and in tests.
+            JobsProgress._instance._mirror = None
         return JobsProgress._instance
 
     def __init__(self):
@@ -81,6 +84,21 @@ class JobsProgress(Set[Job]):
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>: {self.get_job_list()}"
+
+    def set_mirror(self, mirror) -> None:
+        """Attach a PingJobMirror that mirrors the in-progress job ids to the
+        ping process. Every add/remove/clear then pushes the snapshot to it."""
+        self._mirror = mirror
+        self._notify_mirror()
+
+    def _notify_mirror(self) -> None:
+        """Push the current job-id snapshot to the attached mirror, if any."""
+        if self._mirror is not None:
+            self._mirror.set(self.get_job_list())
+
+    def clear(self) -> None:
+        super().clear()
+        self._notify_mirror()
 
     def add(self, element: Any):
         """
@@ -98,7 +116,9 @@ class JobsProgress(Set[Job]):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be added to JobsProgress.")
 
-        return super().add(element)
+        result = super().add(element)
+        self._notify_mirror()
+        return result
 
     def remove(self, element: Any):
         """
@@ -116,7 +136,9 @@ class JobsProgress(Set[Job]):
         if not isinstance(element, Job):
             raise TypeError("Only Job objects can be removed from JobsProgress.")
 
-        return super().discard(element)
+        result = super().discard(element)
+        self._notify_mirror()
+        return result
 
     def get(self, element: Any) -> Optional[Job]:
         if isinstance(element, str):
