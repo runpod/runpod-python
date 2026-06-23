@@ -77,7 +77,7 @@ def detect():
     """
     for agent_id, env_vars in HARNESSES:
         for env in env_vars:
-            if os.getenv(env):
+            if os.getenv(env, "").strip():
                 return agent_id
 
     for env in STANDARD_ENV_VARS:

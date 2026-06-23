@@ -26,9 +26,9 @@ def construct_user_agent():
     if integration_method:
         ua_components.append(f"Integration/{integration_method}")
 
-    agent_id = agent.detect()
-    if agent_id:
-        ua_components.append(f"(via {agent_id})")
+    agent_suffix = agent.suffix()
+    if agent_suffix:
+        ua_components.append(agent_suffix.strip())
 
     user_agent = " ".join(ua_components)
     return user_agent

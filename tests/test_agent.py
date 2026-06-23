@@ -83,6 +83,13 @@ class TestDetect(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             self.assertEqual(agent.detect(), "")
 
+    def test_whitespace_value_not_detected(self):
+        """An env var set to whitespace only does not count as detection."""
+        env = _clean_env()
+        env["CLAUDECODE"] = "   "
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(agent.detect(), "")
+
     def test_ai_agent_generic_fallback(self):
         """The generic AI_AGENT signal is used when no harness matches."""
         env = _clean_env()
