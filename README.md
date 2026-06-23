@@ -63,7 +63,7 @@ cd runpod-python
 pip install -e .
 ```
 
-*Python 3.8 or higher is required to use the latest version of this package.*
+*Python 3.10 or higher is required to use the latest version of this package.*
 
 ## ⚡ | Serverless Worker (SDK)
 
