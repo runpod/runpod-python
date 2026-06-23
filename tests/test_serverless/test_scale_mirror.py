@@ -51,3 +51,29 @@ def test_occupancy_counts_single_in_flight_job():
     scaler.job_progress.add("job_1")
     assert scaler.current_occupancy() == 1
     assert scaler.current_concurrency - scaler.current_occupancy() == 0
+
+
+def test_run_worker_shares_one_mirror():
+    """run_worker creates one mirror and passes it to both ping and scaler."""
+    import runpod.serverless.worker as worker_mod
+    from unittest.mock import MagicMock, patch
+
+    captured = {}
+
+    def fake_job_scaler(config, job_mirror=None):
+        captured["scaler_mirror"] = job_mirror
+        scaler = MagicMock()
+        scaler.start = MagicMock()
+        return scaler
+
+    def fake_start_ping(mirror=None, test=False):
+        captured["ping_mirror"] = mirror
+
+    with patch.object(worker_mod, "run_fitness_checks", return_value=None), \
+         patch("asyncio.run", lambda *a, **k: None), \
+         patch.object(worker_mod.heartbeat, "start_ping", side_effect=fake_start_ping), \
+         patch.object(worker_mod.rp_scale, "JobScaler", side_effect=fake_job_scaler):
+        worker_mod.run_worker({"handler": lambda x: x})
+
+    assert captured["ping_mirror"] is not None
+    assert captured["ping_mirror"] is captured["scaler_mirror"]
