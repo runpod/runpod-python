@@ -42,11 +42,12 @@ class JobScaler:
     Job Scaler. This class is responsible for scaling the number of concurrent requests.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], job_mirror=None):
         self._shutdown_event = asyncio.Event()
         self.current_concurrency = 1
         self.config = config
         self.job_progress = JobsProgress()  # Cache the singleton instance
+        self.job_mirror = job_mirror  # one-way snapshot to the ping process
 
         self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
 
@@ -156,6 +157,11 @@ class JobScaler:
         )
         return current_progress_count + current_queue_count
 
+    def _sync_mirror(self) -> None:
+        """Push the current in-progress job-id snapshot to the ping process."""
+        if self.job_mirror is not None:
+            self.job_mirror.set(self.job_progress.get_job_list())
+
     async def get_jobs(self, session: ClientSession):
         """
         Retrieve multiple jobs from the server in batches using blocking requests.
@@ -189,6 +195,7 @@ class JobScaler:
                 for job in acquired_jobs:
                     await self.jobs_queue.put(job)
                     self.job_progress.add(job)
+                    self._sync_mirror()
                     log.debug("Job Queued", job["id"])
 
                 log.info(f"Jobs in queue: {self.jobs_queue.qsize()}")
@@ -274,5 +281,6 @@ class JobScaler:
 
             # Job is no longer in progress
             self.job_progress.remove(job)
+            self._sync_mirror()
 
             log.debug("Finished Job", job["id"])
