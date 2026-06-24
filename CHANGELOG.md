@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.10.0](https://github.com/runpod/runpod-python/compare/v1.9.1...v1.10.0) (2026-06-24)
+
+
+### Features
+
+* add agent source tracking to user-agent header ([#508](https://github.com/runpod/runpod-python/issues/508)) ([92239c8](https://github.com/runpod/runpod-python/commit/92239c817a64dada82b578e3447c1b4015afef9a))
+* add per-job stop capability to serverless worker ([#510](https://github.com/runpod/runpod-python/issues/510)) ([21c4786](https://github.com/runpod/runpod-python/commit/21c4786847bd2e5fd2ca6d15f85737203a3044a1))
+* detect all coding agents in user-agent, not just Claude Code ([#519](https://github.com/runpod/runpod-python/issues/519)) ([d14c67c](https://github.com/runpod/runpod-python/commit/d14c67c4e82963e61396b58a11dfd7046abbdde0))
+* support Python 3.10-3.14, drop EOL 3.8/3.9 ([#512](https://github.com/runpod/runpod-python/issues/512)) ([8e9d94e](https://github.com/runpod/runpod-python/commit/8e9d94e69105859c159e70fa9ae6bbf094297a2e))
+
+
+### Bug Fixes
+
+* **deps:** bump cryptography floor to &gt;=48.0.1 for OpenSSL fix ([#516](https://github.com/runpod/runpod-python/issues/516)) ([18c6841](https://github.com/runpod/runpod-python/commit/18c6841f77388e9f48f0b82d14e32bc6a0e26f7c)), closes [#511](https://github.com/runpod/runpod-python/issues/511)
+
 ## [1.9.1](https://github.com/runpod/runpod-python/compare/v1.9.0...v1.9.1) (2026-05-05)
 
 
