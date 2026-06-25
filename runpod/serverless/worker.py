@@ -39,8 +39,14 @@ def run_worker(config: Dict[str, Any]) -> None:
     # Run fitness checks before starting worker (production only)
     asyncio.run(run_fitness_checks())
 
+    # One per-worker mirror: the job tracker writes it, the ping process reads
+    # it. Attaching to JobsProgress means every add/remove syncs automatically.
+    from runpod.serverless.modules.worker_state import JobsProgress, PingJobMirror
+    mirror = PingJobMirror()
+    JobsProgress().set_mirror(mirror)
+
     # Start pinging Runpod to show that the worker is alive.
-    heartbeat.start_ping()
+    heartbeat.start_ping(mirror)
 
     # Create a JobScaler responsible for adjusting the concurrency
     job_scaler = rp_scale.JobScaler(config)
