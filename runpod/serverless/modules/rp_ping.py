@@ -11,7 +11,7 @@ from urllib3.util.retry import Retry
 
 from runpod.http_client import SyncClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
-from runpod.serverless.modules.worker_state import WORKER_ID, JobsProgress
+from runpod.serverless.modules.worker_state import WORKER_ID
 from runpod.version import __version__ as runpod_version
 
 log = RunPodLogger()
@@ -29,6 +29,9 @@ class Heartbeat:
         self.PING_URL = os.environ.get("RUNPOD_WEBHOOK_PING", "PING_NOT_SET")
         self.PING_URL = self.PING_URL.replace("$RUNPOD_POD_ID", WORKER_ID)
         self.PING_INTERVAL = int(os.environ.get("RUNPOD_PING_INTERVAL", 10000)) // 1000
+
+        # In-progress job-id snapshot, injected by the main process at start.
+        self._mirror = None
 
         # Create a new HTTP session
         self._session = SyncClientSession()
@@ -52,15 +55,16 @@ class Heartbeat:
         self._session.mount("https://", adapter)
 
     @staticmethod
-    def process_loop(test=False):
+    def process_loop(mirror=None, test=False):
         """
         Static helper to run the ping loop in a separate process.
         Creates a new Heartbeat instance to avoid pickling issues.
         """
         hb = Heartbeat()
+        hb._mirror = mirror
         hb.ping_loop(test)
 
-    def start_ping(self, test=False):
+    def start_ping(self, mirror=None, test=False):
         """
         Sends heartbeat pings to the Runpod server in a separate process.
         """
@@ -77,7 +81,7 @@ class Heartbeat:
             return
 
         if not Heartbeat._process_started:
-            process = Process(target=Heartbeat.process_loop, args=(test,))
+            process = Process(target=Heartbeat.process_loop, args=(mirror, test))
             process.daemon = True
             process.start()
             Heartbeat._process_started = True
@@ -96,8 +100,7 @@ class Heartbeat:
         """
         Sends a heartbeat to the Runpod server.
         """
-        jobs = JobsProgress()  # Get the singleton instance
-        job_ids = jobs.get_job_list()
+        job_ids = self._mirror.get() if self._mirror is not None else None
         ping_params = {"job_id": job_ids, "runpod_version": runpod_version}
 
         try:
