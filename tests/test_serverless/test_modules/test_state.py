@@ -160,66 +160,45 @@ class TestJobsProgress(unittest.IsolatedAsyncioTestCase):
         # test job count contention when adding and removing jobs in parallel
         pass
 
-    async def test_state_persistence(self):
-        """Test state persistence across multiple JobsProgress instances"""
-        # First instance: add some jobs
+    async def test_state_not_shared_across_instances(self):
+        """Job state is in-memory and per-process: a fresh instance (a new
+        worker) must not inherit another instance's jobs. Regression guard for
+        #432, where shared-file persistence funneled all jobs to one worker."""
         jobs1 = JobsProgress()
         jobs1.clear()  # Ensure clean state
-        
-        job1 = {"id": "test_persistent_1"}
-        job2 = {"id": "test_persistent_2"}
-        
-        jobs1.add(job1)
-        jobs1.add(job2)
-        
-        # Reset singleton to simulate process restart
+
+        jobs1.add({"id": "test_persistent_1"})
+        jobs1.add({"id": "test_persistent_2"})
+
+        # Reset singleton to simulate a separate worker process.
         JobsProgress._instance = None
         jobs2 = JobsProgress()
-        
-        # Debug: check jobs2 right after creation
-        print(f"DEBUG: jobs2 length right after creation: {len(jobs2)}")
-        print(f"DEBUG: jobs2 contents right after creation: {list(jobs2)}")
-        
-        # Check that jobs were persisted
-        assert jobs2.get_job_count() == 2, "Jobs should be persisted across instances"
-        
-        # Verify specific jobs are present
-        assert jobs2.get("test_persistent_1") is not None, "First job should be retrievable"
-        assert jobs2.get("test_persistent_2") is not None, "Second job should be retrievable"
 
-    async def test_state_persistence_empty(self):
-        """Test state persistence when no jobs are present"""
-        # Clear any existing state
+        # The new instance starts empty; nothing is persisted across instances.
+        assert jobs2.get_job_count() == 0, "Jobs must not persist across instances"
+        assert jobs2.get_job_list() is None, "Job list must be None for a fresh instance"
+
+    async def test_fresh_instance_is_empty(self):
+        """A fresh JobsProgress instance has no jobs."""
         jobs1 = JobsProgress()
         jobs1.clear()
-        
-        # Reset singleton to simulate process restart
+
+        # Reset singleton to simulate a separate worker process.
         JobsProgress._instance = None
         jobs2 = JobsProgress()
-        
-        # Check that no jobs are present
-        assert jobs2.get_job_count() == 0, "No jobs should be present after clear"
+
+        assert jobs2.get_job_count() == 0, "No jobs should be present"
         assert jobs2.get_job_list() is None, "Job list should be None when empty"
 
-    async def test_file_persistence_after_clear(self):
-        """Verify that clearing the jobs results in an empty persistent state"""
-        # Add some jobs
-        jobs1 = JobsProgress()
-        jobs1.clear()  # Ensure clean state
-        
-        job1 = {"id": "to_be_cleared_1"}
-        job2 = {"id": "to_be_cleared_2"}
-        
-        jobs1.add(job1)
-        jobs1.add(job2)
-        
-        # Clear the jobs
-        jobs1.clear()
-        
-        # Reset singleton to simulate process restart
-        JobsProgress._instance = None
-        jobs2 = JobsProgress()
-        
-        # Verify that no jobs remain
-        assert jobs2.get_job_count() == 0, "Jobs should be cleared in persistent state"
-        assert jobs2.get_job_list() is None, "Job list should be None after clear"
+    async def test_clear_empties_the_set(self):
+        """Clearing removes all tracked jobs."""
+        jobs = JobsProgress()
+        jobs.clear()
+
+        jobs.add({"id": "to_be_cleared_1"})
+        jobs.add({"id": "to_be_cleared_2"})
+
+        jobs.clear()
+
+        assert jobs.get_job_count() == 0, "Jobs should be cleared"
+        assert jobs.get_job_list() is None, "Job list should be None after clear"

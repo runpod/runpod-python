@@ -60,6 +60,38 @@ class TestFastAPI(unittest.TestCase):
             os.environ.pop("RUNPOD_REALTIME_PORT")
             os.environ.pop("RUNPOD_ENDPOINT_ID")
 
+    def test_worker_api_attaches_ping_mirror(self):
+        """WorkerAPI attaches a PingJobMirror to job_list and passes the same
+        instance to the ping; job tracking then syncs it. Regression guard for
+        the API-mode ping reporting job_id=None (PR #517 review)."""
+        module_location = "runpod.serverless.modules.rp_fastapi"
+        with patch(
+            f"{module_location}.Heartbeat.start_ping", Mock()
+        ) as mock_ping, patch(
+            f"{module_location}.FastAPI", Mock()
+        ), patch(
+            f"{module_location}.APIRouter", return_value=Mock()
+        ), patch(
+            f"{module_location}.uvicorn", Mock()
+        ):
+            rp_fastapi.job_list.clear()
+            rp_fastapi.job_list._mirror = None
+
+            rp_fastapi.WorkerAPI({"handler": self.handler})
+
+            # The ping received a mirror, and it is the one attached to job_list.
+            self.assertTrue(mock_ping.called)
+            passed_mirror = mock_ping.call_args[0][0]
+            self.assertIsNotNone(passed_mirror)
+            self.assertIs(rp_fastapi.job_list._mirror, passed_mirror)
+
+            # Tracking a job in API mode now syncs into the mirror.
+            rp_fastapi.job_list.add("api_job_1")
+            self.assertIn("api_job_1", passed_mirror.get())
+
+            rp_fastapi.job_list.clear()
+            rp_fastapi.job_list._mirror = None
+
     def test_webhook_sender_success(self):
         """Test the webhook sender when the request is successful."""
         module_location = "runpod.serverless.modules.rp_fastapi.requests.Session.post"

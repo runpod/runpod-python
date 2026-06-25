@@ -50,12 +50,11 @@ class TestHeartbeat:
             yield session_instance
 
     @pytest.fixture
-    def mock_jobs(self):
-        """Mock the JobsProgress instance"""
-        with patch("runpod.serverless.modules.rp_ping.JobsProgress") as mock:
-            instance = mock.return_value
-            instance.get_job_list.return_value = "job1,job2,job3"
-            yield mock
+    def mock_mirror(self):
+        """A PingJobMirror stand-in returning a fixed in-progress job-id list."""
+        mirror = MagicMock()
+        mirror.get.return_value = "job1,job2,job3"
+        yield mirror
 
     @pytest.fixture
     def mock_logger(self):
@@ -152,10 +151,10 @@ class TestHeartbeat:
         heartbeat = Heartbeat()
         heartbeat.start_ping(test=True)
         
-        # Verify process was created correctly
+        # Verify process was created correctly (mirror defaults to None here)
         mock_process_class.assert_called_once_with(
             target=Heartbeat.process_loop,
-            args=(True,)
+            args=(None, True)
         )
         
         # Verify daemon and start
@@ -214,10 +213,11 @@ class TestHeartbeat:
                 # Should have sent 3 pings
                 assert mock_send.call_count == 3
 
-    def test_send_ping_success(self, mock_env, mock_worker_id, mock_session, mock_jobs, mock_logger):
+    def test_send_ping_success(self, mock_env, mock_worker_id, mock_session, mock_mirror, mock_logger):
         """Test successful ping send"""
         heartbeat = Heartbeat()
-        
+        heartbeat._mirror = mock_mirror
+
         # Mock successful response
         mock_response = MagicMock()
         mock_response.url = "https://test.com/ping/test_worker_123"
@@ -239,30 +239,29 @@ class TestHeartbeat:
         mock_logger.debug.assert_called_once()
 
     def test_send_ping_no_jobs(self, mock_env, mock_worker_id, mock_session, mock_logger):
-        """Test ping send with no jobs"""
-        heartbeat = Heartbeat()
-        
-        # Mock no jobs
-        with patch("runpod.serverless.modules.rp_ping.JobsProgress.get_job_list", return_value=None):
-            mock_response = MagicMock()
-            mock_response.url = "https://test.com/ping/test_worker_123"
-            mock_response.status_code = 200
-            mock_session.get.return_value = mock_response
-            
-            with patch("runpod.serverless.modules.rp_ping.runpod_version", "1.0.0"):
-                heartbeat._send_ping()
-            
-            # Verify request params
-            mock_session.get.assert_called_once_with(
-                "https://test.com/ping/test_worker_123",
-                params={"job_id": None, "runpod_version": "1.0.0"},
-                timeout=10
-            )
+        """Test ping send with no mirror / no jobs in progress."""
+        heartbeat = Heartbeat()  # no mirror injected => job_id is None
 
-    def test_send_ping_request_exception(self, mock_env, mock_worker_id, mock_session, mock_jobs, mock_logger):
+        mock_response = MagicMock()
+        mock_response.url = "https://test.com/ping/test_worker_123"
+        mock_response.status_code = 200
+        mock_session.get.return_value = mock_response
+
+        with patch("runpod.serverless.modules.rp_ping.runpod_version", "1.0.0"):
+            heartbeat._send_ping()
+
+        # Verify request params
+        mock_session.get.assert_called_once_with(
+            "https://test.com/ping/test_worker_123",
+            params={"job_id": None, "runpod_version": "1.0.0"},
+            timeout=10
+        )
+
+    def test_send_ping_request_exception(self, mock_env, mock_worker_id, mock_session, mock_mirror, mock_logger):
         """Test ping send with request exception"""
         heartbeat = Heartbeat()
-        
+        heartbeat._mirror = mock_mirror
+
         # Mock request exception
         mock_session.get.side_effect = requests.RequestException("Connection error")
         
