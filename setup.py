@@ -59,6 +59,7 @@ if __name__ == "__main__":
         include_package_data=True,
         package_data={
             "runpod": [
+                "py.typed",
                 "serverless/binaries/gpu_test",
                 "serverless/binaries/README.md",
             ]
