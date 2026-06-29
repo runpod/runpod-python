@@ -6,9 +6,9 @@ boto3 >= 1.26.165
 click >= 8.1.7
 colorama >= 0.4.6, < 0.4.7
 cryptography >= 48.0.1
-fastapi[all] >= 0.94.0
+fastapi[all] >= 0.138.1
 paramiko >= 5.0.0
-prettytable >= 3.16.0
+prettytable >= 3.18.0
 psutil >= 5.9.0
 py-cpuinfo >= 9.0.0
 inquirerpy == 0.3.4
