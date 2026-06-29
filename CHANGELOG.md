@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/runpod/runpod-python/compare/v1.10.0...v1.10.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* stop funneling all jobs to one worker (JobsProgress shared state) ([#517](https://github.com/runpod/runpod-python/issues/517)) ([6c2cd64](https://github.com/runpod/runpod-python/commit/6c2cd64bb8efa2dd1c5294946ab809ba1d25f29b))
+
 ## [1.10.0](https://github.com/runpod/runpod-python/compare/v1.9.1...v1.10.0) (2026-06-24)
 
 
