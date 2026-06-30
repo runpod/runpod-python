@@ -95,7 +95,11 @@ def generate_pod_deployment_mutation(
             input_fields.append(f"allowedCudaVersions: [{cuda_versions}]")
 
         if container_registry_auth_id is not None:
-            input_fields.append(f'containerRegistryAuthId: "{container_registry_auth_id}"')
+            escaped_auth_id = (
+                container_registry_auth_id.replace(
+                    "\\", "\\\\").replace('"', "\\\"")
+                )
+            input_fields.append(f'containerRegistryAuthId: "{escaped_auth_id}"')
 
     # CPU Pod Fields
     else:
