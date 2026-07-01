@@ -29,6 +29,17 @@ from .cli.groups.config.functions import (
     set_credentials,
 )
 from .endpoint import AsyncioEndpoint, AsyncioJob, Endpoint
+from .apps import (
+    Api,
+    App,
+    EndpointNotFound,
+    Queue,
+    is_local,
+    local_entrypoint,
+    schedule,
+)
+from .apps.gpu import CpuInstanceType, GpuGroup, GpuType
+from .apps.markers import delete, get, init, patch, post, put
 from .serverless.modules.rp_logger import RunPodLogger
 from .version import __version__
 
@@ -59,6 +70,23 @@ __all__ = [
     "AsyncioEndpoint",
     "AsyncioJob",
     "Endpoint",
+    # Apps surface
+    "Api",
+    "App",
+    "CpuInstanceType",
+    "EndpointNotFound",
+    "GpuGroup",
+    "GpuType",
+    "Queue",
+    "delete",
+    "get",
+    "init",
+    "is_local",
+    "local_entrypoint",
+    "patch",
+    "post",
+    "put",
+    "schedule",
     # Serverless module
     "serverless",
     # Logger class

@@ -98,6 +98,10 @@ class TestRunpodInit:
             'check_credentials', 'get_credentials', 'set_credentials',
             # Endpoint classes
             'AsyncioEndpoint', 'AsyncioJob', 'Endpoint',
+            # Apps surface
+            'Api', 'App', 'CpuInstanceType', 'EndpointNotFound', 'GpuGroup',
+            'GpuType', 'Queue', 'delete', 'get', 'init', 'is_local',
+            'local_entrypoint', 'patch', 'post', 'put', 'schedule',
             # Serverless module
             'serverless',
             # Logger class
