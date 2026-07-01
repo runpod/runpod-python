@@ -145,6 +145,47 @@ async def _post_json(
             return await resp.json()
 
 
+async def _get_json(
+    url: str, headers: Dict[str, str], timeout: float
+) -> Dict[str, Any]:
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+    async with aiohttp.ClientSession(timeout=client_timeout) as session:
+        async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+
+async def _wait_terminal(
+    base_url: str,
+    data: Dict[str, Any],
+    headers: Dict[str, str],
+    timeout: float,
+) -> Dict[str, Any]:
+    """poll /status until the job reaches a terminal state.
+
+    runsync returns early (e.g. IN_QUEUE) when the job outlives the sync
+    window, typically on cold starts; polling covers the rest.
+    """
+    import asyncio
+    import time
+
+    deadline = time.monotonic() + timeout
+    interval = 0.5
+    while data.get("status") not in FINAL_STATUSES:
+        job_id = data.get("id")
+        if not job_id:
+            return data
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"job {job_id} did not complete within {timeout}s "
+                f"(last status: {data.get('status', 'UNKNOWN')})"
+            )
+        await asyncio.sleep(interval)
+        interval = min(interval * 1.5, 5.0)
+        data = await _get_json(f"{base_url}/status/{job_id}", headers, 30.0)
+    return data
+
+
 class SentinelTarget(InvocationTarget):
     """routes through the sentinel endpoint; ai-api resolves the real
     endpoint server-side from app/env/resource headers.
@@ -170,15 +211,17 @@ class SentinelTarget(InvocationTarget):
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Any:
-        url = f"{_endpoint_url_base()}/{SENTINEL_ID}/runsync"
+        base = f"{_endpoint_url_base()}/{SENTINEL_ID}"
+        headers = self._sentinel_headers()
         data = await _post_json(
-            url,
+            f"{base}/runsync",
             payload,
-            self._sentinel_headers(),
+            headers,
             timeout,
             app_name=self.app_name,
             resource_name=self.resource_name,
         )
+        data = await _wait_terminal(base, data, headers, timeout)
         return unwrap_job_output(data)
 
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -264,8 +307,10 @@ class LiveTarget(InvocationTarget):
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Any:
-        url = f"{_endpoint_url_base()}/{self.endpoint_id}/runsync"
-        data = await _post_json(url, payload, _headers(), timeout)
+        base = f"{_endpoint_url_base()}/{self.endpoint_id}"
+        headers = _headers()
+        data = await _post_json(f"{base}/runsync", payload, headers, timeout)
+        data = await _wait_terminal(base, data, headers, timeout)
         return self.unwrap(data)
 
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:

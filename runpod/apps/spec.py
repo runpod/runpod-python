@@ -108,6 +108,7 @@ class ResourceSpec:
     system_dependencies: Optional[List[str]] = None
     volume: Optional[str] = None
     env: Optional[Dict[str, str]] = None
+    datacenter: Optional[List[str]] = None
     image: Optional[str] = None
     schedule: Optional[str] = None
     routes: List[RouteSpec] = field(default_factory=list)
@@ -147,6 +148,8 @@ class ResourceSpec:
             data["networkVolume"] = self.volume
         if self.env:
             data["env"] = self.env
+        if self.datacenter:
+            data["locations"] = ",".join(self.datacenter)
         if self.image:
             data["imageName"] = self.image
         if self.schedule:

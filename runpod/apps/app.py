@@ -88,6 +88,7 @@ class App:
         system_dependencies: Optional[List[str]] = None,
         volume: Optional[Any] = None,
         env: Optional[Dict[str, str]] = None,
+        datacenter: Optional[Union[str, List[str]]] = None,
     ) -> Callable[[Callable], FunctionHandle]:
         """declare a queue-based serverless endpoint from a function."""
 
@@ -104,6 +105,7 @@ class App:
                 system_dependencies=system_dependencies,
                 volume=_volume_ref(volume),
                 env=env,
+                datacenter=_datacenter_list(datacenter),
             )
             handle = FunctionHandle(self, fn, spec)
             self._register(spec.name, handle)
@@ -123,6 +125,7 @@ class App:
         volume: Optional[Any] = None,
         env: Optional[Dict[str, str]] = None,
         image: Optional[str] = None,
+        datacenter: Optional[Union[str, List[str]]] = None,
     ) -> Callable[[Callable], FunctionHandle]:
         """declare ephemeral pod compute from a function.
 
@@ -143,6 +146,7 @@ class App:
                 volume=_volume_ref(volume),
                 env=env,
                 image=image,
+                datacenter=_datacenter_list(datacenter),
             )
             handle = FunctionHandle(self, fn, spec)
             self._register(spec.name, handle)
@@ -163,6 +167,7 @@ class App:
         system_dependencies: Optional[List[str]] = None,
         volume: Optional[Any] = None,
         env: Optional[Dict[str, str]] = None,
+        datacenter: Optional[Union[str, List[str]]] = None,
     ) -> Callable[[Any], ApiHandle]:
         """declare a load-balanced serverless endpoint.
 
@@ -199,6 +204,7 @@ class App:
                 system_dependencies=system_dependencies,
                 volume=_volume_ref(volume),
                 env=env,
+                datacenter=_datacenter_list(datacenter),
             )
             handle = ApiHandle(self, target, spec)
             self._register(spec.name, handle)
@@ -235,6 +241,17 @@ class App:
 
     def __repr__(self) -> str:
         return f"<App {self.name!r} resources={len(self._resources)}>"
+
+
+def _datacenter_list(
+    datacenter: Optional[Union[str, List[str]]],
+) -> Optional[List[str]]:
+    """normalize datacenter input to a list of location strings."""
+    if datacenter is None:
+        return None
+    if isinstance(datacenter, str):
+        return [datacenter]
+    return [str(d) for d in datacenter]
 
 
 def _volume_ref(volume: Any) -> Optional[str]:

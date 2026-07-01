@@ -47,8 +47,16 @@ def _image_for(spec: ResourceSpec) -> str:
     return image
 
 
+# cpu serverless is only stocked in EU-RO-1
+CPU_LOCATIONS = "EU-RO-1"
+
+
 def _endpoint_input(app: App, spec: ResourceSpec) -> Dict:
-    """build the saveEndpoint payload for a live dev endpoint."""
+    """build the saveEndpoint payload for a live dev endpoint.
+
+    the template is nested in the saveEndpoint input so it is bound to
+    the endpoint and cascades on deleteEndpoint.
+    """
     payload: Dict = {
         "name": dev_endpoint_name(app.name, spec.name),
         "workersMin": spec.workers[0],
@@ -62,20 +70,23 @@ def _endpoint_input(app: App, spec: ResourceSpec) -> Dict:
             "name": f"{dev_endpoint_name(app.name, spec.name)}-template",
             "imageName": _image_for(spec),
             "containerDiskInGb": 10,
-            "isServerless": True,
+            "dockerArgs": "",
+            "env": [
+                {"key": k, "value": v} for k, v in (spec.env or {}).items()
+            ],
         },
     }
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"
+    if spec.datacenter:
+        payload["locations"] = ",".join(spec.datacenter)
     if spec.is_cpu:
         payload["instanceIds"] = spec.cpu
+        if not spec.datacenter:
+            payload["locations"] = CPU_LOCATIONS
     else:
         payload["gpuIds"] = ",".join(spec.gpu or ["any"])
         payload["gpuCount"] = spec.gpu_count
-    if spec.env:
-        payload["template"]["env"] = [
-            {"key": k, "value": v} for k, v in spec.env.items()
-        ]
     return payload
 
 
