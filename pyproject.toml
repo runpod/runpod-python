@@ -61,6 +61,7 @@ local_scheme = "no-local-version"
 
 [project.scripts]
 runpod = "runpod.cli.entry:runpod_cli"
+rp = "runpod.rp_cli.main:run"
 
 
 [dependency-groups]

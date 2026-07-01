@@ -24,7 +24,6 @@ from .markers import INIT_ATTR, RESERVED_PATHS, is_init, route_of
 from .schedule import SCHEDULE_ATTR
 from .spec import ResourceKind, ResourceSpec, RouteSpec
 from .errors import InvalidResourceError, RemoteExecutionError
-from .targets import args_to_input
 
 if TYPE_CHECKING:
     from .app import App
@@ -103,12 +102,12 @@ class FunctionHandle:
             return result
 
         target = await self._app._resolve(self.spec)
-        payload = {"input": args_to_input(self._fn, args, kwargs)}
+        payload = target.build_payload(self._fn, self.spec, args, kwargs)
         return await target.invoke(payload)
 
     async def _spawn_async(self, *args: Any, **kwargs: Any) -> Job:
         target = await self._app._resolve(self.spec)
-        payload = {"input": args_to_input(self._fn, args, kwargs)}
+        payload = target.build_payload(self._fn, self.spec, args, kwargs)
         data = await target.submit(payload)
         return Job(data, self)
 

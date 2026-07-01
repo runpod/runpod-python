@@ -15,6 +15,7 @@ import aiohttp
 
 from ..user_agent import USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
+from .protocol import FunctionRequest, FunctionResponse
 from .spec import ResourceSpec
 
 # the sentinel pseudo-endpoint id; ai-api resolves the real endpoint from
@@ -96,7 +97,20 @@ def unwrap_job_output(data: Dict[str, Any]) -> Any:
 
 
 class InvocationTarget(ABC):
-    """one resolved destination for remote calls."""
+    """one resolved destination for remote calls.
+
+    each target owns its payload shape: sentinel targets send plain
+    kwargs (the deployed worker resolves functions from the unpacked
+    build), live targets send the full FunctionRequest with source.
+    """
+
+    def build_payload(
+        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
+    ) -> Dict[str, Any]:
+        return {"input": args_to_input(fn, args, kwargs)}
+
+    def unwrap(self, data: Dict[str, Any]) -> Any:
+        return unwrap_job_output(data)
 
     @abstractmethod
     async def invoke(self, payload: Dict[str, Any], *, timeout: float) -> Any:
@@ -213,12 +227,46 @@ class LiveTarget(InvocationTarget):
     def __init__(self, endpoint_id: str):
         self.endpoint_id = endpoint_id
 
+    def build_payload(
+        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
+    ) -> Dict[str, Any]:
+        from .serialization import (
+            get_function_source,
+            serialize_args,
+            serialize_kwargs,
+        )
+
+        request = FunctionRequest(
+            function_name=fn.__name__,
+            function_code=get_function_source(fn),
+            args=serialize_args(args),
+            kwargs=serialize_kwargs(kwargs),
+            dependencies=spec.dependencies,
+            system_dependencies=spec.system_dependencies,
+        )
+        return {"input": request.to_input()}
+
+    def unwrap(self, data: Dict[str, Any]) -> Any:
+        output = unwrap_job_output(data)
+        if isinstance(output, dict) and "success" in output:
+            response = FunctionResponse.from_output(output)
+            if not response.success:
+                raise RemoteExecutionError(
+                    f"remote execution failed: {response.error or 'unknown'}"
+                )
+            if response.result is not None:
+                from .serialization import deserialize_result
+
+                return deserialize_result(response.result)
+            return response.json_result
+        return output
+
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Any:
         url = f"{_endpoint_url_base()}/{self.endpoint_id}/runsync"
         data = await _post_json(url, payload, _headers(), timeout)
-        return unwrap_job_output(data)
+        return self.unwrap(data)
 
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{_endpoint_url_base()}/{self.endpoint_id}/run"
