@@ -82,11 +82,14 @@ def dev(
     """start an interactive dev session for MODULE.
 
     provisions temporary live endpoints, runs the module's
-    @runpod.local_entrypoint, and deletes the endpoints on exit.
+    @runpod.local_entrypoint, watches for file changes (re-scanning and
+    refreshing endpoints so requests run fresh code), and deletes the
+    endpoints on exit.
     """
     from runpod.apps.dev import DevSession
     from runpod.apps.discovery import DiscoveryError, discover_apps
     from runpod.apps.entrypoint import get_entrypoint, run_entrypoint
+    from runpod.apps.watch import FileWatcher
 
     module = module.resolve()
     if not module.is_file():
@@ -94,24 +97,42 @@ def dev(
 
     os.environ["RUNPOD_DEV_SESSION"] = "1"
 
-    try:
-        apps = discover_apps(module)
-    except DiscoveryError as exc:
-        _fail(str(exc))
+    def _scan():
+        try:
+            apps = discover_apps(module)
+        except DiscoveryError as exc:
+            _fail(str(exc))
+        if not apps:
+            _fail("no runpod.App found in module")
+        entrypoint = get_entrypoint()
+        if entrypoint is None:
+            _fail(
+                "no @runpod.local_entrypoint found. define one:\n\n"
+                "    @runpod.local_entrypoint\n"
+                "    async def main(): ...\n"
+            )
+        return apps, entrypoint
 
-    if not apps:
-        _fail("no runpod.App found in module")
+    apps, entrypoint = _scan()
 
-    entrypoint = get_entrypoint()
-    if entrypoint is None:
-        _fail(
-            "no @runpod.local_entrypoint found. define one:\n\n"
-            "    @runpod.local_entrypoint\n"
-            "    async def main(): ...\n"
-        )
+    async def _wait_for_rerun(watcher: FileWatcher) -> str:
+        """race the enter key against a file change."""
+        loop = asyncio.get_event_loop()
+        stdin_task = loop.run_in_executor(None, sys.stdin.readline)
+        try:
+            while True:
+                if watcher.changed():
+                    return "changed"
+                done, _ = await asyncio.wait({stdin_task}, timeout=0.5)
+                if done:
+                    return "enter"
+        finally:
+            stdin_task.cancel()
 
     async def _session() -> None:
+        nonlocal apps, entrypoint
         session = DevSession(apps)
+        watcher = FileWatcher([module.parent])
         _echo("provisioning dev endpoints ...")
         await session.start()
         try:
@@ -121,8 +142,12 @@ def dev(
                     run_entrypoint(entrypoint)
                 except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
                     typer.secho(f"entrypoint error: {exc}", fg=typer.colors.RED)
-                _echo("--- press enter to re-run, ctrl-c to exit ---")
-                await asyncio.get_event_loop().run_in_executor(None, input)
+                _echo("--- press enter to re-run, edit files to reload, ctrl-c to exit ---")
+                reason = await _wait_for_rerun(watcher)
+                if reason == "changed":
+                    _echo("--- change detected: re-scanning and refreshing endpoints ---")
+                    apps, entrypoint = _scan()
+                    await session.refresh(apps)
         finally:
             _echo("cleaning up dev endpoints ...")
             await session.stop()

@@ -13,6 +13,7 @@ the public entry points here are:
 
 from .app import App, get_registered_apps
 from .context import Context, current_context, is_local
+from .datacenter import DataCenter
 from .entrypoint import local_entrypoint
 from .errors import (
     AppError,
@@ -32,6 +33,7 @@ __all__ = [
     "App",
     "AppError",
     "Context",
+    "DataCenter",
     "EndpointNotFound",
     "FunctionHandle",
     "Queue",

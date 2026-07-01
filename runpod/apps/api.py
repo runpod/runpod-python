@@ -62,7 +62,14 @@ class AppsApiClient:
         query = """
         query myEndpoints {
             myself {
-                endpoints { id name templateId workersMin workersMax }
+                endpoints {
+                    id
+                    name
+                    templateId
+                    workersMin
+                    workersMax
+                    template { env { key value } }
+                }
             }
         }
         """

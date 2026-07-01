@@ -34,6 +34,15 @@ async def main() -> int:
         result = await smoke.remote.aio(2, 3)
         print(f"result: {result}")
         assert result == {"sum": 5, "python": True}, f"unexpected result: {result}"
+
+        print("refreshing session (generation bump, workers recreated) ...")
+        await session.refresh([app])
+        assert session.generation == 2
+
+        print("invoking smoke.remote(10, 20) post-refresh ...")
+        result = await smoke.remote.aio(10, 20)
+        print(f"result: {result}")
+        assert result == {"sum": 30, "python": True}, f"unexpected result: {result}"
         print("PASS")
         return 0
     finally:

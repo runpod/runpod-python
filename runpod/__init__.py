@@ -32,6 +32,7 @@ from .endpoint import AsyncioEndpoint, AsyncioJob, Endpoint
 from .apps import (
     Api,
     App,
+    DataCenter,
     EndpointNotFound,
     Queue,
     is_local,
@@ -74,6 +75,7 @@ __all__ = [
     "Api",
     "App",
     "CpuInstanceType",
+    "DataCenter",
     "EndpointNotFound",
     "GpuGroup",
     "GpuType",
