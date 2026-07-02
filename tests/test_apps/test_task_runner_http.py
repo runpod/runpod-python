@@ -17,6 +17,12 @@ import pytest
 from runpod.runtimes.task import runner as task_runner
 from runpod.runtimes.task.runner import Handler
 
+# http.server's per-request sockets are collected lazily; the unraisable
+# checker flags them as ResourceWarnings non-deterministically
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::pytest.PytestUnraisableExceptionWarning"
+)
+
 TOKEN = "test-token"
 
 
