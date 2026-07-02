@@ -35,14 +35,7 @@ TASK_PORT = 8080
 # safety net: pods self-terminate server-side after this long
 DEFAULT_MAX_LIFETIME = timedelta(hours=1)
 
-# task runtime images built from runpod/runtimes/task by the runtimes
-# workflow. RUNPOD_RUNTIME_TAG selects the channel (latest, dev, pinned).
 import os as _os
-
-_TAG = _os.environ.get("RUNPOD_RUNTIME_TAG", "latest")
-
-DEFAULT_GPU_IMAGE = f"runpod/task-gpu:{_TAG}"
-DEFAULT_CPU_IMAGE = f"runpod/task:py3.12-{_TAG}"
 
 READY_POLL_INTERVAL = 2.0
 READY_TIMEOUT = 600.0
@@ -82,10 +75,13 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
         **(spec.env or {}),
     }
 
+    from .images import image_for_spec, local_python_version
+
     pod: Dict[str, Any] = {
         "name": f"task-{task_name}-{secrets.token_hex(4)}",
-        "imageName": spec.image
-        or (DEFAULT_CPU_IMAGE if spec.is_cpu else DEFAULT_GPU_IMAGE),
+        "imageName": image_for_spec(
+            spec, python_version=local_python_version()
+        ),
         "ports": f"{TASK_PORT}/http",
         "containerDiskInGb": 10,
         "terminateAfter": terminate_after,

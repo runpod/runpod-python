@@ -13,6 +13,9 @@ deployed mode (FLASH_RESOURCE_NAME set):
   verify   packages the build excluded by size (torch and friends)
            must come from the image; genuinely absent ones are
            installed as a fallback, loudly
+  system   apt packages from the resource's system_dependencies;
+           these cannot ride in the artifact, so this is the one
+           install that legitimately remains at cold start
   serve    exec the worker runtime from the vendored environment
 
 live mode (no resource name, `rp dev`):
@@ -189,6 +192,50 @@ def _pip_install(packages, phase):
         raise PhaseError(phase, result.stderr[-3000:])
 
 
+def _resource_entry(manifest):
+    name = _resource_name()
+    for entry in manifest.get("resources", []):
+        if entry.get("name") == name:
+            return entry
+    return {}
+
+
+def _install_system(manifest):
+    """apt packages cannot be vendored; install this resource's
+    system_dependencies at cold start."""
+    packages = _resource_entry(manifest).get("systemDependencies") or []
+    if not packages:
+        return
+    import shutil
+
+    if shutil.which("apt-get") is None:
+        raise PhaseError(
+            "system",
+            f"system dependencies {packages} requested but apt-get is "
+            f"not available in this image; use a debian-based image or "
+            f"bake them in",
+        )
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    _log(f"installing system dependencies: {packages}")
+    update = subprocess.run(
+        ["apt-get", "update", "-qq"], capture_output=True, text=True, env=env
+    )
+    if update.returncode != 0:
+        raise PhaseError("system", f"apt-get update failed: {update.stderr[-2000:]}")
+    result = subprocess.run(
+        ["apt-get", "install", "-y", "-qq", "--no-install-recommends", *packages],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise PhaseError(
+            "system",
+            f"failed to install system dependencies {packages}: "
+            f"{result.stderr[-2000:]}",
+        )
+
+
 def _verify_excluded(manifest):
     """packages the build excluded must come from the image.
 
@@ -354,7 +401,9 @@ def main():
         if _resource_name():
             app_dir = _locate()
             paths = _attach(app_dir)
-            _verify_excluded(_manifest(app_dir))
+            manifest = _manifest(app_dir)
+            _verify_excluded(manifest)
+            _install_system(manifest)
             ok, err = _worker_importable(paths)
             if not ok:
                 raise PhaseError(

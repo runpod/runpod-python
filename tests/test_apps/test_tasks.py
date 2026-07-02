@@ -128,7 +128,12 @@ class TestPodInput:
     def test_cpu_pod_input(self):
         pod = _pod_input(self._spec(cpu=["cpu3c-1-2"]), "tok", "t")
         assert pod["instanceIds"] == ["cpu3c-1-2"]
-        assert pod["imageName"] == "runpod/task:py3.12-latest"
+        from runpod.apps.images import local_python_version
+
+        assert (
+            pod["imageName"]
+            == f"runpod/task:py{local_python_version()}-latest"
+        )
         assert pod["ports"] == "8080/http"
         assert pod["terminateAfter"]
         env = {e["key"]: e["value"] for e in pod["env"]}
@@ -143,7 +148,13 @@ class TestPodInput:
         )
         assert pod["gpuTypeIdList"] == ["NVIDIA GeForce RTX 4090"]
         assert pod["gpuCount"] == 2
-        assert pod["imageName"] == "runpod/task-gpu:latest"
+        # gpu runtime image matched to the local python version
+        from runpod.apps.images import local_python_version
+
+        assert (
+            pod["imageName"]
+            == f"runpod/task-gpu:py{local_python_version()}-latest"
+        )
 
     def test_custom_image_bootstraps_runner(self):
         pod = _pod_input(

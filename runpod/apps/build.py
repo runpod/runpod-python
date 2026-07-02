@@ -27,10 +27,9 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .errors import AppError
+from .images import DEFAULT_PYTHON_VERSION, SUPPORTED_PYTHON_VERSIONS
 
 log = logging.getLogger(__name__)
-
-DEFAULT_PYTHON_VERSION = "3.12"
 
 # manylinux tags matching runpod worker glibc, newest first
 MANYLINUX_PLATFORMS = (
@@ -104,12 +103,20 @@ def collect_requirements(project_root: Path, app) -> List[str]:
 def split_exclusions(
     requirements: List[str],
     extra_excludes: Optional[List[str]] = None,
+    *,
+    auto_exclude: bool = True,
 ) -> Tuple[List[str], List[str]]:
     """(vendored, excluded-names). excluded packages resolve from the
-    worker image at runtime instead of the artifact."""
-    excluded_names = SIZE_PROHIBITIVE_PACKAGES | {
-        requirement_name(e) for e in (extra_excludes or [])
-    }
+    worker image at runtime instead of the artifact.
+
+    auto_exclude applies the size-prohibitive set; it is only sound
+    when the workers run on builtin gpu images that preinstall those
+    packages. custom images vendor everything unless the user excludes
+    explicitly.
+    """
+    excluded_names = {requirement_name(e) for e in (extra_excludes or [])}
+    if auto_exclude:
+        excluded_names |= SIZE_PROHIBITIVE_PACKAGES
     kept: List[str] = []
     excluded: List[str] = []
     for req in requirements:
@@ -244,12 +251,25 @@ def build_environment(
     scratch_dir: Optional[Path] = None,
 ) -> BuildResult:
     """vendor the app's full runtime environment into a directory tree."""
+    if python_version not in SUPPORTED_PYTHON_VERSIONS:
+        raise BuildError(
+            f"python {python_version} is not supported "
+            f"(supported: {', '.join(SUPPORTED_PYTHON_VERSIONS)})"
+        )
     scratch = scratch_dir or Path(tempfile.mkdtemp(prefix="rp-build-"))
     env_dir = scratch / "env"
     env_dir.mkdir(parents=True, exist_ok=True)
 
     user_requirements = collect_requirements(project_root, app)
-    vendored, excluded = split_exclusions(user_requirements, exclude)
+    # size-prohibitive packages come preinstalled on the builtin gpu
+    # images; a custom image carries no such guarantee, so any custom
+    # image in the app disables auto-exclusion and everything vendors
+    auto_exclude = not any(
+        h.spec.image for h in app.resources.values()
+    )
+    vendored, excluded = split_exclusions(
+        user_requirements, exclude, auto_exclude=auto_exclude
+    )
 
     runtime = [runtime_requirement(scratch), "cloudpickle"]
     from .spec import ResourceKind

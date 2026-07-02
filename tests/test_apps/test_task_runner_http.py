@@ -123,3 +123,70 @@ def test_unknown_path_404(server):
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         _request(f"{server}/nope")
     assert exc_info.value.code == 404
+
+
+class TestSystemDependencies:
+    def test_missing_apt_reports_error(self, monkeypatch):
+        import shutil
+
+        monkeypatch.setattr(shutil, "which", lambda _: None)
+        response = task_runner.execute_request(
+            {
+                "function_name": "f",
+                "function_code": "def f():\n    return 1",
+                "system_dependencies": ["ffmpeg"],
+                "serialization_format": "json",
+            }
+        )
+        assert response["success"] is False
+        assert "apt-get is not available" in response["error"]
+
+    def test_system_deps_installed_before_execution(self, monkeypatch):
+        import shutil
+
+        monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/apt-get")
+        monkeypatch.setattr(task_runner, "_apt_updated", False)
+        calls = []
+
+        class R:
+            returncode = 0
+            stderr = ""
+
+        monkeypatch.setattr(
+            task_runner.subprocess,
+            "run",
+            lambda cmd, **kw: calls.append(cmd) or R(),
+        )
+        response = task_runner.execute_request(
+            {
+                "function_name": "f",
+                "function_code": "def f():\n    return 40 + 2",
+                "system_dependencies": ["ffmpeg"],
+                "serialization_format": "json",
+            }
+        )
+        assert response["success"] is True
+        assert response["json_result"] == 42
+        assert calls[0][:2] == ["apt-get", "update"]
+        assert "ffmpeg" in calls[1]
+
+    def test_apt_update_runs_once(self, monkeypatch):
+        import shutil
+
+        monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/apt-get")
+        monkeypatch.setattr(task_runner, "_apt_updated", False)
+        calls = []
+
+        class R:
+            returncode = 0
+            stderr = ""
+
+        monkeypatch.setattr(
+            task_runner.subprocess,
+            "run",
+            lambda cmd, **kw: calls.append(cmd) or R(),
+        )
+        task_runner._install_system(["ffmpeg"])
+        task_runner._install_system(["sox"])
+        updates = [c for c in calls if c[:2] == ["apt-get", "update"]]
+        assert len(updates) == 1

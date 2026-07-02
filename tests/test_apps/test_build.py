@@ -80,6 +80,21 @@ class TestSplitExclusions:
         assert kept == ["numpy"]
         assert excluded == ["transformers"]
 
+    def test_auto_exclude_off_vendors_everything(self):
+        # custom images carry no torch guarantee: nothing auto-excluded
+        kept, excluded = split_exclusions(
+            ["numpy", "torch==2.4", "triton"], auto_exclude=False
+        )
+        assert kept == ["numpy", "torch==2.4", "triton"]
+        assert excluded == []
+
+    def test_auto_exclude_off_user_excludes_still_apply(self):
+        kept, excluded = split_exclusions(
+            ["numpy", "torch"], extra_excludes=["torch"], auto_exclude=False
+        )
+        assert kept == ["numpy"]
+        assert excluded == ["torch"]
+
     def test_exclusion_set_is_size_based(self):
         # sanity-pin the auto set; additions must be size-justified
         assert SIZE_PROHIBITIVE_PACKAGES == {

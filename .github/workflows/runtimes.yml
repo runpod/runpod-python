@@ -32,45 +32,15 @@ jobs:
           pip install -e .
           pip install pytest pytest-asyncio cloudpickle
 
-      - name: Run task runner tests
-        run: pytest tests/test_apps/test_tasks.py tests/test_apps/test_task_runner_http.py -q -o addopts="" -p no:unraisableexception
+      - name: Run runtime tests
+        run: pytest tests/test_apps/test_tasks.py tests/test_apps/test_task_runner_http.py tests/test_apps/test_bootstrap.py -q -o addopts="" -p no:unraisableexception
 
-  build-task-cpu:
+  build-gpu-base:
     runs-on: ubuntu-latest
     needs: [test-runner]
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push task image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: runpod/runtimes/task/Dockerfile
-          platforms: linux/amd64
-          build-args: |
-            PYTHON_VERSION=${{ matrix.python-version }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            runpod/task:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
-          cache-from: type=gha,scope=task-py${{ matrix.python-version }}
-          cache-to: type=gha,mode=max,scope=task-py${{ matrix.python-version }}
-
-  build-task-gpu:
-    runs-on: ubuntu-latest
-    needs: [test-runner]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
 
@@ -89,26 +59,36 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push gpu task image
+      - name: Build and push gpu base image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: runpod/runtimes/task/Dockerfile-gpu
+          file: runpod/runtimes/gpu-base/Dockerfile
           platforms: linux/amd64
+          build-args: |
+            PYTHON_VERSION=${{ matrix.python-version }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            runpod/task-gpu:${{ env.TAG_SUFFIX }}
-          cache-from: type=gha,scope=task-gpu
-          cache-to: type=gha,mode=max,scope=task-gpu
+            runpod/gpu-base:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
+          cache-from: type=gha,scope=gpu-base-py${{ matrix.python-version }}
+          cache-to: type=gha,mode=max,scope=gpu-base-py${{ matrix.python-version }}
 
-  build-queue:
+  build-runtimes:
     runs-on: ubuntu-latest
-    needs: [test-runner]
+    needs: [test-runner, build-gpu-base]
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        kind: [task, queue, api]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        accelerator: [cpu, gpu]
     steps:
       - uses: actions/checkout@v7
+
+      - name: Clear space
+        if: matrix.accelerator == 'gpu'
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          docker system prune -af
 
       - uses: docker/setup-buildx-action@v3
 
@@ -120,49 +100,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push queue image
+      - name: Compute image names
+        id: names
+        run: |
+          if [ "${{ matrix.accelerator }}" = "gpu" ]; then
+            echo "base=runpod/gpu-base:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}" >> "$GITHUB_OUTPUT"
+            echo "repo=runpod/${{ matrix.kind }}-gpu" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=python:${{ matrix.python-version }}-slim" >> "$GITHUB_OUTPUT"
+            echo "repo=runpod/${{ matrix.kind }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push runtime image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: runpod/runtimes/queue/Dockerfile
+          file: runpod/runtimes/${{ matrix.kind }}/Dockerfile
           platforms: linux/amd64
           build-args: |
-            PYTHON_VERSION=${{ matrix.python-version }}
+            BASE_IMAGE=${{ steps.names.outputs.base }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            runpod/queue:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
-          cache-from: type=gha,scope=queue-py${{ matrix.python-version }}
-          cache-to: type=gha,mode=max,scope=queue-py${{ matrix.python-version }}
-
-  build-api:
-    runs-on: ubuntu-latest
-    needs: [test-runner]
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push api image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: runpod/runtimes/api/Dockerfile
-          platforms: linux/amd64
-          build-args: |
-            PYTHON_VERSION=${{ matrix.python-version }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            runpod/api:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
-          cache-from: type=gha,scope=api-py${{ matrix.python-version }}
-          cache-to: type=gha,mode=max,scope=api-py${{ matrix.python-version }}
+            ${{ steps.names.outputs.repo }}:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
+          cache-from: type=gha,scope=${{ matrix.kind }}-${{ matrix.accelerator }}-py${{ matrix.python-version }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.kind }}-${{ matrix.accelerator }}-py${{ matrix.python-version }}

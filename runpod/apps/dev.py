@@ -23,20 +23,7 @@ log = logging.getLogger(__name__)
 
 DEV_PREFIX = "dev"
 
-# worker runtime images by (kind, is_cpu). queue images are built from
-# runpod/runtimes/queue in this repo; api still rides the flash lb
-# images until the lb runtime lands. RUNPOD_RUNTIME_TAG selects the
-# image channel (latest, dev, or a pinned version).
 import os as _os
-
-_TAG = _os.environ.get("RUNPOD_RUNTIME_TAG", "latest")
-
-DEFAULT_IMAGES = {
-    ("queue", False): f"runpod/queue:py3.12-{_TAG}",
-    ("queue", True): f"runpod/queue:py3.12-{_TAG}",
-    ("api", False): f"runpod/api:py3.12-{_TAG}",
-    ("api", True): f"runpod/api:py3.12-{_TAG}",
-}
 
 
 def dev_endpoint_name(app_name: str, resource_name: str) -> str:
@@ -44,18 +31,17 @@ def dev_endpoint_name(app_name: str, resource_name: str) -> str:
 
 
 def _image_for(spec: ResourceSpec) -> str:
-    import os
-
+    """dev worker image: custom image, env override, or the builtin
+    runtime image matched to the local python (dev requests carry
+    pickled source, so client and worker versions should align)."""
     if spec.image:
         return spec.image
-    override = os.getenv("RUNPOD_DEV_IMAGE")
+    override = _os.getenv("RUNPOD_DEV_IMAGE")
     if override:
         return override
-    key = (spec.kind.value, spec.is_cpu)
-    image = DEFAULT_IMAGES.get(key)
-    if image is None:
-        raise ValueError(f"no dev image for resource kind {spec.kind.value}")
-    return image
+    from .images import image_for_spec, local_python_version
+
+    return image_for_spec(spec, python_version=local_python_version())
 
 
 def _bootstrap_source() -> str:

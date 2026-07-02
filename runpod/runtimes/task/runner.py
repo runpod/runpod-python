@@ -23,6 +23,7 @@ import base64
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -68,6 +69,42 @@ def _install(packages, label):
     return None
 
 
+_apt_updated = False
+
+
+def _install_system(packages):
+    """install apt packages; requires a debian-family image with root."""
+    global _apt_updated
+    if not packages:
+        return None
+    if shutil.which("apt-get") is None:
+        return (
+            f"system dependencies {packages} requested but apt-get is not "
+            f"available in this image; use a debian-based image or bake "
+            f"them in"
+        )
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    if not _apt_updated:
+        update = subprocess.run(
+            ["apt-get", "update", "-qq"], capture_output=True, text=True, env=env
+        )
+        if update.returncode != 0:
+            return f"apt-get update failed: {update.stderr[-2000:]}"
+        _apt_updated = True
+    result = subprocess.run(
+        ["apt-get", "install", "-y", "-qq", "--no-install-recommends", *packages],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        return (
+            f"failed to install system dependencies {packages}: "
+            f"{result.stderr[-2000:]}"
+        )
+    return None
+
+
 def _deserialize_args(request):
     fmt = request.get("serialization_format", "cloudpickle")
     args = request.get("args") or []
@@ -95,6 +132,9 @@ def execute_request(request):
     """run one FunctionRequest to completion, returning a response dict."""
     stdout_io = io.StringIO()
     try:
+        error = _install_system(request.get("system_dependencies"))
+        if error:
+            return {"success": False, "error": error}
         error = _install(request.get("dependencies"), "dependencies")
         if error:
             return {"success": False, "error": error}

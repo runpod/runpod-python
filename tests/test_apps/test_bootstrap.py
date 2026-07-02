@@ -112,6 +112,56 @@ class TestAttachPhase:
         assert exc_info.value.phase == "attach"
 
 
+class TestSystemPhase:
+    def test_no_system_deps_no_op(self):
+        bootstrap._install_system({"resources": [{"name": "q"}]})
+
+    def test_missing_apt_fails_with_phase(self, monkeypatch):
+        import shutil
+
+        monkeypatch.setenv("FLASH_RESOURCE_NAME", "q")
+        monkeypatch.setattr(shutil, "which", lambda _: None)
+        manifest = {
+            "resources": [{"name": "q", "systemDependencies": ["ffmpeg"]}]
+        }
+        with pytest.raises(bootstrap.PhaseError) as exc_info:
+            bootstrap._install_system(manifest)
+        assert exc_info.value.phase == "system"
+        assert "ffmpeg" in str(exc_info.value)
+
+    def test_installs_resource_system_deps(self, monkeypatch):
+        import shutil
+
+        monkeypatch.setenv("FLASH_RESOURCE_NAME", "q")
+        monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/apt-get")
+        calls = []
+
+        class R:
+            returncode = 0
+            stderr = ""
+
+        monkeypatch.setattr(
+            bootstrap.subprocess,
+            "run",
+            lambda cmd, **kw: calls.append(cmd) or R(),
+        )
+        manifest = {
+            "resources": [{"name": "q", "systemDependencies": ["ffmpeg", "sox"]}]
+        }
+        bootstrap._install_system(manifest)
+        assert calls[0][:2] == ["apt-get", "update"]
+        assert calls[1][:3] == ["apt-get", "install", "-y"]
+        assert "ffmpeg" in calls[1] and "sox" in calls[1]
+
+    def test_other_resources_deps_ignored(self, monkeypatch):
+        monkeypatch.setenv("FLASH_RESOURCE_NAME", "q")
+        manifest = {
+            "resources": [{"name": "other", "systemDependencies": ["ffmpeg"]}]
+        }
+        # q has no system deps; must not attempt anything
+        bootstrap._install_system(manifest)
+
+
 class TestVerifyPhase:
     def test_no_exclusions_no_op(self):
         bootstrap._verify_excluded({"resources": []})
@@ -161,7 +211,11 @@ class TestCustomImagePayloads:
 
         payload = _endpoint_input(app, q.spec)
         template = payload["template"]
-        assert template["imageName"].startswith("runpod/queue:py3.12-")
+        from runpod.apps.images import local_python_version
+
+        assert template["imageName"].startswith(
+            f"runpod/queue:py{local_python_version()}-"
+        )
         assert template["dockerArgs"] == ""
         env = {e["key"]: e["value"] for e in template["env"]}
         assert "RUNPOD_BOOTSTRAP_B64" not in env

@@ -33,18 +33,34 @@ on the baked images).
 
 ## images
 
+every runtime kind ships a cpu and a gpu variant per python version.
+gpu variants build on `runpod/gpu-base:pyX.Y-{tag}` (python:X.Y-slim
+plus the torch family), which preinstalls exactly the packages the
+build auto-excludes from artifacts. the two lists must stay in sync:
+`SIZE_PROHIBITIVE_PACKAGES` in `runpod/apps/build.py` and the pip
+install in `gpu-base/Dockerfile`.
+
 | image | base | use |
 |---|---|---|
-| `runpod/queue:py{3.10,3.11,3.12}-{tag}` | `python:X.Y-slim` | queue endpoints |
-| `runpod/api:py{3.10,3.11,3.12}-{tag}` | `python:X.Y-slim` | load-balanced api endpoints |
-| `runpod/task:py{3.10,3.11,3.12}-{tag}` | `python:X.Y-slim` | cpu tasks |
-| `runpod/task-gpu:{tag}` | `runpod/pytorch` | gpu tasks |
+| `runpod/gpu-base:py{3.10-3.14}-{tag}` | `python:X.Y-slim` + torch | shared gpu base |
+| `runpod/queue:py{3.10-3.14}-{tag}` | `python:X.Y-slim` | cpu queue endpoints |
+| `runpod/queue-gpu:py{3.10-3.14}-{tag}` | gpu-base | gpu queue endpoints |
+| `runpod/api:py{3.10-3.14}-{tag}` | `python:X.Y-slim` | cpu api endpoints |
+| `runpod/api-gpu:py{3.10-3.14}-{tag}` | gpu-base | gpu api endpoints |
+| `runpod/task:py{3.10-3.14}-{tag}` | `python:X.Y-slim` | cpu tasks |
+| `runpod/task-gpu:py{3.10-3.14}-{tag}` | gpu-base | gpu tasks |
+
+image selection lives in `runpod.apps.images`; dev sessions and tasks
+pick the variant matching the local python so pickled payloads stay
+compatible.
 
 custom images work everywhere: the sdk injects `bootstrap.py` (queue/
 api) or `runner.py` (task) base64-encoded in an env var and boots it
 via `dockerArgs`. both scripts are stdlib-only, so any image with a
 python3 binary works. for deployed resources the vendored env then
-provides everything else, including the runpod package itself.
+provides everything else, including the runpod package itself. builds
+targeting custom images vendor the torch family too (no auto
+exclusion), since only the builtin gpu images guarantee it.
 
 ## task
 

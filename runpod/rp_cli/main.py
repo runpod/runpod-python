@@ -41,7 +41,7 @@ def deploy(
     python_version: str = typer.Option(
         "3.12",
         "--python-version",
-        help="Worker python version for dependency wheels (3.10-3.12).",
+        help="Worker python version for dependency wheels (3.10-3.14).",
     ),
     exclude: Optional[str] = typer.Option(
         None,
