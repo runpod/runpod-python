@@ -52,8 +52,13 @@ def deploy(
     ),
 ):
     """package and deploy all apps found in TARGET."""
+    import logging
+
     from runpod.apps.deploy import deploy_app
     from runpod.apps.discovery import DiscoveryError, discover_apps
+    from runpod.rp_cli import console as ui
+
+    logging.getLogger("runpod.apps").setLevel(logging.WARNING)
 
     target = (target or Path.cwd()).resolve()
     if not target.exists():
@@ -61,7 +66,6 @@ def deploy(
 
     project_root = target if target.is_dir() else target.parent
 
-    _echo(f"discovering apps in {target} ...")
     try:
         apps = discover_apps(target)
     except DiscoveryError as exc:
@@ -75,22 +79,31 @@ def deploy(
         )
 
     for found in apps:
-        names = ", ".join(found.resources) or "(no resources)"
-        _echo(f"deploying app '{found.name}': {names}")
-        result = asyncio.run(
-            deploy_app(
-                found,
-                project_root,
-                env_name=env,
-                python_version=python_version,
-                exclude=exclude.split(",") if exclude else None,
+        resource_names = list(found.resources)
+        ui.set_name_width(resource_names)
+        ui.console.print()
+        ui.console.print(
+            f"[bold]{found.name}[/bold] [dim]-> {env or found.env}[/dim]"
+        )
+        with ui.Timer() as t:
+            result = asyncio.run(
+                deploy_app(
+                    found,
+                    project_root,
+                    env_name=env,
+                    python_version=python_version,
+                    exclude=exclude.split(",") if exclude else None,
+                    events=ui.DeployEvents(),
+                )
             )
+        for name, endpoint_id in sorted(result.endpoints.items()):
+            ui.resource_ready(name, endpoint_id)
+        ui.success(
+            f"build [white]{result.build_id}[/white] live on "
+            f"[white]{result.app_name}/{env or found.env}[/white] "
+            f"[dim]{t.elapsed:.1f}s[/dim]"
         )
-        _echo(
-            f"  build {result.build_id} active on "
-            f"{result.app_name}/{env or found.env}"
-        )
-    _echo("done.")
+    ui.console.print()
 
 
 @app.command()
@@ -113,12 +126,19 @@ def dev(
     from runpod.apps.discovery import DiscoveryError, discover_apps
     from runpod.apps.entrypoint import get_entrypoint, run_entrypoint
     from runpod.apps.watch import FileWatcher
+    from runpod.rp_cli import console as ui
 
     module = module.resolve()
     if not module.is_file():
         _fail(f"{module} is not a file")
 
     os.environ["RUNPOD_DEV_SESSION"] = "1"
+
+    # the console renders lifecycle lines; keep the module loggers to
+    # warnings so output isn't duplicated
+    import logging
+
+    logging.getLogger("runpod.apps").setLevel(logging.WARNING)
 
     def _scan():
         try:
@@ -137,6 +157,25 @@ def dev(
         return apps, entrypoint
 
     apps, entrypoint = _scan()
+
+    def _all_resource_names(app_list) -> list:
+        return [
+            handle.spec.name
+            for a in app_list
+            for handle in a.resources.values()
+        ]
+
+    def _table_rows(session: DevSession) -> list:
+        rows = []
+        for a in session.apps:
+            for handle in a.resources.values():
+                spec = handle.spec
+                hardware = ",".join(spec.cpu or spec.gpu or ["any"])
+                endpoint_id = session._endpoints.get(
+                    f"dev-{a.name}-{spec.name}", ""
+                ) or ("per-call" if spec.kind.value == "task" else "")
+                rows.append((spec.name, spec.kind.value, hardware, endpoint_id))
+        return rows
 
     async def _wait_for_rerun(watcher: FileWatcher) -> str:
         """race the enter key against a file change."""
@@ -164,35 +203,47 @@ def dev(
 
     async def _session() -> int:
         nonlocal apps, entrypoint
-        session = DevSession(apps)
+        ui.set_name_width(_all_resource_names(apps))
+        session = DevSession(apps, events=ui.DevEvents())
         watcher = FileWatcher([module.parent])
-        _echo("provisioning dev endpoints ...")
+
+        ui.dev_banner([a.name for a in apps], str(module.name))
         await session.start()
+        ui.console.print()
+        ui.dev_resources_table(_table_rows(session))
+
         try:
             while True:
-                _echo("--- running entrypoint ---")
-                try:
-                    run_entrypoint(entrypoint)
-                except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
-                    typer.secho(f"entrypoint error: {exc}", fg=typer.colors.RED)
-                    if once:
-                        return 1
+                ui.rule("entrypoint")
+                with ui.Timer() as t:
+                    try:
+                        run_entrypoint(entrypoint)
+                        ui.success(f"entrypoint [dim]{t.so_far:.1f}s[/dim]")
+                    except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
+                        ui.error(f"entrypoint failed [dim]{t.so_far:.1f}s[/dim]")
+                        ui.console.print(f"  [red]{exc}[/red]")
+                        if once:
+                            return 1
                 if once:
                     return 0
-                _echo("--- press enter to re-run, edit files to reload, ctrl-c to exit ---")
+                ui.rule()
+                ui.dev_hints()
                 reason = await _wait_for_rerun(watcher)
                 if reason == "changed":
-                    _echo("--- change detected: re-scanning and refreshing endpoints ---")
+                    ui.info("[blue]change detected[/blue] reloading ...")
                     apps, entrypoint = _scan()
+                    ui.set_name_width(_all_resource_names(apps))
                     await session.refresh(apps)
         finally:
-            _echo("cleaning up dev endpoints ...")
+            ui.console.print()
+            ui.info("cleaning up dev endpoints ...")
             await session.stop()
 
     try:
         raise typer.Exit(asyncio.run(_session()))
     except (KeyboardInterrupt, EOFError):
-        _echo("\nsession ended.")
+        ui.console.print()
+        ui.info("session ended.")
 
 
 @app.command()

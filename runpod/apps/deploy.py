@@ -371,6 +371,12 @@ async def reconcile_endpoints(
     return endpoints
 
 
+def _phase(events, name: str, detail: str = "") -> None:
+    handler = getattr(events, "phase", None)
+    if handler is not None:
+        handler(name, detail)
+
+
 async def deploy_app(
     app: App,
     project_root: Path,
@@ -379,11 +385,13 @@ async def deploy_app(
     api: Optional[AppsApiClient] = None,
     python_version: str = DEFAULT_PYTHON_VERSION,
     exclude: Optional[List[str]] = None,
+    events: Optional[object] = None,
 ) -> DeployResult:
     """run the full deploy pipeline for one app."""
     client = api or AppsApiClient()
     env_name = env_name or app.env
 
+    _phase(events, "vendor", f"python {python_version}")
     build: BuildResult = build_environment(
         app, project_root, python_version=python_version, exclude=exclude
     )
@@ -393,6 +401,7 @@ async def deploy_app(
         python_version=python_version,
         excluded_packages=build.excluded,
     )
+    _phase(events, "package")
     tar_path = package_project(project_root, manifest, env_dir=build.env_dir)
     tar_size = tar_path.stat().st_size
     size_mb = tar_size / (1024 * 1024)
@@ -404,6 +413,7 @@ async def deploy_app(
         )
     log.info("packaged %s (%.1f MB)", app.name, size_mb)
 
+    _phase(events, "upload", f"{size_mb:.1f} MB")
     remote_app = await client.get_app_by_name(app.name)
     if remote_app is None:
         remote_app = await client.create_app(app.name)
@@ -428,6 +438,7 @@ async def deploy_app(
     await client.deploy_build(environment["id"], build["id"])
     log.info("activated build %s on %s/%s", build["id"], app.name, env_name)
 
+    _phase(events, "endpoints")
     endpoints = await reconcile_endpoints(
         client, app, environment, build["id"], python_version
     )

@@ -279,3 +279,65 @@ class TestDevRefresh:
         await session.refresh([app2])
 
         api.delete_endpoint.assert_awaited_once_with("ep-gone")
+
+
+class TestDevEvents:
+    async def test_lifecycle_events_emitted(self):
+        events = []
+
+        class Sink:
+            def provisioning(self, name, kind, hardware):
+                events.append(("provisioning", name, kind, hardware))
+
+            def adopted(self, name, endpoint_id):
+                events.append(("adopted", name, endpoint_id))
+
+            def ready(self, name, endpoint_id):
+                events.append(("ready", name, endpoint_id))
+
+            def refreshed(self, name, generation):
+                events.append(("refreshed", name, generation))
+
+            def deleted(self, name):
+                events.append(("deleted", name))
+
+        app = App("ev-app")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-1"}
+        api.delete_endpoint.return_value = True
+
+        session = DevSession([app], api=api, events=Sink())
+        await session.start()
+        await session.refresh([app])
+        await session.stop()
+
+        kinds = [e[0] for e in events]
+        assert "provisioning" in kinds
+        assert "ready" in kinds
+        assert "refreshed" in kinds
+        assert "deleted" in kinds
+        assert ("provisioning", "q", "queue", "cpu3c-1-2") in events
+        # deleted reports the resource name, not the endpoint name
+        assert ("deleted", "q") in events
+
+    async def test_missing_event_methods_ignored(self):
+        app = App("ev-app2")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-1"}
+
+        # events object with no handlers at all must not break anything
+        session = DevSession([app], api=api, events=object())
+        await session.start()
+        await session.stop()

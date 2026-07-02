@@ -30,6 +30,11 @@ def dev_endpoint_name(app_name: str, resource_name: str) -> str:
     return f"{DEV_PREFIX}-{app_name}-{resource_name}"
 
 
+def _resource_of(endpoint_name: str) -> str:
+    """resource name from a dev endpoint name (last dash segment)."""
+    return endpoint_name.rsplit("-", 1)[-1]
+
+
 def _image_for(spec: ResourceSpec) -> str:
     """dev worker image: custom image, env override, or the builtin
     runtime image matched to the local python (dev requests carry
@@ -144,14 +149,29 @@ class DevSession:
     lifecycle: adopt-or-create by name on start, reconcile on refresh
     (config updates + a generation bump that recreates workers so every
     request after a code change runs fully fresh), delete on stop.
+
+    `events`, when provided, receives lifecycle callbacks:
+    provisioning(name, kind, hardware), adopted(name, id),
+    ready(name, id), refreshed(name, generation), deleted(name).
     """
 
-    def __init__(self, apps: List[App], api: Optional[AppsApiClient] = None):
+    def __init__(
+        self,
+        apps: List[App],
+        api: Optional[AppsApiClient] = None,
+        events: Optional[object] = None,
+    ):
         self.apps = apps
         self.api = api or AppsApiClient()
         self.generation = 1
+        self.events = events
         # endpoint name -> id for everything this session owns
         self._endpoints: Dict[str, str] = {}
+
+    def _emit(self, event: str, *args) -> None:
+        handler = getattr(self.events, event, None)
+        if handler is not None:
+            handler(*args)
 
     @property
     def _endpoint_ids(self) -> List[str]:
@@ -178,19 +198,25 @@ class DevSession:
                 name = dev_endpoint_name(app.name, spec.name)
                 payload = _endpoint_input(app, spec, self.generation)
 
+                hardware = ",".join(spec.cpu or spec.gpu or ["any"])
                 found = existing.get(name)
                 if found:
                     # adopt: reconcile the leftover endpoint to the
                     # current spec instead of creating a duplicate
+                    self._emit("adopted", spec.name, found["id"])
                     payload["id"] = found["id"]
                     result = await self.api.save_endpoint(payload)
                     endpoint_id = result["id"]
                     log.info("adopted dev endpoint %s (%s)", name, endpoint_id)
                 else:
+                    self._emit(
+                        "provisioning", spec.name, spec.kind.value, hardware
+                    )
                     result = await self.api.save_endpoint(payload)
                     endpoint_id = result["id"]
                     log.info("provisioned dev endpoint %s (%s)", name, endpoint_id)
 
+                self._emit("ready", spec.name, endpoint_id)
                 self._endpoints[name] = endpoint_id
                 app._dev_targets[spec.name] = LiveTarget(endpoint_id)
 
@@ -217,6 +243,7 @@ class DevSession:
                 endpoint_id = self._endpoints.pop(name)
                 try:
                     await self.api.delete_endpoint(endpoint_id)
+                    self._emit("deleted", _resource_of(name))
                     log.info("deleted removed dev endpoint %s", name)
                 except Exception as exc:
                     log.warning("failed to delete %s: %s", name, exc)
@@ -231,6 +258,7 @@ class DevSession:
             endpoint_id = result["id"]
             self._endpoints[name] = endpoint_id
             app._dev_targets[handle.spec.name] = LiveTarget(endpoint_id)
+            self._emit("refreshed", handle.spec.name, self.generation)
             log.info(
                 "refreshed dev endpoint %s (%s, generation %d)",
                 name,
@@ -243,6 +271,7 @@ class DevSession:
         for name, endpoint_id in list(self._endpoints.items()):
             try:
                 await self.api.delete_endpoint(endpoint_id)
+                self._emit("deleted", _resource_of(name))
                 log.info("deleted dev endpoint %s (%s)", name, endpoint_id)
             except Exception as exc:
                 log.warning(
