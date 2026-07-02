@@ -34,8 +34,8 @@ _TAG = _os.environ.get("RUNPOD_RUNTIME_TAG", "latest")
 DEFAULT_IMAGES = {
     ("queue", False): f"runpod/queue:py3.12-{_TAG}",
     ("queue", True): f"runpod/queue:py3.12-{_TAG}",
-    ("api", False): "runpod/flash-lb:py3.12-latest",
-    ("api", True): "runpod/flash-lb-cpu:py3.12-latest",
+    ("api", False): f"runpod/api:py3.12-{_TAG}",
+    ("api", True): f"runpod/api:py3.12-{_TAG}",
 }
 
 
@@ -60,7 +60,7 @@ def _image_for(spec: ResourceSpec) -> str:
 
 def _bootstrap_source() -> str:
     return (
-        Path(__file__).parent.parent / "runtimes" / "queue" / "bootstrap.py"
+        Path(__file__).parent.parent / "runtimes" / "bootstrap.py"
     ).read_text()
 
 
@@ -120,11 +120,16 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
     if spec.image:
         # custom image: inject the bootstrap so the worker runtime starts
         # regardless of what the image contains
-        payload["template"]["env"].append(
-            {
-                "key": "RUNPOD_BOOTSTRAP_B64",
-                "value": base64.b64encode(_bootstrap_source().encode()).decode(),
-            }
+        payload["template"]["env"].extend(
+            [
+                {
+                    "key": "RUNPOD_BOOTSTRAP_B64",
+                    "value": base64.b64encode(
+                        _bootstrap_source().encode()
+                    ).decode(),
+                },
+                {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
+            ]
         )
         payload["template"]["dockerArgs"] = _bootstrap_docker_args()
     if spec.kind is ResourceKind.API:

@@ -1,4 +1,4 @@
-"""stdlib-only bootstrap for queue endpoints on custom images.
+"""stdlib-only bootstrap for serverless endpoints on custom images.
 
 deployed code reaches the pod via the host's artifact delivery (any pod
 in a flash environment gets the build tarball, regardless of image).
@@ -7,15 +7,18 @@ this shim makes that code runnable on a bare image:
   phase unpack     wait for and extract the artifact into /app
   phase runtime    pip install the runpod package if missing
   phase deps       pip install this resource's manifest dependencies
-  phase worker     exec the real worker (runpod.runtimes.queue.worker)
+  phase worker     exec the real runtime: runpod.runtimes.queue.worker
+                   or runpod.runtimes.api.server, selected by
+                   RUNPOD_RUNTIME_KIND (queue | api)
 
 if any phase fails, instead of crash-looping silently, a minimal
 job-take loop starts and answers every job with the structured error so
 the failure is visible in job responses, not just container logs.
 
-delivery: baked into the runtime images, or injected base64 in a
-template env var and booted via dockerArgs on custom images. stdlib
-only; must run on any image with a python3 binary.
+this module is the entrypoint for every serverless runtime image
+(runpod/queue, runpod/api) and for custom images, where it is injected
+base64 in a template env var and booted via dockerArgs. stdlib only;
+must run on any image with a python3 binary.
 """
 
 import json
@@ -84,6 +87,10 @@ def _pip_install(packages, phase):
         raise PhaseError(phase, result.stderr[-3000:])
 
 
+def _runtime_kind():
+    return os.environ.get("RUNPOD_RUNTIME_KIND", "queue")
+
+
 def _ensure_runtime():
     try:
         import runpod.runtimes.queue.worker  # noqa: F401
@@ -95,7 +102,10 @@ def _ensure_runtime():
     # prerelease testing); defaults to the published package
     spec = os.environ.get("RUNPOD_PACKAGE_SPEC", "runpod")
     _log(f"worker runtime not in image, installing {spec}")
-    _pip_install([spec, "cloudpickle"], "runtime")
+    packages = [spec, "cloudpickle"]
+    if _runtime_kind() == "api":
+        packages.append("uvicorn>=0.30")
+    _pip_install(packages, "runtime")
 
 
 def _resource_entry():
@@ -126,10 +136,13 @@ def _install_deps(entry):
 
 
 def _run_worker():
-    env = dict(os.environ, RUNPOD_APP_DIR=APP_DIR)
-    result = subprocess.run(
-        [sys.executable, "-m", "runpod.runtimes.queue.worker"], env=env
+    module = (
+        "runpod.runtimes.api.server"
+        if _runtime_kind() == "api"
+        else "runpod.runtimes.queue.worker"
     )
+    env = dict(os.environ, RUNPOD_APP_DIR=APP_DIR)
+    result = subprocess.run([sys.executable, "-m", module], env=env)
     sys.exit(result.returncode)
 
 

@@ -133,3 +133,36 @@ jobs:
             runpod/queue:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
           cache-from: type=gha,scope=queue-py${{ matrix.python-version }}
           cache-to: type=gha,mode=max,scope=queue-py${{ matrix.python-version }}
+
+  build-api:
+    runs-on: ubuntu-latest
+    needs: [test-runner]
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: runpod/runtimes/api/Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            PYTHON_VERSION=${{ matrix.python-version }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            runpod/api:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
+          cache-from: type=gha,scope=api-py${{ matrix.python-version }}
+          cache-to: type=gha,mode=max,scope=api-py${{ matrix.python-version }}
