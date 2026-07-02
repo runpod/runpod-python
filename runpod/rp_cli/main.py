@@ -196,6 +196,39 @@ def dev(
 
 
 @app.command()
+def logs(
+    pod_id: str = typer.Argument(..., help="Pod id to fetch logs for."),
+    follow: bool = typer.Option(
+        False, "--follow", "-f", help="Stream logs as they arrive."
+    ),
+    log_type: str = typer.Option(
+        "all", "--type", help="all, container, or system."
+    ),
+    tail: int = typer.Option(100, "--tail", help="Lines of backfill."),
+):
+    """show a pod's container and system logs (host api)."""
+    from runpod.apps.logs import pod_logs, stream_pod_logs
+
+    async def _run():
+        if follow:
+            async for entry in stream_pod_logs(
+                pod_id, log_type=log_type, tail=tail
+            ):
+                source = entry.get("source", "?")
+                _echo(f"[{source}] {entry.get('line', '')}")
+        else:
+            logs_data = await pod_logs(pod_id, log_type=log_type)
+            for source in ("system", "container"):
+                for line in logs_data.get(source) or []:
+                    _echo(f"[{source}] {line}")
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+
+
+@app.command()
 def login():
     """authenticate with runpod and store the api key."""
     from runpod.cli.groups.config.functions import set_credentials

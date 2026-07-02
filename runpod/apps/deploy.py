@@ -233,7 +233,7 @@ def _deployed_endpoint_input(
     the environment. binding via flashEnvironmentId is also what makes
     hosts deliver the build artifact to this endpoint's workers.
     """
-    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS
+    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
     from .images import image_for_spec
 
     template_env = {
@@ -249,6 +249,15 @@ def _deployed_endpoint_input(
     api_key = _account_api_key()
     if api_key and "RUNPOD_API_KEY" not in template_env:
         template_env["RUNPOD_API_KEY"] = api_key
+
+    # workers that spawn tasks must select runtime images from the same
+    # channel the deploy used (the vendored env supplies the code, so
+    # only the image channel needs to travel)
+    import os as _os
+
+    tag = _os.environ.get("RUNPOD_RUNTIME_TAG")
+    if tag and "RUNPOD_RUNTIME_TAG" not in template_env:
+        template_env["RUNPOD_RUNTIME_TAG"] = tag
 
     payload: Dict[str, Any] = {
         "name": spec.name,
@@ -308,6 +317,11 @@ def _deployed_endpoint_input(
     else:
         payload["gpuIds"] = ",".join(spec.gpu or ["any"])
         payload["gpuCount"] = spec.gpu_count
+        if not spec.datacenter:
+            # artifact delivery rides the flash volume (network
+            # storage); machines outside storage-cluster regions fail
+            # with "requires network storage" and recycle forever
+            payload["locations"] = ",".join(dc.value for dc in DataCenter)
     return payload
 
 
