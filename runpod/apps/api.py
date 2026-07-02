@@ -76,6 +76,41 @@ class AppsApiClient:
         data = await self._execute(query)
         return data["myself"]["endpoints"]
 
+    # -- pods (task execution) --
+
+    async def deploy_task_pod(
+        self, pod_input: Dict[str, Any], *, is_cpu: bool
+    ) -> Dict[str, Any]:
+        """deploy an on-demand pod for a task run."""
+        if is_cpu:
+            # deployCpuPod takes a single instanceId
+            instance_ids = pod_input.pop("instanceIds", None)
+            if instance_ids:
+                pod_input["instanceId"] = instance_ids[0]
+            mutation = """
+            mutation deployCpuPod($input: deployCpuPodInput!) {
+                deployCpuPod(input: $input) { id desiredStatus }
+            }
+            """
+            data = await self._execute(mutation, {"input": pod_input})
+            return data["deployCpuPod"]
+
+        mutation = """
+        mutation deployPod($input: PodFindAndDeployOnDemandInput) {
+            podFindAndDeployOnDemand(input: $input) { id desiredStatus }
+        }
+        """
+        data = await self._execute(mutation, {"input": pod_input})
+        return data["podFindAndDeployOnDemand"]
+
+    async def terminate_pod(self, pod_id: str) -> None:
+        mutation = """
+        mutation terminatePod($input: PodTerminateInput!) {
+            podTerminate(input: $input)
+        }
+        """
+        await self._execute(mutation, {"input": {"podId": pod_id}})
+
     # -- app lifecycle (deploy) --
 
     async def get_app_by_name(self, name: str) -> Optional[Dict[str, Any]]:

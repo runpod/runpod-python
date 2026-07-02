@@ -343,21 +343,56 @@ class PodTarget(InvocationTarget):
     """ephemeral pod execution for @app.task: provision a pod, run the
     function body, collect the result, terminate.
 
-    transport lands with the task execution engine.
+    tasks run to completion far beyond the queue data plane's sync
+    window, so the transport is a direct http channel to a single-shot
+    runner on the pod (see runpod.apps.tasks).
     """
+
+    # tasks default to a long window; the pod's terminateAfter is the backstop
+    TASK_TIMEOUT_SECONDS = 3600.0
 
     def __init__(self, spec: ResourceSpec, fn: Callable):
         self.spec = spec
         self.fn = fn
 
-    async def invoke(
-        self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
-    ) -> Any:
-        raise NotImplementedError(
-            "task pod execution is not wired up yet; use .local() meanwhile"
+    def build_payload(
+        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
+    ) -> Dict[str, Any]:
+        from .serialization import (
+            get_function_source,
+            serialize_args,
+            serialize_kwargs,
         )
 
-    async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        raise NotImplementedError(
-            "task pod execution is not wired up yet; use .local() meanwhile"
+        request = FunctionRequest(
+            function_name=fn.__name__,
+            function_code=get_function_source(fn),
+            args=serialize_args(args),
+            kwargs=serialize_kwargs(kwargs),
+            dependencies=spec.dependencies,
+            system_dependencies=spec.system_dependencies,
         )
+        return request.to_input()
+
+    async def invoke(
+        self, payload: Dict[str, Any], *, timeout: float = TASK_TIMEOUT_SECONDS
+    ) -> Any:
+        from .tasks import TaskExecution, unwrap_task_response
+
+        execution = TaskExecution(self.spec)
+        await execution.start()
+        try:
+            await execution.wait_ready()
+            response = await execution.execute(payload, timeout)
+        finally:
+            await execution.terminate()
+        return unwrap_task_response(response)
+
+    async def submit(self, payload: Dict[str, Any]) -> Any:
+        from .tasks import TaskExecution, TaskJob
+
+        execution = TaskExecution(self.spec)
+        await execution.start()
+        await execution.wait_ready()
+        await execution.submit(payload)
+        return TaskJob(execution)

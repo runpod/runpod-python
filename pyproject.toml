@@ -52,6 +52,8 @@ include-package-data = true
 runpod = [
     "serverless/binaries/gpu_test",
     "serverless/binaries/README.md",
+    "runtimes/**/*.py",
+    "runtimes/**/Dockerfile*",
 ]
 
 [tool.setuptools_scm]

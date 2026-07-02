@@ -105,11 +105,14 @@ class FunctionHandle:
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
         return await target.invoke(payload)
 
-    async def _spawn_async(self, *args: Any, **kwargs: Any) -> Job:
+    async def _spawn_async(self, *args: Any, **kwargs: Any) -> Any:
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
         data = await target.submit(payload)
-        return Job(data, self)
+        # queue targets return raw job data; task targets return a TaskJob
+        if isinstance(data, dict):
+            return Job(data, self)
+        return data
 
     def _is_current_worker(self) -> bool:
         import os
