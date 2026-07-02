@@ -272,3 +272,26 @@ class TestPodTargetPayload:
         assert isinstance(job, TaskJob)
         assert job.pod_id == "pod-1"
         instance.submit.assert_awaited_once()
+
+
+class TestGpuPoolExpansion:
+    def test_pool_id_expands_to_device_names(self):
+        from runpod.apps.tasks import _device_names
+
+        assert _device_names(["ADA_24"]) == ["NVIDIA GeForce RTX 4090"]
+
+    def test_device_name_passes_through(self):
+        from runpod.apps.tasks import _device_names
+
+        assert _device_names(["NVIDIA L40S"]) == ["NVIDIA L40S"]
+
+    def test_none_means_any(self):
+        from runpod.apps.tasks import _device_names
+
+        assert _device_names(None) == ["any"]
+
+    def test_mixed_pool_and_device(self):
+        from runpod.apps.tasks import _device_names
+
+        names = _device_names(["AMPERE_48", "NVIDIA L40S"])
+        assert "NVIDIA A40" in names and "NVIDIA L40S" in names

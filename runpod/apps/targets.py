@@ -120,6 +120,14 @@ class InvocationTarget(ABC):
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """submit without waiting; returns the raw job data."""
 
+    async def wait(
+        self, job_data: Dict[str, Any], *, timeout: float
+    ) -> Any:
+        """wait for a submitted job to finish and return its output."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job polling"
+        )
+
     async def request(
         self, method: str, path: str, body: Any = None, *, timeout: float
     ) -> Any:
@@ -285,6 +293,18 @@ class SentinelTarget(InvocationTarget):
             resource_name=self.resource_name,
         )
 
+    async def wait(
+        self,
+        job_data: Dict[str, Any],
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> Any:
+        base = f"{_endpoint_url_base()}/{SENTINEL_ID}"
+        data = await _wait_terminal(
+            base, job_data, self._sentinel_headers(), timeout
+        )
+        return unwrap_job_output(data)
+
     async def request(
         self,
         method: str,
@@ -366,6 +386,16 @@ class LiveTarget(InvocationTarget):
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{_endpoint_url_base()}/{self.endpoint_id}/run"
         return await _post_json(url, payload, _headers(), DEFAULT_TIMEOUT_SECONDS)
+
+    async def wait(
+        self,
+        job_data: Dict[str, Any],
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> Any:
+        base = f"{_endpoint_url_base()}/{self.endpoint_id}"
+        data = await _wait_terminal(base, job_data, _headers(), timeout)
+        return self.unwrap(data)
 
     async def request(
         self,

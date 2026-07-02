@@ -198,6 +198,27 @@ def package_project(
     return output
 
 
+# gpu runtime images carry the torch family (~9 GB uncompressed); the
+# container disk must hold the image layers plus the unpacked artifact
+CPU_CONTAINER_DISK_GB = 10
+GPU_CONTAINER_DISK_GB = 30
+
+
+def _container_disk_gb(spec) -> int:
+    return CPU_CONTAINER_DISK_GB if spec.is_cpu else GPU_CONTAINER_DISK_GB
+
+
+def _account_api_key() -> Optional[str]:
+    import os
+
+    key = os.getenv("RUNPOD_API_KEY")
+    if key:
+        return key
+    import runpod
+
+    return runpod.api_key
+
+
 def _deployed_endpoint_input(
     app: App,
     spec,
@@ -222,6 +243,13 @@ def _deployed_endpoint_input(
         **(spec.env or {}),
     }
 
+    # cross-resource calls from inside a worker go through the sentinel,
+    # which authenticates with the account api key; without it any
+    # .remote() from worker code would fail
+    api_key = _account_api_key()
+    if api_key and "RUNPOD_API_KEY" not in template_env:
+        template_env["RUNPOD_API_KEY"] = api_key
+
     payload: Dict[str, Any] = {
         "name": spec.name,
         "flashEnvironmentId": environment_id,
@@ -236,7 +264,7 @@ def _deployed_endpoint_input(
         "template": {
             "name": f"{app.name}-{spec.name}-template",
             "imageName": image_for_spec(spec, python_version=python_version),
-            "containerDiskInGb": 10,
+            "containerDiskInGb": _container_disk_gb(spec),
             "dockerArgs": "",
             "env": [
                 {"key": k, "value": v} for k, v in template_env.items()

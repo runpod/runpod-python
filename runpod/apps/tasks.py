@@ -55,6 +55,23 @@ def _bootstrap_command() -> str:
     return shell_launcher("RUNPOD_TASK_RUNNER_B64", "/task_runner.py")
 
 
+def _device_names(gpu: Optional[List[str]]) -> List[str]:
+    """pods take exact device names, not pool ids; expand any pool ids
+    (e.g. ADA_24 -> NVIDIA GeForce RTX 4090) and pass device names
+    through."""
+    from .gpu import GpuGroup
+
+    if not gpu:
+        return ["any"]
+    names: List[str] = []
+    for entry in gpu:
+        try:
+            names.extend(GpuGroup(entry).device_names() or [entry])
+        except ValueError:
+            names.append(entry)
+    return names
+
+
 def _proxy_url(pod_id: str) -> str:
     return f"https://{pod_id}-{TASK_PORT}.proxy.runpod.net"
 
@@ -83,7 +100,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
             spec, python_version=local_python_version()
         ),
         "ports": f"{TASK_PORT}/http",
-        "containerDiskInGb": 10,
+        "containerDiskInGb": 10 if spec.is_cpu else 30,
         "terminateAfter": terminate_after,
         "supportPublicIp": True,
     }
@@ -113,7 +130,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     if spec.is_cpu:
         pod["instanceIds"] = spec.cpu
     else:
-        pod["gpuTypeIdList"] = spec.gpu or ["any"]
+        pod["gpuTypeIdList"] = _device_names(spec.gpu)
         pod["gpuCount"] = spec.gpu_count
     return pod
 

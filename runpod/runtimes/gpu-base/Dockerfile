@@ -7,9 +7,13 @@
 ARG PYTHON_VERSION=3.12
 FROM python:${PYTHON_VERSION}-slim
 
+# nvidia container runtime keys on these to inject the host driver;
+# without them torch sees no gpu even on a gpu machine
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

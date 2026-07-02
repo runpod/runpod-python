@@ -51,6 +51,14 @@ class GpuGroup(Enum):
         """all gpu groups except ANY."""
         return [g for g in cls if g is not cls.ANY]
 
+    def device_names(self) -> List[str]:
+        """exact device display names in this pool.
+
+        serverless endpoints take pool ids directly (gpuIds), but pods
+        take device names (gpuTypeIdList), so tasks need the expansion.
+        """
+        return [t.value for t in POOLS_TO_TYPES.get(self, [])]
+
 
 class GpuType(Enum):
     ANY = "any"

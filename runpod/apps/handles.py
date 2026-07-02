@@ -30,11 +30,18 @@ if TYPE_CHECKING:
 
 
 class Job:
-    """a submitted queue job, returned by .spawn()."""
+    """a submitted queue job, returned by .spawn().
+
+    `job.result()` blocks until the job finishes and returns its
+    output; `await job.result.aio()` is the async form.
+    """
 
     def __init__(self, data: Dict[str, Any], handle: "FunctionHandle"):
         self._data = data
         self._handle = handle
+        from .invoker import Invoker
+
+        self.result = Invoker(self._result_async)
 
     @property
     def id(self) -> str:
@@ -43,6 +50,10 @@ class Job:
     @property
     def status(self) -> str:
         return self._data.get("status", "UNKNOWN")
+
+    async def _result_async(self, timeout: float = 300.0) -> Any:
+        target = await self._handle._app._resolve(self._handle.spec)
+        return await target.wait(self._data, timeout=timeout)
 
     def __repr__(self) -> str:
         return f"Job(id={self.id!r}, status={self.status!r})"

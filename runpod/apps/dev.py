@@ -93,7 +93,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
         "template": {
             "name": f"{dev_endpoint_name(app.name, spec.name)}-template",
             "imageName": _image_for(spec),
-            "containerDiskInGb": 10,
+            "containerDiskInGb": 10 if spec.is_cpu else 30,
             "dockerArgs": "",
             "env": [
                 {"key": GENERATION_ENV, "value": str(generation)},
