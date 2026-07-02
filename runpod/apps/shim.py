@@ -1,13 +1,15 @@
 """shell launcher for booting injected runtime scripts on custom images.
 
 builds the dockerArgs command that materializes a base64 env payload
-into a file and runs it. constraints, in order of hostility:
+into a file and runs it with the image's python. constraints:
 
-  - no bash: POSIX sh only (busybox/alpine images)
-  - no cpython on PATH: probe well-known interpreter locations (conda,
-    venv, uv, system) before giving up
-  - no base64 binary: the discovered python does the decode
-  - no python at all: download a standalone build via curl or wget
+  - POSIX sh only (no bash on busybox/alpine images)
+  - python may not be on sh's PATH (conda/venv images), so well-known
+    interpreter locations are probed
+  - no base64 binary assumed: the discovered python does the decode
+  - no python at all is a configuration error: the whole feature is
+    running the user's python function on their image, so a pythonless
+    image gets a loud, clear failure
 
 the launcher must stay single-quote-free internally: the host parses
 dockerArgs with a shell lexer and the whole script rides inside one
@@ -28,15 +30,6 @@ _PYTHON_CANDIDATES = (
     "/usr/local/bin/python",
 )
 
-# standalone cpython for images with no interpreter at all; the musl
-# variant covers alpine, detected via the musl loader path
-_STANDALONE_BASE = (
-    "https://github.com/astral-sh/python-build-standalone/releases/download/"
-    "20250409/cpython-3.12.10%2B20250409-x86_64-unknown-linux-"
-)
-_STANDALONE_GNU = f"{_STANDALONE_BASE}gnu-install_only.tar.gz"
-_STANDALONE_MUSL = f"{_STANDALONE_BASE}musl-install_only.tar.gz"
-
 
 def shell_launcher(env_var: str, dest: str) -> str:
     """dockerArgs command that decodes $env_var into dest and execs it."""
@@ -47,17 +40,8 @@ def shell_launcher(env_var: str, dest: str) -> str:
         f'if command -v "$c" >/dev/null 2>&1; then PY="$c"; break; fi; '
         f"done; "
         f'if [ -z "$PY" ]; then '
-        f'echo "[shim] no python found, downloading standalone build" >&2; '
-        f"if ls /lib/ld-musl-* >/dev/null 2>&1; then URL={_STANDALONE_MUSL}; "
-        f"else URL={_STANDALONE_GNU}; fi; "
-        f"mkdir -p /tmp/rp-python && cd /tmp/rp-python && "
-        f'( command -v curl >/dev/null 2>&1 && curl -fsSL "$URL" -o py.tgz '
-        f'|| wget -q "$URL" -O py.tgz ) && '
-        f"tar -xzf py.tgz && PY=/tmp/rp-python/python/bin/python3; "
-        f"fi; "
-        f'if [ -z "$PY" ]; then '
-        f'echo "[shim] FATAL: no python interpreter available and no curl/wget "'
-        f'"to fetch one. use an image with python3, curl, or wget." >&2; '
+        f'echo "[shim] FATAL: no python interpreter found in this image. "'
+        f'"custom images must include python3." >&2; '
         f"exit 1; fi; "
         f'echo "${env_var}" | "$PY" -c '
         f'"import base64,sys;sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" '

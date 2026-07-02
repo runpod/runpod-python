@@ -50,8 +50,7 @@ def test_probes_beyond_path():
     assert "/opt/venv/bin/python" in cmd
 
 
-def test_standalone_fallback_present():
+def test_pythonless_image_fails_loudly():
     cmd = shell_launcher("VAR", "/dest.py")
-    assert "python-build-standalone" in cmd
-    assert "musl" in cmd
-    assert "curl" in cmd and "wget" in cmd
+    assert "FATAL" in cmd
+    assert "must include python3" in cmd
