@@ -28,12 +28,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install test deps
-        run: pip install pytest pytest-asyncio cloudpickle aiohttp requests
+        run: |
+          pip install -e .
+          pip install pytest pytest-asyncio cloudpickle
 
       - name: Run task runner tests
-        run: |
-          pip install -e . --no-deps
-          pytest tests/test_apps/test_tasks.py tests/test_apps/test_task_runner_http.py -q -o addopts=""
+        run: pytest tests/test_apps/test_tasks.py tests/test_apps/test_task_runner_http.py -q -o addopts=""
 
   build-task-cpu:
     runs-on: ubuntu-latest
