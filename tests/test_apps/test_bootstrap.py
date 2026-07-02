@@ -109,7 +109,7 @@ class TestCustomImagePayloads:
 
         payload = _endpoint_input(app, q.spec)
         template = payload["template"]
-        assert template["imageName"] == "runpod/flash-cpu:py3.12-latest"
+        assert template["imageName"].startswith("runpod/queue:py3.12-")
         assert template["dockerArgs"] == ""
         env = {e["key"]: e["value"] for e in template["env"]}
         assert "RUNPOD_BOOTSTRAP_B64" not in env

@@ -2,7 +2,7 @@ name: Runtimes
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/apps-sdk]
     paths:
       - "runpod/runtimes/**"
       - ".github/workflows/runtimes.yml"
@@ -14,6 +14,8 @@ on:
 
 env:
   REGISTRY: docker.io
+  # dev-suffixed tags for non-main branches so testing never clobbers latest
+  TAG_SUFFIX: ${{ github.ref == 'refs/heads/main' && 'latest' || 'dev' }}
 
 jobs:
   test-runner:
@@ -62,7 +64,7 @@ jobs:
             PYTHON_VERSION=${{ matrix.python-version }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            runpod/task:py${{ matrix.python-version }}-latest
+            runpod/task:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
           cache-from: type=gha,scope=task-py${{ matrix.python-version }}
           cache-to: type=gha,mode=max,scope=task-py${{ matrix.python-version }}
 
@@ -95,6 +97,39 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            runpod/task-gpu:latest
+            runpod/task-gpu:${{ env.TAG_SUFFIX }}
           cache-from: type=gha,scope=task-gpu
           cache-to: type=gha,mode=max,scope=task-gpu
+
+  build-queue:
+    runs-on: ubuntu-latest
+    needs: [test-runner]
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push queue image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: runpod/runtimes/queue/Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            PYTHON_VERSION=${{ matrix.python-version }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            runpod/queue:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
+          cache-from: type=gha,scope=queue-py${{ matrix.python-version }}
+          cache-to: type=gha,mode=max,scope=queue-py${{ matrix.python-version }}

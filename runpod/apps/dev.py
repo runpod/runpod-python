@@ -23,10 +23,17 @@ log = logging.getLogger(__name__)
 
 DEV_PREFIX = "dev"
 
-# worker runtime images by (kind, is_cpu); tag pinned via env override
+# worker runtime images by (kind, is_cpu). queue images are built from
+# runpod/runtimes/queue in this repo; api still rides the flash lb
+# images until the lb runtime lands. RUNPOD_RUNTIME_TAG selects the
+# image channel (latest, dev, or a pinned version).
+import os as _os
+
+_TAG = _os.environ.get("RUNPOD_RUNTIME_TAG", "latest")
+
 DEFAULT_IMAGES = {
-    ("queue", False): "runpod/flash:py3.12-latest",
-    ("queue", True): "runpod/flash-cpu:py3.12-latest",
+    ("queue", False): f"runpod/queue:py3.12-{_TAG}",
+    ("queue", True): f"runpod/queue:py3.12-{_TAG}",
     ("api", False): "runpod/flash-lb:py3.12-latest",
     ("api", True): "runpod/flash-lb-cpu:py3.12-latest",
 }
