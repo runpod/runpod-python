@@ -112,13 +112,20 @@ def _locate():
     started = time.monotonic()
     try:
         with tarfile.open(ARTIFACT_PATH, mode="r:*") as tar:
-            for member in tar.getmembers():
-                dest = os.path.realpath(os.path.join(APP_DIR, member.name))
-                if not dest.startswith(target + os.sep) and dest != target:
-                    raise PhaseError(
-                        "locate", f"unsafe tar member path: {member.name}"
+            if hasattr(tarfile, "data_filter"):
+                # 3.12+: the data filter rejects traversal, devices,
+                # and absolute paths
+                tar.extractall(path=APP_DIR, filter="data")
+            else:
+                for member in tar.getmembers():
+                    dest = os.path.realpath(
+                        os.path.join(APP_DIR, member.name)
                     )
-            tar.extractall(path=APP_DIR)
+                    if not dest.startswith(target + os.sep) and dest != target:
+                        raise PhaseError(
+                            "locate", f"unsafe tar member path: {member.name}"
+                        )
+                tar.extractall(path=APP_DIR)
     except (OSError, tarfile.TarError) as exc:
         raise PhaseError("locate", f"failed to extract artifact: {exc}")
 
