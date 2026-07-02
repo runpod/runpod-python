@@ -21,12 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # cu128 wheels: default pypi torch is cu130, which needs 580+ drivers
 # that much of the fleet does not have yet. cu128 runs on 12.8+ drivers.
-# py3.10 needs an explicit pin: the newest packages on the cu128 index
-# no longer resolve together for cp310.
-RUN if python -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 10) else 1)'; then \
-        pip install --no-cache-dir torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 \
-            --index-url https://download.pytorch.org/whl/cu128; \
-    else \
-        pip install --no-cache-dir torch torchvision torchaudio \
-            --index-url https://download.pytorch.org/whl/cu128; \
-    fi
+# pinned + extra-index (not index-url): the cuda index lacks common
+# deps like typing-extensions, and the pin prevents drifting back to
+# pypi's cu130 build.
+RUN pip install --no-cache-dir \
+    "torch==2.9.1+cu128" "torchvision==0.24.1+cu128" "torchaudio==2.9.1+cu128" \
+    --extra-index-url https://download.pytorch.org/whl/cu128
