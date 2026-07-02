@@ -57,10 +57,9 @@ def _runner_source() -> str:
 
 def _bootstrap_command() -> str:
     """shell command that materializes and starts the runner."""
-    return (
-        "bash -c 'echo $RUNPOD_TASK_RUNNER_B64 | base64 -d > /task_runner.py "
-        "&& python3 /task_runner.py'"
-    )
+    from .shim import shell_launcher
+
+    return shell_launcher("RUNPOD_TASK_RUNNER_B64", "/task_runner.py")
 
 
 def _proxy_url(pod_id: str) -> str:

@@ -67,10 +67,9 @@ def _bootstrap_source() -> str:
 def _bootstrap_docker_args() -> str:
     """shell command that materializes and starts the bootstrap on a
     custom image."""
-    return (
-        "bash -c 'echo $RUNPOD_BOOTSTRAP_B64 | base64 -d > /bootstrap.py "
-        "&& python3 /bootstrap.py'"
-    )
+    from .shim import shell_launcher
+
+    return shell_launcher("RUNPOD_BOOTSTRAP_B64", "/bootstrap.py")
 
 
 def _cpu_locations(instance_ids: List[str]) -> str:
