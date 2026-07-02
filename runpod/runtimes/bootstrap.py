@@ -99,13 +99,24 @@ def _ensure_runtime():
     except ImportError:
         pass
     # RUNPOD_PACKAGE_SPEC allows pinning or installing from git (e.g.
-    # prerelease testing); defaults to the published package
+    # prerelease testing); defaults to the published package. --upgrade
+    # matters: the image may carry an older runpod without the runtimes
+    # modules, and a plain install would no-op against it.
     spec = os.environ.get("RUNPOD_PACKAGE_SPEC", "runpod")
     _log(f"worker runtime not in image, installing {spec}")
-    packages = [spec, "cloudpickle"]
+    packages = ["--upgrade", spec, "cloudpickle"]
     if _runtime_kind() == "api":
         packages.append("uvicorn>=0.30")
     _pip_install(packages, "runtime")
+    try:
+        import runpod.runtimes.queue.worker  # noqa: F401
+    except ImportError as exc:
+        raise PhaseError(
+            "runtime",
+            f"installed {spec} but the worker runtime is still missing: "
+            f"{exc}. the installed runpod version may predate the runtimes "
+            f"modules; set RUNPOD_PACKAGE_SPEC to a version that has them.",
+        )
 
 
 def _resource_entry():

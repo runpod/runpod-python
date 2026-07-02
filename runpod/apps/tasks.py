@@ -98,6 +98,9 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
         env["RUNPOD_TASK_RUNNER_B64"] = base64.b64encode(
             _runner_source().encode()
         ).decode()
+        package_spec = _os.environ.get("RUNPOD_PACKAGE_SPEC")
+        if package_spec:
+            env["RUNPOD_PACKAGE_SPEC"] = package_spec
         pod["dockerArgs"] = _bootstrap_command()
 
     pod["env"] = [{"key": k, "value": v} for k, v in env.items()]

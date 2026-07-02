@@ -131,6 +131,13 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
                 {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
             ]
         )
+        # the bootstrap pip-installs the runpod package on bare images;
+        # forward a pinned spec (e.g. a git branch during prerelease)
+        package_spec = _os.environ.get("RUNPOD_PACKAGE_SPEC")
+        if package_spec:
+            payload["template"]["env"].append(
+                {"key": "RUNPOD_PACKAGE_SPEC", "value": package_spec}
+            )
         payload["template"]["dockerArgs"] = _bootstrap_docker_args()
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"
