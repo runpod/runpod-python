@@ -127,6 +127,58 @@ class InvocationTarget(ABC):
         raise NotImplementedError(f"{type(self).__name__} does not serve http routes")
 
 
+# transient statuses worth retrying: gateway/edge errors that occur
+# while the sentinel cache warms or an edge node hiccups. 4xx (other
+# than 429) are never retried; the request itself is wrong.
+RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504, 520, 522, 524})
+RETRY_ATTEMPTS = 4
+RETRY_BASE_DELAY = 0.5
+
+
+async def _request_json(
+    method: str,
+    url: str,
+    headers: Dict[str, str],
+    timeout: float,
+    *,
+    payload: Any = None,
+    app_name: str = "",
+    resource_name: str = "",
+) -> Dict[str, Any]:
+    """http json call with exponential backoff on transient failures."""
+    import asyncio
+
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+    last_exc: Optional[Exception] = None
+    for attempt in range(RETRY_ATTEMPTS):
+        if attempt:
+            await asyncio.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+        try:
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                async with session.request(
+                    method, url, json=payload, headers=headers
+                ) as resp:
+                    if resp.status == 404:
+                        raise EndpointNotFound(app_name, resource_name)
+                    if resp.status in RETRYABLE_STATUSES:
+                        last_exc = aiohttp.ClientResponseError(
+                            resp.request_info,
+                            resp.history,
+                            status=resp.status,
+                            message=await resp.text(),
+                        )
+                        continue
+                    resp.raise_for_status()
+                    return await resp.json()
+        except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exc:
+            # connection-level failures (reset, ssl hiccup, dns) are
+            # transient by nature; response-level errors above already
+            # decided retryability
+            last_exc = exc
+            continue
+    raise last_exc  # type: ignore[misc]
+
+
 async def _post_json(
     url: str,
     payload: Any,
@@ -136,23 +188,21 @@ async def _post_json(
     app_name: str = "",
     resource_name: str = "",
 ) -> Dict[str, Any]:
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.post(url, json=payload, headers=headers) as resp:
-            if resp.status == 404:
-                raise EndpointNotFound(app_name, resource_name)
-            resp.raise_for_status()
-            return await resp.json()
+    return await _request_json(
+        "POST",
+        url,
+        headers,
+        timeout,
+        payload=payload,
+        app_name=app_name,
+        resource_name=resource_name,
+    )
 
 
 async def _get_json(
     url: str, headers: Dict[str, str], timeout: float
 ) -> Dict[str, Any]:
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.get(url, headers=headers) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+    return await _request_json("GET", url, headers, timeout)
 
 
 async def _wait_terminal(

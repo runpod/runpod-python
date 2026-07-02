@@ -7,6 +7,7 @@ import timeout guards against module-level code that blocks.
 
 import importlib.util
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
@@ -17,6 +18,27 @@ from .app import App, get_registered_apps
 log = logging.getLogger(__name__)
 
 IMPORT_TIMEOUT_SECONDS = 30
+
+# set while discovery imports modules; handle invocation checks it so
+# module-level .remote()/.spawn() calls fail fast with a precise
+# diagnosis instead of attempting network calls mid-scan
+DISCOVERY_ENV = "RUNPOD_DISCOVERY_SCAN"
+
+
+def in_discovery() -> bool:
+    return bool(os.environ.get(DISCOVERY_ENV))
+
+
+class DiscoveryInvocationError(Exception):
+    """a handle was invoked at module level during a discovery scan."""
+
+    def __init__(self, resource_name: str):
+        super().__init__(
+            f"'{resource_name}' was invoked at import time. move calls "
+            f"into a function, an entrypoint, or an "
+            f'`if __name__ == "__main__":` guard so importing the file '
+            f"has no side effects."
+        )
 
 _SKIP_DIRS = {
     ".git",
@@ -80,7 +102,14 @@ def _import_module(path: Path) -> None:
 
 
 def discover_apps(target: Path) -> List[App]:
-    """import all python files under target and return the apps they define."""
+    """import python files under target and return the apps they define.
+
+    a single-file target imports strictly and raises on any failure.
+    a directory walk is tolerant: files that fail to import are
+    collected as warnings, and discovery only fails outright when no
+    app was found anywhere (the failures are then the likely cause and
+    are included in the error).
+    """
     before = set(id(a) for a in get_registered_apps())
 
     sys_path_added = False
@@ -90,11 +119,34 @@ def discover_apps(target: Path) -> List[App]:
         sys.path.insert(0, root_str)
         sys_path_added = True
 
+    strict = target.is_file()
+    failures: List[str] = []
+    os.environ[DISCOVERY_ENV] = "1"
     try:
         for path in _python_files(target):
-            _import_module(path)
+            try:
+                _import_module(path)
+            except DiscoveryError as exc:
+                if strict:
+                    raise
+                failures.append(str(exc))
+                log.warning("%s", exc)
     finally:
+        os.environ.pop(DISCOVERY_ENV, None)
         if sys_path_added:
             sys.path.remove(root_str)
 
-    return [a for a in get_registered_apps() if id(a) not in before]
+    found = [a for a in get_registered_apps() if id(a) not in before]
+    # a file imported both by the scan (synthetic name) and by another
+    # file (real name, e.g. `from main import q1`) registers its app
+    # twice; deploying duplicates would be wasteful and confusing
+    by_name = {}
+    for app in found:
+        by_name.setdefault(app.name, app)
+    found = list(by_name.values())
+    if not found and failures:
+        raise DiscoveryError(
+            "no runpod.App found; some files failed to import:\n  "
+            + "\n  ".join(failures)
+        )
+    return found

@@ -93,6 +93,7 @@ class FunctionHandle:
     # -- remote execution --
 
     async def _remote_async(self, *args: Any, **kwargs: Any) -> Any:
+        self._guard_discovery()
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
@@ -106,6 +107,7 @@ class FunctionHandle:
         return await target.invoke(payload)
 
     async def _spawn_async(self, *args: Any, **kwargs: Any) -> Any:
+        self._guard_discovery()
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
         data = await target.submit(payload)
@@ -113,6 +115,12 @@ class FunctionHandle:
         if isinstance(data, dict):
             return Job(data, self)
         return data
+
+    def _guard_discovery(self) -> None:
+        from .discovery import DiscoveryInvocationError, in_discovery
+
+        if in_discovery():
+            raise DiscoveryInvocationError(self.spec.name)
 
     def _is_current_worker(self) -> bool:
         import os
@@ -153,6 +161,10 @@ class _RouteCaller:
         return block(self.aio(path, body, **kwargs))
 
     async def aio(self, path: str, body: Any = None, **kwargs: Any) -> Any:
+        from .discovery import DiscoveryInvocationError, in_discovery
+
+        if in_discovery():
+            raise DiscoveryInvocationError(self._handle.spec.name)
         target = await self._handle._app._resolve(self._handle.spec)
         return await target.request(self._method, path, body, **kwargs)
 

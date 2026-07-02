@@ -219,3 +219,39 @@ class TestDeployPipeline:
 
         api.create_app.assert_not_awaited()
         api.create_environment.assert_not_awaited()
+
+
+class TestTolerantDiscovery:
+    def test_broken_bystander_warns_but_discovers(self, tmp_path):
+        _write_project(tmp_path)
+        (tmp_path / "scratch.py").write_text("this is not python !!!")
+        apps = discover_apps(tmp_path)
+        assert len(apps) == 1
+
+    def test_single_file_target_stays_strict(self, tmp_path):
+        broken = tmp_path / "broken.py"
+        broken.write_text("import nonexistent_module_xyz")
+        with pytest.raises(DiscoveryError, match="broken.py"):
+            discover_apps(broken)
+
+    def test_no_apps_and_failures_raises_with_causes(self, tmp_path):
+        (tmp_path / "broken.py").write_text("import nonexistent_module_xyz")
+        with pytest.raises(DiscoveryError, match="broken.py"):
+            discover_apps(tmp_path)
+
+    def test_import_time_invocation_diagnosed(self, tmp_path):
+        _write_project(tmp_path)
+        (tmp_path / "client.py").write_text(
+            "from main import q1\nq1.remote(1)\n"
+        )
+        # directory walk: the client file fails with the precise
+        # diagnosis but the app still discovers
+        apps = discover_apps(tmp_path)
+        assert len(apps) == 1
+
+    def test_import_time_invocation_message(self, tmp_path):
+        _write_project(tmp_path)
+        client = tmp_path / "client.py"
+        client.write_text("from main import q1\nq1.remote(1)\n")
+        with pytest.raises(DiscoveryError, match="invoked at import time"):
+            discover_apps(client)
