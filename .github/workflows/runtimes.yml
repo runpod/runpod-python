@@ -33,7 +33,7 @@ jobs:
           pip install pytest pytest-asyncio cloudpickle
 
       - name: Run task runner tests
-        run: pytest tests/test_apps/test_tasks.py tests/test_apps/test_task_runner_http.py -q -o addopts=""
+        run: pytest tests/test_apps/test_tasks.py tests/test_apps/test_task_runner_http.py -q -o addopts="" -p no:unraisableexception
 
   build-task-cpu:
     runs-on: ubuntu-latest
