@@ -78,10 +78,15 @@ def _unpack():
 
 
 def _pip_install(packages, phase):
+    env = dict(os.environ)
+    # tarball installs (e.g. github archive urls) have no .git for
+    # setuptools-scm version inference; pretend a version so they build
+    env.setdefault("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD", "0.0.0.dev0")
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-q", *packages],
         capture_output=True,
         text=True,
+        env=env,
     )
     if result.returncode != 0:
         raise PhaseError(phase, result.stderr[-3000:])
