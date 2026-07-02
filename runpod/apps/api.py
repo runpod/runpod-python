@@ -119,7 +119,13 @@ class AppsApiClient:
             flashAppByName(flashAppName: $flashAppName) {
                 id
                 name
-                flashEnvironments { id name state activeBuildId }
+                flashEnvironments {
+                    id
+                    name
+                    state
+                    activeBuildId
+                    endpoints { id name }
+                }
             }
         }
         """

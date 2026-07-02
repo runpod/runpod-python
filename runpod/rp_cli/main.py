@@ -96,6 +96,11 @@ def deploy(
 @app.command()
 def dev(
     module: Path = typer.Argument(..., help="Python module to run."),
+    once: bool = typer.Option(
+        False,
+        "--once",
+        help="Run the entrypoint once, tear down, and exit (for scripts/CI).",
+    ),
 ):
     """start an interactive dev session for MODULE.
 
@@ -143,11 +148,21 @@ def dev(
                     return "changed"
                 done, _ = await asyncio.wait({stdin_task}, timeout=0.5)
                 if done:
+                    # eof (piped stdin, ci): interactive re-run is
+                    # impossible, wait on file changes only
+                    if not stdin_task.result():
+                        return await _wait_for_change(watcher)
                     return "enter"
         finally:
             stdin_task.cancel()
 
-    async def _session() -> None:
+    async def _wait_for_change(watcher: FileWatcher) -> str:
+        while True:
+            if watcher.changed():
+                return "changed"
+            await asyncio.sleep(0.5)
+
+    async def _session() -> int:
         nonlocal apps, entrypoint
         session = DevSession(apps)
         watcher = FileWatcher([module.parent])
@@ -160,6 +175,10 @@ def dev(
                     run_entrypoint(entrypoint)
                 except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
                     typer.secho(f"entrypoint error: {exc}", fg=typer.colors.RED)
+                    if once:
+                        return 1
+                if once:
+                    return 0
                 _echo("--- press enter to re-run, edit files to reload, ctrl-c to exit ---")
                 reason = await _wait_for_rerun(watcher)
                 if reason == "changed":
@@ -171,7 +190,7 @@ def dev(
             await session.stop()
 
     try:
-        asyncio.run(_session())
+        raise typer.Exit(asyncio.run(_session()))
     except (KeyboardInterrupt, EOFError):
         _echo("\nsession ended.")
 

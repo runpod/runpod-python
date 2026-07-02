@@ -9,15 +9,22 @@ per app:
      honored for source)
   5. get-or-create the flash app + environment
   6. upload via presigned url, finalize the build
-  7. activate the build on the environment (coordinator provisions)
+  7. activate the build on the environment (hosts deliver the artifact
+     to workers via the flash volume)
+  8. reconcile endpoints: one per queue/api resource, named exactly
+     the resource name and bound to the environment via
+     flashEnvironmentId (the relation the sentinel's
+     resolveFlashEndpoint walks). removed resources' endpoints are
+     deleted; tasks have no standing infra.
 """
 
+import base64
 import fnmatch
 import json
 import logging
 import tarfile
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -79,6 +86,7 @@ class DeployResult:
     build_id: str
     environment_id: str
     resources: List[str]
+    endpoints: Dict[str, str] = field(default_factory=dict)
 
 
 def build_manifest(
@@ -190,6 +198,137 @@ def package_project(
     return output
 
 
+def _deployed_endpoint_input(
+    app: App,
+    spec,
+    environment_id: str,
+    build_id: str,
+    python_version: str,
+) -> Dict[str, Any]:
+    """saveEndpoint payload for one deployed queue/api resource.
+
+    the endpoint name must equal the resource name: sentinel
+    resolution matches X-Flash-Endpoint against endpoint.name within
+    the environment. binding via flashEnvironmentId is also what makes
+    hosts deliver the build artifact to this endpoint's workers.
+    """
+    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS
+    from .images import image_for_spec
+
+    template_env = {
+        "FLASH_RESOURCE_NAME": spec.name,
+        # version-triggering: a new build recreates all workers
+        "RUNPOD_BUILD_ID": build_id,
+        **(spec.env or {}),
+    }
+
+    payload: Dict[str, Any] = {
+        "name": spec.name,
+        "flashEnvironmentId": environment_id,
+        "workersMin": spec.workers[0],
+        "workersMax": spec.workers[1],
+        "idleTimeout": spec.idle_timeout,
+        "scalerType": (
+            "REQUEST_COUNT" if spec.kind is ResourceKind.API else "QUEUE_DELAY"
+        ),
+        "scalerValue": 4,
+        "flashBootType": "FLASHBOOT",
+        "template": {
+            "name": f"{app.name}-{spec.name}-template",
+            "imageName": image_for_spec(spec, python_version=python_version),
+            "containerDiskInGb": 10,
+            "dockerArgs": "",
+            "env": [
+                {"key": k, "value": v} for k, v in template_env.items()
+            ],
+        },
+    }
+
+    if spec.image:
+        # custom image: inject the bootstrap; the vendored env in the
+        # artifact provides the runtime once the bootstrap unpacks it
+        from .dev import _bootstrap_docker_args, _bootstrap_source
+
+        payload["template"]["env"].extend(
+            [
+                {
+                    "key": "RUNPOD_BOOTSTRAP_B64",
+                    "value": base64.b64encode(
+                        _bootstrap_source().encode()
+                    ).decode(),
+                },
+                {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
+            ]
+        )
+        payload["template"]["dockerArgs"] = _bootstrap_docker_args()
+
+    if spec.kind is ResourceKind.API:
+        payload["type"] = "LB"
+    if spec.datacenter:
+        payload["locations"] = ",".join(spec.datacenter)
+    if spec.is_cpu:
+        payload["instanceIds"] = spec.cpu
+        if not spec.datacenter:
+            if any(i.startswith("cpu5") for i in spec.cpu or []):
+                payload["locations"] = ",".join(
+                    dc.value for dc in CPU5_DATACENTERS
+                )
+            else:
+                payload["locations"] = ",".join(
+                    dc.value for dc in CPU3_DATACENTERS
+                )
+    else:
+        payload["gpuIds"] = ",".join(spec.gpu or ["any"])
+        payload["gpuCount"] = spec.gpu_count
+    return payload
+
+
+async def reconcile_endpoints(
+    client: AppsApiClient,
+    app: App,
+    environment: Dict[str, Any],
+    build_id: str,
+    python_version: str,
+) -> Dict[str, str]:
+    """converge the environment's endpoints to the app's resources.
+
+    resource name -> endpoint id for everything provisioned. existing
+    endpoints (matched by name) are updated in place; endpoints whose
+    resources disappeared are deleted.
+    """
+    existing = {
+        e["name"]: e["id"] for e in environment.get("endpoints") or []
+    }
+    provisionable = {
+        h.spec.name: h
+        for h in app.resources.values()
+        if h.spec.kind in (ResourceKind.QUEUE, ResourceKind.API)
+    }
+
+    endpoints: Dict[str, str] = {}
+    for name, handle in sorted(provisionable.items()):
+        payload = _deployed_endpoint_input(
+            app, handle.spec, environment["id"], build_id, python_version
+        )
+        if name in existing:
+            payload["id"] = existing[name]
+        result = await client.save_endpoint(payload)
+        endpoints[name] = result["id"]
+        log.info(
+            "%s endpoint %s (%s)",
+            "updated" if name in existing else "provisioned",
+            name,
+            result["id"],
+        )
+
+    for name, endpoint_id in existing.items():
+        if name not in provisionable:
+            await client.delete_endpoint(endpoint_id)
+            log.info("deleted removed endpoint %s (%s)", name, endpoint_id)
+
+    return endpoints
+
+
 async def deploy_app(
     app: App,
     project_root: Path,
@@ -247,9 +386,14 @@ async def deploy_app(
     await client.deploy_build(environment["id"], build["id"])
     log.info("activated build %s on %s/%s", build["id"], app.name, env_name)
 
+    endpoints = await reconcile_endpoints(
+        client, app, environment, build["id"], python_version
+    )
+
     return DeployResult(
         app_name=app.name,
         build_id=build["id"],
         environment_id=environment["id"],
         resources=[r["name"] for r in manifest["resources"]],
+        endpoints=endpoints,
     )
