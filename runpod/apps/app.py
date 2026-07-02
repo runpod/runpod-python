@@ -89,8 +89,14 @@ class App:
         volume: Optional[Any] = None,
         env: Optional[Dict[str, str]] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
+        image: Optional[str] = None,
     ) -> Callable[[Callable], FunctionHandle]:
-        """declare a queue-based serverless endpoint from a function."""
+        """declare a queue-based serverless endpoint from a function.
+
+        image selects a custom base image for the workers; the deployed
+        code still arrives via the build artifact and is booted by the
+        runtime bootstrap, so any image with a python3 binary works.
+        """
 
         def decorator(fn: Callable) -> FunctionHandle:
             spec = ResourceSpec(
@@ -106,6 +112,7 @@ class App:
                 volume=_volume_ref(volume),
                 env=env,
                 datacenter=_datacenter_list(datacenter),
+                image=image,
             )
             handle = FunctionHandle(self, fn, spec)
             self._register(spec.name, handle)
@@ -168,6 +175,7 @@ class App:
         volume: Optional[Any] = None,
         env: Optional[Dict[str, str]] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
+        image: Optional[str] = None,
     ) -> Callable[[Any], ApiHandle]:
         """declare a load-balanced serverless endpoint.
 
@@ -205,6 +213,7 @@ class App:
                 volume=_volume_ref(volume),
                 env=env,
                 datacenter=_datacenter_list(datacenter),
+                image=image,
             )
             handle = ApiHandle(self, target, spec)
             self._register(spec.name, handle)

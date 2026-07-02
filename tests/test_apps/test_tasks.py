@@ -1,5 +1,14 @@
 """tests for the task runner and pod task transport."""
 
+# the sync bridge finalizes coroutines on a background loop thread;
+# AsyncMock coroutines observed there trip the unraisable checker
+# non-deterministically under full-suite gc timing
+import pytest as _pytest
+
+pytestmark = _pytest.mark.filterwarnings(
+    "ignore::pytest.PytestUnraisableExceptionWarning"
+)
+
 import base64
 import json
 from unittest.mock import AsyncMock, patch

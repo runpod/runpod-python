@@ -7,8 +7,10 @@ api is the only source of truth; nothing is persisted locally.
 """
 
 import asyncio
+import base64
 import logging
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from .api import AppsApiClient
@@ -37,6 +39,8 @@ def dev_endpoint_name(app_name: str, resource_name: str) -> str:
 def _image_for(spec: ResourceSpec) -> str:
     import os
 
+    if spec.image:
+        return spec.image
     override = os.getenv("RUNPOD_DEV_IMAGE")
     if override:
         return override
@@ -45,6 +49,21 @@ def _image_for(spec: ResourceSpec) -> str:
     if image is None:
         raise ValueError(f"no dev image for resource kind {spec.kind.value}")
     return image
+
+
+def _bootstrap_source() -> str:
+    return (
+        Path(__file__).parent.parent / "runtimes" / "queue" / "bootstrap.py"
+    ).read_text()
+
+
+def _bootstrap_docker_args() -> str:
+    """shell command that materializes and starts the bootstrap on a
+    custom image."""
+    return (
+        "bash -c 'echo $RUNPOD_BOOTSTRAP_B64 | base64 -d > /bootstrap.py "
+        "&& python3 /bootstrap.py'"
+    )
 
 
 def _cpu_locations(instance_ids: List[str]) -> str:
@@ -90,6 +109,17 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
             ],
         },
     }
+
+    if spec.image:
+        # custom image: inject the bootstrap so the worker runtime starts
+        # regardless of what the image contains
+        payload["template"]["env"].append(
+            {
+                "key": "RUNPOD_BOOTSTRAP_B64",
+                "value": base64.b64encode(_bootstrap_source().encode()).decode(),
+            }
+        )
+        payload["template"]["dockerArgs"] = _bootstrap_docker_args()
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"
     if spec.datacenter:
