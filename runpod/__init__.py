@@ -112,7 +112,9 @@ _credentials = get_credentials(profile)
 if _credentials is not None:
     api_key = _credentials["api_key"]  # pylint: disable=invalid-name
 else:
-    api_key = None  # pylint: disable=invalid-name
+    # workers and ci have no config file; the env var is the standard
+    # way credentials reach them
+    api_key = os.environ.get("RUNPOD_API_KEY")  # pylint: disable=invalid-name
 
 endpoint_url_base = os.environ.get(
     "RUNPOD_ENDPOINT_BASE_URL", "https://api.runpod.ai/v2"
