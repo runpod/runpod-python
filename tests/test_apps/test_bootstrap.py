@@ -20,15 +20,16 @@ def clean_registry():
     _clear_registry()
 
 
-class TestBootstrapPhases:
-    def test_unpack_missing_artifact_fails_with_phase(self, tmp_path, monkeypatch):
+class TestLocatePhase:
+    def test_missing_artifact_fails_with_phase(self, tmp_path, monkeypatch):
         monkeypatch.setattr(bootstrap, "ARTIFACT_PATH", str(tmp_path / "nope.tar.gz"))
         monkeypatch.setattr(bootstrap, "ARTIFACT_WAIT_SECONDS", 0)
+        monkeypatch.setattr(bootstrap, "APP_DIR", str(tmp_path / "app"))
         with pytest.raises(bootstrap.PhaseError) as exc_info:
-            bootstrap._unpack()
-        assert exc_info.value.phase == "unpack"
+            bootstrap._locate()
+        assert exc_info.value.phase == "locate"
 
-    def test_unpack_extracts_artifact(self, tmp_path, monkeypatch):
+    def test_extracts_artifact(self, tmp_path, monkeypatch):
         import tarfile
 
         src = tmp_path / "src"
@@ -41,10 +42,36 @@ class TestBootstrapPhases:
         app_dir = tmp_path / "app"
         monkeypatch.setattr(bootstrap, "ARTIFACT_PATH", str(artifact))
         monkeypatch.setattr(bootstrap, "APP_DIR", str(app_dir))
-        bootstrap._unpack()
+        assert bootstrap._locate() == str(app_dir)
         assert (app_dir / "main.py").read_text() == "x = 1"
 
-    def test_unpack_rejects_traversal(self, tmp_path, monkeypatch):
+    def test_unpack_happens_once(self, tmp_path, monkeypatch):
+        import tarfile
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "main.py").write_text("x = 1")
+        artifact = tmp_path / "artifact.tar.gz"
+        with tarfile.open(artifact, "w:gz") as tar:
+            tar.add(src / "main.py", arcname="main.py")
+
+        app_dir = tmp_path / "app"
+        monkeypatch.setattr(bootstrap, "ARTIFACT_PATH", str(artifact))
+        monkeypatch.setattr(bootstrap, "APP_DIR", str(app_dir))
+        bootstrap._locate()
+        # second boot on a warm container: marker short-circuits
+        artifact.unlink()
+        assert bootstrap._locate() == str(app_dir)
+
+    def test_prebuilt_dir_skips_unpack(self, tmp_path, monkeypatch):
+        prebuilt = tmp_path / "prebuilt"
+        prebuilt.mkdir()
+        monkeypatch.setattr(bootstrap, "PREBUILT_APP_DIR", str(prebuilt))
+        # no artifact anywhere; the host-provided tree wins outright
+        monkeypatch.setattr(bootstrap, "ARTIFACT_PATH", str(tmp_path / "no.tar.gz"))
+        assert bootstrap._locate() == str(prebuilt)
+
+    def test_rejects_traversal(self, tmp_path, monkeypatch):
         import io
         import tarfile
 
@@ -58,30 +85,55 @@ class TestBootstrapPhases:
         monkeypatch.setattr(bootstrap, "ARTIFACT_PATH", str(artifact))
         monkeypatch.setattr(bootstrap, "APP_DIR", str(tmp_path / "app"))
         with pytest.raises(bootstrap.PhaseError) as exc_info:
-            bootstrap._unpack()
-        assert exc_info.value.phase == "unpack"
+            bootstrap._locate()
+        assert exc_info.value.phase == "locate"
 
-    def test_resource_entry_found(self, tmp_path, monkeypatch):
-        manifest = {
-            "resources": [
-                {"name": "q1", "dependencies": ["numpy"]},
-                {"name": "q2"},
-            ]
-        }
-        (tmp_path / "runpod_manifest.json").write_text(json.dumps(manifest))
-        monkeypatch.setattr(bootstrap, "APP_DIR", str(tmp_path))
-        monkeypatch.setenv("FLASH_RESOURCE_NAME", "q1")
-        entry = bootstrap._resource_entry()
-        assert entry["dependencies"] == ["numpy"]
 
-    def test_resource_entry_missing_names_available(self, tmp_path, monkeypatch):
+class TestAttachPhase:
+    def test_env_dir_leads_path_order(self, tmp_path):
+        (tmp_path / "env").mkdir()
+        paths = bootstrap._attach(str(tmp_path))
+        assert paths == [str(tmp_path / "env"), str(tmp_path)]
+
+    def test_no_env_dir_falls_back_to_source_only(self, tmp_path):
+        paths = bootstrap._attach(str(tmp_path))
+        assert paths == [str(tmp_path)]
+
+    def test_manifest_read(self, tmp_path):
         (tmp_path / "runpod_manifest.json").write_text(
-            json.dumps({"resources": [{"name": "other"}]})
+            json.dumps({"resources": [{"name": "q1"}]})
         )
-        monkeypatch.setattr(bootstrap, "APP_DIR", str(tmp_path))
-        monkeypatch.setenv("FLASH_RESOURCE_NAME", "q1")
-        with pytest.raises(bootstrap.PhaseError, match="other"):
-            bootstrap._resource_entry()
+        manifest = bootstrap._manifest(str(tmp_path))
+        assert manifest["resources"][0]["name"] == "q1"
+
+    def test_manifest_missing_fails_with_phase(self, tmp_path):
+        with pytest.raises(bootstrap.PhaseError) as exc_info:
+            bootstrap._manifest(str(tmp_path))
+        assert exc_info.value.phase == "attach"
+
+
+class TestVerifyPhase:
+    def test_no_exclusions_no_op(self):
+        bootstrap._verify_excluded({"resources": []})
+
+    def test_present_exclusions_no_install(self, monkeypatch):
+        installed = []
+        monkeypatch.setattr(
+            bootstrap, "_pip_install", lambda pkgs, phase: installed.extend(pkgs)
+        )
+        # json is definitely importable; stands in for torch-in-image
+        bootstrap._verify_excluded({"excludedPackages": ["json"]})
+        assert installed == []
+
+    def test_missing_exclusions_installed(self, monkeypatch):
+        installed = []
+        monkeypatch.setattr(
+            bootstrap, "_pip_install", lambda pkgs, phase: installed.extend(pkgs)
+        )
+        bootstrap._verify_excluded(
+            {"excludedPackages": ["definitely-not-installed-xyz"]}
+        )
+        assert installed == ["definitely-not-installed-xyz"]
 
 
 class TestCustomImagePayloads:
@@ -98,7 +150,7 @@ class TestCustomImagePayloads:
         assert "bootstrap.py" in template["dockerArgs"]
         env = {e["key"]: e["value"] for e in template["env"]}
         decoded = base64.b64decode(env["RUNPOD_BOOTSTRAP_B64"]).decode()
-        assert "def _unpack" in decoded
+        assert "def _locate" in decoded
 
     def test_queue_default_image_no_bootstrap(self):
         app = App("a")
@@ -155,6 +207,6 @@ class TestBootstrapIsStdlibOnly:
                 imports.add(node.module.split(".")[0])
         stdlib = {
             "json", "os", "subprocess", "sys", "tarfile", "time",
-            "urllib", "io",
+            "urllib", "io", "importlib", "http",
         }
         assert imports <= stdlib, f"non-stdlib imports: {imports - stdlib}"

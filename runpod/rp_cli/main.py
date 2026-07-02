@@ -38,6 +38,18 @@ def deploy(
     env: Optional[str] = typer.Option(
         None, "--env", "-e", help="Target environment name."
     ),
+    python_version: str = typer.Option(
+        "3.12",
+        "--python-version",
+        help="Worker python version for dependency wheels (3.10-3.12).",
+    ),
+    exclude: Optional[str] = typer.Option(
+        None,
+        "--exclude",
+        help="Comma-separated packages to exclude from the artifact "
+        "(they must then come from the worker image). torch packages "
+        "are always excluded.",
+    ),
 ):
     """package and deploy all apps found in TARGET."""
     from runpod.apps.deploy import deploy_app
@@ -66,7 +78,13 @@ def deploy(
         names = ", ".join(found.resources) or "(no resources)"
         _echo(f"deploying app '{found.name}': {names}")
         result = asyncio.run(
-            deploy_app(found, project_root, env_name=env)
+            deploy_app(
+                found,
+                project_root,
+                env_name=env,
+                python_version=python_version,
+                exclude=exclude.split(",") if exclude else None,
+            )
         )
         _echo(
             f"  build {result.build_id} active on "

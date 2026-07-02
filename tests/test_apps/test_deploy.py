@@ -5,7 +5,7 @@ import json
 import tarfile
 import textwrap
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -144,6 +144,35 @@ class TestPackaging:
             assert "secret.env" not in names
             assert not any("__pycache__" in n for n in names)
 
+    def test_vendored_env_included_under_env(self, tmp_path):
+        _write_project(tmp_path)
+        env_dir = tmp_path / "built-env"
+        (env_dir / "numpy").mkdir(parents=True)
+        (env_dir / "numpy" / "__init__.py").write_text("")
+
+        tar_path = package_project(
+            tmp_path, {"version": 1, "resources": []}, env_dir=env_dir
+        )
+        with tarfile.open(tar_path) as tar:
+            names = tar.getnames()
+            assert "env/numpy/__init__.py" in names
+            # env dir under project root must not be double-added as source
+            assert "built-env/numpy/__init__.py" not in names
+            assert "main.py" in names
+
+
+def _stub_build(tmp_path):
+    """patch environment vendoring with a tiny fake env tree."""
+    from runpod.apps.build import BuildResult
+
+    env_dir = tmp_path / "fake-env"
+    env_dir.mkdir(exist_ok=True)
+    (env_dir / "vendored_pkg.py").write_text("x = 1")
+    return patch(
+        "runpod.apps.deploy.build_environment",
+        return_value=BuildResult(env_dir=env_dir, requirements=["runpod"]),
+    )
+
 
 class TestDeployPipeline:
     async def test_deploy_app_full_flow(self, tmp_path):
@@ -161,7 +190,8 @@ class TestDeployPipeline:
         api.finalize_artifact_upload.return_value = {"id": "build-1"}
         api.deploy_build.return_value = {"id": "env-1"}
 
-        result = await deploy_app(app, tmp_path, api=api)
+        with _stub_build(tmp_path):
+            result = await deploy_app(app, tmp_path, api=api)
 
         assert isinstance(result, DeployResult)
         assert result.build_id == "build-1"
@@ -184,7 +214,8 @@ class TestDeployPipeline:
         }
         api.finalize_artifact_upload.return_value = {"id": "build-2"}
 
-        await deploy_app(app, tmp_path, api=api)
+        with _stub_build(tmp_path):
+            await deploy_app(app, tmp_path, api=api)
 
         api.create_app.assert_not_awaited()
         api.create_environment.assert_not_awaited()
