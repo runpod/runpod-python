@@ -340,6 +340,12 @@ def run() -> None:
         # rich-click's eager --help callback exits via the click Exit
         # exception, which escapes the mixed typer/click stack here
         sys.exit(exc.exit_code)
+    except click.exceptions.ClickException as exc:
+        # usage errors from the mounted click groups (bad subcommand,
+        # missing arg) escape typer's handler; render them the click
+        # way instead of a traceback
+        exc.show()
+        sys.exit(exc.exit_code)
 
 
 if __name__ == "__main__":
