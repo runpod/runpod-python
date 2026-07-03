@@ -414,6 +414,7 @@ async def deploy_app(
     log.info("packaged %s (%.1f MB)", app.name, size_mb)
 
     _phase(events, "upload", f"{size_mb:.1f} MB")
+    upload_progress = getattr(events, "upload_progress", None)
     remote_app = await client.get_app_by_name(app.name)
     if remote_app is None:
         remote_app = await client.create_app(app.name)
@@ -429,7 +430,9 @@ async def deploy_app(
         log.info("created environment %s (%s)", env_name, environment["id"])
 
     upload = await client.prepare_artifact_upload(app_id, tar_size)
-    await client.upload_tarball(upload["uploadUrl"], str(tar_path))
+    await client.upload_tarball(
+        upload["uploadUrl"], str(tar_path), progress=upload_progress
+    )
     build = await client.finalize_artifact_upload(
         app_id, upload["objectKey"], manifest
     )
@@ -442,6 +445,10 @@ async def deploy_app(
     endpoints = await reconcile_endpoints(
         client, app, environment, build["id"], python_version
     )
+    endpoint_ready = getattr(events, "endpoint_ready", None)
+    if endpoint_ready is not None:
+        for name, endpoint_id in sorted(endpoints.items()):
+            endpoint_ready(name, endpoint_id)
 
     return DeployResult(
         app_name=app.name,

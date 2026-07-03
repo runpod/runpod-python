@@ -17,7 +17,12 @@ app = typer.Typer(
     help="Runpod CLI: deploy and manage apps, endpoints, and pods.",
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
+    rich_markup_mode="rich",
 )
+
+APPS_PANEL = "Apps"
+OBSERVE_PANEL = "Observability"
+ACCOUNT_PANEL = "Account"
 
 
 def _echo(message: str) -> None:
@@ -29,7 +34,7 @@ def _fail(message: str) -> None:
     raise typer.Exit(1)
 
 
-@app.command()
+@app.command(rich_help_panel=APPS_PANEL)
 def deploy(
     target: Optional[Path] = typer.Argument(
         None,
@@ -81,32 +86,38 @@ def deploy(
     for found in apps:
         resource_names = list(found.resources)
         ui.set_name_width(resource_names)
-        ui.console.print()
-        ui.console.print(
-            f"[bold]{found.name}[/bold] [dim]-> {env or found.env}[/dim]"
+        ui.deploy_banner(
+            found.name,
+            env or found.env,
+            [
+                (h.spec.name, h.spec.kind.value)
+                for h in found.resources.values()
+            ],
         )
+        events = ui.DeployEvents()
         with ui.Timer() as t:
-            result = asyncio.run(
-                deploy_app(
-                    found,
-                    project_root,
-                    env_name=env,
-                    python_version=python_version,
-                    exclude=exclude.split(",") if exclude else None,
-                    events=ui.DeployEvents(),
+            try:
+                result = asyncio.run(
+                    deploy_app(
+                        found,
+                        project_root,
+                        env_name=env,
+                        python_version=python_version,
+                        exclude=exclude.split(",") if exclude else None,
+                        events=events,
+                    )
                 )
-            )
-        for name, endpoint_id in sorted(result.endpoints.items()):
-            ui.resource_ready(name, endpoint_id)
+            finally:
+                events.close()
         ui.success(
-            f"build [white]{result.build_id}[/white] live on "
-            f"[white]{result.app_name}/{env or found.env}[/white] "
+            f"build [accent.light]{result.build_id}[/accent.light] live on "
+            f"[bold white]{result.app_name}/{env or found.env}[/bold white] "
             f"[dim]{t.elapsed:.1f}s[/dim]"
         )
     ui.console.print()
 
 
-@app.command()
+@app.command(rich_help_panel=APPS_PANEL)
 def dev(
     module: Path = typer.Argument(..., help="Python module to run."),
     once: bool = typer.Option(
@@ -209,33 +220,36 @@ def dev(
 
         ui.dev_banner([a.name for a in apps], str(module.name))
         await session.start()
-        ui.console.print()
-        ui.dev_resources_table(_table_rows(session))
+        ui.resources_table(_table_rows(session))
 
+        runs = 0
+        reloads = 0
+        session_timer = ui.Timer().__enter__()
         try:
             while True:
-                ui.rule("entrypoint")
+                ui.entrypoint_header()
+                runs += 1
                 with ui.Timer() as t:
                     try:
                         run_entrypoint(entrypoint)
-                        ui.success(f"entrypoint [dim]{t.so_far:.1f}s[/dim]")
+                        ui.entrypoint_success(t.so_far)
                     except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
-                        ui.error(f"entrypoint failed [dim]{t.so_far:.1f}s[/dim]")
-                        ui.console.print(f"  [red]{exc}[/red]")
+                        ui.entrypoint_failure(t.so_far, str(exc))
                         if once:
                             return 1
                 if once:
                     return 0
-                ui.rule()
                 ui.dev_hints()
                 reason = await _wait_for_rerun(watcher)
                 if reason == "changed":
-                    ui.info("[blue]change detected[/blue] reloading ...")
+                    reloads += 1
+                    ui.reload_flash()
                     apps, entrypoint = _scan()
                     ui.set_name_width(_all_resource_names(apps))
                     await session.refresh(apps)
         finally:
-            ui.console.print()
+            session_timer.__exit__()
+            ui.session_summary(runs, reloads, session_timer.elapsed)
             ui.info("cleaning up dev endpoints ...")
             await session.stop()
 
@@ -246,7 +260,7 @@ def dev(
         ui.info("session ended.")
 
 
-@app.command()
+@app.command(rich_help_panel=OBSERVE_PANEL)
 def logs(
     pod_id: str = typer.Argument(..., help="Pod id to fetch logs for."),
     follow: bool = typer.Option(
@@ -279,7 +293,7 @@ def logs(
         pass
 
 
-@app.command()
+@app.command(rich_help_panel=ACCOUNT_PANEL)
 def login():
     """authenticate with runpod and store the api key."""
     from runpod.cli.groups.config.functions import set_credentials

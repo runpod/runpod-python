@@ -190,6 +190,7 @@ class DevSession:
     async def start(self) -> None:
         """provision (or adopt) a live endpoint per queue/api resource and
         register the targets on each app."""
+        self._emit("session_starting")
         existing = {e["name"]: e for e in await self.api.list_my_endpoints()}
 
         for app in self.apps:
@@ -219,6 +220,8 @@ class DevSession:
                 self._emit("ready", spec.name, endpoint_id)
                 self._endpoints[name] = endpoint_id
                 app._dev_targets[spec.name] = LiveTarget(endpoint_id)
+
+        self._emit("session_started")
 
     async def refresh(self, apps: List[App]) -> None:
         """reconcile endpoints against a re-scanned set of apps.

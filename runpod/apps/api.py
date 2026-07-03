@@ -213,15 +213,41 @@ class AppsApiClient:
         )
         return data["deployBuildToEnvironment"]
 
-    async def upload_tarball(self, upload_url: str, tar_path: str) -> None:
-        """put the build tarball to the presigned url."""
+    async def upload_tarball(
+        self,
+        upload_url: str,
+        tar_path: str,
+        progress: Optional[Any] = None,
+    ) -> None:
+        """put the build tarball to the presigned url.
+
+        progress, when given, is called with (bytes_sent, total_bytes)
+        as chunks go out.
+        """
+        import os
+
         timeout = aiohttp.ClientTimeout(total=600)
-        with open(tar_path, "rb") as f:
-            body = f.read()
+        total = os.path.getsize(tar_path)
+
+        def _reader():
+            sent = 0
+            with open(tar_path, "rb") as f:
+                while True:
+                    chunk = f.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    sent += len(chunk)
+                    if progress is not None:
+                        progress(sent, total)
+                    yield chunk
+
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.put(
                 upload_url,
-                data=body,
-                headers={"Content-Type": "application/gzip"},
+                data=_reader(),
+                headers={
+                    "Content-Type": "application/gzip",
+                    "Content-Length": str(total),
+                },
             ) as resp:
                 resp.raise_for_status()
