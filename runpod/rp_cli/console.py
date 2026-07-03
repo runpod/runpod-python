@@ -11,9 +11,7 @@ import time
 from datetime import datetime
 from typing import Dict, Iterable, Optional, Tuple
 
-from rich import box
-from rich.console import Console, Group
-from rich.panel import Panel
+from rich.console import Console
 from rich.progress import (
     Progress,
     SpinnerColumn,
@@ -21,7 +19,6 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
@@ -128,59 +125,31 @@ def request_failed(name: str, elapsed_s: float, err: Optional[str] = None) -> No
 # -- banners ---------------------------------------------------------------
 
 
-def _brand_title(subtitle: str) -> Text:
-    title = Text()
-    title.append("◤ ", style=ACCENT)
-    title.append("runpod", style=f"bold {ACCENT_LIGHT}")
-    title.append(" ▸ ", style=DIM)
-    title.append(subtitle, style="bold white")
-    return title
+def _brand(subtitle: str, detail: str = "") -> None:
+    line = Text()
+    line.append("◤ ", style=ACCENT)
+    line.append("runpod", style=f"bold {ACCENT_LIGHT}")
+    line.append(" ▸ ", style=DIM)
+    line.append(subtitle, style="bold white")
+    if detail:
+        line.append(f"  {detail}", style=DIM)
+    console.print()
+    console.print(line)
 
 
 def dev_banner(app_names: Iterable[str], module: str) -> None:
-    body = Text()
-    body.append("apps    ", style=DIM)
-    body.append(", ".join(app_names), style="white")
-    body.append("\nmodule  ", style=DIM)
-    body.append(module, style="white")
+    _brand("dev", f"{', '.join(app_names)} · {module}")
     console.print()
-    console.print(
-        Panel(
-            body,
-            title=_brand_title("dev"),
-            title_align="left",
-            border_style=ACCENT,
-            box=box.ROUNDED,
-            padding=(0, 2),
-            expand=False,
-        )
-    )
 
 
 def deploy_banner(app_name: str, env: str, resources: Iterable[Tuple[str, str]]) -> None:
     """resources: (name, kind) pairs."""
-    body = Text()
-    first = True
+    _brand("deploy", f"{app_name} → {env}")
     for name, kind in resources:
-        if not first:
-            body.append("\n")
-        body.append(f"{kind:<6}", style=KIND_STYLES.get(kind, "white"))
-        body.append(f" {name}", style="white")
-        first = False
-    if first:
-        body.append("(no resources)", style=DIM)
-    console.print()
-    console.print(
-        Panel(
-            body,
-            title=_brand_title(f"deploy · {app_name} → {env}"),
-            title_align="left",
-            border_style=ACCENT,
-            box=box.ROUNDED,
-            padding=(0, 2),
-            expand=False,
+        console.print(
+            f"  {kind_badge(kind)} [white]{name}[/white]"
         )
-    )
+    console.print()
 
 
 def resources_table(rows: Iterable[tuple]) -> None:
@@ -189,25 +158,22 @@ def resources_table(rows: Iterable[tuple]) -> None:
     if not rows:
         console.print("  [dim](no resources)[/dim]")
         return
-    table = Table(
-        box=box.SIMPLE_HEAD,
-        border_style="dim",
-        header_style=f"bold {ACCENT_LIGHT}",
-        pad_edge=False,
-        padding=(0, 2),
-    )
-    table.add_column("resource", style="bold white")
-    table.add_column("kind")
-    table.add_column("hardware", style="dim")
-    table.add_column("endpoint", style=ACCENT_LIGHT)
+    w_name = max(len(r[0]) for r in rows)
+    w_hw = max(len(r[2]) for r in rows)
+    console.print()
     for name, kind, hardware, endpoint_id in rows:
-        table.add_row(
-            name,
-            kind_badge(kind),
-            hardware,
-            endpoint_id or "[dim]—[/dim]",
+        endpoint = (
+            f"[accent.light]{endpoint_id}[/accent.light]"
+            if endpoint_id
+            else "[dim]—[/dim]"
         )
-    console.print(table)
+        console.print(
+            f"  [bold white]{name:<{w_name}}[/bold white]"
+            f"  {kind_badge(kind)}"
+            f"  [dim]{hardware:<{w_hw}}[/dim]"
+            f"  {endpoint}"
+        )
+    console.print()
 
 
 def dev_hints() -> None:
@@ -388,20 +354,10 @@ def entrypoint_failure(elapsed: float, err: str) -> None:
 
 def session_summary(runs: int, reloads: int, elapsed: float) -> None:
     minutes, seconds = divmod(int(elapsed), 60)
+    duration = f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
     console.print()
     console.print(
-        Panel(
-            Text.assemble(
-                ("runs ", DIM),
-                (str(runs), "white"),
-                ("   reloads ", DIM),
-                (str(reloads), "white"),
-                ("   session ", DIM),
-                (f"{minutes}m {seconds}s" if minutes else f"{seconds}s", "white"),
-            ),
-            border_style="dim",
-            box=box.ROUNDED,
-            padding=(0, 2),
-            expand=False,
-        )
+        f"  [dim]runs[/dim] [white]{runs}[/white]"
+        f"   [dim]reloads[/dim] [white]{reloads}[/white]"
+        f"   [dim]session[/dim] [white]{duration}[/white]"
     )

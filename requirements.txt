@@ -15,7 +15,6 @@ py-cpuinfo >= 9.0.0
 inquirerpy == 0.3.4
 requests >= 2.31.0
 rich >= 13.0.0
-rich-click >= 1.8.0
 tomli >= 2.4.1
 tomlkit >= 0.15.0
 tqdm-loggable >= 0.2
