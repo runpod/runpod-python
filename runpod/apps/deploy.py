@@ -315,7 +315,9 @@ def _deployed_endpoint_input(
                     dc.value for dc in CPU3_DATACENTERS
                 )
     else:
-        payload["gpuIds"] = ",".join(spec.gpu or ["any"])
+        from .gpu import gpu_ids_value
+
+        payload["gpuIds"] = gpu_ids_value(spec.gpu)
         payload["gpuCount"] = spec.gpu_count
         if not spec.datacenter:
             # artifact delivery rides the flash volume (network

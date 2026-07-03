@@ -125,69 +125,43 @@ def request_failed(name: str, elapsed_s: float, err: Optional[str] = None) -> No
 # -- banners ---------------------------------------------------------------
 
 
-def _brand(subtitle: str, detail: str = "") -> None:
-    line = Text()
-    line.append("◤ ", style=ACCENT)
-    line.append("runpod", style=f"bold {ACCENT_LIGHT}")
-    line.append(" ▸ ", style=DIM)
-    line.append(subtitle, style="bold white")
-    if detail:
-        line.append(f"  {detail}", style=DIM)
-    console.print()
-    console.print(line)
-
-
 def dev_banner(app_names: Iterable[str], module: str) -> None:
-    _brand("dev", f"{', '.join(app_names)} · {module}")
-    console.print()
+    console.print(
+        f"[bold white]dev[/bold white] [dim]{', '.join(app_names)} · {module}[/dim]"
+    )
 
 
 def deploy_banner(app_name: str, env: str, resources: Iterable[Tuple[str, str]]) -> None:
     """resources: (name, kind) pairs."""
-    _brand("deploy", f"{app_name} → {env}")
-    for name, kind in resources:
-        console.print(
-            f"  {kind_badge(kind)} [white]{name}[/white]"
-        )
-    console.print()
+    names = ", ".join(name for name, _ in resources) or "(no resources)"
+    console.print(
+        f"[bold white]deploy[/bold white] [dim]{app_name} → {env} · {names}[/dim]"
+    )
 
 
 def resources_table(rows: Iterable[tuple]) -> None:
     """rows of (name, kind, hardware, endpoint_id)."""
     rows = list(rows)
     if not rows:
-        console.print("  [dim](no resources)[/dim]")
         return
     w_name = max(len(r[0]) for r in rows)
     w_hw = max(len(r[2]) for r in rows)
-    console.print()
     for name, kind, hardware, endpoint_id in rows:
         endpoint = (
             f"[accent.light]{endpoint_id}[/accent.light]"
             if endpoint_id
-            else "[dim]—[/dim]"
+            else "[dim]per-call[/dim]"
         )
         console.print(
-            f"  [bold white]{name:<{w_name}}[/bold white]"
+            f"  [white]{name:<{w_name}}[/white]"
             f"  {kind_badge(kind)}"
             f"  [dim]{hardware:<{w_hw}}[/dim]"
             f"  {endpoint}"
         )
-    console.print()
-
-
-def dev_hints() -> None:
-    console.print(
-        f"  [{ACCENT_LIGHT}]⏎[/{ACCENT_LIGHT}] [dim]re-run[/dim]   "
-        f"[{ACCENT_LIGHT}]✎[/{ACCENT_LIGHT}] [dim]edit to reload[/dim]   "
-        f"[{ACCENT_LIGHT}]^C[/{ACCENT_LIGHT}] [dim]exit[/dim]"
-    )
-    console.print()
 
 
 def reload_flash() -> None:
-    console.print()
-    console.rule(f"[{WARN}]⚡ reload[/{WARN}]", style=WARN)
+    console.print(f"[warn]⚡ reload[/warn]")
 
 
 # -- live deploy phases ------------------------------------------------------
@@ -340,24 +314,13 @@ class Timer:
 
 def entrypoint_header() -> None:
     console.print()
-    console.rule(f"[{ACCENT_LIGHT}]▶ entrypoint[/{ACCENT_LIGHT}]", style="dim")
 
 
 def entrypoint_success(elapsed: float) -> None:
-    console.rule(f"[ok]✓ {elapsed:.1f}s[/ok]", style="dim")
+    console.print(
+        f"[ok]✓[/ok] [dim]{elapsed:.1f}s · enter to re-run · edit to reload · ^C to quit[/dim]"
+    )
 
 
 def entrypoint_failure(elapsed: float, err: str) -> None:
-    console.rule(f"[err]✗ {elapsed:.1f}s[/err]", style="dim")
-    console.print(f"  [err]{err}[/err]")
-
-
-def session_summary(runs: int, reloads: int, elapsed: float) -> None:
-    minutes, seconds = divmod(int(elapsed), 60)
-    duration = f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
-    console.print()
-    console.print(
-        f"  [dim]runs[/dim] [white]{runs}[/white]"
-        f"   [dim]reloads[/dim] [white]{reloads}[/white]"
-        f"   [dim]session[/dim] [white]{duration}[/white]"
-    )
+    console.print(f"[err]✗ {err}[/err] [dim]{elapsed:.1f}s[/dim]")

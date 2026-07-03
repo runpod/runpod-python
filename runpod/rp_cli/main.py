@@ -91,6 +91,8 @@ def deploy(target, env, python_version, exclude):
                         events=events,
                     )
                 )
+            except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+                raise click.ClickException(str(exc)) from exc
             finally:
                 events.close()
         ui.success(
@@ -206,13 +208,9 @@ def dev(module, once):
         await session.start()
         ui.resources_table(_table_rows(session))
 
-        runs = 0
-        reloads = 0
-        session_timer = ui.Timer().__enter__()
         try:
             while True:
                 ui.entrypoint_header()
-                runs += 1
                 with ui.Timer() as t:
                     try:
                         run_entrypoint(entrypoint)
@@ -223,25 +221,23 @@ def dev(module, once):
                             return 1
                 if once:
                     return 0
-                ui.dev_hints()
                 reason = await _wait_for_rerun(watcher)
                 if reason == "changed":
-                    reloads += 1
                     ui.reload_flash()
                     apps, entrypoint = _scan()
                     ui.set_name_width(_all_resource_names(apps))
                     await session.refresh(apps)
         finally:
-            session_timer.__exit__()
-            ui.session_summary(runs, reloads, session_timer.elapsed)
-            ui.info("cleaning up dev endpoints ...")
+            ui.console.print()
+            ui.info("cleaning up ...")
             await session.stop()
 
     try:
         sys.exit(asyncio.run(_session()))
     except (KeyboardInterrupt, EOFError):
         ui.console.print()
-        ui.info("session ended.")
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
 
 
 # ------------------------------------------------------------------ logs

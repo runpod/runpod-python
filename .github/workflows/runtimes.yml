@@ -14,8 +14,9 @@ on:
 
 env:
   REGISTRY: docker.io
-  # dev-suffixed tags for non-main branches so testing never clobbers latest
-  TAG_SUFFIX: ${{ github.ref == 'refs/heads/main' && 'latest' || 'dev' }}
+  # the apps sdk branch publishes latest while the feature is prerelease:
+  # the runtime image names are new, so nothing released depends on them
+  TAG_SUFFIX: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/apps-sdk') && 'latest' || 'dev' }}
 
 jobs:
   test-runner:

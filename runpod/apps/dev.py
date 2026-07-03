@@ -138,7 +138,9 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
         if not spec.datacenter:
             payload["locations"] = _cpu_locations(spec.cpu or [])
     else:
-        payload["gpuIds"] = ",".join(spec.gpu or ["any"])
+        from .gpu import gpu_ids_value
+
+        payload["gpuIds"] = gpu_ids_value(spec.gpu)
         payload["gpuCount"] = spec.gpu_count
     return payload
 

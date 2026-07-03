@@ -154,3 +154,14 @@ class CpuInstanceType(str, Enum):
 
 
 GpuLike = Union[GpuGroup, GpuType, str]
+
+
+def gpu_ids_value(gpu: Optional[List[str]]) -> str:
+    """the gpuIds string for an endpoint payload.
+
+    "any gpu" (no selection, or the ANY sentinel) means every pool id:
+    the api has no wildcard and rejects "any".
+    """
+    if not gpu or any(str(g).lower() == "any" for g in gpu):
+        return ",".join(g.value for g in GpuGroup.all())
+    return ",".join(str(g) for g in gpu)

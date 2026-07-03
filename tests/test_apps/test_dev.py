@@ -341,3 +341,29 @@ class TestDevEvents:
         session = DevSession([app], api=api, events=object())
         await session.start()
         await session.stop()
+
+
+class TestGpuIdsPayload:
+    def test_no_gpu_selection_expands_to_all_pools(self):
+        # the api rejects "any"; an unconstrained gpu queue asks for
+        # every pool id instead
+        app = App("gpu-any")
+
+        @app.queue(name="q")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        gpu_ids = payload["gpuIds"].split(",")
+        assert "any" not in gpu_ids
+        assert "ADA_24" in gpu_ids and "AMPERE_80" in gpu_ids
+
+    def test_explicit_pools_pass_through(self):
+        app = App("gpu-explicit")
+
+        @app.queue(name="q", gpu="ADA_24")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        assert payload["gpuIds"] == "ADA_24"
