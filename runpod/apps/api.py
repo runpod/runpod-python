@@ -229,7 +229,7 @@ class AppsApiClient:
         timeout = aiohttp.ClientTimeout(total=600)
         total = os.path.getsize(tar_path)
 
-        def _reader():
+        async def _reader():
             sent = 0
             with open(tar_path, "rb") as f:
                 while True:

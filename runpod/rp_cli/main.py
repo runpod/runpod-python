@@ -174,28 +174,38 @@ def dev(module, once):
                 rows.append((spec.name, spec.kind.value, hardware, endpoint_id))
         return rows
 
+    # daemon stdin reader: a blocked readline must never keep the
+    # process alive after ctrl-c (executor threads are joined at
+    # loop shutdown; a daemon thread is not)
+    import queue as _queue
+    import threading
+
+    stdin_lines: "_queue.Queue[str]" = _queue.Queue()
+
+    def _stdin_reader() -> None:
+        for line in sys.stdin:
+            stdin_lines.put(line)
+        stdin_lines.put("")  # eof marker
+
+    threading.Thread(target=_stdin_reader, daemon=True).start()
+
     async def _wait_for_rerun(watcher: "FileWatcher") -> str:
         """race the enter key against a file change."""
-        loop = asyncio.get_event_loop()
-        stdin_task = loop.run_in_executor(None, sys.stdin.readline)
-        try:
-            while True:
-                if watcher.changed():
-                    return "changed"
-                done, _ = await asyncio.wait({stdin_task}, timeout=0.5)
-                if done:
-                    # eof (piped stdin, ci): interactive re-run is
-                    # impossible, wait on file changes only
-                    if not stdin_task.result():
-                        return await _wait_for_change(watcher)
-                    return "enter"
-        finally:
-            stdin_task.cancel()
-
-    async def _wait_for_change(watcher: "FileWatcher") -> str:
+        eof = False
         while True:
             if watcher.changed():
                 return "changed"
+            if not eof:
+                try:
+                    line = stdin_lines.get_nowait()
+                    if line == "":
+                        # piped stdin / ci: no interactive re-runs,
+                        # keep watching files only
+                        eof = True
+                    else:
+                        return "enter"
+                except _queue.Empty:
+                    pass
             await asyncio.sleep(0.5)
 
     async def _session() -> int:

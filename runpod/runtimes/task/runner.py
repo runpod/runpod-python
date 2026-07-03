@@ -163,9 +163,7 @@ def execute_request(request):
         with redirect_stdout(stdout_io):
             result = fn(*args, **kwargs)
             if hasattr(result, "__await__"):
-                import asyncio
-
-                result = asyncio.run(_await(result))
+                result = _run_awaitable(result)
 
         response = {"success": True, "stdout": stdout_io.getvalue()}
         response.update(
@@ -180,6 +178,27 @@ def execute_request(request):
             "error": traceback.format_exc(),
             "stdout": stdout_io.getvalue(),
         }
+
+
+def _run_awaitable(awaitable):
+    """drive an awaitable to completion from sync code.
+
+    the task runner runs this on plain threads, but the queue worker's
+    live mode calls execute_request from inside the serverless event
+    loop, where asyncio.run would raise; a private loop on a helper
+    thread covers both.
+    """
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_await(awaitable))
+
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, _await(awaitable)).result()
 
 
 async def _await(awaitable):

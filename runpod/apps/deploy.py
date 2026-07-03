@@ -37,7 +37,7 @@ from .build import (
     BuildResult,
     build_environment,
 )
-from .errors import ScheduleNotSupported
+from .errors import InvalidResourceError, ScheduleNotSupported
 from .schedule import SCHEDULES_ENABLED
 from .spec import ResourceKind
 
@@ -102,6 +102,16 @@ def build_manifest(
         spec = handle.spec
         if spec.schedule and not SCHEDULES_ENABLED:
             raise ScheduleNotSupported()
+        if (
+            spec.kind in (ResourceKind.QUEUE, ResourceKind.API)
+            and len(spec.name) < 3
+        ):
+            # deployed queue/api resources become endpoints named
+            # exactly the resource name; the api floor is 3 chars
+            raise InvalidResourceError(
+                f"resource name '{spec.name}' is too short to deploy; "
+                f"queue and api names must be at least 3 characters"
+            )
         entry = spec.to_manifest()
         fn = (
             getattr(handle, "_fn", None)

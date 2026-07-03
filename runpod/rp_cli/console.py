@@ -8,7 +8,6 @@ module turns them into pixels.
 """
 
 import time
-from datetime import datetime
 from typing import Dict, Iterable, Optional, Tuple
 
 from rich.console import Console
@@ -50,6 +49,14 @@ theme = Theme(
 
 console = Console(highlight=False, theme=theme)
 
+CONSOLE_URL = "https://console.runpod.io/serverless/user/endpoint"
+
+
+def endpoint_link(endpoint_id: str) -> str:
+    """clickable console url for an endpoint."""
+    url = f"{CONSOLE_URL}/{endpoint_id}?tab=overview"
+    return f"[link={url}][accent.light]{endpoint_id}[/accent.light][/link]"
+
 _name_width: int = 0
 
 
@@ -60,10 +67,6 @@ def set_name_width(names: Iterable[str]) -> None:
 
 def _padded(name: str) -> str:
     return f"{name:<{_name_width}}" if _name_width else name
-
-
-def _ts() -> str:
-    return f"[dim]{datetime.now().strftime('%H:%M:%S')}[/dim]"
 
 
 def _pipe(name: str) -> str:
@@ -79,19 +82,19 @@ def kind_badge(kind: str) -> str:
 
 
 def info(message: str) -> None:
-    console.print(f"{_ts()} {message}")
+    console.print(f"{message}")
 
 
 def success(message: str) -> None:
-    console.print(f"{_ts()} [ok]✓[/ok] {message}")
+    console.print(f"[ok]✓[/ok] {message}")
 
 
 def error(message: str) -> None:
-    console.print(f"{_ts()} [err]✗[/err] {message}")
+    console.print(f"[err]✗[/err] {message}")
 
 
 def warn(message: str) -> None:
-    console.print(f"{_ts()} [warn]![/warn] {message}")
+    console.print(f"[warn]![/warn] {message}")
 
 
 def rule(title: str = "") -> None:
@@ -103,20 +106,20 @@ def rule(title: str = "") -> None:
 
 def request_started(name: str, label: str = "") -> None:
     console.print(
-        f"{_ts()} [bold white]CALL[/bold white] [accent.light]/{name}[/accent.light]"
+        f"[bold white]CALL[/bold white] [accent.light]/{name}[/accent.light]"
         f" [dim]{label}[/dim]"
     )
 
 
 def request_completed(name: str, elapsed_s: float) -> None:
     console.print(
-        f"{_ts()} [ok]✓[/ok] {_padded(name)} [dim]{elapsed_s:.1f}s[/dim]"
+        f"[ok]✓[/ok] {_padded(name)} [dim]{elapsed_s:.1f}s[/dim]"
     )
 
 
 def request_failed(name: str, elapsed_s: float, err: Optional[str] = None) -> None:
     console.print(
-        f"{_ts()} [err]✗[/err] {_padded(name)} [dim]{elapsed_s:.1f}s[/dim]"
+        f"[err]✗[/err] {_padded(name)} [dim]{elapsed_s:.1f}s[/dim]"
     )
     if err:
         console.print(f"         [err dim]{err}[/err dim]")
@@ -148,8 +151,8 @@ def resources_table(rows: Iterable[tuple]) -> None:
     w_hw = max(len(r[2]) for r in rows)
     for name, kind, hardware, endpoint_id in rows:
         endpoint = (
-            f"[accent.light]{endpoint_id}[/accent.light]"
-            if endpoint_id
+            endpoint_link(endpoint_id)
+            if endpoint_id and endpoint_id != "per-call"
             else "[dim]per-call[/dim]"
         )
         console.print(
@@ -218,7 +221,7 @@ class DeployEvents:
 
     def endpoint_ready(self, name: str, endpoint_id: str) -> None:
         self._progress.console.print(
-            f"  {_pipe(name)} [ok]ready[/ok] [dim]{endpoint_id}[/dim]"
+            f"  {_pipe(name)} [ok]ready[/ok] {endpoint_link(endpoint_id)}"
         )
 
     def close(self) -> None:
@@ -284,17 +287,17 @@ class DevEvents:
             )
         else:
             console.print(
-                f"{_ts()} {_pipe(name)} [ok]ready[/ok] [dim]{endpoint_id}[/dim]"
+                f"{_pipe(name)} [ok]ready[/ok] {endpoint_link(endpoint_id)}"
             )
 
     def refreshed(self, name: str, generation: int) -> None:
         console.print(
-            f"{_ts()} {_pipe(name)} [accent]refreshed[/accent] "
+            f"{_pipe(name)} [accent]refreshed[/accent] "
             f"[dim]generation {generation}[/dim]"
         )
 
     def deleted(self, name: str) -> None:
-        console.print(f"{_ts()} {_pipe(name)} [dim]deleted[/dim]")
+        console.print(f"{_pipe(name)} [dim]deleted[/dim]")
 
 
 class Timer:

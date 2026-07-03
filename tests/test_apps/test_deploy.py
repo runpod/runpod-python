@@ -38,8 +38,8 @@ def _write_project(tmp_path: Path) -> Path:
 
             app = App("demo-app")
 
-            @app.queue(name="q1", cpu="cpu5c-2-4")
-            def q1(x: int):
+            @app.queue(name="que1", cpu="cpu5c-2-4")
+            def que1(x: int):
                 return x * 2
 
             if __name__ == "__main__":
@@ -56,7 +56,7 @@ class TestDiscovery:
         apps = discover_apps(tmp_path)
         assert len(apps) == 1
         assert apps[0].name == "demo-app"
-        assert "q1" in apps[0].resources
+        assert "que1" in apps[0].resources
 
     def test_single_file_target(self, tmp_path):
         _write_project(tmp_path)
@@ -92,8 +92,8 @@ class TestManifest:
     def test_manifest_shape(self, tmp_path):
         app = App("m-app")
 
-        @app.queue(name="q", cpu="cpu5c-2-4", dependencies=["numpy"])
-        def q(x):
+        @app.queue(name="qee", cpu="cpu5c-2-4", dependencies=["numpy"])
+        def qee(x):
             return x
 
         manifest = build_manifest(app, tmp_path)
@@ -101,7 +101,7 @@ class TestManifest:
         assert manifest["version"] == 1
         (resource,) = manifest["resources"]
         assert resource["kind"] == "queue"
-        assert resource["name"] == "q"
+        assert resource["name"] == "qee"
         assert resource["dependencies"] == ["numpy"]
         assert resource["qualname"]
 
@@ -195,7 +195,7 @@ class TestDeployPipeline:
 
         assert isinstance(result, DeployResult)
         assert result.build_id == "build-1"
-        assert result.resources == ["q1"]
+        assert result.resources == ["que1"]
         api.upload_tarball.assert_awaited_once()
         api.deploy_build.assert_awaited_once_with("env-1", "build-1")
 
@@ -242,7 +242,7 @@ class TestTolerantDiscovery:
     def test_import_time_invocation_diagnosed(self, tmp_path):
         _write_project(tmp_path)
         (tmp_path / "client.py").write_text(
-            "from main import q1\nq1.remote(1)\n"
+            "from main import que1\nque1.remote(1)\n"
         )
         # directory walk: the client file fails with the precise
         # diagnosis but the app still discovers
@@ -252,6 +252,6 @@ class TestTolerantDiscovery:
     def test_import_time_invocation_message(self, tmp_path):
         _write_project(tmp_path)
         client = tmp_path / "client.py"
-        client.write_text("from main import q1\nq1.remote(1)\n")
+        client.write_text("from main import que1\nque1.remote(1)\n")
         with pytest.raises(DiscoveryError, match="invoked at import time"):
             discover_apps(client)

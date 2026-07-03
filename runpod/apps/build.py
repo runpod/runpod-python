@@ -19,6 +19,7 @@ build produces a linux-correct environment.
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -143,14 +144,40 @@ def runtime_requirement(scratch_dir: Path) -> str:
     """the runpod runtime spec to vendor into the artifact.
 
     RUNPOD_PACKAGE_SPEC overrides the published package (version pins,
-    git refs, tarball urls, local checkouts). non-index specs are built
-    into a wheel first so the platform-targeted vendoring install can
-    stay binary-only.
+    git refs, tarball urls, local checkouts). non-index specs are
+    built into a wheel first so the platform-targeted vendoring
+    install can stay binary-only.
+
+    without an override the published package is vendored for its
+    dependency closure, then sync_running_package overlays the
+    client's own package tree so the worker always runs exactly the
+    client's code regardless of what pypi has.
     """
     spec = os.environ.get("RUNPOD_PACKAGE_SPEC", "runpod")
     if _is_pinnable_name(spec):
         return spec
     return str(_build_wheel(spec, scratch_dir))
+
+
+def sync_running_package(env_dir: Path) -> None:
+    """overlay the running runpod package onto the vendored env.
+
+    the package is pure python (py3-none-any), so the client's
+    installed tree is valid on the worker platform. this pins the
+    vendored runtime to the exact client version: wire protocols,
+    manifest handling, and worker code can never drift, and prerelease
+    clients work before their version reaches pypi.
+    """
+    import runpod as _runpod
+
+    src = Path(_runpod.__file__).resolve().parent
+    dest = env_dir / "runpod"
+    shutil.copytree(
+        src,
+        dest,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        dirs_exist_ok=True,
+    )
 
 
 def _build_wheel(spec: str, scratch_dir: Path) -> Path:
@@ -288,6 +315,8 @@ def build_environment(
         ", ".join(excluded) or "none",
     )
     vendor(env_dir, all_requirements, python_version)
+    if not os.environ.get("RUNPOD_PACKAGE_SPEC"):
+        sync_running_package(env_dir)
     _verify_runtime(env_dir)
 
     return BuildResult(

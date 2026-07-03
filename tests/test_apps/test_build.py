@@ -110,6 +110,25 @@ class TestRuntimeRequirement:
         monkeypatch.delenv("RUNPOD_PACKAGE_SPEC", raising=False)
         assert runtime_requirement(tmp_path) == "runpod"
 
+    def test_running_package_overlays_env(self, tmp_path):
+        from runpod.apps.build import sync_running_package
+
+        env_dir = tmp_path / "env"
+        # stale copy from the pypi install: must be overwritten
+        (env_dir / "runpod").mkdir(parents=True)
+        (env_dir / "runpod" / "stale.py").write_text("old = True")
+
+        sync_running_package(env_dir)
+
+        # the client's own tree (which has the runtimes) wins
+        assert (env_dir / "runpod" / "runtimes" / "bootstrap.py").is_file()
+        assert (env_dir / "runpod" / "apps" / "build.py").is_file()
+        assert not any(
+            p.name == "__pycache__"
+            for p in (env_dir / "runpod").rglob("*")
+            if p.is_dir()
+        )
+
     def test_version_pin_passes_through(self, tmp_path, monkeypatch):
         monkeypatch.setenv("RUNPOD_PACKAGE_SPEC", "runpod==1.8.0")
         assert runtime_requirement(tmp_path) == "runpod==1.8.0"
