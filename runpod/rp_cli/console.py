@@ -44,6 +44,7 @@ theme = Theme(
         "err": ERR,
         "warn": WARN,
         "dim": DIM,
+        "progress.elapsed": DIM,
     }
 )
 
@@ -52,10 +53,11 @@ console = Console(highlight=False, theme=theme)
 CONSOLE_URL = "https://console.runpod.io/serverless/user/endpoint"
 
 
-def endpoint_link(endpoint_id: str) -> str:
-    """clickable console url for an endpoint."""
-    url = f"{CONSOLE_URL}/{endpoint_id}?tab=overview"
-    return f"[link={url}][accent.light]{endpoint_id}[/accent.light][/link]"
+def endpoint_url(endpoint_id: str) -> str:
+    return f"{CONSOLE_URL}/{endpoint_id}?tab=overview"
+
+
+
 
 _name_width: int = 0
 
@@ -149,18 +151,24 @@ def resources_table(rows: Iterable[tuple]) -> None:
         return
     w_name = max(len(r[0]) for r in rows)
     w_hw = max(len(r[2]) for r in rows)
+    console.print()
     for name, kind, hardware, endpoint_id in rows:
-        endpoint = (
-            endpoint_link(endpoint_id)
-            if endpoint_id and endpoint_id != "per-call"
-            else "[dim]per-call[/dim]"
+        tail = (
+            "[dim]per-call[/dim]"
+            if not endpoint_id or endpoint_id == "per-call"
+            else ""
         )
         console.print(
             f"  [white]{name:<{w_name}}[/white]"
             f"  {kind_badge(kind)}"
             f"  [dim]{hardware:<{w_hw}}[/dim]"
-            f"  {endpoint}"
+            f"  {tail}"
         )
+        if endpoint_id and endpoint_id != "per-call":
+            console.print(
+                f"  [accent.light]{endpoint_url(endpoint_id)}[/accent.light]"
+            )
+    console.print()
 
 
 def reload_flash() -> None:
@@ -220,9 +228,10 @@ class DeployEvents:
         )
 
     def endpoint_ready(self, name: str, endpoint_id: str) -> None:
-        self._progress.console.print(
-            f"  {_pipe(name)} [ok]ready[/ok] {endpoint_link(endpoint_id)}"
-        )
+        # collected, not printed: endpoint urls render in the final
+        # summary after the progress display stops
+        self.endpoints: Dict[str, str] = getattr(self, "endpoints", {})
+        self.endpoints[name] = endpoint_id
 
     def close(self) -> None:
         if self._current is not None:
@@ -281,14 +290,12 @@ class DevEvents:
         if self._progress is not None and name in self._tasks:
             self._progress.update(
                 self._tasks[name],
-                detail=f"ready · {endpoint_id}",
+                detail="ready",
                 total=1,
                 completed=1,
             )
         else:
-            console.print(
-                f"{_pipe(name)} [ok]ready[/ok] {endpoint_link(endpoint_id)}"
-            )
+            console.print(f"{_pipe(name)} [ok]ready[/ok]")
 
     def refreshed(self, name: str, generation: int) -> None:
         console.print(

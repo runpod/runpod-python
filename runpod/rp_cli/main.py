@@ -96,10 +96,17 @@ def deploy(target, env, python_version, exclude):
             finally:
                 events.close()
         ui.success(
-            f"build [accent.light]{result.build_id}[/accent.light] live on "
             f"[bold white]{result.app_name}/{env or found.env}[/bold white] "
-            f"[dim]{t.elapsed:.1f}s[/dim]"
+            f"is live [dim]{t.elapsed:.1f}s[/dim]"
         )
+        if result.endpoints:
+            ui.console.print()
+            w = max(len(n) for n in result.endpoints)
+            for name, endpoint_id in sorted(result.endpoints.items()):
+                ui.console.print(
+                    f"  [white]{name:<{w}}[/white]  "
+                    f"[accent.light]{ui.endpoint_url(endpoint_id)}[/accent.light]"
+                )
     ui.console.print()
 
 
