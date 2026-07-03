@@ -308,6 +308,12 @@ def login():
 
 def _mount_legacy_groups() -> None:
     """mount the existing click groups so `rp pod ...` etc work."""
+    # patch click before the legacy modules import it so their groups
+    # and subcommands render with the same rich help styling
+    from rich_click.patch import patch as _rich_click_patch
+
+    _rich_click_patch()
+
     import typer.main as typer_main
 
     from runpod.cli.groups.config.commands import config_wizard
@@ -326,7 +332,14 @@ _mount_legacy_groups()
 
 def run() -> None:
     """console-script entry point."""
-    cli()  # noqa: F821 - bound by _mount_legacy_groups
+    import click.exceptions
+
+    try:
+        cli()  # noqa: F821 - bound by _mount_legacy_groups
+    except click.exceptions.Exit as exc:
+        # rich-click's eager --help callback exits via the click Exit
+        # exception, which escapes the mixed typer/click stack here
+        sys.exit(exc.exit_code)
 
 
 if __name__ == "__main__":
