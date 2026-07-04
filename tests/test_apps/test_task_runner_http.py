@@ -190,3 +190,23 @@ class TestSystemDependencies:
         task_runner._install_system(["sox"])
         updates = [c for c in calls if c[:2] == ["apt-get", "update"]]
         assert len(updates) == 1
+
+
+class TestStdoutTee:
+    def test_prints_reach_real_stdout_and_response(self, capfd):
+        from runpod.runtimes.task.runner import execute_request
+
+        response = execute_request(
+            {
+                "function_name": "speak",
+                "function_code": "def speak():\n    print('live line')\n    return 1\n",
+                "args": [],
+                "kwargs": {},
+                "serialization_format": "json",
+            }
+        )
+        assert response["success"]
+        # captured for the job response
+        assert "live line" in response["stdout"]
+        # and written through to the container's stdout for log streams
+        assert "live line" in capfd.readouterr().out

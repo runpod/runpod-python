@@ -163,9 +163,12 @@ def execute_request(request):
 
         args, kwargs = _deserialize_args(request)
 
-        # stdout only: sys.stderr carries the runner's own request logs
-        # from other threads, which must not leak into job output
-        with redirect_stdout(stdout_io):
+        # stdout is teed: captured for the job response and written
+        # through to the real stdout so container logs (and live log
+        # streaming in dev sessions) carry the function's prints.
+        # sys.stderr carries the runner's own request logs from other
+        # threads, which must not leak into job output
+        with redirect_stdout(_Tee(stdout_io, sys.__stdout__)):
             result = fn(*args, **kwargs)
             if hasattr(result, "__await__"):
                 result = _run_awaitable(result)
@@ -183,6 +186,30 @@ def execute_request(request):
             "error": traceback.format_exc(),
             "stdout": stdout_io.getvalue(),
         }
+
+
+class _Tee(io.TextIOBase):
+    """write-through to multiple streams, flushing eagerly so log
+    followers see lines as they happen."""
+
+    def __init__(self, *streams):
+        self._streams = [s for s in streams if s is not None]
+
+    def write(self, s):
+        for stream in self._streams:
+            try:
+                stream.write(s)
+                stream.flush()
+            except (ValueError, OSError):
+                pass
+        return len(s)
+
+    def flush(self):
+        for stream in self._streams:
+            try:
+                stream.flush()
+            except (ValueError, OSError):
+                pass
 
 
 def _run_awaitable(awaitable):

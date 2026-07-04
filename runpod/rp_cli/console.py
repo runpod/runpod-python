@@ -8,7 +8,7 @@ module turns them into pixels.
 """
 
 import time
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from rich.console import Console
 from rich.progress import (
@@ -304,6 +304,9 @@ class DevEvents:
     def __init__(self) -> None:
         self._progress: Optional[Progress] = None
         self._tasks: Dict[str, TaskID] = {}
+        # in-flight request names; feed lines carry the name whenever
+        # calls overlap so interleaved output stays attributable
+        self._inflight: List[str] = []
 
     def session_starting(self) -> None:
         self._progress = Progress(
@@ -354,7 +357,15 @@ class DevEvents:
 
     # -- request lifecycle (LiveTarget events) --
 
+    def _feed(self, name: str, body: str) -> None:
+        """a dim indented line under a dispatch; named when calls overlap."""
+        if len(self._inflight) > 1:
+            console.print(f"  [dim]│ {_padded(name)}  {body}[/dim]")
+        else:
+            console.print(f"  [dim]│ {body}[/dim]")
+
     def dispatch(self, name: str, label: str = "") -> None:
+        self._inflight.append(name)
         suffix = f" [dim]{label}[/dim]" if label else ""
         console.print(
             f"[accent]→[/accent] [bold white]{_padded(name)}[/bold white]{suffix}"
@@ -363,24 +374,28 @@ class DevEvents:
     def worker_status(self, name: str, counts: Dict[str, int]) -> None:
         from runpod.apps.monitor import format_worker_counts
 
-        console.print(
-            f"  [dim]│ {format_worker_counts(counts)}[/dim]"
-        )
+        self._feed(name, format_worker_counts(counts))
 
     def worker_ready(self, name: str, worker_id: str) -> None:
-        console.print(f"  [dim]│ worker {worker_id[:12]}[/dim]")
+        self._feed(name, f"worker {worker_id[:12]}")
 
     def worker_log(self, name: str, line: str) -> None:
         from rich.markup import escape
 
-        console.print(f"  [dim]│ {escape(line)}[/dim]")
+        self._feed(name, escape(line))
+
+    def _done(self, name: str) -> None:
+        if name in self._inflight:
+            self._inflight.remove(name)
 
     def request_completed(self, name: str, elapsed_s: float) -> None:
+        self._done(name)
         console.print(
             f"[ok]✓[/ok] [white]{_padded(name)}[/white] [dim]{elapsed_s:.1f}s[/dim]"
         )
 
     def request_failed(self, name: str, elapsed_s: float) -> None:
+        self._done(name)
         console.print(
             f"[err]✗[/err] [white]{_padded(name)}[/white] [dim]{elapsed_s:.1f}s[/dim]"
         )
