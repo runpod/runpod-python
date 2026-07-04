@@ -43,6 +43,7 @@ class AppsApiClient:
                 workersMin
                 workersMax
                 idleTimeout
+                aiKey
             }
         }
         """

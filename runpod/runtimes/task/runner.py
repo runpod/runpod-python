@@ -147,7 +147,11 @@ def execute_request(request):
                 "error": "function_name and function_code are required",
             }
 
-        namespace = {}
+        # exec mirrors deployed-mode module import: the code is the
+        # user's full module, so __name__ is set like an import would
+        # (main guards stay inert) and decorated handles resolve to
+        # their wrapped functions
+        namespace = {"__name__": "__runpod_live__"}
         exec(function_code, namespace)  # noqa: S102 - that is the job
         if function_name not in namespace:
             return {
@@ -155,6 +159,7 @@ def execute_request(request):
                 "error": f"function '{function_name}' not found in provided code",
             }
         fn = namespace[function_name]
+        fn = getattr(fn, "_fn", fn)
 
         args, kwargs = _deserialize_args(request)
 

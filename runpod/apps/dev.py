@@ -221,7 +221,12 @@ class DevSession:
 
                 self._emit("ready", spec.name, endpoint_id)
                 self._endpoints[name] = endpoint_id
-                app._dev_targets[spec.name] = LiveTarget(endpoint_id)
+                app._dev_targets[spec.name] = LiveTarget(
+                    endpoint_id,
+                    spec.name,
+                    events=self.events,
+                    metrics_key=result.get("aiKey"),
+                )
 
         self._emit("session_started")
 
@@ -262,7 +267,12 @@ class DevSession:
             result = await self.api.save_endpoint(payload)
             endpoint_id = result["id"]
             self._endpoints[name] = endpoint_id
-            app._dev_targets[handle.spec.name] = LiveTarget(endpoint_id)
+            app._dev_targets[handle.spec.name] = LiveTarget(
+                endpoint_id,
+                handle.spec.name,
+                events=self.events,
+                metrics_key=result.get("aiKey"),
+            )
             self._emit("refreshed", handle.spec.name, self.generation)
             log.info(
                 "refreshed dev endpoint %s (%s, generation %d)",

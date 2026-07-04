@@ -31,27 +31,19 @@ def deserialize_result(result_b64: str) -> Any:
 
 
 def get_function_source(fn: Callable) -> str:
-    """extract a function's source with decorators stripped.
+    """the full source of the function's module.
 
-    the worker execs this source into a fresh namespace and calls the
-    function by name, so the emitted code must be a bare def.
+    the worker execs this and resolves the function by name, exactly
+    mirroring deployed mode (which imports the user's module from the
+    build artifact): module-level imports, globals, and decorators
+    behave identically in dev and deploy.
     """
     fn = inspect.unwrap(fn)
-    source = textwrap.dedent(inspect.getsource(fn))
-
-    module = ast.parse(source)
-    fn_def = None
-    for node in ast.walk(module):
-        if (
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == fn.__name__
-        ):
-            fn_def = node
-            break
-    if fn_def is None:
-        raise ValueError(f"could not find function definition for {fn.__name__}")
-
-    # slice from the def line, dropping decorator lines above it
-    lines = source.split("\n")
-    fn_lines = lines[fn_def.lineno - 1 :]
-    return textwrap.dedent("\n".join(fn_lines))
+    module = inspect.getmodule(fn)
+    if module is not None:
+        try:
+            return inspect.getsource(module)
+        except (OSError, TypeError):
+            pass
+    # no module file (repl, exec): fall back to the bare function body
+    return textwrap.dedent(inspect.getsource(fn))

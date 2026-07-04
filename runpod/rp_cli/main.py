@@ -105,7 +105,7 @@ def deploy(target, env, python_version, exclude):
             for name, endpoint_id in sorted(result.endpoints.items()):
                 ui.console.print(
                     f"  [white]{name:<{w}}[/white]  "
-                    f"[accent.light]{ui.endpoint_url(endpoint_id)}[/accent.light]"
+                    f"{ui.endpoint_link(endpoint_id)}"
                 )
     ui.console.print()
 

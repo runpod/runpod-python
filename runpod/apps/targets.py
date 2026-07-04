@@ -218,15 +218,19 @@ async def _wait_terminal(
     data: Dict[str, Any],
     headers: Dict[str, str],
     timeout: float,
+    on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """poll /status until the job reaches a terminal state.
 
     runsync returns early (e.g. IN_QUEUE) when the job outlives the sync
-    window, typically on cold starts; polling covers the rest.
+    window, typically on cold starts; polling covers the rest. on_status,
+    when given, sees every payload (observability hooks read workerId).
     """
     import asyncio
     import time
 
+    if on_status is not None:
+        on_status(data)
     deadline = time.monotonic() + timeout
     interval = 0.5
     while data.get("status") not in FINAL_STATUSES:
@@ -241,6 +245,8 @@ async def _wait_terminal(
         await asyncio.sleep(interval)
         interval = min(interval * 1.5, 5.0)
         data = await _get_json(f"{base_url}/status/{job_id}", headers, 30.0)
+        if on_status is not None:
+            on_status(data)
     return data
 
 
@@ -335,10 +341,21 @@ class LiveTarget(InvocationTarget):
 
     provisioning of the live endpoint itself is owned by the dev session
     (see runpod.apps.dev); this target only speaks to an endpoint id.
+    when an event sink is attached, each call gets a dispatch line,
+    live worker status/log feed, and a completion line.
     """
 
-    def __init__(self, endpoint_id: str):
+    def __init__(
+        self,
+        endpoint_id: str,
+        resource_name: str = "",
+        events: Optional[object] = None,
+        metrics_key: Optional[str] = None,
+    ):
         self.endpoint_id = endpoint_id
+        self.resource_name = resource_name
+        self.events = events
+        self.metrics_key = metrics_key
 
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
@@ -374,14 +391,60 @@ class LiveTarget(InvocationTarget):
             return response.json_result
         return output
 
+    def _monitor(self):
+        if self.events is None:
+            return None
+        from .monitor import WorkerMonitor
+
+        return WorkerMonitor(
+            self.endpoint_id,
+            self.resource_name,
+            self.events,
+            metrics_key=self.metrics_key,
+        )
+
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Any:
+        import time
+
+        from .monitor import emit
+
         base = f"{_endpoint_url_base()}/{self.endpoint_id}"
         headers = _headers()
-        data = await _post_json(f"{base}/runsync", payload, headers, timeout)
-        data = await _wait_terminal(base, data, headers, timeout)
-        return self.unwrap(data)
+        monitor = self._monitor()
+        emit(self.events, "dispatch", self.resource_name)
+        start = time.monotonic()
+        if monitor is not None:
+            await monitor.start()
+        try:
+            data = await _post_json(f"{base}/runsync", payload, headers, timeout)
+            data = await _wait_terminal(
+                base,
+                data,
+                headers,
+                timeout,
+                on_status=monitor.on_status if monitor else None,
+            )
+            result = self.unwrap(data)
+        except Exception:
+            emit(
+                self.events,
+                "request_failed",
+                self.resource_name,
+                time.monotonic() - start,
+            )
+            raise
+        finally:
+            if monitor is not None:
+                await monitor.stop()
+        emit(
+            self.events,
+            "request_completed",
+            self.resource_name,
+            time.monotonic() - start,
+        )
+        return result
 
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{_endpoint_url_base()}/{self.endpoint_id}/run"
@@ -405,18 +468,39 @@ class LiveTarget(InvocationTarget):
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> Any:
+        import time
+
+        from .monitor import emit
+
+        emit(self.events, "dispatch", self.resource_name, f"{method} {path}")
+        start = time.monotonic()
         url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
         client_timeout = aiohttp.ClientTimeout(total=timeout)
-        async with aiohttp.ClientSession(timeout=client_timeout) as session:
-            async with session.request(
-                method, url, json=body, headers=_headers()
-            ) as resp:
-                resp.raise_for_status()
-                text = await resp.text()
-                try:
-                    return json.loads(text)
-                except json.JSONDecodeError:
-                    return text
+        try:
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                async with session.request(
+                    method, url, json=body, headers=_headers()
+                ) as resp:
+                    resp.raise_for_status()
+                    text = await resp.text()
+        except Exception:
+            emit(
+                self.events,
+                "request_failed",
+                self.resource_name,
+                time.monotonic() - start,
+            )
+            raise
+        emit(
+            self.events,
+            "request_completed",
+            self.resource_name,
+            time.monotonic() - start,
+        )
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
 
 
 class PodTarget(InvocationTarget):

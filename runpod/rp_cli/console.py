@@ -56,6 +56,14 @@ def endpoint_url(endpoint_id: str) -> str:
     return f"{CONSOLE_URL}/{endpoint_id}?tab=overview"
 
 
+def endpoint_link(endpoint_id: str) -> str:
+    """short clickable endpoint reference (osc8 hyperlink)."""
+    return (
+        f"[link={endpoint_url(endpoint_id)}]"
+        f"[accent.light]{endpoint_id} ↗[/accent.light][/link]"
+    )
+
+
 
 
 _name_width: int = 0
@@ -150,12 +158,11 @@ def resources_table(rows: Iterable[tuple]) -> None:
         return
     w_name = max(len(r[0]) for r in rows)
     w_hw = max(len(r[2]) for r in rows)
-    console.print()
     for name, kind, hardware, endpoint_id in rows:
         tail = (
             "[dim]per-call[/dim]"
             if not endpoint_id or endpoint_id == "per-call"
-            else ""
+            else endpoint_link(endpoint_id)
         )
         console.print(
             f"  [white]{name:<{w_name}}[/white]"
@@ -163,15 +170,10 @@ def resources_table(rows: Iterable[tuple]) -> None:
             f"  [dim]{hardware:<{w_hw}}[/dim]"
             f"  {tail}"
         )
-        if endpoint_id and endpoint_id != "per-call":
-            console.print(
-                f"  [accent.light]{endpoint_url(endpoint_id)}[/accent.light]"
-            )
-    console.print()
 
 
 def reload_flash() -> None:
-    console.print(f"[warn]⚡ reload[/warn]")
+    console.print()
 
 
 # -- live deploy phases ------------------------------------------------------
@@ -291,8 +293,12 @@ class DeployEvents:
 
 
 class DevEvents:
-    """DevSession event sink: per-resource spinner rows during start,
-    plain lifecycle lines afterwards.
+    """DevSession event sink.
+
+    provisioning renders transient spinner rows that vanish once the
+    session is up (the resource table is the durable record). request
+    lifecycle renders as a block: an accent dispatch line, a dim
+    indented worker feed, and a check/cross verdict.
     """
 
     def __init__(self) -> None:
@@ -302,9 +308,10 @@ class DevEvents:
     def session_starting(self) -> None:
         self._progress = Progress(
             SpinnerColumn("dots", style=ACCENT, finished_text="[ok]✓[/ok]"),
-            TextColumn("[accent.light]{task.description}[/accent.light]"),
+            TextColumn("[white]{task.description}[/white]"),
             TextColumn("[dim]{task.fields[detail]}[/dim]"),
             console=console,
+            transient=True,
         )
         self._progress.start()
 
@@ -329,27 +336,54 @@ class DevEvents:
         self._row(name, f"provisioning {kind} · {hardware}")
 
     def adopted(self, name: str, endpoint_id: str) -> None:
-        self._row(name, f"adopted {endpoint_id}")
+        self._row(name, "adopting")
 
     def ready(self, name: str, endpoint_id: str) -> None:
         if self._progress is not None and name in self._tasks:
             self._progress.update(
-                self._tasks[name],
-                detail="ready",
-                total=1,
-                completed=1,
+                self._tasks[name], detail="ready", total=1, completed=1
             )
-        else:
-            console.print(f"{_pipe(name)} [ok]ready[/ok]")
 
     def refreshed(self, name: str, generation: int) -> None:
         console.print(
-            f"{_pipe(name)} [accent]refreshed[/accent] "
-            f"[dim]generation {generation}[/dim]"
+            f"[warn]⚡[/warn] {_padded(name)} [dim]reloaded[/dim]"
         )
 
     def deleted(self, name: str) -> None:
-        console.print(f"{_pipe(name)} [dim]deleted[/dim]")
+        console.print(f"  [dim]{_padded(name)} deleted[/dim]")
+
+    # -- request lifecycle (LiveTarget events) --
+
+    def dispatch(self, name: str, label: str = "") -> None:
+        suffix = f" [dim]{label}[/dim]" if label else ""
+        console.print(
+            f"[accent]→[/accent] [bold white]{_padded(name)}[/bold white]{suffix}"
+        )
+
+    def worker_status(self, name: str, counts: Dict[str, int]) -> None:
+        from runpod.apps.monitor import format_worker_counts
+
+        console.print(
+            f"  [dim]│ {format_worker_counts(counts)}[/dim]"
+        )
+
+    def worker_ready(self, name: str, worker_id: str) -> None:
+        console.print(f"  [dim]│ worker {worker_id[:12]}[/dim]")
+
+    def worker_log(self, name: str, line: str) -> None:
+        from rich.markup import escape
+
+        console.print(f"  [dim]│ {escape(line)}[/dim]")
+
+    def request_completed(self, name: str, elapsed_s: float) -> None:
+        console.print(
+            f"[ok]✓[/ok] [white]{_padded(name)}[/white] [dim]{elapsed_s:.1f}s[/dim]"
+        )
+
+    def request_failed(self, name: str, elapsed_s: float) -> None:
+        console.print(
+            f"[err]✗[/err] [white]{_padded(name)}[/white] [dim]{elapsed_s:.1f}s[/dim]"
+        )
 
 
 class Timer:
@@ -372,10 +406,13 @@ def entrypoint_header() -> None:
 
 
 def entrypoint_success(elapsed: float) -> None:
+    console.print()
     console.print(
-        f"[ok]✓[/ok] [dim]{elapsed:.1f}s · enter to re-run · edit to reload · ^C to quit[/dim]"
+        f"[dim]── {elapsed:.1f}s · enter re-run · edit reload · ^C quit ──[/dim]"
     )
 
 
 def entrypoint_failure(elapsed: float, err: str) -> None:
-    console.print(f"[err]✗ {err}[/err] [dim]{elapsed:.1f}s[/dim]")
+    console.print()
+    console.print(f"[err]✗ {err}[/err]")
+    console.print(f"[dim]── {elapsed:.1f}s · enter re-run · edit reload · ^C quit ──[/dim]")

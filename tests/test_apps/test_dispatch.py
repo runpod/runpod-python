@@ -239,3 +239,68 @@ class TestSyncBridge:
             result = asyncio.run(caller())
 
         assert result == "bridged"
+
+
+class TestModuleSourceShipping:
+    def test_whole_module_ships(self, tmp_path):
+        import importlib.util
+        import sys
+
+        mod_file = tmp_path / "shipmod.py"
+        mod_file.write_text(
+            "import asyncio\n"
+            "from pathlib import Path\n"
+            "\n"
+            "GREETING = 'hello'\n"
+            "\n"
+            "async def waiter():\n"
+            "    await asyncio.sleep(0)\n"
+            "    return f'{GREETING} {Path(\"x\")}'\n"
+            "\n"
+            "if __name__ == '__main__':\n"
+            "    raise SystemExit('main guard must not run')\n"
+        )
+        spec = importlib.util.spec_from_file_location("shipmod", mod_file)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["shipmod"] = mod
+        try:
+            from runpod.apps.serialization import get_function_source
+
+            source = get_function_source(mod.waiter)
+            # the entire module ships: imports and globals included
+            assert "import asyncio" in source
+            assert "GREETING = 'hello'" in source
+
+            # executes like deployed-mode module import: main guard inert
+            namespace = {"__name__": "__runpod_live__"}
+            exec(source, namespace)
+            import asyncio as aio
+
+            assert aio.run(namespace["waiter"]()) == "hello x"
+        finally:
+            sys.modules.pop("shipmod", None)
+
+    def test_execute_request_unwraps_handles(self):
+        # a shipped module defines decorated handles; the runner must
+        # call the wrapped function, not the handle
+        from runpod.runtimes.task.runner import execute_request
+
+        code = (
+            "import runpod\n"
+            "app = runpod.App('t')\n"
+            "@app.queue()\n"
+            "def double(x):\n"
+            "    return x * 2\n"
+        )
+        response = execute_request(
+            {
+                "function_name": "double",
+                "function_code": code,
+                "args": [],
+                "kwargs": {"x": "AAA"},
+                "serialization_format": "json",
+            }
+        )
+        assert response["success"], response.get("error")
+        assert response["json_result"] == "AAAAAA"
