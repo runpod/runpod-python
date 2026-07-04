@@ -224,8 +224,13 @@ def vendor(
     python_version: str,
     *,
     no_deps: bool = False,
+    progress: Optional[callable] = None,
 ) -> None:
-    """resolve requirements into env_dir for the worker platform."""
+    """resolve requirements into env_dir for the worker platform.
+
+    progress, if given, is called as progress(count, package) each time
+    pip starts resolving another distribution.
+    """
     if not requirements:
         return
     cmd = [
@@ -233,8 +238,8 @@ def vendor(
         "-m",
         "pip",
         "install",
-        "-q",
         "--upgrade",
+        "--no-color",
         "--target",
         str(env_dir),
         "--python-version",
@@ -250,10 +255,26 @@ def vendor(
         cmd.append("--no-deps")
     cmd.extend(requirements)
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    count = 0
+    for line in proc.stdout:
+        line = line.strip()
+        # pip emits one "Collecting <dist>" per resolved distribution
+        if line.startswith("Collecting "):
+            count += 1
+            if progress is not None:
+                name = re.split(r"[><=!~\[ (]", line[11:], maxsplit=1)[0]
+                progress(count, name)
+    stderr = proc.stderr.read()
+    proc.wait()
+    if proc.returncode != 0:
         raise BuildError(
-            f"dependency vendoring failed: {result.stderr[-3000:]}\n"
+            f"dependency vendoring failed: {stderr[-3000:]}\n"
             f"packages without linux wheels cannot be vendored; "
             f"exclude them (they must then come from the image)"
         )
@@ -276,6 +297,7 @@ def build_environment(
     python_version: str = DEFAULT_PYTHON_VERSION,
     exclude: Optional[List[str]] = None,
     scratch_dir: Optional[Path] = None,
+    events: Optional[object] = None,
 ) -> BuildResult:
     """vendor the app's full runtime environment into a directory tree."""
     if python_version not in SUPPORTED_PYTHON_VERSIONS:
@@ -314,7 +336,12 @@ def build_environment(
         len(excluded),
         ", ".join(excluded) or "none",
     )
-    vendor(env_dir, all_requirements, python_version)
+    vendor(
+        env_dir,
+        all_requirements,
+        python_version,
+        progress=getattr(events, "vendor_progress", None),
+    )
     if not os.environ.get("RUNPOD_PACKAGE_SPEC"):
         sync_running_package(env_dir)
     _verify_runtime(env_dir)

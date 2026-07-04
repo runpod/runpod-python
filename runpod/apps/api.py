@@ -222,8 +222,11 @@ class AppsApiClient:
         """put the build tarball to the presigned url.
 
         progress, when given, is called with (bytes_sent, total_bytes)
-        as chunks go out.
+        as chunks go out. transient resets (broken pipe, connection
+        reset, 5xx) are retried with backoff; the payload is re-read
+        from disk on each attempt.
         """
+        import asyncio
         import os
 
         timeout = aiohttp.ClientTimeout(total=600)
@@ -241,10 +244,21 @@ class AppsApiClient:
                         progress(sent, total)
                     yield chunk
 
+        attempts = 4
+        for attempt in range(attempts):
+            try:
+                await self._put_tarball(upload_url, _reader(), total, timeout)
+                return
+            except (aiohttp.ClientError, OSError) as exc:
+                if attempt == attempts - 1:
+                    raise
+                await asyncio.sleep(2**attempt)
+
+    async def _put_tarball(self, upload_url, reader, total, timeout) -> None:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.put(
                 upload_url,
-                data=_reader(),
+                data=reader,
                 headers={
                     "Content-Type": "application/gzip",
                     "Content-Length": str(total),

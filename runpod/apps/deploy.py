@@ -405,7 +405,11 @@ async def deploy_app(
 
     _phase(events, "vendor", f"python {python_version}")
     build: BuildResult = build_environment(
-        app, project_root, python_version=python_version, exclude=exclude
+        app,
+        project_root,
+        python_version=python_version,
+        exclude=exclude,
+        events=events,
     )
     manifest = build_manifest(
         app,

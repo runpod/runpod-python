@@ -153,20 +153,33 @@ class TestRuntimeRequirement:
             assert runtime_requirement(tmp_path) == str(wheel)
 
 
+def _fake_popen(captured, *, returncode=0, stdout="", stderr=""):
+    import io
+
+    def fake(cmd, **kwargs):
+        captured["cmd"] = cmd
+
+        class P:
+            def __init__(self):
+                self.stdout = io.StringIO(stdout)
+                self.stderr = io.StringIO(stderr)
+                self.returncode = returncode
+
+            def wait(self):
+                return returncode
+
+        return P()
+
+    return fake
+
+
 class TestVendor:
     def test_targets_worker_platform(self, tmp_path):
         captured = {}
-
-        def fake_run(cmd, **kwargs):
-            captured["cmd"] = cmd
-
-            class R:
-                returncode = 0
-                stderr = ""
-
-            return R()
-
-        with patch("runpod.apps.build.subprocess.run", side_effect=fake_run):
+        with patch(
+            "runpod.apps.build.subprocess.Popen",
+            side_effect=_fake_popen(captured),
+        ):
             vendor(tmp_path, ["numpy"], "3.12")
 
         cmd = captured["cmd"]
@@ -176,18 +189,36 @@ class TestVendor:
         assert "manylinux_2_28_x86_64" in cmd
 
     def test_empty_requirements_no_op(self, tmp_path):
-        with patch("runpod.apps.build.subprocess.run") as run:
+        with patch("runpod.apps.build.subprocess.Popen") as popen:
             vendor(tmp_path, [], "3.12")
-        run.assert_not_called()
+        popen.assert_not_called()
 
     def test_failure_raises_build_error(self, tmp_path):
-        def fake_run(cmd, **kwargs):
-            class R:
-                returncode = 1
-                stderr = "no matching distribution"
-
-            return R()
-
-        with patch("runpod.apps.build.subprocess.run", side_effect=fake_run):
+        with patch(
+            "runpod.apps.build.subprocess.Popen",
+            side_effect=_fake_popen(
+                {}, returncode=1, stderr="no matching distribution"
+            ),
+        ):
             with pytest.raises(BuildError, match="no matching distribution"):
                 vendor(tmp_path, ["nonexistent-xyz"], "3.12")
+
+    def test_progress_reports_collected_packages(self, tmp_path):
+        seen = []
+        stdout = (
+            "Collecting numpy>=1.0\n"
+            "  Downloading numpy-2.0-cp312.whl\n"
+            "Collecting requests\n"
+            "Installing collected packages\n"
+        )
+        with patch(
+            "runpod.apps.build.subprocess.Popen",
+            side_effect=_fake_popen({}, stdout=stdout),
+        ):
+            vendor(
+                tmp_path,
+                ["numpy"],
+                "3.12",
+                progress=lambda c, n: seen.append((c, n)),
+            )
+        assert seen == [(1, "numpy"), (2, "requests")]

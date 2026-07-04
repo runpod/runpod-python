@@ -16,7 +16,6 @@ from rich.progress import (
     SpinnerColumn,
     TaskID,
     TextColumn,
-    TimeElapsedColumn,
 )
 from rich.text import Text
 from rich.theme import Theme
@@ -185,46 +184,94 @@ _PHASE_LABELS = {
 }
 
 
+_BAR_WIDTH = 22
+
+
+def _bar(fraction: float) -> str:
+    """slim one-line progress bar."""
+    fraction = min(max(fraction, 0.0), 1.0)
+    filled = int(fraction * _BAR_WIDTH)
+    return (
+        f"[accent]{'━' * filled}[/accent]"
+        f"[grey30]{'━' * (_BAR_WIDTH - filled)}[/grey30]"
+    )
+
+
 class DeployEvents:
     """deploy_app event sink: animated phase list with live progress.
 
     each phase renders a spinner while active and collapses to a ✓ with
-    elapsed time when the next phase begins. upload progress (bytes)
-    animates in-line when the transport reports it.
+    a short summary when the next begins. vendoring streams package
+    names as pip resolves them; upload renders a slim in-line bar.
     """
 
     def __init__(self) -> None:
         self._progress = Progress(
             SpinnerColumn("dots", style=ACCENT, finished_text=f"[ok]✓[/ok]"),
             TextColumn("[white]{task.description}[/white]"),
-            TextColumn("[dim]{task.fields[detail]}[/dim]"),
-            TimeElapsedColumn(),
+            TextColumn("{task.fields[detail]}"),
             console=console,
             transient=False,
         )
         self._current: Optional[TaskID] = None
+        self._current_name = ""
         self._started = False
+        self._package_count = 0
+        self._upload_total = 0
 
     def _ensure_started(self) -> None:
         if not self._started:
             self._progress.start()
             self._started = True
 
+    def _finish_current(self) -> None:
+        if self._current is None:
+            return
+        # collapse the live detail into a short summary
+        if self._current_name == "vendor" and self._package_count:
+            summary = f"{self._package_count} packages"
+        elif self._current_name == "upload" and self._upload_total:
+            summary = f"{self._upload_total / 1048576:.1f} MB"
+        else:
+            summary = ""
+        self._progress.update(
+            self._current,
+            detail=f"[dim]{summary}[/dim]",
+            total=1,
+            completed=1,
+        )
+        self._current = None
+
     def phase(self, name: str, detail: str = "") -> None:
         self._ensure_started()
-        if self._current is not None:
-            self._progress.update(self._current, total=1, completed=1)
+        self._finish_current()
+        self._current_name = name
         self._current = self._progress.add_task(
-            _PHASE_LABELS.get(name, name), detail=detail, total=None
+            _PHASE_LABELS.get(name, name),
+            detail=f"[dim]{detail}[/dim]" if detail else "",
+            total=None,
+        )
+
+    def vendor_progress(self, count: int, package: str) -> None:
+        if self._current is None:
+            return
+        self._package_count = count
+        self._progress.update(
+            self._current,
+            detail=f"[accent.light]{package}[/accent.light] [dim]· {count}[/dim]",
         )
 
     def upload_progress(self, sent: int, total: int) -> None:
         if self._current is None:
             return
-        mb = 1024 * 1024
+        self._upload_total = total
+        mb = 1048576
         self._progress.update(
             self._current,
-            detail=f"{sent / mb:.1f} / {total / mb:.1f} MB",
+            detail=(
+                f"{_bar(sent / total)} "
+                f"[dim]{sent / mb:.1f} / {total / mb:.1f} MB[/dim]"
+            ),
         )
 
     def endpoint_ready(self, name: str, endpoint_id: str) -> None:
@@ -234,9 +281,7 @@ class DeployEvents:
         self.endpoints[name] = endpoint_id
 
     def close(self) -> None:
-        if self._current is not None:
-            self._progress.update(self._current, total=1, completed=1)
-            self._current = None
+        self._finish_current()
         if self._started:
             self._progress.stop()
             self._started = False
