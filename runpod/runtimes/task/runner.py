@@ -150,9 +150,13 @@ def execute_request(request):
         # exec mirrors deployed-mode module import: the code is the
         # user's full module, so __name__ is set like an import would
         # (main guards stay inert) and decorated handles resolve to
-        # their wrapped functions
-        namespace = {"__name__": "__runpod_live__"}
-        exec(function_code, namespace)  # noqa: S102 - that is the job
+        # their wrapped functions. the source is written to a real
+        # file first so inspect.getsource works inside the function
+        # (nested .remote() calls re-extract sibling source)
+        source_path = _materialize_source(function_code)
+        namespace = {"__name__": "__runpod_live__", "__file__": source_path}
+        code_obj = compile(function_code, source_path, "exec")
+        exec(code_obj, namespace)  # noqa: S102 - that is the job
         if function_name not in namespace:
             return {
                 "success": False,
@@ -186,6 +190,21 @@ def execute_request(request):
             "error": traceback.format_exc(),
             "stdout": stdout_io.getvalue(),
         }
+
+
+def _materialize_source(function_code):
+    """persist request source to a stable path for inspect/linecache."""
+    import hashlib
+    import tempfile
+
+    digest = hashlib.sha256(function_code.encode()).hexdigest()[:16]
+    path = os.path.join(
+        tempfile.gettempdir(), f"runpod_live_{digest}.py"
+    )
+    if not os.path.exists(path):
+        with open(path, "w") as f:
+            f.write(function_code)
+    return path
 
 
 class _Tee(io.TextIOBase):

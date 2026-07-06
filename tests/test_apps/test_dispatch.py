@@ -304,3 +304,33 @@ class TestModuleSourceShipping:
         )
         assert response["success"], response.get("error")
         assert response["json_result"] == "AAAAAA"
+
+    def test_nested_source_extraction_from_shipped_module(self):
+        # inside a live worker, a function calling sibling.remote()
+        # re-extracts that sibling's source via inspect; the shipped
+        # module must be inspectable after exec
+        from runpod.runtimes.task.runner import execute_request
+
+        code = (
+            "import runpod\n"
+            "app = runpod.App('t2')\n"
+            "@app.queue()\n"
+            "def sibling(x):\n"
+            "    return x\n"
+            "@app.queue()\n"
+            "def caller():\n"
+            "    import inspect\n"
+            "    from runpod.apps.serialization import get_function_source\n"
+            "    return get_function_source(sibling._fn)\n"
+        )
+        response = execute_request(
+            {
+                "function_name": "caller",
+                "function_code": code,
+                "args": [],
+                "kwargs": {},
+                "serialization_format": "json",
+            }
+        )
+        assert response["success"], response.get("error")
+        assert "def sibling" in response["json_result"]
