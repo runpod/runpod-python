@@ -1,5 +1,6 @@
 """Bidirectional warm-cache sync between local directories and a network volume."""
 
+import contextlib
 import os
 import tarfile
 import tempfile
@@ -71,7 +72,13 @@ class VolumeCache:
                         continue
 
     def _guard(self, fn, default):
-        return fn()
+        try:
+            return fn()
+        except Exception as exc:                     # best-effort: never break the worker
+            if not self._best_effort:
+                raise
+            log.warn(f"VolumeCache operation failed: {exc}")
+            return default
 
     def sync(self):
         if not self.available:
@@ -165,3 +172,11 @@ class VolumeCache:
             target == d or target.startswith(d + os.sep)
             for d in self._dirs
         )
+
+    @contextlib.contextmanager
+    def warm(self):
+        self.hydrate()
+        try:
+            yield self
+        finally:
+            self.sync()
