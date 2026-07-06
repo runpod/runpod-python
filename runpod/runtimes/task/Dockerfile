@@ -7,9 +7,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
     PYTHONUNBUFFERED=1
 
-RUN pip install --no-cache-dir cloudpickle
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-COPY runpod/runtimes/task/runner.py /runner.py
+# install the runpod package: task payloads carry the user's full module
+# source, which imports runpod (decorators, nested .remote calls)
+COPY . /src
+RUN pip install --no-cache-dir /src cloudpickle && rm -rf /src
 
 EXPOSE 8080
-CMD ["python", "/runner.py"]
+CMD ["python", "-m", "runpod.runtimes.task.runner"]
