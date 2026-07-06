@@ -252,3 +252,10 @@ def test_warm_syncs_even_on_exception(tmp_path):
         with vc.warm():
             raise ValueError("boom")
     assert calls == ["hydrate", "sync"]
+
+
+def test_volumecache_exported_from_serverless():
+    import runpod.serverless as sls
+    import runpod.serverless.utils as utils
+    assert sls.VolumeCache is utils.VolumeCache
+    assert "VolumeCache" in sls.__all__
