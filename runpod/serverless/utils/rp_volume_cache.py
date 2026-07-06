@@ -92,7 +92,25 @@ class VolumeCache:
         os.replace(tmp, final)
         log.info(f"VolumeCache: synced {len(files)} files to {final}")
         self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
+        self._enforce_retention()
         return True
+
+    def _enforce_retention(self):
+        if not self._max_size_gb:
+            return
+        cap = self._max_size_gb * (1024 ** 3)
+        shards = self._list_shards()                 # oldest first
+        total = sum(os.path.getsize(s) for s in shards)
+        for shard in shards:
+            if total <= cap:
+                break
+            size = os.path.getsize(shard)
+            try:
+                os.remove(shard)
+                total -= size
+                log.info(f"VolumeCache: pruned old shard {shard}")
+            except OSError as exc:
+                log.warn(f"VolumeCache: failed to prune {shard}: {exc}")
 
     @property
     def _marker_path(self):
