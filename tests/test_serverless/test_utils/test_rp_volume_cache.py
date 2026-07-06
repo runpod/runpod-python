@@ -86,3 +86,19 @@ def test_sync_noop_when_unavailable(tmp_path):
     vc = VolumeCache([str(tmp_path / "c")], namespace="ep1",
                      volume_path=str(tmp_path / "missing"))
     assert vc.sync() is False
+
+
+def test_sync_tolerates_coarse_mtime_granularity(tmp_path):
+    # A fresh instance sets baseline to now - epsilon. A file whose mtime is
+    # floored to the current integer second (as coarse NFS filesystems report)
+    # must still be picked up, not silently dropped.
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    f = cache / "model.bin"
+    f.write_text("weights")
+    now = time.time()
+    os.utime(f, (float(int(now)), float(int(now))))  # floor mtime to integer second
+    assert vc.sync() is True
