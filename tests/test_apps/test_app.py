@@ -260,3 +260,65 @@ def test_manifest_serialization():
         "networkVolume": "my-volume",
         "env": {"KEY": "val"},
     }
+
+
+class TestGpuStringResolution:
+    def test_pool_id_passthrough(self):
+        from runpod.apps.spec import normalize_gpu
+
+        assert normalize_gpu("ADA_24") == ["ADA_24"]
+        assert normalize_gpu("ada_24") == ["ADA_24"]
+
+    def test_device_name_passthrough(self):
+        from runpod.apps.spec import normalize_gpu
+
+        assert normalize_gpu("NVIDIA B200") == ["NVIDIA B200"]
+
+    def test_enum_style_name(self):
+        from runpod.apps.spec import normalize_gpu
+
+        assert normalize_gpu("NVIDIA_B200") == ["NVIDIA B200"]
+
+    def test_shorthand_fragments(self):
+        from runpod.apps.spec import normalize_gpu
+
+        assert normalize_gpu("B200") == ["NVIDIA B200"]
+        assert normalize_gpu("4090") == ["NVIDIA GeForce RTX 4090"]
+        assert normalize_gpu("5090") == ["NVIDIA GeForce RTX 5090"]
+
+    def test_fragment_matches_all_variants(self):
+        from runpod.apps.spec import normalize_gpu
+
+        matches = normalize_gpu("A100")
+        assert set(matches) == {
+            "NVIDIA A100 80GB PCIe",
+            "NVIDIA A100-SXM4-80GB",
+        }
+
+    def test_any_sentinel(self):
+        from runpod.apps.spec import normalize_gpu
+
+        assert normalize_gpu("any") == ["any"]
+
+    def test_unknown_raises_at_decoration(self):
+        import pytest
+
+        from runpod.apps.errors import InvalidResourceError
+        from runpod.apps.spec import normalize_gpu
+
+        with pytest.raises(InvalidResourceError, match="unknown gpu 'B300'"):
+            normalize_gpu("B300")
+
+    def test_gpu_ids_maps_devices_to_pools(self):
+        from runpod.apps.gpu import gpu_ids_value
+
+        # endpoints select by pool; device names map back
+        assert gpu_ids_value(["NVIDIA B200"]) == "BLACKWELL_180"
+        assert gpu_ids_value(["NVIDIA GeForce RTX 4090"]) == "ADA_24"
+        # pool ids pass through untouched
+        assert gpu_ids_value(["ADA_24"]) == "ADA_24"
+        # duplicates collapse (two devices in the same pool)
+        assert (
+            gpu_ids_value(["NVIDIA A100 80GB PCIe", "NVIDIA A100-SXM4-80GB"])
+            == "AMPERE_80"
+        )

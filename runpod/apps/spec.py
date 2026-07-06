@@ -65,12 +65,17 @@ def normalize_gpu(
         return None
     if not isinstance(gpu, list):
         gpu = [gpu]
+    from .gpu import resolve_gpu_string
+
     out: List[str] = []
     for g in gpu:
         if isinstance(g, (GpuGroup, GpuType)):
             out.append(g.value)
         elif isinstance(g, str):
-            out.append(g)
+            # strings resolve strictly: pool ids and device names pass
+            # through, shorthands ("4090", "B200") expand, and typos
+            # fail at decoration time instead of at the api
+            out.extend(resolve_gpu_string(g))
         else:
             raise InvalidResourceError(
                 f"gpu must be a GpuGroup, GpuType, or string, got {type(g).__name__}"

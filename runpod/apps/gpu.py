@@ -156,12 +156,69 @@ class CpuInstanceType(str, Enum):
 GpuLike = Union[GpuGroup, GpuType, str]
 
 
+def resolve_gpu_string(value: str) -> List[str]:
+    """resolve a user-supplied gpu string to api-facing values.
+
+    accepted forms, in match order:
+      - "any"
+      - pool ids ("ADA_24", case-insensitive)
+      - exact device names ("NVIDIA B200")
+      - enum-style names ("NVIDIA_B200")
+      - shorthand device fragments ("B200", "4090", "h100"): every
+        device whose name contains the fragment matches, so "H100"
+        selects all H100 variants
+
+    unknown strings raise with the full list of valid options.
+    """
+    text = value.strip()
+    if text.lower() == "any":
+        return [GpuGroup.ANY.value]
+
+    upper = text.upper()
+    for group in GpuGroup.all():
+        if group.value.upper() == upper:
+            return [group.value]
+
+    for gpu_type in GpuType.all():
+        if gpu_type.value.upper() == upper or gpu_type.name == upper:
+            return [gpu_type.value]
+
+    fragment = upper.replace("_", " ")
+    matches = [
+        gpu_type.value
+        for gpu_type in GpuType.all()
+        if fragment in gpu_type.value.upper()
+    ]
+    if matches:
+        return matches
+
+    from .errors import InvalidResourceError
+
+    pools = ", ".join(g.value for g in GpuGroup.all())
+    devices = ", ".join(t.value for t in GpuType.all())
+    raise InvalidResourceError(
+        f"unknown gpu '{value}'. use a pool id ({pools}), a device "
+        f"name ({devices}), or a fragment like '4090' or 'H100'"
+    )
+
+
 def gpu_ids_value(gpu: Optional[List[str]]) -> str:
     """the gpuIds string for an endpoint payload.
 
     "any gpu" (no selection, or the ANY sentinel) means every pool id:
-    the api has no wildcard and rejects "any".
+    the api has no wildcard and rejects "any". device names map back
+    to their pool (endpoints select by pool, not device).
     """
     if not gpu or any(str(g).lower() == "any" for g in gpu):
         return ",".join(g.value for g in GpuGroup.all())
-    return ",".join(str(g) for g in gpu)
+    pools: List[str] = []
+    for entry in gpu:
+        value = str(entry)
+        try:
+            pool = pool_for_gpu_type(GpuType(value))
+            value = pool.value if pool is not None else value
+        except ValueError:
+            pass
+        if value not in pools:
+            pools.append(value)
+    return ",".join(pools)
