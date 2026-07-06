@@ -1,6 +1,7 @@
 """Bidirectional warm-cache sync between local directories and a network volume."""
 
 import os
+import tarfile
 import time
 import uuid
 import threading
@@ -13,6 +14,8 @@ log = RunPodLogger()
 class VolumeCache:
     """Hydrate configured dirs from a network volume on cold start; sync their
     delta back as a worker-owned tar shard. Best-effort and stdlib-only."""
+
+    _EXCLUDE_SUBSTRINGS = (os.sep + "refs" + os.sep, os.sep + ".no_exist" + os.sep)
 
     def __init__(
         self,
@@ -39,3 +42,50 @@ class VolumeCache:
     @property
     def available(self):
         return bool(self._namespace) and os.path.isdir(self._volume_path)
+
+    def _list_shards(self):
+        d = self._shard_dir
+        if not os.path.isdir(d):
+            return []
+        shards = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".tar")]
+        return sorted(shards, key=os.path.getmtime)
+
+    def _iter_delta_files(self):
+        for root in self._dirs:
+            if not os.path.isdir(root):
+                continue
+            for dirpath, _dirs, files in os.walk(root):
+                for name in files:
+                    path = os.path.join(dirpath, name)
+                    if name.endswith(".lock") or name.startswith(".rp_volume_cache"):
+                        continue
+                    if any(sub in path for sub in self._EXCLUDE_SUBSTRINGS):
+                        continue
+                    try:
+                        if os.path.getmtime(path) > self._baseline:
+                            yield path
+                    except OSError:
+                        continue
+
+    def _guard(self, fn, default):
+        return fn()
+
+    def sync(self):
+        if not self.available:
+            return False
+        return self._guard(self._do_sync, False)
+
+    def _do_sync(self):
+        files = list(self._iter_delta_files())
+        if not files:
+            log.debug("VolumeCache: no delta files to sync")
+            return False
+        os.makedirs(self._shard_dir, exist_ok=True)
+        final = os.path.join(self._shard_dir, f"{self._worker_id}-{time.time_ns():020d}.tar")
+        tmp = final + ".tmp"
+        with tarfile.open(tmp, "w") as tar:
+            for path in files:
+                tar.add(path, arcname=os.path.relpath(path, "/"))
+        os.replace(tmp, final)
+        log.info(f"VolumeCache: synced {len(files)} files to {final}")
+        return True
