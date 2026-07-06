@@ -319,7 +319,6 @@ class TestModuleSourceShipping:
             "    return x\n"
             "@app.queue()\n"
             "def caller():\n"
-            "    import inspect\n"
             "    from runpod.apps.serialization import get_function_source\n"
             "    return get_function_source(sibling._fn)\n"
         )
@@ -333,4 +332,7 @@ class TestModuleSourceShipping:
             }
         )
         assert response["success"], response.get("error")
+        # the whole module re-ships (decorators intact), matching what
+        # the first hop sent
         assert "def sibling" in response["json_result"]
+        assert "@app.queue()" in response["json_result"]

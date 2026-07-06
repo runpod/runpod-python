@@ -8,6 +8,7 @@ with decorators stripped so the worker can exec it standalone.
 import ast
 import base64
 import inspect
+import os
 import textwrap
 from typing import Any, Callable, Dict, List
 
@@ -45,5 +46,27 @@ def get_function_source(fn: Callable) -> str:
             return inspect.getsource(module)
         except (OSError, TypeError):
             pass
-    # no module file (repl, exec): fall back to the bare function body
-    return textwrap.dedent(inspect.getsource(fn))
+    # exec'd module (nested hop inside a live worker): the runner
+    # materialized the shipped module to a real file; re-ship it whole
+    # so decorators and globals keep working on the next worker
+    filename = getattr(getattr(fn, "__code__", None), "co_filename", "")
+    if filename and os.path.isfile(filename):
+        with open(filename) as f:
+            return f.read()
+    # last resort (repl): the bare function body with decorators
+    # stripped, since their context cannot travel
+    return _bare_function_source(fn)
+
+
+def _bare_function_source(fn: Callable) -> str:
+    """a function's own def, decorators removed."""
+    source = textwrap.dedent(inspect.getsource(fn))
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == fn.__name__
+        ):
+            lines = source.split("\n")
+            return textwrap.dedent("\n".join(lines[node.lineno - 1 :]))
+    return source
