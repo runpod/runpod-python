@@ -10,6 +10,8 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 log = RunPodLogger()
 
+_BASELINE_EPSILON_SECONDS = 2.0  # tolerate coarse (1s) network-filesystem mtime granularity
+
 
 class VolumeCache:
     """Hydrate configured dirs from a network volume on cold start; sync their
@@ -32,7 +34,7 @@ class VolumeCache:
         self._max_size_gb = max_size_gb
         self._best_effort = best_effort
         self._worker_id = os.environ.get("RUNPOD_POD_ID") or uuid.uuid4().hex[:12]
-        self._baseline = time.time()
+        self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
         self._lock = threading.Lock()
 
     @property
@@ -88,4 +90,5 @@ class VolumeCache:
                 tar.add(path, arcname=os.path.relpath(path, "/"))
         os.replace(tmp, final)
         log.info(f"VolumeCache: synced {len(files)} files to {final}")
+        self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
         return True
