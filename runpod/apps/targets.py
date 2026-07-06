@@ -418,7 +418,15 @@ class LiveTarget(InvocationTarget):
         if monitor is not None:
             await monitor.start()
         try:
-            data = await _post_json(f"{base}/runsync", payload, headers, timeout)
+            if monitor is not None:
+                # async submit + status polling: runsync would hold the
+                # connection, hiding the workerId until completion and
+                # starving the live worker feed
+                data = await _post_json(f"{base}/run", payload, headers, timeout)
+            else:
+                data = await _post_json(
+                    f"{base}/runsync", payload, headers, timeout
+                )
             data = await _wait_terminal(
                 base,
                 data,

@@ -103,3 +103,37 @@ class TestReportCounts:
         monitor._report_counts({"workers": None})
         monitor._report_counts({})
         assert sink.events == []
+
+
+class TestLineFiltering:
+    def test_user_prints_pass_through(self):
+        from runpod.apps.monitor import _filter_line
+
+        assert _filter_line("hello world") == "hello world"
+        assert _filter_line("42") == "42"
+
+    def test_sdk_info_frames_hidden(self):
+        from runpod.apps.monitor import _filter_line
+
+        assert (
+            _filter_line('{"requestId": null, "message": "Jobs in queue: 1", "level": "INFO"}')
+            is None
+        )
+        assert (
+            _filter_line('{"requestId": "abc", "message": "Started.", "level": "INFO"}')
+            is None
+        )
+
+    def test_sdk_error_frames_surface_message(self):
+        from runpod.apps.monitor import _filter_line
+
+        assert (
+            _filter_line('{"requestId": "abc", "message": "boom", "level": "ERROR"}')
+            == "boom"
+        )
+
+    def test_non_frame_json_passes_through(self):
+        from runpod.apps.monitor import _filter_line
+
+        # user code printing json without the sdk frame shape
+        assert _filter_line('{"result": 5}') == '{"result": 5}'

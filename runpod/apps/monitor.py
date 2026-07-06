@@ -8,6 +8,7 @@ event sink; missing handlers are silently skipped.
 """
 
 import asyncio
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -24,6 +25,36 @@ _TRACKED_STATES = ("initializing", "ready", "running", "throttled", "unhealthy")
 _TS_PREFIX = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\s*"
 )
+
+
+def _worker_frame(line: str) -> Optional[Dict[str, Any]]:
+    """parse the serverless sdk's structured json log lines."""
+    if not line.startswith("{"):
+        return None
+    try:
+        frame = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(frame, dict) and "message" in frame and "level" in frame:
+        return frame
+    return None
+
+
+def _filter_line(line: str) -> Optional[str]:
+    """what to show from a raw container log line.
+
+    the serverless sdk's own frames (fitness checks, queue counts,
+    started/finished) are runtime noise; user prints pass through
+    verbatim, and sdk error/warn frames surface as their message.
+    """
+    if line.startswith("--- Starting Serverless Worker"):
+        return None
+    frame = _worker_frame(line)
+    if frame is None:
+        return line
+    if frame.get("level", "").upper() in ("ERROR", "WARN", "WARNING"):
+        return str(frame.get("message", ""))
+    return None
 
 
 def emit(sink: Optional[object], event: str, *args: Any) -> None:
@@ -61,6 +92,7 @@ class WorkerMonitor:
         self._streamed_workers: set = set()
         self._last_counts: Optional[Dict[str, int]] = None
         self._since = datetime.now(timezone.utc).isoformat()
+        self._lines_emitted = 0
 
     async def start(self) -> None:
         if self.metrics_key:
@@ -82,6 +114,28 @@ class WorkerMonitor:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
+        # the stream often cannot attach within a short job's lifetime
+        # (fresh pods 403 on the logs endpoint until the gateway can
+        # resolve them); a final snapshot recovers the output
+        if self._streamed_workers and not self._lines_emitted:
+            await self._snapshot_logs()
+
+    async def _snapshot_logs(self) -> None:
+        from .logs import pod_logs
+
+        for worker_id in self._streamed_workers:
+            try:
+                logs = await pod_logs(worker_id, log_type="container")
+            except Exception:  # noqa: BLE001 - observability is best-effort
+                log.debug("log snapshot for %s failed", worker_id, exc_info=True)
+                continue
+            for raw in logs.get("container") or []:
+                if _line_before(raw, self._since):
+                    continue
+                line = _TS_PREFIX.sub("", raw.rstrip())
+                shown = _filter_line(line) if line else None
+                if shown:
+                    emit(self.events, "worker_log", self.name, shown)
 
     async def _poll_metrics(self) -> None:
         from .targets import _endpoint_url_base, _get_json
@@ -100,6 +154,9 @@ class WorkerMonitor:
             await asyncio.sleep(METRICS_POLL_INTERVAL)
 
     def _report_counts(self, data: Dict[str, Any]) -> None:
+        # once a worker picked the job up, pool churn is noise
+        if self._streamed_workers:
+            return
         workers = data.get("workers")
         if not isinstance(workers, dict):
             return
@@ -119,22 +176,76 @@ class WorkerMonitor:
         emit(self.events, "worker_status", self.name, counts)
 
     async def _stream_logs(self, worker_id: str) -> None:
+        """follow the worker's container logs, retrying the attach.
+
+        freshly provisioned workers 403 on the logs endpoint until their
+        pod row is resolvable by the gateway, and the stream itself can
+        drop mid-request; the attach retries with backoff for as long
+        as the request is in flight (stop() cancels the task).
+        """
         from .logs import stream_pod_logs
 
-        try:
-            async for event in stream_pod_logs(
-                worker_id,
-                log_type="container",
-                tail=0,
-                since=self._since,
-            ):
-                line = _TS_PREFIX.sub("", (event.get("line") or "").rstrip())
-                if line:
-                    emit(self.events, "worker_log", self.name, line)
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 - observability is best-effort
-            log.debug("log stream for %s ended", worker_id, exc_info=True)
+        attempt = 0
+        while True:
+            streamed = False
+            try:
+                # backfill (tail) + since: lines printed between request
+                # start and the attach finally succeeding (fresh workers
+                # 403 until the gateway can resolve them) are recovered
+                # from the backfill instead of dropped
+                async for event in stream_pod_logs(
+                    worker_id,
+                    log_type="container",
+                    tail=1000,
+                    since=self._since,
+                ):
+                    streamed = True
+                    attempt = 0
+                    line = _TS_PREFIX.sub(
+                        "", (event.get("line") or "").rstrip()
+                    )
+                    if line:
+                        self._lines_emitted += 1
+                        shown = _filter_line(line)
+                        if shown:
+                            emit(
+                                self.events, "worker_log", self.name, shown
+                            )
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 - observability is best-effort
+                log.debug(
+                    "log stream attach for %s failed (attempt %d)",
+                    worker_id,
+                    attempt + 1,
+                    exc_info=True,
+                )
+            if streamed:
+                # the server closed a healthy stream (1h cap or worker
+                # teardown); resume immediately from where we left off
+                self._since = datetime.now(timezone.utc).isoformat()
+                continue
+            attempt += 1
+            # attach latency matters more than politeness: fresh pods
+            # 403 for tens of seconds and short jobs end quickly, so
+            # ramp linearly instead of exponentially
+            await asyncio.sleep(min(attempt, 30))
+
+
+def _line_before(raw: str, since_iso: str) -> bool:
+    """true when the log line's leading timestamp predates since."""
+    match = _TS_PREFIX.match(raw)
+    if not match:
+        return False
+    ts = match.group(0).strip().replace("Z", "+00:00")
+    # docker timestamps carry nanoseconds; fromisoformat caps at micro
+    ts = re.sub(r"(\.\d{6})\d+", r"\1", ts)
+    try:
+        line_ts = datetime.fromisoformat(ts)
+        since = datetime.fromisoformat(since_iso)
+    except ValueError:
+        return False
+    return line_ts <= since
 
 
 def format_worker_counts(counts: Dict[str, int]) -> str:

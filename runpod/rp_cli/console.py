@@ -304,9 +304,6 @@ class DevEvents:
     def __init__(self) -> None:
         self._progress: Optional[Progress] = None
         self._tasks: Dict[str, TaskID] = {}
-        # in-flight request names; feed lines carry the name whenever
-        # calls overlap so interleaved output stays attributable
-        self._inflight: List[str] = []
 
     def session_starting(self) -> None:
         self._progress = Progress(
@@ -356,48 +353,43 @@ class DevEvents:
         console.print(f"  [dim]{_padded(name)} deleted[/dim]")
 
     # -- request lifecycle (LiveTarget events) --
-
-    def _feed(self, name: str, body: str) -> None:
-        """a dim indented line under a dispatch; named when calls overlap."""
-        if len(self._inflight) > 1:
-            console.print(f"  [dim]│ {_padded(name)}  {body}[/dim]")
-        else:
-            console.print(f"  [dim]│ {body}[/dim]")
+    # next.js/wrangler-style event lines: leading status glyph, the
+    # function call in normal weight, everything else dim, timing at
+    # the end. function stdout renders as `name │ line` so concurrent
+    # calls interleave without losing attribution.
 
     def dispatch(self, name: str, label: str = "") -> None:
-        self._inflight.append(name)
-        suffix = f" [dim]{label}[/dim]" if label else ""
-        console.print(
-            f"[accent]→[/accent] [bold white]{_padded(name)}[/bold white]{suffix}"
-        )
+        detail = f" [dim]{label}[/dim]" if label else ""
+        console.print(f" [accent]○[/accent] [white]{name}()[/white]{detail}")
 
     def worker_status(self, name: str, counts: Dict[str, int]) -> None:
         from runpod.apps.monitor import format_worker_counts
 
-        self._feed(name, format_worker_counts(counts))
+        console.print(
+            f" [dim]○ {name}() waiting · {format_worker_counts(counts)}[/dim]"
+        )
 
     def worker_ready(self, name: str, worker_id: str) -> None:
-        self._feed(name, f"worker {worker_id[:12]}")
+        console.print(
+            f" [accent]●[/accent] [white]{name}()[/white] [dim]running on "
+            f"worker {worker_id[:12]}[/dim]"
+        )
 
     def worker_log(self, name: str, line: str) -> None:
         from rich.markup import escape
 
-        self._feed(name, escape(line))
-
-    def _done(self, name: str) -> None:
-        if name in self._inflight:
-            self._inflight.remove(name)
+        console.print(f"   {_pipe(name)} {escape(line)}")
 
     def request_completed(self, name: str, elapsed_s: float) -> None:
-        self._done(name)
         console.print(
-            f"[ok]✓[/ok] [white]{_padded(name)}[/white] [dim]{elapsed_s:.1f}s[/dim]"
+            f" [ok]✓[/ok] [white]{name}()[/white] "
+            f"[dim]in {_fmt_elapsed(elapsed_s)}[/dim]"
         )
 
     def request_failed(self, name: str, elapsed_s: float) -> None:
-        self._done(name)
         console.print(
-            f"[err]✗[/err] [white]{_padded(name)}[/white] [dim]{elapsed_s:.1f}s[/dim]"
+            f" [err]✗[/err] [white]{name}()[/white] "
+            f"[dim]failed in {_fmt_elapsed(elapsed_s)}[/dim]"
         )
 
 
@@ -416,18 +408,35 @@ class Timer:
         return time.monotonic() - self._start
 
 
-def entrypoint_header() -> None:
+def _fmt_elapsed(elapsed: float) -> str:
+    if elapsed < 1:
+        return f"{elapsed * 1000:.0f}ms"
+    if elapsed < 120:
+        return f"{elapsed:.1f}s"
+    return f"{int(elapsed // 60)}m{int(elapsed % 60):02d}s"
+
+
+def entrypoint_header(fn_name: str = "") -> None:
     console.print()
+    if fn_name:
+        console.print(
+            f" [accent]▸[/accent] [white]{fn_name}()[/white] "
+            f"[dim]local entrypoint[/dim]"
+        )
 
 
 def entrypoint_success(elapsed: float) -> None:
     console.print()
     console.print(
-        f"[dim]── {elapsed:.1f}s · enter re-run · edit reload · ^C quit ──[/dim]"
+        f" [ok]✓[/ok] [white]done[/white] [dim]in {_fmt_elapsed(elapsed)} "
+        f"· enter re-run · edit reload · ^C quit[/dim]"
     )
 
 
 def entrypoint_failure(elapsed: float, err: str) -> None:
     console.print()
-    console.print(f"[err]✗ {err}[/err]")
-    console.print(f"[dim]── {elapsed:.1f}s · enter re-run · edit reload · ^C quit ──[/dim]")
+    console.print(f" [err]✗ {err}[/err]")
+    console.print(
+        f" [err]✗[/err] [white]failed[/white] [dim]in {_fmt_elapsed(elapsed)} "
+        f"· enter re-run · edit reload · ^C quit[/dim]"
+    )

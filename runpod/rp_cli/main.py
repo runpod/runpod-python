@@ -227,7 +227,7 @@ def dev(module, once):
 
         try:
             while True:
-                ui.entrypoint_header()
+                ui.entrypoint_header(getattr(entrypoint, "__name__", ""))
                 with ui.Timer() as t:
                     try:
                         run_entrypoint(entrypoint)
