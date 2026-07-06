@@ -79,7 +79,11 @@ jobs:
 
   build-runtimes:
     runs-on: ubuntu-latest
+    # gpu legs build FROM the registry's gpu-base tag, so a failed
+    # gpu-base rebuild (e.g. torch mirror outage) must not block
+    # runtime images: the previously published base keeps working
     needs: [test-runner, build-gpu-base]
+    if: always() && needs.test-runner.result == 'success'
     strategy:
       fail-fast: false
       matrix:
