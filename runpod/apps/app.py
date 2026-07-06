@@ -56,6 +56,8 @@ class App:
         self.name = name
         self.env = env
         self._resources: Dict[str, Union[FunctionHandle, ApiHandle]] = {}
+        # event sink for task lifecycle rendering, set by dev sessions
+        self._dev_events: Optional[object] = None
         # populated by an `rp dev` session: resource name -> live target
         self._dev_targets: Dict[str, InvocationTarget] = {}
         _REGISTRY.append(self)
@@ -233,7 +235,8 @@ class App:
         if spec.kind is ResourceKind.TASK:
             handle = self._resources.get(spec.name)
             fn = getattr(handle, "_fn", None)
-            return PodTarget(spec, fn)
+            # dev sessions attach an event sink for lifecycle rendering
+            return PodTarget(spec, fn, events=self._dev_events)
 
         ctx = current_context()
 

@@ -562,9 +562,15 @@ class PodTarget(InvocationTarget):
     # tasks default to a long window; the pod's terminateAfter is the backstop
     TASK_TIMEOUT_SECONDS = 3600.0
 
-    def __init__(self, spec: ResourceSpec, fn: Callable):
+    def __init__(
+        self,
+        spec: ResourceSpec,
+        fn: Callable,
+        events: Optional[object] = None,
+    ):
         self.spec = spec
         self.fn = fn
+        self.events = events
 
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
@@ -588,16 +594,56 @@ class PodTarget(InvocationTarget):
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: float = TASK_TIMEOUT_SECONDS
     ) -> Any:
+        import time
+
+        from .monitor import emit
         from .tasks import TaskExecution, unwrap_task_response
 
+        name = self.spec.name
+        hardware = ",".join(self.spec.cpu or self.spec.gpu or ["any"])
+        emit(self.events, "dispatch", name)
+        emit(self.events, "task_status", name, f"provisioning pod · {hardware}")
+        start = time.monotonic()
+
+        stream = None
         execution = TaskExecution(self.spec)
-        await execution.start()
         try:
+            await execution.start()
+            if execution.pod_id:
+                emit(
+                    self.events,
+                    "task_status",
+                    name,
+                    f"pod {execution.pod_id[:12]} · waiting for runtime",
+                )
+                if self.events is not None:
+                    from .monitor import PodLogStream
+
+                    stream = PodLogStream(execution.pod_id, name, self.events)
+                    stream.attach()
             await execution.wait_ready()
+            emit(self.events, "worker_ready", name, execution.pod_id or "")
             response = await execution.execute(payload, timeout)
+        except Exception:
+            emit(
+                self.events,
+                "request_failed",
+                name,
+                time.monotonic() - start,
+            )
+            raise
         finally:
+            if stream is not None:
+                await stream.stop()
             await execution.terminate()
-        return unwrap_task_response(response)
+        result = unwrap_task_response(response)
+        emit(
+            self.events,
+            "request_completed",
+            name,
+            time.monotonic() - start,
+        )
+        return result
 
     async def submit(self, payload: Dict[str, Any]) -> Any:
         from .tasks import TaskExecution, TaskJob

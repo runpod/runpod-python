@@ -14,6 +14,9 @@ from ..api.graphql import run_graphql_query_async
 from ..error import QueryError
 
 
+_TRANSPORT_RETRIES = 4
+
+
 class AppsApiClient:
     """async control-plane client scoped to apps provisioning."""
 
@@ -23,10 +26,22 @@ class AppsApiClient:
     async def _execute(
         self, query: str, variables: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        response = await run_graphql_query_async(
-            query, api_key=self._api_key, variables=variables
-        )
-        return response["data"]
+        import asyncio
+
+        last_exc: Optional[Exception] = None
+        for attempt in range(_TRANSPORT_RETRIES):
+            if attempt:
+                await asyncio.sleep(2 ** (attempt - 1))
+            try:
+                response = await run_graphql_query_async(
+                    query, api_key=self._api_key, variables=variables
+                )
+                return response["data"]
+            except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as exc:
+                # transport-level failures (ssl hiccups, resets, dns)
+                # are transient; graphql/auth errors propagate untouched
+                last_exc = exc
+        raise last_exc  # type: ignore[misc]
 
     # -- endpoints (dev session provisioning) --
 

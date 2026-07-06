@@ -143,11 +143,33 @@ def dev_banner(app_names: Iterable[str], module: str) -> None:
     )
 
 
-def deploy_banner(app_name: str, env: str, resources: Iterable[Tuple[str, str]]) -> None:
+def deploy_plan(apps: Iterable[Tuple[str, str, int]]) -> None:
+    """upfront summary for multi-app deploys: (name, source, n_resources)."""
+    apps = list(apps)
+    console.print(
+        f"[bold white]deploy[/bold white] [dim]{len(apps)} apps[/dim]"
+    )
+    width = max(len(name) for name, _, _ in apps)
+    for name, source, count in apps:
+        detail = f"{source} · " if source else ""
+        console.print(
+            f"  [white]{name:<{width}}[/white]  "
+            f"[dim]{detail}{count} resource{'s' if count != 1 else ''}[/dim]"
+        )
+
+
+def deploy_banner(
+    app_name: str,
+    env: str,
+    resources: Iterable[Tuple[str, str]],
+    source: str = "",
+) -> None:
     """resources: (name, kind) pairs."""
     names = ", ".join(name for name, _ in resources) or "(no resources)"
+    origin = f" · {source}" if source else ""
     console.print(
-        f"[bold white]deploy[/bold white] [dim]{app_name} → {env} · {names}[/dim]"
+        f"[bold white]deploy[/bold white] [white]{app_name}[/white] "
+        f"[dim]→ {env}{origin} · {names}[/dim]"
     )
 
 
@@ -382,6 +404,9 @@ class DevEvents:
         console.print(
             f" [dim]○ {name}() waiting · {format_worker_counts(counts)}[/dim]"
         )
+
+    def task_status(self, name: str, detail: str) -> None:
+        console.print(f" [dim]○ {name}() {detail}[/dim]")
 
     def worker_ready(self, name: str, worker_id: str) -> None:
         console.print(

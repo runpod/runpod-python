@@ -250,6 +250,9 @@ class DevSession:
         """provision (or adopt) a live endpoint per queue/api resource and
         register the targets on each app."""
         self._emit("session_starting")
+        for app in self.apps:
+            # task targets read the sink off the app at resolve time
+            app._dev_events = self.events
         existing = {e["name"]: e for e in await self.api.list_my_endpoints()}
 
         for app in self.apps:
@@ -385,6 +388,7 @@ class DevSession:
         self._endpoints.clear()
         for app in self.apps:
             app._dev_targets.clear()
+            app._dev_events = None
 
     async def __aenter__(self) -> "DevSession":
         await self.start()

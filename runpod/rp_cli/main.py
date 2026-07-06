@@ -24,6 +24,17 @@ def _fail(message: str) -> None:
     raise click.ClickException(message)
 
 
+def _app_source(found, project_root: Path) -> str:
+    """the file an app was discovered in, relative to the project."""
+    source = getattr(found, "_source_file", None)
+    if source is None:
+        return ""
+    try:
+        return str(Path(source).resolve().relative_to(project_root))
+    except ValueError:
+        return str(source)
+
+
 # ---------------------------------------------------------------- deploy
 
 
@@ -71,12 +82,27 @@ def deploy(target, env, python_version, exclude):
             '    app = App("my-app")'
         )
 
-    for found in apps:
+    if len(apps) > 1:
+        ui.deploy_plan(
+            [
+                (
+                    found.name,
+                    _app_source(found, project_root),
+                    len(found.resources),
+                )
+                for found in apps
+            ]
+        )
+
+    for index, found in enumerate(apps):
+        if index or len(apps) > 1:
+            ui.console.print()
         ui.set_name_width(list(found.resources))
         ui.deploy_banner(
             found.name,
             env or found.env,
             [(h.spec.name, h.spec.kind.value) for h in found.resources.values()],
+            source=_app_source(found, project_root),
         )
         events = ui.DeployEvents()
         with ui.Timer() as t:

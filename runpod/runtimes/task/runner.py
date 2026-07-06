@@ -320,7 +320,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def log_message(self, format, *args):  # noqa: A002 - stdlib signature
-        sys.stderr.write(f"[task-runner] {format % args}\n")
+        # request logging is noise in container logs (dev sessions
+        # stream them as the function's output)
+        pass
 
 
 def main() -> None:
@@ -328,7 +330,6 @@ def main() -> None:
         sys.stderr.write("[task-runner] RUNPOD_TASK_TOKEN not set, exiting\n")
         sys.exit(1)
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    sys.stderr.write(f"[task-runner] listening on :{PORT}\n")
     server.serve_forever()
 
 

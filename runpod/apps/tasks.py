@@ -179,38 +179,47 @@ class TaskExecution:
         )
 
     async def execute(self, request: Dict[str, Any], timeout: float) -> Dict[str, Any]:
-        """run to completion via /execute.
+        """run to completion: submit, then poll for the result.
+
+        the pod proxy caps how long a single request can stay open
+        (long jobs would 524), so completion always goes through the
+        background slot + short /result polls.
+        """
+        await self.submit(request)
+        deadline = time.monotonic() + timeout
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"task on pod {self.pod_id} did not finish in {timeout}s"
+                )
+            response = await self.poll_result()
+            if response is not None:
+                return response
+            await asyncio.sleep(RESULT_POLL_INTERVAL)
+
+    async def submit(self, request: Dict[str, Any]) -> None:
+        """start in the background via /submit.
 
         the proxy answers 404 for pods an edge node has not learned
         about yet; since this pod demonstrably exists (we created it
         and /ping succeeded), 404s here are propagation races and are
         retried briefly rather than surfaced.
         """
-        url = f"{_proxy_url(self.pod_id)}/execute"
-        client_timeout = aiohttp.ClientTimeout(total=timeout)
+        url = f"{_proxy_url(self.pod_id)}/submit"
         attempts = 6
-        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+        async with aiohttp.ClientSession() as session:
             for attempt in range(attempts):
                 async with session.post(
-                    url, json=request, headers=self._headers
+                    url,
+                    json=request,
+                    headers=self._headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
                 ) as resp:
                     if resp.status == 404 and attempt < attempts - 1:
                         await asyncio.sleep(2 * (attempt + 1))
                         continue
                     resp.raise_for_status()
-                    return await resp.json()
-
-    async def submit(self, request: Dict[str, Any]) -> None:
-        """start in the background via /submit."""
-        url = f"{_proxy_url(self.pod_id)}/submit"
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url,
-                json=request,
-                headers=self._headers,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                resp.raise_for_status()
+                    return
 
     async def poll_result(self) -> Optional[Dict[str, Any]]:
         """fetch /result; returns the response dict once DONE, else None."""

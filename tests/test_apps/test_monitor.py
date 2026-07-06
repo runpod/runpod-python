@@ -57,11 +57,16 @@ class TestOnStatus:
         monitor = WorkerMonitor("ep1", "calc", sink)
 
         async def run():
-            with patch.object(
-                monitor, "_stream_logs", return_value=asyncio.sleep(0)
+            with patch(
+                "runpod.apps.monitor.PodLogStream.attach"
+            ) as attach, patch(
+                "runpod.apps.monitor.PodLogStream.stop",
+                return_value=asyncio.sleep(0),
             ):
                 monitor.on_status({"workerId": "w123", "status": "IN_PROGRESS"})
                 monitor.on_status({"workerId": "w123", "status": "IN_PROGRESS"})
+                # one stream per worker, not per status payload
+                assert attach.call_count == 1
                 await monitor.stop()
 
         asyncio.run(run())

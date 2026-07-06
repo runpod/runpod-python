@@ -124,6 +124,7 @@ def discover_apps(target: Path) -> List[App]:
     os.environ[DISCOVERY_ENV] = "1"
     try:
         for path in _python_files(target):
+            seen = set(id(a) for a in get_registered_apps())
             try:
                 _import_module(path)
             except DiscoveryError as exc:
@@ -131,6 +132,12 @@ def discover_apps(target: Path) -> List[App]:
                     raise
                 failures.append(str(exc))
                 log.warning("%s", exc)
+                continue
+            # stamp fresh apps with their defining file so callers can
+            # report where each app came from
+            for app in get_registered_apps():
+                if id(app) not in seen and not hasattr(app, "_source_file"):
+                    app._source_file = path
     finally:
         os.environ.pop(DISCOVERY_ENV, None)
         if sys_path_added:
