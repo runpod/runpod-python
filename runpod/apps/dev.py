@@ -101,7 +101,12 @@ def _bootstrap_docker_args() -> str:
 def _client_api_key() -> str:
     from .targets import _api_key
 
-    return _api_key()
+    try:
+        return _api_key()
+    except RuntimeError:
+        # payload construction must not require credentials (tests,
+        # dry runs); the session itself fails loudly on its first call
+        return ""
 
 
 def _cpu_locations(instance_ids: List[str]) -> str:
@@ -146,7 +151,11 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
                 # nested .remote() calls from inside a dev worker need
                 # credentials and the dev-session marker to resolve
                 # sibling dev endpoints by name
-                {"key": "RUNPOD_API_KEY", "value": _client_api_key()},
+                *(
+                    [{"key": "RUNPOD_API_KEY", "value": key}]
+                    if (key := _client_api_key())
+                    else []
+                ),
                 {"key": "RUNPOD_DEV_APP", "value": app.name},
                 *({"key": k, "value": v} for k, v in (spec.env or {}).items()),
             ],

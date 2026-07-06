@@ -69,9 +69,20 @@ class TestEndpointInput:
         assert template["dockerArgs"] == ""
         env = {e["key"]: e["value"] for e in template["env"]}
         assert env["RUNPOD_DEV_GENERATION"] == "1"
-        # nested .remote() support: credentials + dev-session marker
-        assert "RUNPOD_API_KEY" in env
+        # nested .remote() support: dev-session marker always present
         assert env["RUNPOD_DEV_APP"] == app.name
+
+    def test_api_key_forwarded_when_configured(self, monkeypatch):
+        monkeypatch.setenv("RUNPOD_API_KEY", "rpa_test123")
+        app = App("keyed")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        env = {e["key"]: e["value"] for e in payload["template"]["env"]}
+        assert env["RUNPOD_API_KEY"] == "rpa_test123"
         assert "gpuIds" not in payload
 
     def test_gpu_queue_payload(self):
