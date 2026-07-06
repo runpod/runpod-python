@@ -28,12 +28,14 @@ def _resolve_api_key(api_key: Optional[str]) -> str:
     return effective_api_key
 
 
-def _build_headers(api_key: str) -> Dict[str, str]:
-    return {
+def _build_headers(api_key: Optional[str]) -> Dict[str, str]:
+    headers = {
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
-        "Authorization": f"Bearer {api_key}",
     }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
 
 
 def _build_payload(query: str, variables: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -84,6 +86,7 @@ async def run_graphql_query_async(
     api_key: Optional[str] = None,
     variables: Optional[Dict[str, Any]] = None,
     timeout: float = 60.0,
+    allow_anonymous: bool = False,
 ) -> Dict[str, Any]:
     """
     Async variant of run_graphql_query, sharing the same url, headers,
@@ -94,10 +97,18 @@ async def run_graphql_query_async(
         api_key: Optional API key to use for this query.
         variables: Optional GraphQL variables to send with the query.
         timeout: Total request timeout in seconds.
+        allow_anonymous: Send the request without credentials when no
+            key is available (pre-login flows).
     """
     import aiohttp  # pylint: disable=import-outside-toplevel
 
-    effective_api_key = _resolve_api_key(api_key)
+    if allow_anonymous:
+        try:
+            effective_api_key: Optional[str] = _resolve_api_key(api_key)
+        except error.AuthenticationError:
+            effective_api_key = None
+    else:
+        effective_api_key = _resolve_api_key(api_key)
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
     async with aiohttp.ClientSession(timeout=client_timeout) as session:

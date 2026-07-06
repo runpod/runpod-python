@@ -328,16 +328,320 @@ def logs(pod_id, follow, log_type, tail):
 
 
 @cli.command()
-def login():
-    """Authenticate with Runpod and store the API key."""
-    from runpod.cli.groups.config.functions import set_credentials
+@click.option(
+    "--no-open", is_flag=True, help="Print the url instead of opening a browser."
+)
+@click.option(
+    "--api-key",
+    "api_key_opt",
+    default=None,
+    help="Store this API key directly (skips the browser flow).",
+)
+def login(no_open, api_key_opt):
+    """Authenticate with Runpod and store the API key.
 
-    api_key = click.prompt("Runpod API key", hide_input=True)
+    Opens the Runpod console for browser approval by default; pass
+    --api-key to store a key directly.
+    """
+    from runpod.apps.auth import LoginError, browser_login
+    from runpod.cli.groups.config.functions import set_credentials
+    from runpod.rp_cli import console as ui
+
+    if api_key_opt:
+        try:
+            set_credentials(api_key_opt, overwrite=True)
+        except ValueError as exc:
+            _fail(str(exc))
+        ui.success("credentials saved to [dim]~/.runpod/config.toml[/dim]")
+        return
+
+    def _show_url(url: str) -> None:
+        ui.console.print()
+        ui.console.print(" [white]authorize in your browser:[/white]")
+        ui.console.print(f" [accent.light][link={url}]{url}[/link][/accent.light]")
+        ui.console.print()
+        if not no_open:
+            click.launch(url)
+
     try:
+        with ui.console.status("[dim]waiting for approval ...[/dim]"):
+            api_key = asyncio.run(browser_login(on_url=_show_url))
         set_credentials(api_key, overwrite=True)
-    except ValueError as exc:
+    except (LoginError, ValueError) as exc:
         _fail(str(exc))
-    click.echo("credentials saved to ~/.runpod/config.toml")
+    ui.success("logged in · credentials saved to [dim]~/.runpod/config.toml[/dim]")
+
+
+# ---------------------------------------------------------- app / env
+
+
+def _fmt_ts(value) -> str:
+    if not value:
+        return "-"
+    text = str(value)
+    return text[:10] if len(text) >= 10 else text
+
+
+@cli.group()
+def app():
+    """Manage deployed apps."""
+
+
+@app.command(name="list")
+def app_list():
+    """List all apps and their environments."""
+    from runpod.apps.manage import list_apps
+    from runpod.rp_cli import console as ui
+
+    try:
+        apps = asyncio.run(list_apps())
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+
+    if not apps:
+        ui.console.print("\n  no apps deployed · run [white]rp deploy[/white]\n")
+        return
+
+    width = max(len(a["name"]) for a in apps)
+    ui.console.print()
+    for entry in apps:
+        envs = entry.get("flashEnvironments") or []
+        names = ", ".join(e["name"] for e in envs) or "-"
+        ui.console.print(
+            f"  [white]{entry['name']:<{width}}[/white]  [dim]{names}[/dim]"
+        )
+    ui.console.print()
+
+
+@app.command(name="get")
+@click.argument("app_name")
+def app_get(app_name):
+    """Show one app with its environments."""
+    from runpod.apps.manage import get_app
+    from runpod.rp_cli import console as ui
+
+    try:
+        entry = asyncio.run(get_app(app_name))
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+
+    envs = entry.get("flashEnvironments") or []
+    ui.console.print()
+    ui.console.print(f"  [white]{entry['name']}[/white]")
+    if envs:
+        width = max(len(e["name"]) for e in envs)
+        for env_entry in envs:
+            build = (env_entry.get("activeBuildId") or "no build")[:12]
+            ui.console.print(
+                f"    [white]{env_entry['name']:<{width}}[/white]  [dim]{build}[/dim]"
+            )
+    ui.console.print()
+
+
+@app.command(name="delete")
+@click.argument("app_name")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
+def app_delete(app_name, yes):
+    """Delete an app, undeploying every environment in it."""
+    from runpod.apps.manage import delete_app
+    from runpod.rp_cli import console as ui
+
+    if not yes:
+        click.confirm(
+            f"delete app '{app_name}' and all its environments?", abort=True
+        )
+
+    events = ui.CleanupEvents()
+    try:
+        result = asyncio.run(delete_app(app_name, events=events))
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+    finally:
+        events.close()
+
+    if result.failures:
+        for failure in result.failures:
+            ui.error(failure)
+        raise click.ClickException("undeploy incomplete; app kept")
+    ui.success(
+        f"deleted [white]{app_name}[/white] "
+        f"[dim]{result.endpoints_deleted} endpoints removed[/dim]"
+    )
+
+
+@cli.group()
+def env():
+    """Manage app environments."""
+
+
+def _resolve_app_name(app_name) -> str:
+    """--app flag or the single app discovered in cwd."""
+    if app_name:
+        return app_name
+    from runpod.apps.discovery import DiscoveryError, discover_apps
+
+    try:
+        apps = discover_apps(Path.cwd())
+    except DiscoveryError:
+        apps = []
+    if len(apps) == 1:
+        return apps[0].name
+    _fail("pass --app <name> (no unique app found in the current directory)")
+
+
+@env.command(name="list")
+@click.option("--app", "-a", "app_name", default=None, help="App name.")
+def env_list(app_name):
+    """List environments for an app."""
+    from runpod.apps.manage import get_app
+    from runpod.rp_cli import console as ui
+
+    name = _resolve_app_name(app_name)
+    try:
+        entry = asyncio.run(get_app(name))
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+
+    envs = entry.get("flashEnvironments") or []
+    if not envs:
+        ui.console.print(
+            f"\n  no environments in [white]{name}[/white] · run [white]rp deploy[/white]\n"
+        )
+        return
+    ui.console.print()
+    width = max(len(e["name"]) for e in envs)
+    for env_entry in envs:
+        build = (env_entry.get("activeBuildId") or "-")[:12]
+        ui.console.print(
+            f"  [white]{env_entry['name']:<{width}}[/white] "
+            f"[dim]{build} · {_fmt_ts(env_entry.get('createdAt'))}[/dim]"
+        )
+    ui.console.print()
+
+
+@env.command(name="get")
+@click.argument("env_name")
+@click.option("--app", "-a", "app_name", default=None, help="App name.")
+def env_get(env_name, app_name):
+    """Show an environment with its endpoints."""
+    from runpod.apps.manage import get_environment
+    from runpod.rp_cli import console as ui
+
+    name = _resolve_app_name(app_name)
+    try:
+        entry = asyncio.run(get_environment(name, env_name))
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+
+    ui.console.print()
+    ui.console.print(
+        f"  [white]{name}/{entry['name']}[/white] "
+        f"[dim]build {(entry.get('activeBuildId') or '-')[:12]}[/dim]"
+    )
+    endpoints = entry.get("endpoints") or []
+    if endpoints:
+        width = max(len(e["name"]) for e in endpoints)
+        for endpoint in endpoints:
+            ui.console.print(
+                f"    [white]{endpoint['name']:<{width}}[/white]  "
+                f"{ui.endpoint_link(endpoint['id'])}"
+            )
+    ui.console.print()
+
+
+@env.command(name="create")
+@click.argument("env_name")
+@click.option("--app", "-a", "app_name", default=None, help="App name.")
+def env_create(env_name, app_name):
+    """Create a new environment in an app."""
+    from runpod.apps.api import AppsApiClient
+    from runpod.apps.manage import get_app
+    from runpod.rp_cli import console as ui
+
+    name = _resolve_app_name(app_name)
+
+    async def _create():
+        client = AppsApiClient()
+        entry = await get_app(name, api=client)
+        return await client.create_environment(entry["id"], env_name)
+
+    try:
+        asyncio.run(_create())
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+    ui.success(f"created [white]{name}/{env_name}[/white]")
+
+
+@env.command(name="delete")
+@click.argument("env_name")
+@click.option("--app", "-a", "app_name", default=None, help="App name.")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
+def env_delete(env_name, app_name, yes):
+    """Undeploy and delete an environment."""
+    from runpod.apps.manage import undeploy_environment
+    from runpod.rp_cli import console as ui
+
+    name = _resolve_app_name(app_name)
+    if not yes:
+        click.confirm(
+            f"undeploy and delete '{name}/{env_name}'?", abort=True
+        )
+
+    events = ui.CleanupEvents()
+    try:
+        result = asyncio.run(
+            undeploy_environment(name, env_name, events=events)
+        )
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+    finally:
+        events.close()
+
+    if result.failures:
+        for failure in result.failures:
+            ui.error(failure)
+        raise click.ClickException("undeploy incomplete; environment kept")
+    ui.success(
+        f"deleted [white]{name}/{env_name}[/white] "
+        f"[dim]{result.endpoints_deleted} endpoints removed[/dim]"
+    )
+
+
+@cli.command()
+@click.option("--app", "-a", "app_name", default=None, help="App name.")
+@click.option("--env", "-e", "env_name", default="default", show_default=True)
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
+def undeploy(app_name, env_name, yes):
+    """Tear down a deployed environment's endpoints.
+
+    Deletes the environment's endpoints and the environment itself;
+    the app and its build history remain.
+    """
+    from runpod.apps.manage import undeploy_environment
+    from runpod.rp_cli import console as ui
+
+    name = _resolve_app_name(app_name)
+    if not yes:
+        click.confirm(f"undeploy '{name}/{env_name}'?", abort=True)
+
+    events = ui.CleanupEvents()
+    try:
+        result = asyncio.run(
+            undeploy_environment(name, env_name, events=events)
+        )
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+    finally:
+        events.close()
+
+    if result.failures:
+        for failure in result.failures:
+            ui.error(failure)
+        raise click.ClickException("undeploy incomplete")
+    ui.success(
+        f"undeployed [white]{name}/{env_name}[/white] "
+        f"[dim]{result.endpoints_deleted} endpoints removed[/dim]"
+    )
 
 
 # -------------------------------------------------------- legacy groups

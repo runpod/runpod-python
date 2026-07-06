@@ -19,9 +19,16 @@ if TYPE_CHECKING:
     from boto3.s3.transfer import TransferConfig
     from botocore.client import BaseClient
 
+# configured on this logger only: basicConfig would install a root
+# handler for the entire process at import time
 logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
-logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHandler()])
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter(FMT))
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 
 def _import_boto3_dependencies():

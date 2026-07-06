@@ -158,6 +158,119 @@ class AppsApiClient:
         )
         return data["createFlashEnvironment"]
 
+    # -- app / environment management --
+
+    async def list_apps(self) -> List[Dict[str, Any]]:
+        """all flash apps with their environments and builds."""
+        query = """
+        query getFlashApps {
+            myself {
+                flashApps {
+                    id
+                    name
+                    flashEnvironments {
+                        id
+                        name
+                        state
+                        createdAt
+                        activeBuildId
+                    }
+                    flashBuilds { id createdAt }
+                }
+            }
+        }
+        """
+        data = await self._execute(query)
+        return data["myself"].get("flashApps") or []
+
+    async def get_environment_by_name(
+        self, app_name: str, env_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """an environment with its attached endpoints and volumes."""
+        app = await self.get_app_by_name(app_name)
+        if app is None:
+            return None
+        query = """
+        query getFlashEnvironmentByName($input: FlashEnvironmentByNameInput!) {
+            flashEnvironmentByName(input: $input) {
+                id
+                name
+                state
+                activeBuildId
+                createdAt
+                endpoints { id name }
+                networkVolumes { id name }
+            }
+        }
+        """
+        try:
+            data = await self._execute(
+                query,
+                {"input": {"flashAppId": app["id"], "name": env_name}},
+            )
+        except QueryError as exc:
+            if "not found" in str(exc).lower():
+                return None
+            raise
+        return data["flashEnvironmentByName"]
+
+    async def delete_app(self, app_id: str) -> bool:
+        mutation = """
+        mutation deleteFlashApp($flashAppId: String!) {
+            deleteFlashApp(flashAppId: $flashAppId)
+        }
+        """
+        data = await self._execute(mutation, {"flashAppId": app_id})
+        return "deleteFlashApp" in data
+
+    async def delete_environment(self, environment_id: str) -> bool:
+        mutation = """
+        mutation deleteFlashEnvironment($flashEnvironmentId: String!) {
+            deleteFlashEnvironment(flashEnvironmentId: $flashEnvironmentId)
+        }
+        """
+        data = await self._execute(
+            mutation, {"flashEnvironmentId": environment_id}
+        )
+        return "deleteFlashEnvironment" in data
+
+    # -- browser auth (login) --
+
+    async def create_auth_request(self) -> Dict[str, Any]:
+        """open a browser-approval auth request; no credentials needed."""
+        mutation = """
+        mutation createFlashAuthRequest {
+            createFlashAuthRequest {
+                id
+                status
+                expiresAt
+            }
+        }
+        """
+        response = await run_graphql_query_async(
+            mutation, api_key=self._api_key, allow_anonymous=True
+        )
+        return response["data"].get("createFlashAuthRequest") or {}
+
+    async def get_auth_request_status(self, request_id: str) -> Dict[str, Any]:
+        query = """
+        query flashAuthRequestStatus($flashAuthRequestId: String!) {
+            flashAuthRequestStatus(flashAuthRequestId: $flashAuthRequestId) {
+                id
+                status
+                expiresAt
+                apiKey
+            }
+        }
+        """
+        response = await run_graphql_query_async(
+            query,
+            api_key=self._api_key,
+            variables={"flashAuthRequestId": request_id},
+            allow_anonymous=True,
+        )
+        return response["data"].get("flashAuthRequestStatus") or {}
+
     async def prepare_artifact_upload(
         self, app_id: str, tarball_size: int
     ) -> Dict[str, Any]:
