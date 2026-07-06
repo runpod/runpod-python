@@ -166,3 +166,24 @@ def test_accepts_regular_member_inside_dirs(tmp_path):
     m = tarfile.TarInfo(name=rel)
     m.type = tarfile.REGTYPE
     assert vc._is_safe_member(m) is True
+
+
+def test_rejects_sibling_prefix_collision(tmp_path):
+    # An allowed dir ".../cache" must NOT match a sibling ".../cache-evil";
+    # this locks the separator-anchored prefix check against substring regressions.
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    evil = tmp_path / "cache-evil"
+    evil.mkdir()
+    rel = os.path.relpath(str(evil / "x"), "/")
+    m = tarfile.TarInfo(name=rel)
+    m.type = tarfile.REGTYPE
+    assert vc._is_safe_member(m) is False
+
+
+def test_rejects_hardlink_member(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    rel = os.path.relpath(str(cache / "hl"), "/")
+    m = tarfile.TarInfo(name=rel)
+    m.type = tarfile.LNKTYPE
+    m.linkname = "root/.cache/x"
+    assert vc._is_safe_member(m) is False
