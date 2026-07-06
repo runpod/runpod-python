@@ -121,10 +121,14 @@ class VolumeCache:
             log.debug("VolumeCache: cache already hydrated, skipping")
             return False
         extracted = False
+        # Use the tar data filter for defense-in-depth where the runtime provides
+        # it (Python 3.12+, and 3.10.12+/3.11.4+ backports) without requiring it --
+        # the >=3.10 floor may predate the API. _is_safe_member is the primary guard.
+        extract_kwargs = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
         for shard in shards:                       # oldest -> newest (last wins)
             with tarfile.open(shard) as tar:
                 safe = [m for m in tar.getmembers() if self._is_safe_member(m)]
-                tar.extractall(path="/", members=safe)
+                tar.extractall(path="/", members=safe, **extract_kwargs)
                 extracted = extracted or bool(safe)
         os.makedirs(os.path.dirname(self._marker_path), exist_ok=True)
         with open(self._marker_path, "w") as fh:
