@@ -34,9 +34,88 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PORT = int(os.environ.get("RUNPOD_TASK_PORT", "8080"))
 TOKEN = os.environ.get("RUNPOD_TASK_TOKEN", "")
 
+# watchdog: self-terminate when the client is clearly gone. RUNNING
+# jobs are never killed (terminateAfter is the runaway backstop);
+# NONE means the client died before submitting, DONE means the result
+# sat uncollected. normal flows poll every ~2s, so these never fire
+# for a live client.
+IDLE_TIMEOUT = float(os.environ.get("RUNPOD_TASK_IDLE_TIMEOUT", "600"))
+WATCHDOG_INTERVAL = 15.0
+
 # single background job slot for /submit + /result
 _job_lock = threading.Lock()
 _job_state = {"status": "NONE", "response": None}
+_last_contact = {"ts": None}  # set at server start
+
+
+def _touch_contact():
+    import time
+
+    _last_contact["ts"] = time.time()
+
+
+def _should_self_terminate(status, last_contact, now, idle_timeout):
+    """the watchdog decision: kill only provably-abandoned pods."""
+    if status == "RUNNING":
+        return False
+    if last_contact is None:
+        return False
+    return (now - last_contact) > idle_timeout
+
+
+def _terminate_self():
+    """terminate this pod via the injected pod-scoped api key.
+
+    every pod carries a RUNPOD_API_KEY scoped to itself; podTerminate
+    with it removes the pod entirely. exiting the process is the
+    fallback (stops the workload; terminateAfter finishes the job).
+    """
+    import json as _json
+    import urllib.request
+
+    pod_id = os.environ.get("RUNPOD_POD_ID")
+    api_key = os.environ.get("RUNPOD_API_KEY")
+    if pod_id and api_key:
+        try:
+            api_base = os.environ.get(
+                "RUNPOD_API_BASE_URL", "https://api.runpod.io"
+            )
+            payload = _json.dumps(
+                {
+                    "query": (
+                        "mutation podTerminate($input: PodTerminateInput!) "
+                        "{ podTerminate(input: $input) }"
+                    ),
+                    "variables": {"input": {"podId": pod_id}},
+                }
+            ).encode()
+            request = urllib.request.Request(
+                f"{api_base}/graphql",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                },
+            )
+            urllib.request.urlopen(request, timeout=30)  # noqa: S310
+            sys.stderr.write("[task-runner] self-terminated (abandoned)\n")
+        except Exception:  # noqa: BLE001 - fall through to process exit
+            pass
+    os._exit(0)
+
+
+def _watchdog():
+    import time
+
+    while True:
+        time.sleep(WATCHDOG_INTERVAL)
+        if _should_self_terminate(
+            _job_state["status"],
+            _last_contact["ts"],
+            time.time(),
+            IDLE_TIMEOUT,
+        ):
+            _terminate_self()
 
 
 def _load_cloudpickle(install: bool = False):
@@ -267,7 +346,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _authed(self):
         header = self.headers.get("Authorization", "")
-        return TOKEN and header == f"Bearer {TOKEN}"
+        authed = TOKEN and header == f"Bearer {TOKEN}"
+        if authed:
+            # any authenticated contact proves the client is alive
+            _touch_contact()
+        return authed
 
     def _read_request(self):
         length = int(self.headers.get("Content-Length", "0"))
@@ -329,6 +412,8 @@ def main() -> None:
     if not TOKEN:
         sys.stderr.write("[task-runner] RUNPOD_TASK_TOKEN not set, exiting\n")
         sys.exit(1)
+    _touch_contact()
+    threading.Thread(target=_watchdog, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     server.serve_forever()
 

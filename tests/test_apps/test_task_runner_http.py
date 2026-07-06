@@ -210,3 +210,36 @@ class TestStdoutTee:
         assert "live line" in response["stdout"]
         # and written through to the container's stdout for log streams
         assert "live line" in capfd.readouterr().out
+
+
+class TestWatchdog:
+    def test_running_job_never_killed(self):
+        from runpod.runtimes.task.runner import _should_self_terminate
+
+        assert not _should_self_terminate("RUNNING", 0, 10_000, 600)
+
+    def test_abandoned_before_submit(self):
+        from runpod.runtimes.task.runner import _should_self_terminate
+
+        assert _should_self_terminate("NONE", 0, 601, 600)
+
+    def test_uncollected_result(self):
+        from runpod.runtimes.task.runner import _should_self_terminate
+
+        assert _should_self_terminate("DONE", 0, 601, 600)
+
+    def test_live_client_keeps_pod(self):
+        from runpod.runtimes.task.runner import _should_self_terminate
+
+        # polls every ~2s: last contact is always recent
+        assert not _should_self_terminate("DONE", 599, 600, 600)
+
+    def test_no_contact_recorded_yet(self):
+        from runpod.runtimes.task.runner import _should_self_terminate
+
+        assert not _should_self_terminate("NONE", None, 10_000, 600)
+
+    def test_authed_requests_touch_contact(self, server, monkeypatch):
+        monkeypatch.setattr(task_runner, "_last_contact", {"ts": None})
+        _request(f"{server}/result")
+        assert task_runner._last_contact["ts"] is not None
