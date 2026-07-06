@@ -302,15 +302,30 @@ def test_sync_after_job_runs_once(monkeypatch):
 def test_run_worker_hydrates_registered_cache(monkeypatch):
     from runpod.serverless import worker
 
-    async def _noop_fitness_checks():
-        return None
+    vcmod.reset_builtin_state_for_test()
+    try:
+        async def _noop_fitness_checks():
+            return None
 
-    fake = type("F", (), {"hydrate": lambda self: fake_calls.append("h")})()
-    fake_calls = []
-    monkeypatch.setattr(worker, "build_default_cache", lambda: fake, raising=False)
-    monkeypatch.setattr(worker.rp_scale, "JobScaler",
-                        lambda config: type("J", (), {"start": lambda self: None})())
-    monkeypatch.setattr(worker.heartbeat, "start_ping", lambda mirror: None)
-    monkeypatch.setattr(worker, "run_fitness_checks", _noop_fitness_checks)
-    worker.run_worker({"handler": lambda job: job})
-    assert "h" in fake_calls
+        fake = type("F", (), {
+            "hydrate": lambda self: fake_calls.append("h"),
+            "sync": lambda self: None,
+        })()
+        fake_calls = []
+        monkeypatch.setattr(worker, "build_default_cache", lambda: fake, raising=False)
+        monkeypatch.setattr(worker.rp_scale, "JobScaler",
+                            lambda config: type("J", (), {"start": lambda self: None})())
+        monkeypatch.setattr(worker.heartbeat, "start_ping", lambda mirror: None)
+        monkeypatch.setattr(worker, "run_fitness_checks", _noop_fitness_checks)
+        worker.run_worker({"handler": lambda job: job})
+        assert "h" in fake_calls
+    finally:
+        vcmod.reset_builtin_state_for_test()
+
+
+def test_build_default_cache_survives_bad_max_gb(monkeypatch):
+    vcmod.reset_builtin_state_for_test()
+    monkeypatch.delenv("RUNPOD_VOLUME_CACHE", raising=False)
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
+    monkeypatch.setenv("RUNPOD_VOLUME_CACHE_MAX_GB", "not-a-number")
+    assert vcmod.build_default_cache() is None   # degrades, does not raise
