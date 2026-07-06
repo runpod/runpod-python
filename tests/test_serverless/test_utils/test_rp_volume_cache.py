@@ -211,3 +211,44 @@ def test_no_retention_when_cap_is_none(tmp_path):
         (cache / f"f{i}.bin").write_text("data")
         vc.sync()
     assert len(vc._list_shards()) == 3
+
+
+def test_best_effort_swallows_and_returns_default(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    def boom():
+        raise RuntimeError("disk exploded")
+    monkeypatch.setattr(vc, "_do_sync", boom)
+    (cache / "x.bin").write_text("x")
+    vc._baseline = time.time() - 5
+    assert vc.sync() is False        # swallowed, no raise
+
+
+def test_best_effort_false_reraises(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._best_effort = False
+    def boom():
+        raise RuntimeError("disk exploded")
+    monkeypatch.setattr(vc, "_do_sync", boom)
+    with pytest.raises(RuntimeError):
+        vc.sync()
+
+
+def test_warm_hydrates_on_enter_and_syncs_on_exit(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    calls = []
+    vc.hydrate = lambda: calls.append("hydrate")
+    vc.sync = lambda: calls.append("sync")
+    with vc.warm():
+        calls.append("body")
+    assert calls == ["hydrate", "body", "sync"]
+
+
+def test_warm_syncs_even_on_exception(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    calls = []
+    vc.hydrate = lambda: calls.append("hydrate")
+    vc.sync = lambda: calls.append("sync")
+    with pytest.raises(ValueError):
+        with vc.warm():
+            raise ValueError("boom")
+    assert calls == ["hydrate", "sync"]
