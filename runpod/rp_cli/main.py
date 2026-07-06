@@ -253,17 +253,23 @@ def dev(module, once):
         loop = asyncio.get_running_loop()
         done: asyncio.Future = loop.create_future()
 
+        def _finish(exc: "BaseException | None") -> None:
+            if done.done():
+                return
+            if exc is None:
+                done.set_result(None)
+            else:
+                done.set_exception(exc)
+
         def _runner() -> None:
             try:
                 run_entrypoint(fn)
             except BaseException as exc:  # noqa: BLE001 - marshalled to the loop
-                loop.call_soon_threadsafe(
-                    lambda: done.set_exception(exc) if not done.done() else None
-                )
+                # bind the exception now: `as exc` is unbound once the
+                # except block exits, before the loop callback runs
+                loop.call_soon_threadsafe(_finish, exc)
             else:
-                loop.call_soon_threadsafe(
-                    lambda: done.set_result(None) if not done.done() else None
-                )
+                loop.call_soon_threadsafe(_finish, None)
 
         threading.Thread(target=_runner, daemon=True).start()
         await done
