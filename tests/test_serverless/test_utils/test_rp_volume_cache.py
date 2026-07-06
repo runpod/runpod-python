@@ -1,4 +1,6 @@
 import os
+import tarfile
+import time
 import pytest
 from runpod.serverless.utils.rp_volume_cache import VolumeCache
 
@@ -30,3 +32,57 @@ def test_namespace_defaults_to_endpoint_id(tmp_path, monkeypatch):
     vol.mkdir()
     vc = VolumeCache([str(tmp_path / "cache")], volume_path=str(vol))
     assert vc._shard_dir == os.path.join(str(vol), ".cache", "endpoint-xyz")
+
+
+def _mk_cache_with_volume(tmp_path):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    return vc, cache, vol
+
+
+def test_sync_packs_files_created_after_baseline(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._baseline = time.time() - 5
+    (cache / "model.bin").write_text("weights")
+    assert vc.sync() is True
+    shards = vc._list_shards()
+    assert len(shards) == 1
+    with tarfile.open(shards[0]) as tar:
+        names = tar.getnames()
+    assert os.path.relpath(str(cache / "model.bin"), "/") in names
+
+
+def test_sync_excludes_files_older_than_baseline(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    old = cache / "old.bin"
+    old.write_text("x")
+    os.utime(old, (time.time() - 100, time.time() - 100))
+    vc._baseline = time.time()
+    assert vc.sync() is False
+
+
+def test_sync_skips_excluded_paths(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._baseline = time.time() - 5
+    (cache / "refs").mkdir()
+    (cache / "refs" / "main").write_text("ref")
+    assert vc.sync() is False
+
+
+def test_sync_shard_names_are_unique_per_call(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._baseline = time.time() - 5
+    (cache / "a.bin").write_text("a")
+    vc.sync()
+    (cache / "b.bin").write_text("b")
+    vc.sync()
+    assert len(vc._list_shards()) == 2
+
+
+def test_sync_noop_when_unavailable(tmp_path):
+    vc = VolumeCache([str(tmp_path / "c")], namespace="ep1",
+                     volume_path=str(tmp_path / "missing"))
+    assert vc.sync() is False
