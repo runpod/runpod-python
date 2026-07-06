@@ -268,7 +268,6 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
             error_msg = job_output.pop("error", None)
             refresh_worker = job_output.pop("refresh_worker", None)
             run_result["output"] = job_output
-            sync_after_job()
 
             if error_msg:
                 run_result["error"] = error_msg
@@ -283,6 +282,8 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
         if run_result.get("output") == {}:
             run_result.pop("output")
+
+        sync_after_job()  # fire-and-forget cache warm on any successful output
 
         check_return_size(run_result)  # Checks the size of the return body.
 

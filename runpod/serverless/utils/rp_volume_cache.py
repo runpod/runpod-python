@@ -1,6 +1,7 @@
 """Bidirectional warm-cache sync between local directories and a network volume."""
 
 import contextlib
+import glob
 import os
 import tarfile
 import tempfile
@@ -37,7 +38,6 @@ class VolumeCache:
         self._best_effort = best_effort
         self._worker_id = os.environ.get("RUNPOD_POD_ID") or uuid.uuid4().hex[:12]
         self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
-        self._lock = threading.Lock()
 
     @property
     def _shard_dir(self):
@@ -91,6 +91,11 @@ class VolumeCache:
             log.debug("VolumeCache: no delta files to sync")
             return False
         os.makedirs(self._shard_dir, exist_ok=True)
+        for stale in glob.glob(os.path.join(self._shard_dir, f"{self._worker_id}-*.tar.tmp")):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
         final = os.path.join(self._shard_dir, f"{self._worker_id}-{time.time_ns():020d}.tar")
         tmp = final + ".tmp"
         with tarfile.open(tmp, "w") as tar:
@@ -201,6 +206,18 @@ def _discover_model_dirs():
 
 
 def build_default_cache():
+    """Build the built-in VolumeCache from RUNPOD_* env vars, or None if disabled/unavailable.
+
+    Known operational limitations (accepted, not bugs):
+    1. Cold-scale write amplification: when N workers cold-start simultaneously,
+       each misses the still-empty cache and each writes its own full-size shard
+       on first sync. Bounded by retention (RUNPOD_VOLUME_CACHE_MAX_GB).
+    2. Lost first warm on aggressive recycle: sync() runs in a daemon thread
+       dispatched after the job response; a large-model sync may not finish
+       before the worker is recycled, killing the thread mid-write. The partial
+       shard is cleaned up on the next sync from this worker, and the warm is
+       simply retried then.
+    """
     if os.environ.get("RUNPOD_VOLUME_CACHE", "1").lower() in _DISABLED_VALUES:
         return None
     try:
@@ -219,13 +236,16 @@ def set_active_cache(vc):
 
 def sync_after_job():
     global _SYNCED
-    if _ACTIVE_CACHE is None:
-        return
-    with _sync_lock:
-        if _SYNCED:
+    try:
+        if _ACTIVE_CACHE is None:
             return
-        _SYNCED = True
-    threading.Thread(target=_ACTIVE_CACHE.sync, daemon=True).start()
+        with _sync_lock:
+            if _SYNCED:
+                return
+            _SYNCED = True
+        threading.Thread(target=_ACTIVE_CACHE.sync, daemon=True).start()
+    except Exception as exc:  # cache glue must never affect job outcome
+        log.warn(f"VolumeCache: sync_after_job failed to dispatch: {exc}")
 
 
 def reset_builtin_state_for_test():
