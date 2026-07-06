@@ -440,3 +440,31 @@ class TestGpuIdsPayload:
 
         payload = _endpoint_input(app, q.spec)
         assert payload["gpuIds"] == "ADA_24"
+
+
+class TestRefreshKeepsTaskEvents:
+    async def test_dev_events_reattached_after_refresh(self):
+        sink = object()
+        app = App("evt-app")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-1"}
+
+        session = DevSession([app], api=api, events=sink)
+        await session.start()
+        assert app._dev_events is sink
+
+        # file change: discovery builds a brand-new app instance
+        app2 = App("evt-app")
+
+        @app2.queue(name="q", cpu="cpu3c-1-2")
+        def q2():
+            pass
+
+        await session.refresh([app2])
+        assert app2._dev_events is sink

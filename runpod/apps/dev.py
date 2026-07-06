@@ -301,6 +301,10 @@ class DevSession:
         provisioned, removed ones deleted."""
         self.generation += 1
         self.apps = apps
+        for app in apps:
+            # re-scanned apps are fresh instances; re-attach the sink
+            # so task lifecycle events keep rendering after reloads
+            app._dev_events = self.events
 
         desired: Dict[str, tuple] = {}
         for app in apps:
