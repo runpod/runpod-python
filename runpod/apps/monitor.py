@@ -93,6 +93,9 @@ class WorkerMonitor:
         self._last_counts: Optional[Dict[str, int]] = None
         self._since = datetime.now(timezone.utc).isoformat()
         self._lines_emitted = 0
+        # (ts, line) pairs already shown; reconnect backfill overlaps
+        # the previous window and must not replay lines
+        self._seen: set = set()
 
     async def start(self) -> None:
         if self.metrics_key:
@@ -133,7 +136,13 @@ class WorkerMonitor:
                 if _line_before(raw, self._since):
                     continue
                 line = _TS_PREFIX.sub("", raw.rstrip())
-                shown = _filter_line(line) if line else None
+                if not line:
+                    continue
+                key = (raw.rstrip(), line)
+                if key in self._seen:
+                    continue
+                self._seen.add(key)
+                shown = _filter_line(line)
                 if shown:
                     emit(self.events, "worker_log", self.name, shown)
 
@@ -201,10 +210,13 @@ class WorkerMonitor:
                 ):
                     streamed = True
                     attempt = 0
-                    line = _TS_PREFIX.sub(
-                        "", (event.get("line") or "").rstrip()
-                    )
+                    raw = (event.get("line") or "").rstrip()
+                    line = _TS_PREFIX.sub("", raw)
                     if line:
+                        key = (event.get("ts") or raw, line)
+                        if key in self._seen:
+                            continue
+                        self._seen.add(key)
                         self._lines_emitted += 1
                         shown = _filter_line(line)
                         if shown:
@@ -226,10 +238,13 @@ class WorkerMonitor:
                 self._since = datetime.now(timezone.utc).isoformat()
                 continue
             attempt += 1
-            # attach latency matters more than politeness: fresh pods
-            # 403 for tens of seconds and short jobs end quickly, so
-            # ramp linearly instead of exponentially
-            await asyncio.sleep(min(attempt, 30))
+            # attach latency is the product: retry aggressively while
+            # the gateway warms up to the fresh pod (sub-second polls),
+            # then ease off if it stays unreachable
+            if attempt <= 20:
+                await asyncio.sleep(0.5)
+            else:
+                await asyncio.sleep(min(attempt - 20, 15))
 
 
 def _line_before(raw: str, since_iso: str) -> bool:

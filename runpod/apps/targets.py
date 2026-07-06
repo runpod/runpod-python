@@ -233,6 +233,9 @@ async def _wait_terminal(
         on_status(data)
     deadline = time.monotonic() + timeout
     interval = 0.5
+    # observed polls (dev sessions) stay tight so the worker id
+    # surfaces fast enough for log streams to attach in realtime
+    max_interval = 1.0 if on_status is not None else 5.0
     while data.get("status") not in FINAL_STATUSES:
         job_id = data.get("id")
         if not job_id:
@@ -243,7 +246,7 @@ async def _wait_terminal(
                 f"(last status: {data.get('status', 'UNKNOWN')})"
             )
         await asyncio.sleep(interval)
-        interval = min(interval * 1.5, 5.0)
+        interval = min(interval * 1.5, max_interval)
         data = await _get_json(f"{base_url}/status/{job_id}", headers, 30.0)
         if on_status is not None:
             on_status(data)

@@ -240,7 +240,7 @@ def dev(module, once):
                     return 0
                 reason = await _wait_for_rerun(watcher)
                 if reason == "changed":
-                    ui.reload_flash()
+                    ui.reload_banner(str(module.name))
                     apps, entrypoint = _scan()
                     ui.set_name_width(_all_resource_names(apps))
                     await session.refresh(apps)

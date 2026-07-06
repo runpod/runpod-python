@@ -245,8 +245,33 @@ class App:
             # startup; a miss means the resource was added mid-session
             raise EndpointNotFound(self.name, spec.name)
 
+        if ctx is Context.WORKER and os.getenv("RUNPOD_DEV_APP") == self.name:
+            # nested call inside a dev worker: siblings live on dev
+            # endpoints (named dev-{app}-{resource}), not the sentinel
+            return await self._resolve_dev_sibling(spec)
+
         env_name = os.getenv("FLASH_ENVIRONMENT") or self.env
         return SentinelTarget(self.name, env_name, spec.name)
+
+    async def _resolve_dev_sibling(self, spec: ResourceSpec) -> InvocationTarget:
+        """find the dev endpoint for a sibling resource by name."""
+        from .targets import LiveTarget
+
+        target = self._dev_targets.get(spec.name)
+        if target is not None:
+            return target
+
+        from .api import AppsApiClient
+        from .dev import dev_endpoint_name
+
+        wanted = dev_endpoint_name(self.name, spec.name)
+        endpoints = await AppsApiClient().list_my_endpoints()
+        for endpoint in endpoints:
+            if endpoint["name"] == wanted:
+                target = LiveTarget(endpoint["id"], spec.name)
+                self._dev_targets[spec.name] = target
+                return target
+        raise EndpointNotFound(self.name, spec.name)
 
     def __repr__(self) -> str:
         return f"<App {self.name!r} resources={len(self._resources)}>"

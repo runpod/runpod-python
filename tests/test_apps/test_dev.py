@@ -67,9 +67,11 @@ class TestEndpointInput:
             assert loc in valid
         template = payload["template"]
         assert template["dockerArgs"] == ""
-        assert template["env"] == [
-            {"key": "RUNPOD_DEV_GENERATION", "value": "1"}
-        ]
+        env = {e["key"]: e["value"] for e in template["env"]}
+        assert env["RUNPOD_DEV_GENERATION"] == "1"
+        # nested .remote() support: credentials + dev-session marker
+        assert "RUNPOD_API_KEY" in env
+        assert env["RUNPOD_DEV_APP"] == app.name
         assert "gpuIds" not in payload
 
     def test_gpu_queue_payload(self):
@@ -295,8 +297,14 @@ class TestDevEvents:
             def ready(self, name, endpoint_id):
                 events.append(("ready", name, endpoint_id))
 
-            def refreshed(self, name, generation):
-                events.append(("refreshed", name, generation))
+            def resource_changed(self, name, fields):
+                events.append(("resource_changed", name, fields))
+
+            def resource_added(self, name, kind, hardware):
+                events.append(("resource_added", name, kind, hardware))
+
+            def resource_removed(self, name):
+                events.append(("resource_removed", name))
 
             def deleted(self, name):
                 events.append(("deleted", name))
@@ -320,11 +328,65 @@ class TestDevEvents:
         kinds = [e[0] for e in events]
         assert "provisioning" in kinds
         assert "ready" in kinds
-        assert "refreshed" in kinds
         assert "deleted" in kinds
+        # unchanged resource refreshes silently: no diff events
+        assert "resource_changed" not in kinds
+        assert "resource_added" not in kinds
         assert ("provisioning", "q", "queue", "cpu3c-1-2") in events
         # deleted reports the resource name, not the endpoint name
         assert ("deleted", "q") in events
+
+    async def test_refresh_diff_events(self):
+        events = []
+
+        class Sink:
+            def resource_added(self, name, kind, hardware):
+                events.append(("added", name, kind, hardware))
+
+            def resource_changed(self, name, fields):
+                events.append(("changed", name, tuple(fields)))
+
+            def resource_removed(self, name):
+                events.append(("removed", name))
+
+        app = App("diff-app")
+
+        @app.queue(name="stays", cpu="cpu3c-1-2")
+        def stays():
+            pass
+
+        @app.queue(name="goes", cpu="cpu3c-1-2")
+        def goes():
+            pass
+
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.side_effect = lambda p: {"id": f"ep-{p['name']}"}
+        api.delete_endpoint.return_value = True
+
+        session = DevSession([app], api=api, events=Sink())
+        await session.start()
+
+        # rescan: 'goes' removed, 'stays' reconfigured, 'fresh' added
+        app2 = App("diff-app")
+
+        @app2.queue(name="stays", cpu="cpu3c-1-2", workers=(1, 4))
+        def stays2():
+            pass
+
+        @app2.queue(name="fresh", cpu="cpu5c-2-4")
+        def fresh():
+            pass
+
+        await session.refresh([app2])
+
+        assert ("removed", "goes") in events
+        added = [e for e in events if e[0] == "added"]
+        assert ("added", "fresh", "queue", "cpu5c-2-4") in added
+        changed = [e for e in events if e[0] == "changed"]
+        assert len(changed) == 1
+        assert changed[0][1] == "stays"
+        assert "workersMin" in changed[0][2] or "workersMax" in changed[0][2]
 
     async def test_missing_event_methods_ignored(self):
         app = App("ev-app2")

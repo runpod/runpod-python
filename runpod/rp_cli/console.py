@@ -172,8 +172,10 @@ def resources_table(rows: Iterable[tuple]) -> None:
         )
 
 
-def reload_flash() -> None:
+def reload_banner(module: str = "") -> None:
     console.print()
+    detail = f" [dim]{module} changed[/dim]" if module else ""
+    console.print(f" [accent]↻[/accent] [white]reloading[/white]{detail}")
 
 
 # -- live deploy phases ------------------------------------------------------
@@ -344,13 +346,25 @@ class DevEvents:
                 self._tasks[name], detail="ready", total=1, completed=1
             )
 
-    def refreshed(self, name: str, generation: int) -> None:
+    def deleted(self, name: str) -> None:
+        console.print(f" [dim]− {name}[/dim]")
+
+    # -- refresh diff --
+
+    def resource_added(self, name: str, kind: str, hardware: str) -> None:
         console.print(
-            f"[warn]⚡[/warn] {_padded(name)} [dim]reloaded[/dim]"
+            f" [ok]+[/ok] [white]{name}[/white] "
+            f"[dim]{kind} · {hardware}[/dim]"
         )
 
-    def deleted(self, name: str) -> None:
-        console.print(f"  [dim]{_padded(name)} deleted[/dim]")
+    def resource_changed(self, name: str, fields: List[str]) -> None:
+        what = ", ".join(fields) if fields else "config"
+        console.print(
+            f" [warn]~[/warn] [white]{name}[/white] [dim]{what}[/dim]"
+        )
+
+    def resource_removed(self, name: str) -> None:
+        console.print(f" [err]−[/err] [white]{name}[/white]")
 
     # -- request lifecycle (LiveTarget events) --
     # next.js/wrangler-style event lines: leading status glyph, the
