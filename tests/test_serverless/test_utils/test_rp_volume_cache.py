@@ -142,3 +142,27 @@ def test_hydrate_is_idempotent_via_marker(tmp_path):
     vc.sync()
     assert vc.hydrate() is True     # first hydrate extracts
     assert vc.hydrate() is False    # marker current -> no-op
+
+
+def test_rejects_member_outside_configured_dirs(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    m = tarfile.TarInfo(name="etc/passwd")   # resolves to /etc/passwd, outside cache
+    m.type = tarfile.REGTYPE
+    assert vc._is_safe_member(m) is False
+
+
+def test_rejects_symlink_member(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    rel = os.path.relpath(str(cache / "link"), "/")
+    m = tarfile.TarInfo(name=rel)
+    m.type = tarfile.SYMTYPE
+    m.linkname = "/etc/passwd"
+    assert vc._is_safe_member(m) is False
+
+
+def test_accepts_regular_member_inside_dirs(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    rel = os.path.relpath(str(cache / "model.bin"), "/")
+    m = tarfile.TarInfo(name=rel)
+    m.type = tarfile.REGTYPE
+    assert vc._is_safe_member(m) is True
