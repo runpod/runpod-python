@@ -187,3 +187,27 @@ def test_rejects_hardlink_member(tmp_path):
     m.type = tarfile.LNKTYPE
     m.linkname = "root/.cache/x"
     assert vc._is_safe_member(m) is False
+
+
+def test_retention_prunes_oldest_shards_past_cap(tmp_path):
+    cache = tmp_path / "cache"; cache.mkdir()
+    vol = tmp_path / "volume"; vol.mkdir()
+    cap_bytes = 1500
+    vc = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol),
+                     max_size_gb=cap_bytes / (1024 ** 3))
+    for i in range(4):
+        vc._baseline = time.time() - 5
+        (cache / f"f{i}.bin").write_text("x" * 800)
+        vc.sync()
+        time.sleep(0.01)
+    total = sum(os.path.getsize(s) for s in vc._list_shards())
+    assert total <= cap_bytes
+
+
+def test_no_retention_when_cap_is_none(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    for i in range(3):
+        vc._baseline = time.time() - 5
+        (cache / f"f{i}.bin").write_text("data")
+        vc.sync()
+    assert len(vc._list_shards()) == 3
