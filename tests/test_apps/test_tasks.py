@@ -285,10 +285,18 @@ class TestGpuPoolExpansion:
 
         assert _device_names(["NVIDIA L40S"]) == ["NVIDIA L40S"]
 
-    def test_none_means_any(self):
+    def test_none_expands_to_all_devices(self):
+        # the pod api has no "any" wildcard; unconstrained gpu means
+        # every known device name
+        from runpod.apps.gpu import POOLS_TO_TYPES
         from runpod.apps.tasks import _device_names
 
-        assert _device_names(None) == ["any"]
+        names = _device_names(None)
+        assert "any" not in names
+        all_devices = {
+            t.value for types in POOLS_TO_TYPES.values() for t in types
+        }
+        assert set(names) == all_devices
 
     def test_mixed_pool_and_device(self):
         from runpod.apps.tasks import _device_names

@@ -157,3 +157,66 @@ class TestLiveApi:
             data = response.json()
             assert data["success"] is True
             assert data["json_result"] == 42
+
+
+class TestLiveDispatcher:
+    def test_sync_materializes_routes(self):
+        from fastapi.testclient import TestClient
+
+        from runpod.runtimes.api.server import _build_live_app
+
+        source = (
+            "import runpod\n"
+            "from runpod.apps.markers import get, init, post\n"
+            "app = runpod.App('live')\n"
+            "@app.api(cpu='cpu3c-1-2')\n"
+            "class Counter:\n"
+            "    @init\n"
+            "    def setup(self):\n"
+            "        self.count = 0\n"
+            "    @post('/bump')\n"
+            "    async def bump(self, body: dict):\n"
+            "        self.count += body.get('by', 1)\n"
+            "        return {'count': self.count}\n"
+            "    @get('/value')\n"
+            "    async def value(self):\n"
+            "        return {'count': self.count}\n"
+        )
+
+        client = TestClient(_build_live_app())
+        # before sync: core routes only
+        assert client.get("/ping").status_code == 200
+        assert client.post("/bump", json={}).status_code == 404
+
+        r = client.post(
+            "/_runpod/sync", json={"source": source, "resource": "Counter"}
+        )
+        assert r.status_code == 200
+
+        assert client.post("/bump", json={"by": 3}).json() == {"count": 3}
+        assert client.get("/value").json() == {"count": 3}
+        # core routes still work after materialization
+        assert client.get("/ping").status_code == 200
+
+    def test_resync_same_source_keeps_state(self):
+        from fastapi.testclient import TestClient
+
+        from runpod.runtimes.api.server import _build_live_app
+
+        source = (
+            "import runpod\n"
+            "from runpod.apps.markers import post\n"
+            "app = runpod.App('live2')\n"
+            "@app.api(cpu='cpu3c-1-2')\n"
+            "class S:\n"
+            "    @post('/add')\n"
+            "    async def add(self, body: dict):\n"
+            "        self.total = getattr(self, 'total', 0) + body['x']\n"
+            "        return {'total': self.total}\n"
+        )
+        client = TestClient(_build_live_app())
+        client.post("/_runpod/sync", json={"source": source, "resource": "S"})
+        assert client.post("/add", json={"x": 2}).json() == {"total": 2}
+        # identical source: no rebuild, state survives
+        client.post("/_runpod/sync", json={"source": source, "resource": "S"})
+        assert client.post("/add", json={"x": 3}).json() == {"total": 5}

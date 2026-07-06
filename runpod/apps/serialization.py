@@ -28,7 +28,17 @@ def serialize_kwargs(kwargs: dict) -> Dict[str, str]:
 
 
 def deserialize_result(result_b64: str) -> Any:
-    return cloudpickle.loads(base64.b64decode(result_b64))
+    try:
+        return cloudpickle.loads(base64.b64decode(result_b64))
+    except ModuleNotFoundError as exc:
+        from .errors import RemoteExecutionError
+
+        raise RemoteExecutionError(
+            f"the remote result contains an object from the "
+            f"'{exc.name}' package, which is not installed locally. "
+            f"return plain python types (e.g. str(...) it) or install "
+            f"'{exc.name}' on this machine."
+        ) from exc
 
 
 def get_function_source(fn: Callable) -> str:

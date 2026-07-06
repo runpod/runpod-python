@@ -56,13 +56,16 @@ def _bootstrap_command() -> str:
 
 
 def _device_names(gpu: Optional[List[str]]) -> List[str]:
-    """pods take exact device names, not pool ids; expand any pool ids
+    """pods take exact device names, not pool ids; expand pool ids
     (e.g. ADA_24 -> NVIDIA GeForce RTX 4090) and pass device names
-    through."""
-    from .gpu import GpuGroup
+    through. no gpu constraint means any device, which the pod api
+    only understands as the full device list."""
+    from .gpu import POOLS_TO_TYPES, GpuGroup
 
     if not gpu:
-        return ["any"]
+        return sorted(
+            {t.value for types in POOLS_TO_TYPES.values() for t in types}
+        )
     names: List[str] = []
     for entry in gpu:
         try:

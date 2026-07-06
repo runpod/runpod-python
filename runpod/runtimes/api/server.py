@@ -14,8 +14,11 @@ deployed mode (rp deploy):
       - asgi factory: call the factory, serve what it returns
 
 live mode (rp dev):
-    no artifact. serves /execute, which runs FunctionRequest payloads
-    (source per request) via the task runner's execute_request.
+    no artifact. the client pushes the user's module source to
+    /_runpod/sync (once per source change); the matching api class is
+    materialized from it and serves the real routes, so dev requests
+    hit the same handlers a deployed worker would. /execute remains
+    for FunctionRequest payloads.
 """
 
 import importlib
@@ -112,6 +115,14 @@ def _build_class_app(handle) -> Any:
             return JSONResponse({"status": "initializing"}, status_code=204)
         return {"status": "healthy"}
 
+    _mount_routes(app, handle, instance)
+    return app
+
+
+def _mount_routes(app: Any, handle, instance) -> None:
+    """add each @get/@post route of an ApiHandle's class to a fastapi app."""
+    from fastapi import Request
+
     for route in handle.spec.routes:
         method = getattr(route, "method", None) or route["method"]
         path = getattr(route, "path", None) or route["path"]
@@ -138,8 +149,6 @@ def _build_class_app(handle) -> Any:
             path, make_endpoint(bound), methods=[method], name=handler_name
         )
 
-    return app
-
 
 def _build_factory_app(handle) -> Any:
     """call the user's asgi factory and ensure /ping exists."""
@@ -155,23 +164,94 @@ def _build_factory_app(handle) -> Any:
     return app
 
 
-def _build_live_app() -> Any:
-    """generic /execute server for dev sessions (source per request)."""
+async def _materialize_live_api(source: str, resource: str) -> Any:
+    """exec shipped module source and build the api app for a resource.
+
+    @init runs here, before the app is swapped in, so the first
+    routed request already sees initialized state.
+    """
     from fastapi import FastAPI
 
-    app = FastAPI(title="runpod-live-api")
+    from runpod.apps.handles import ApiHandle
+    from runpod.runtimes.task.runner import _materialize_source
 
-    @app.get("/ping")
-    async def ping():
-        return {"status": "healthy"}
+    path = _materialize_source(source)
+    namespace: dict = {"__name__": "__runpod_live__", "__file__": path}
+    exec(compile(source, path, "exec"), namespace)  # noqa: S102
 
-    @app.post("/execute")
-    async def execute(request: dict):
-        from runpod.runtimes.task.runner import execute_request
+    handle = None
+    for value in namespace.values():
+        if isinstance(value, ApiHandle) and value.spec.name == resource:
+            handle = value
+            break
+    if handle is None:
+        raise RuntimeError(
+            f"no @app.api resource named '{resource}' in shipped module"
+        )
+    if handle._cls is None:
+        return _build_factory_app(handle)
 
-        return execute_request(request.get("input", request))
-
+    instance = handle._cls()
+    if handle._init_name:
+        await _maybe_await(getattr(instance, handle._init_name)())
+    app = FastAPI(title=f"{resource} (live)")
+    _mount_routes(app, handle, instance)
     return app
+
+
+class _LiveDispatcher:
+    """asgi front for dev sessions.
+
+    the client pushes module source to /_runpod/sync; the api app is
+    materialized from it (rebuilt when the source hash changes) and
+    serves every route. /ping and /execute always work.
+    """
+
+    def __init__(self):
+        self._core = self._build_core()
+        self._inner: Any = None
+        self._hash: Optional[str] = None
+
+    def _build_core(self) -> Any:
+        import hashlib
+
+        from fastapi import FastAPI
+
+        app = FastAPI(title="runpod-live-api")
+
+        @app.get("/ping")
+        async def ping():
+            return {"status": "healthy"}
+
+        @app.post("/execute")
+        async def execute(request: dict):
+            from runpod.runtimes.task.runner import execute_request
+
+            return execute_request(request.get("input", request))
+
+        @app.post("/_runpod/sync")
+        async def sync(request: dict):
+            source = request.get("source") or ""
+            resource = request.get("resource") or ""
+            digest = hashlib.sha256(source.encode()).hexdigest()
+            if digest != self._hash:
+                self._inner = await _materialize_live_api(source, resource)
+                self._hash = digest
+            return {"status": "synced", "hash": digest}
+
+        return app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self._core(scope, receive, send)
+        path = scope.get("path", "")
+        if path in ("/ping", "/execute", "/_runpod/sync") or self._inner is None:
+            return await self._core(scope, receive, send)
+        return await self._inner(scope, receive, send)
+
+
+def _build_live_app() -> Any:
+    return _LiveDispatcher()
 
 
 def build_app() -> Any:

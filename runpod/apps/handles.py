@@ -177,6 +177,11 @@ class _RouteCaller:
         if in_discovery():
             raise DiscoveryInvocationError(self._handle.spec.name)
         target = await self._handle._app._resolve(self._handle.spec)
+        # live targets need the module source to materialize the api
+        # server-side; other targets ignore the reference
+        setter = getattr(target, "attach_source", None)
+        if setter is not None:
+            setter(self._handle.__wrapped__, self._handle.spec.name)
         return await target.request(self._method, path, body, **kwargs)
 
 

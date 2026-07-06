@@ -359,6 +359,41 @@ class LiveTarget(InvocationTarget):
         self.resource_name = resource_name
         self.events = events
         self.metrics_key = metrics_key
+        self._source_target: Optional[Any] = None
+        self._source_resource: str = ""
+        # source hash the worker last confirmed; None forces a sync
+        self._synced_hash: Optional[str] = None
+
+    def attach_source(self, target: Any, resource: str) -> None:
+        """register the object whose module backs this api resource.
+
+        live api endpoints materialize their routes from module source
+        pushed over /_runpod/sync (once per source change), keeping dev
+        behavior identical to deployed.
+        """
+        self._source_target = target
+        self._source_resource = resource
+
+    async def _sync_source(self, timeout: float) -> None:
+        """push the current module source to the worker if it changed."""
+        if self._source_target is None:
+            return
+        import hashlib
+
+        from .serialization import get_function_source
+
+        source = get_function_source(self._source_target)
+        digest = hashlib.sha256(source.encode()).hexdigest()
+        if digest == self._synced_hash:
+            return
+        url = f"https://{self.endpoint_id}.{_lb_domain()}/_runpod/sync"
+        await _post_json(
+            url,
+            {"source": source, "resource": self._source_resource},
+            _headers(),
+            timeout,
+        )
+        self._synced_hash = digest
 
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
@@ -488,6 +523,7 @@ class LiveTarget(InvocationTarget):
         url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
         client_timeout = aiohttp.ClientTimeout(total=timeout)
         try:
+            await self._sync_source(timeout)
             async with aiohttp.ClientSession(timeout=client_timeout) as session:
                 async with session.request(
                     method, url, json=body, headers=_headers()

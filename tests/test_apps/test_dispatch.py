@@ -336,3 +336,20 @@ class TestModuleSourceShipping:
         # the first hop sent
         assert "def sibling" in response["json_result"]
         assert "@app.queue()" in response["json_result"]
+
+    def test_missing_module_on_deserialize_is_actionable(self):
+        import base64
+
+        import cloudpickle
+        import pytest
+
+        from runpod.apps.errors import RemoteExecutionError
+        from runpod.apps.serialization import deserialize_result
+
+        class FakePickle:
+            def __reduce__(self):
+                return (__import__, ("nonexistent_pkg_xyz",))
+
+        payload = base64.b64encode(cloudpickle.dumps(FakePickle())).decode()
+        with pytest.raises(RemoteExecutionError, match="nonexistent_pkg_xyz"):
+            deserialize_result(payload)
