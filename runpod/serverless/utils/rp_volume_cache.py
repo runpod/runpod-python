@@ -2,6 +2,7 @@
 
 import os
 import tarfile
+import tempfile
 import time
 import uuid
 import threading
@@ -92,3 +93,47 @@ class VolumeCache:
         log.info(f"VolumeCache: synced {len(files)} files to {final}")
         self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
         return True
+
+    @property
+    def _marker_path(self):
+        base = os.path.join(tempfile.gettempdir(), "rp_volume_cache")
+        return os.path.join(base, f"{self._namespace}.hydrated")
+
+    def _newest_shard_mtime(self):
+        shards = self._list_shards()
+        return os.path.getmtime(shards[-1]) if shards else 0.0
+
+    def _clear_marker_for_test(self):
+        if os.path.exists(self._marker_path):
+            os.remove(self._marker_path)
+
+    def hydrate(self):
+        if not self.available:
+            return False
+        return self._guard(self._do_hydrate, False)
+
+    def _do_hydrate(self):
+        shards = self._list_shards()
+        if not shards:
+            return False
+        newest = self._newest_shard_mtime()
+        if os.path.exists(self._marker_path) and os.path.getmtime(self._marker_path) >= newest:
+            log.debug("VolumeCache: cache already hydrated, skipping")
+            return False
+        extracted = False
+        for shard in shards:                       # oldest -> newest (last wins)
+            with tarfile.open(shard) as tar:
+                safe = [m for m in tar.getmembers() if self._is_safe_member(m)]
+                tar.extractall(path="/", members=safe, filter=tarfile.data_filter)
+                extracted = extracted or bool(safe)
+        os.makedirs(os.path.dirname(self._marker_path), exist_ok=True)
+        with open(self._marker_path, "w") as fh:
+            fh.write(str(newest))
+        os.utime(self._marker_path, (newest, newest))
+        self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
+        if extracted:
+            log.info(f"VolumeCache: hydrated from {len(shards)} shard(s)")
+        return extracted
+
+    def _is_safe_member(self, member):
+        return member.isfile() or member.isdir()
