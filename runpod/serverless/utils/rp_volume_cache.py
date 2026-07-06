@@ -124,7 +124,7 @@ class VolumeCache:
         for shard in shards:                       # oldest -> newest (last wins)
             with tarfile.open(shard) as tar:
                 safe = [m for m in tar.getmembers() if self._is_safe_member(m)]
-                tar.extractall(path="/", members=safe, filter=tarfile.data_filter)
+                tar.extractall(path="/", members=safe)
                 extracted = extracted or bool(safe)
         os.makedirs(os.path.dirname(self._marker_path), exist_ok=True)
         with open(self._marker_path, "w") as fh:
