@@ -102,3 +102,43 @@ def test_sync_tolerates_coarse_mtime_granularity(tmp_path):
     now = time.time()
     os.utime(f, (float(int(now)), float(int(now))))  # floor mtime to integer second
     assert vc.sync() is True
+
+
+def test_hydrate_noop_when_no_shards(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    assert vc.hydrate() is False
+
+
+def test_hydrate_restores_files_to_absolute_paths(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._baseline = time.time() - 5
+    (cache / "model.bin").write_text("weights")
+    vc.sync()
+    (cache / "model.bin").unlink()          # simulate a fresh cold worker
+    assert vc.hydrate() is True
+    assert (cache / "model.bin").read_text() == "weights"
+
+
+def test_hydrate_later_shard_overwrites_earlier(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._baseline = time.time() - 5
+    f = cache / "model.bin"
+    f.write_text("v1")
+    vc.sync()
+    time.sleep(0.01)
+    f.write_text("v2")
+    vc._baseline = time.time() - 5
+    vc.sync()
+    f.unlink()
+    vc._clear_marker_for_test()
+    vc.hydrate()
+    assert f.read_text() == "v2"
+
+
+def test_hydrate_is_idempotent_via_marker(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._baseline = time.time() - 5
+    (cache / "model.bin").write_text("weights")
+    vc.sync()
+    assert vc.hydrate() is True     # first hydrate extracts
+    assert vc.hydrate() is False    # marker current -> no-op
