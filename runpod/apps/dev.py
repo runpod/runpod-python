@@ -354,14 +354,31 @@ class DevSession:
                 self.generation,
             )
 
-    async def stop(self) -> None:
-        """delete every endpoint this session owns."""
-        for name, endpoint_id in list(self._endpoints.items()):
+    async def stop(self, events: Optional[object] = None) -> None:
+        """delete every endpoint this session owns.
+
+        events, when given, overrides the session sink for teardown
+        rendering: cleanup_started(total), deleting(name), deleted(name),
+        delete_failed(name).
+        """
+        sink = events if events is not None else self.events
+
+        def _tell(event: str, *args) -> None:
+            handler = getattr(sink, event, None)
+            if handler is not None:
+                handler(*args)
+
+        pending = list(self._endpoints.items())
+        _tell("cleanup_started", len(pending))
+        for name, endpoint_id in pending:
+            resource = _resource_of(name)
+            _tell("deleting", resource)
             try:
                 await self.api.delete_endpoint(endpoint_id)
-                self._emit("deleted", _resource_of(name))
+                _tell("deleted", resource)
                 log.info("deleted dev endpoint %s (%s)", name, endpoint_id)
             except Exception as exc:
+                _tell("delete_failed", resource)
                 log.warning(
                     "failed to delete dev endpoint %s: %s", endpoint_id, exc
                 )

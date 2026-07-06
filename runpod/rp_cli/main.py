@@ -215,6 +215,33 @@ def dev(module, once):
                     pass
             await asyncio.sleep(0.5)
 
+    async def _run_entrypoint_cancellable(fn) -> None:
+        """drive the entrypoint on a daemon thread.
+
+        the entrypoint is user code full of blocking .remote() calls;
+        running it inline would pin the main loop and make ctrl-c
+        undeliverable (asyncio's sigint handler cancels the main task,
+        which needs an await point). a daemon thread keeps the loop
+        free, and cancellation simply abandons the in-flight call.
+        """
+        loop = asyncio.get_running_loop()
+        done: asyncio.Future = loop.create_future()
+
+        def _runner() -> None:
+            try:
+                run_entrypoint(fn)
+            except BaseException as exc:  # noqa: BLE001 - marshalled to the loop
+                loop.call_soon_threadsafe(
+                    lambda: done.set_exception(exc) if not done.done() else None
+                )
+            else:
+                loop.call_soon_threadsafe(
+                    lambda: done.set_result(None) if not done.done() else None
+                )
+
+        threading.Thread(target=_runner, daemon=True).start()
+        await done
+
     async def _session() -> int:
         nonlocal apps, entrypoint
         ui.set_name_width(_all_resource_names(apps))
@@ -230,8 +257,10 @@ def dev(module, once):
                 ui.entrypoint_header(getattr(entrypoint, "__name__", ""))
                 with ui.Timer() as t:
                     try:
-                        run_entrypoint(entrypoint)
+                        await _run_entrypoint_cancellable(entrypoint)
                         ui.entrypoint_success(t.so_far)
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
                         ui.entrypoint_failure(t.so_far, str(exc))
                         if once:
@@ -245,13 +274,13 @@ def dev(module, once):
                     ui.set_name_width(_all_resource_names(apps))
                     await session.refresh(apps)
         finally:
-            ui.console.print()
-            ui.info("cleaning up ...")
-            await session.stop()
+            events = ui.CleanupEvents()
+            await session.stop(events=events)
+            events.close()
 
     try:
         sys.exit(asyncio.run(_session()))
-    except (KeyboardInterrupt, EOFError):
+    except (KeyboardInterrupt, EOFError, asyncio.CancelledError):
         ui.console.print()
     except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
         raise click.ClickException(str(exc)) from exc

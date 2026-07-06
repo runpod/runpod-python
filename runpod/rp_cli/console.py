@@ -407,6 +407,63 @@ class DevEvents:
         )
 
 
+class CleanupEvents:
+    """session teardown sink: one spinner line with delete progress."""
+
+    def __init__(self) -> None:
+        self._progress: Optional[Progress] = None
+        self._task: Optional[TaskID] = None
+        self._total = 0
+        self._done = 0
+
+    def cleanup_started(self, total: int) -> None:
+        self._total = total
+        if total == 0:
+            return
+        console.print()
+        self._progress = Progress(
+            SpinnerColumn("dots", style=ACCENT, finished_text="[ok]✓[/ok]"),
+            TextColumn("[white]{task.description}[/white]"),
+            TextColumn("[dim]{task.fields[detail]}[/dim]"),
+            console=console,
+        )
+        self._progress.start()
+        self._task = self._progress.add_task(
+            "cleaning up", detail="", total=total
+        )
+
+    def deleting(self, name: str) -> None:
+        if self._progress is not None and self._task is not None:
+            self._progress.update(
+                self._task, detail=f"{name} · {self._done}/{self._total}"
+            )
+
+    def deleted(self, name: str) -> None:
+        self._done += 1
+        if self._progress is not None and self._task is not None:
+            self._progress.update(
+                self._task,
+                completed=self._done,
+                detail=f"{name} · {self._done}/{self._total}",
+            )
+
+    def delete_failed(self, name: str) -> None:
+        self._done += 1
+        if self._progress is not None and self._task is not None:
+            self._progress.update(self._task, completed=self._done)
+        console.print(f" [warn]![/warn] [dim]could not delete {name}[/dim]")
+
+    def close(self) -> None:
+        if self._progress is not None and self._task is not None:
+            self._progress.update(
+                self._task,
+                completed=self._total,
+                detail=f"{self._done} deleted",
+            )
+            self._progress.stop()
+            self._progress = None
+
+
 class Timer:
     """context timer for elapsed reporting."""
 
