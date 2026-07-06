@@ -29,7 +29,7 @@ class VolumeCache:
         max_size_gb=None,
         best_effort=True,
     ):
-        self._dirs = [os.path.abspath(os.fspath(d)) for d in dirs]
+        self._dirs = [os.path.realpath(os.fspath(d)) for d in dirs]
         self._namespace = namespace or os.environ.get("RUNPOD_ENDPOINT_ID") or ""
         self._volume_path = os.fspath(volume_path)
         self._max_size_gb = max_size_gb
