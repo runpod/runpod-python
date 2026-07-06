@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 from runpod.serverless.modules import rp_logger, rp_local, rp_ping, rp_scale
 from runpod.serverless.modules.rp_fitness import run_fitness_checks
+from runpod.serverless.utils.rp_volume_cache import build_default_cache, set_active_cache
 
 log = rp_logger.RunPodLogger()
 heartbeat = rp_ping.Heartbeat()
@@ -47,6 +48,12 @@ def run_worker(config: Dict[str, Any]) -> None:
 
     # Start pinging Runpod to show that the worker is alive.
     heartbeat.start_ping(mirror)
+
+    # Warm the local cache from a mounted network volume before any job runs.
+    volume_cache = build_default_cache()
+    if volume_cache is not None:
+        volume_cache.hydrate()
+        set_active_cache(volume_cache)
 
     # Create a JobScaler responsible for adjusting the concurrency
     job_scaler = rp_scale.JobScaler(config)
