@@ -259,3 +259,58 @@ def test_volumecache_exported_from_serverless():
     import runpod.serverless.utils as utils
     assert sls.VolumeCache is utils.VolumeCache
     assert "VolumeCache" in sls.__all__
+
+
+import runpod.serverless.utils.rp_volume_cache as vcmod
+
+
+def test_build_default_cache_disabled_by_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUNPOD_VOLUME_CACHE", "0")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
+    assert vcmod.build_default_cache() is None
+
+
+def test_build_default_cache_none_when_no_volume(tmp_path, monkeypatch):
+    monkeypatch.delenv("RUNPOD_VOLUME_CACHE", raising=False)
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
+    monkeypatch.setattr(vcmod.VolumeCache, "available", property(lambda self: False))
+    assert vcmod.build_default_cache() is None
+
+
+def test_discover_model_dirs_includes_hf_home_and_extras(monkeypatch):
+    monkeypatch.setenv("HF_HOME", "/models/hf")
+    monkeypatch.setenv("RUNPOD_CACHE_DIRS", "/a" + os.pathsep + "/b")
+    dirs = vcmod._discover_model_dirs()
+    assert "/models/hf" in dirs and "/a" in dirs and "/b" in dirs
+
+
+def test_sync_after_job_runs_once(monkeypatch):
+    vcmod.reset_builtin_state_for_test()
+    counter = {"n": 0}
+    fake = type("F", (), {"sync": lambda self: counter.__setitem__("n", counter["n"] + 1)})()
+    joined = []
+    class FakeThread:
+        def __init__(self, target, daemon=None): self.target = target
+        def start(self): self.target(); joined.append(True)
+    monkeypatch.setattr(vcmod.threading, "Thread", FakeThread)
+    vcmod.set_active_cache(fake)
+    vcmod.sync_after_job()
+    vcmod.sync_after_job()
+    assert counter["n"] == 1
+
+
+def test_run_worker_hydrates_registered_cache(monkeypatch):
+    from runpod.serverless import worker
+
+    async def _noop_fitness_checks():
+        return None
+
+    fake = type("F", (), {"hydrate": lambda self: fake_calls.append("h")})()
+    fake_calls = []
+    monkeypatch.setattr(worker, "build_default_cache", lambda: fake, raising=False)
+    monkeypatch.setattr(worker.rp_scale, "JobScaler",
+                        lambda config: type("J", (), {"start": lambda self: None})())
+    monkeypatch.setattr(worker.heartbeat, "start_ping", lambda mirror: None)
+    monkeypatch.setattr(worker, "run_fitness_checks", _noop_fitness_checks)
+    worker.run_worker({"handler": lambda job: job})
+    assert "h" in fake_calls
