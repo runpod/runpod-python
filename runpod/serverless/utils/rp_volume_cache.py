@@ -203,8 +203,12 @@ def _discover_model_dirs():
 def build_default_cache():
     if os.environ.get("RUNPOD_VOLUME_CACHE", "1").lower() in _DISABLED_VALUES:
         return None
-    max_gb = float(os.environ.get("RUNPOD_VOLUME_CACHE_MAX_GB", "50"))
-    vc = VolumeCache(_discover_model_dirs(), max_size_gb=max_gb)
+    try:
+        max_gb = float(os.environ.get("RUNPOD_VOLUME_CACHE_MAX_GB", "50"))
+        vc = VolumeCache(_discover_model_dirs(), max_size_gb=max_gb)
+    except Exception as exc:  # never let cache setup crash worker startup
+        log.warn(f"VolumeCache: failed to build default cache, disabling: {exc}")
+        return None
     return vc if vc.available else None
 
 
