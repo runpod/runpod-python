@@ -140,4 +140,10 @@ class VolumeCache:
         return extracted
 
     def _is_safe_member(self, member):
-        return member.isfile() or member.isdir()
+        if not (member.isfile() or member.isdir()):
+            return False                              # reject symlink/hardlink/device/fifo
+        target = os.path.realpath(os.path.join("/", member.name))
+        return any(
+            target == d or target.startswith(d + os.sep)
+            for d in self._dirs
+        )
