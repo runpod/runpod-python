@@ -15,6 +15,7 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
 from ..utils import rp_debugger
+from ..utils.rp_volume_cache import sync_after_job
 from .rp_handler import is_generator
 from .rp_http import send_result, stream_result
 from .rp_tips import check_return_size
@@ -267,6 +268,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
             error_msg = job_output.pop("error", None)
             refresh_worker = job_output.pop("refresh_worker", None)
             run_result["output"] = job_output
+            sync_after_job()
 
             if error_msg:
                 run_result["error"] = error_msg

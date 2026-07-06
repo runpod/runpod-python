@@ -180,3 +180,51 @@ class VolumeCache:
             yield self
         finally:
             self.sync()
+
+
+_ACTIVE_CACHE = None
+_SYNCED = False
+_sync_lock = threading.Lock()
+
+_DISABLED_VALUES = ("0", "false", "no")
+
+
+def _discover_model_dirs():
+    dirs = [os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface")]
+    for var in ("HF_HUB_CACHE", "TORCH_HOME"):
+        if os.environ.get(var):
+            dirs.append(os.environ[var])
+    extra = os.environ.get("RUNPOD_CACHE_DIRS")
+    if extra:
+        dirs.extend(p for p in extra.split(os.pathsep) if p)
+    return list(dict.fromkeys(dirs))                 # de-dupe, preserve order
+
+
+def build_default_cache():
+    if os.environ.get("RUNPOD_VOLUME_CACHE", "1").lower() in _DISABLED_VALUES:
+        return None
+    max_gb = float(os.environ.get("RUNPOD_VOLUME_CACHE_MAX_GB", "50"))
+    vc = VolumeCache(_discover_model_dirs(), max_size_gb=max_gb)
+    return vc if vc.available else None
+
+
+def set_active_cache(vc):
+    global _ACTIVE_CACHE
+    _ACTIVE_CACHE = vc
+
+
+def sync_after_job():
+    global _SYNCED
+    if _ACTIVE_CACHE is None:
+        return
+    with _sync_lock:
+        if _SYNCED:
+            return
+        _SYNCED = True
+    threading.Thread(target=_ACTIVE_CACHE.sync, daemon=True).start()
+
+
+def reset_builtin_state_for_test():
+    global _ACTIVE_CACHE, _SYNCED
+    _ACTIVE_CACHE = None
+    _SYNCED = False
