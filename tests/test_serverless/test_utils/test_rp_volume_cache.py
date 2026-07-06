@@ -329,3 +329,34 @@ def test_build_default_cache_survives_bad_max_gb(monkeypatch):
     monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
     monkeypatch.setenv("RUNPOD_VOLUME_CACHE_MAX_GB", "not-a-number")
     assert vcmod.build_default_cache() is None   # degrades, does not raise
+
+
+def test_two_workers_produce_independently_hydratable_shards(tmp_path):
+    # Distinct worker_ids must write non-colliding shards that both hydrate (spec acceptance).
+    cache = tmp_path / "cache"; cache.mkdir()
+    vol = tmp_path / "volume"; vol.mkdir()
+    a = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    a._worker_id = "workerA"
+    a._baseline = time.time() - 5
+    (cache / "a.bin").write_text("aaa")
+    assert a.sync() is True
+    b = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    b._worker_id = "workerB"
+    b._baseline = time.time() - 5
+    (cache / "b.bin").write_text("bbb")
+    assert b.sync() is True
+    (cache / "a.bin").unlink(); (cache / "b.bin").unlink()
+    reader = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    reader._clear_marker_for_test()
+    assert reader.hydrate() is True
+    assert (cache / "a.bin").read_text() == "aaa"
+    assert (cache / "b.bin").read_text() == "bbb"
+
+
+def test_build_default_cache_returns_instance_when_available(monkeypatch):
+    vcmod.reset_builtin_state_for_test()
+    monkeypatch.delenv("RUNPOD_VOLUME_CACHE", raising=False)
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
+    monkeypatch.setattr(vcmod.VolumeCache, "available", property(lambda self: True))
+    vc = vcmod.build_default_cache()
+    assert isinstance(vc, vcmod.VolumeCache)
