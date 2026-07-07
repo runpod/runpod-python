@@ -507,14 +507,20 @@ def secret():
 
 
 @secret.command(name="add")
-@click.argument("name")
+@click.argument("name", required=False)
 @click.option("--value", default=None, help="Secret value (prompted if omitted).")
 @click.option("--description", default="", help="Optional description.")
 def secret_add(name, value, description):
-    """Create a secret. Reference it with runpod.Secret(NAME)."""
+    """Create a secret. Reference it with runpod.Secret(NAME).
+
+    Prompts for anything not provided: bare `rp secret add` asks for
+    name and value, `rp secret add NAME` asks for just the value.
+    """
     from runpod.apps.api import AppsApiClient
     from runpod.rp_cli import console as ui
 
+    if name is None:
+        name = click.prompt("name")
     if value is None:
         value = click.prompt("value", hide_input=True)
 
