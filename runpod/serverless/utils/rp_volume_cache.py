@@ -24,6 +24,7 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 log = RunPodLogger()
 
 _MTIME_TOLERANCE = 2.0  # seconds; tolerate coarse (NFS) mtime granularity
+_JOIN_TIMEOUT_SECONDS = 30.0  # bound the atexit wait so stalled volume I/O can't hang shutdown
 
 
 class VolumeCache:
@@ -88,7 +89,7 @@ class VolumeCache:
         for dirpath, _dirs, files in os.walk(root):
             for name in files:
                 path = os.path.join(dirpath, name)
-                if name.endswith(".lock") or name.startswith(".rpvc"):
+                if name.endswith(".lock") or name.endswith(".rpvc.tmp"):
                     continue
                 if any(sub in path for sub in self._EXCLUDE_SUBSTRINGS):
                     continue
@@ -116,7 +117,7 @@ class VolumeCache:
         return any(target == d or target.startswith(d + os.sep) for d in self._dirs)
 
     def _copy_file(self, src, dst):
-        tmp = dst + ".rpvc.tmp"
+        tmp = f"{dst}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, tmp)  # preserves mtime so future diffs converge
@@ -233,7 +234,12 @@ def _register_pending(thread):
 def _join_pending_syncs():
     for t in list(_pending_syncs):
         try:
-            t.join()
+            t.join(timeout=_JOIN_TIMEOUT_SECONDS)
+            if t.is_alive():
+                log.warn(
+                    "VolumeCache: background sync did not finish within "
+                    f"{_JOIN_TIMEOUT_SECONDS:.0f}s at exit; cache may be incomplete"
+                )
         except Exception:
             pass
     _pending_syncs.clear()
