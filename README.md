@@ -151,19 +151,12 @@ See [Worker Fitness Checks](https://github.com/runpod/runpod-python/blob/main/do
 
 ### Network-Volume Warm Cache
 
-When a network volume is attached, `VolumeCache` warms local directories (such as a model cache) across cold starts — restoring them on startup and syncing new files back — so a repeated multi-GB model download becomes a one-time cost per endpoint. It is opt-in and best-effort.
-
-```bash
-# Enable the built-in warm cache (requires a mounted network volume)
-RUNPOD_VOLUME_CACHE=1
-```
-
-Or use it explicitly around a model load:
+When a network volume is attached, `VolumeCache` warms local directories (such as a model cache) across cold starts — hydrating them on startup and syncing new files back on exit — so a repeated multi-GB model download becomes a one-time cost per endpoint. It is stdlib-only and best-effort.
 
 ```python
 from runpod.serverless import VolumeCache
 
-with VolumeCache(dirs=["/root/.cache/huggingface"]).warm():
+with VolumeCache(dirs=["/root/.cache/huggingface"]):
     model = load_model()
 ```
 
