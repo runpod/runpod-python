@@ -439,3 +439,69 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert mock_log.error.call_count == 1
         assert mock_log.info.call_count == 1
         mock_log.info.assert_called_with("Finished running generator.", "123")
+
+    async def test_run_job_generator_success_syncs_cache(self):
+        """
+        Tests that run_job_generator triggers sync_after_job on the success path.
+        """
+        handler = self.handler_gen_success
+        job = {"id": "123"}
+        counter = {"n": 0}
+
+        def fake_sync_after_job():
+            counter["n"] += 1
+
+        with patch(
+            "runpod.serverless.modules.rp_job.log", new_callable=Mock
+        ), patch(
+            "runpod.serverless.modules.rp_job.sync_after_job",
+            side_effect=fake_sync_after_job,
+        ) as mock_sync:
+            result = [i async for i in rp_job.run_job_generator(handler, job)]
+
+        assert result == [
+            {"output": "partial_output_1"},
+            {"output": "partial_output_2"},
+        ]
+        mock_sync.assert_called_once()
+        assert counter["n"] == 1
+
+    async def test_run_job_generator_success_syncs_cache_async(self):
+        """
+        Tests that run_job_generator triggers sync_after_job on the success path
+        for an async generator handler.
+        """
+        handler = self.handler_async_gen_success
+        job = {"id": "123"}
+
+        with patch(
+            "runpod.serverless.modules.rp_job.log", new_callable=Mock
+        ), patch(
+            "runpod.serverless.modules.rp_job.sync_after_job"
+        ) as mock_sync:
+            result = [i async for i in rp_job.run_job_generator(handler, job)]
+
+        assert result == [
+            {"output": "partial_output_1"},
+            {"output": "partial_output_2"},
+        ]
+        mock_sync.assert_called_once()
+
+    async def test_run_job_generator_exception_does_not_sync_cache(self):
+        """
+        Tests that run_job_generator does NOT trigger sync_after_job on the
+        exception path.
+        """
+        handler = self.handler_fail
+        job = {"id": "123"}
+
+        with patch(
+            "runpod.serverless.modules.rp_job.log", new_callable=Mock
+        ), patch(
+            "runpod.serverless.modules.rp_job.sync_after_job"
+        ) as mock_sync:
+            result = [i async for i in rp_job.run_job_generator(handler, job)]
+
+        assert len(result) == 1
+        assert "error" in result[0]
+        mock_sync.assert_not_called()

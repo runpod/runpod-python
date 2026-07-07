@@ -33,6 +33,16 @@ class VolumeCache:
     ):
         self._dirs = [os.path.realpath(os.fspath(d)) for d in dirs]
         self._namespace = namespace or os.environ.get("RUNPOD_ENDPOINT_ID") or ""
+        if self._namespace and (
+            os.path.isabs(self._namespace)
+            or os.sep in self._namespace
+            or "/" in self._namespace
+            or "\\" in self._namespace
+            or self._namespace in (".", "..")
+        ):
+            raise ValueError(
+                f"namespace must be a single safe path component, got {self._namespace!r}"
+            )
         self._volume_path = os.fspath(volume_path)
         self._max_size_gb = max_size_gb
         self._best_effort = best_effort
@@ -95,6 +105,7 @@ class VolumeCache:
             try:
                 os.remove(stale)
             except OSError:
+                # best-effort cleanup: ignore temp files that vanish or can't be removed
                 pass
         final = os.path.join(self._shard_dir, f"{self._worker_id}-{time.time_ns():020d}.tar")
         tmp = final + ".tmp"
@@ -110,13 +121,19 @@ class VolumeCache:
     def _enforce_retention(self):
         if not self._max_size_gb:
             return
+        def _size(p):
+            try:
+                return os.path.getsize(p)
+            except OSError:
+                return 0
+
         cap = self._max_size_gb * (1024 ** 3)
         shards = self._list_shards()                 # oldest first
-        total = sum(os.path.getsize(s) for s in shards)
+        total = sum(_size(s) for s in shards)
         for shard in shards:
             if total <= cap:
                 break
-            size = os.path.getsize(shard)
+            size = _size(shard)
             try:
                 os.remove(shard)
                 total -= size
