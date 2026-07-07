@@ -226,11 +226,28 @@ class DevSession:
         self._endpoints: Dict[str, str] = {}
         # endpoint name -> comparable payload, for refresh diffing
         self._payloads: Dict[str, Dict] = {}
+        # volumes resolve once per session (placement is stable)
+        self._volume_resolver = None
 
     def _emit(self, event: str, *args) -> None:
         handler = getattr(self.events, event, None)
         if handler is not None:
             handler(*args)
+
+    async def _attach_volumes(self, payload: Dict, spec, app) -> None:
+        """resolve the resource's volumes onto a dev endpoint payload."""
+        from .deploy import attach_endpoint_volumes
+        from .volume import VolumeResolver
+
+        if not spec.volume:
+            return
+        if self._volume_resolver is None:
+            self._volume_resolver = VolumeResolver(
+                self.api, events=self.events
+            )
+        await attach_endpoint_volumes(
+            payload, spec, self._volume_resolver, app
+        )
 
     @property
     def _endpoint_ids(self) -> List[str]:
@@ -260,6 +277,7 @@ class DevSession:
                 spec = handle.spec
                 name = dev_endpoint_name(app.name, spec.name)
                 payload = _endpoint_input(app, spec, self.generation)
+                await self._attach_volumes(payload, spec, app)
 
                 hardware = ",".join(spec.cpu or spec.gpu or ["any"])
                 found = existing.get(name)
@@ -327,6 +345,7 @@ class DevSession:
         # update survivors (config + generation bump) and create additions
         for name, (app, handle) in desired.items():
             payload = _endpoint_input(app, handle.spec, self.generation)
+            await self._attach_volumes(payload, handle.spec, app)
             existing_id = self._endpoints.get(name)
             comparable = _comparable(payload)
             previous = self._payloads.get(name)

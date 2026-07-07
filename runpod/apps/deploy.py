@@ -359,11 +359,15 @@ async def reconcile_endpoints(
         if h.spec.kind in (ResourceKind.QUEUE, ResourceKind.API)
     }
 
+    from .volume import VolumeResolver
+
+    resolver = VolumeResolver(client)
     endpoints: Dict[str, str] = {}
     for name, handle in sorted(provisionable.items()):
         payload = _deployed_endpoint_input(
             app, handle.spec, environment["id"], build_id, python_version
         )
+        await attach_endpoint_volumes(payload, handle.spec, resolver, app)
         if name in existing:
             payload["id"] = existing[name]
         result = await client.save_endpoint(payload)
@@ -381,6 +385,31 @@ async def reconcile_endpoints(
             log.info("deleted removed endpoint %s (%s)", name, endpoint_id)
 
     return endpoints
+
+
+async def attach_endpoint_volumes(
+    payload: Dict[str, Any], spec, resolver, app
+) -> None:
+    """resolve a resource's volumes onto an endpoint payload.
+
+    endpoints may span regions: one volume per datacenter, locations
+    derived from the resolved volumes so lists cannot disagree.
+    """
+    from .volume import specs_sharing_volume, volume_list
+
+    volumes = volume_list(spec.volume)
+    if not volumes:
+        return
+    resolved = []
+    for volume in volumes:
+        sharing = specs_sharing_volume([app], volume.name) or [spec]
+        resolved.append(await resolver.resolve(volume, sharing))
+    payload["networkVolumeIds"] = [
+        {"networkVolumeId": r["id"]} for r in resolved
+    ]
+    payload["locations"] = ",".join(
+        dict.fromkeys(r["dataCenterId"] for r in resolved)
+    )
 
 
 def _phase(events, name: str, detail: str = "") -> None:

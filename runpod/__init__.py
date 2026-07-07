@@ -35,6 +35,7 @@ from .apps import (
     DataCenter,
     EndpointNotFound,
     Queue,
+    Volume,
     is_local,
     local_entrypoint,
     schedule,

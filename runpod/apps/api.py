@@ -173,6 +173,101 @@ class AppsApiClient:
         )
         return data["createFlashEnvironment"]
 
+    # -- stock (placement) --
+
+    async def gpu_stock_status(
+        self, gpu_id: str, data_center_id: str, gpu_count: int = 1
+    ) -> Optional[str]:
+        """stock signal for a gpu device in one datacenter."""
+        query = """
+        query GpuStock($gpuTypesInput: GpuTypeFilter, $lowestPriceInput: GpuLowestPriceInput) {
+            gpuTypes(input: $gpuTypesInput) {
+                lowestPrice(input: $lowestPriceInput) { stockStatus }
+            }
+        }
+        """
+        data = await self._execute(
+            query,
+            {
+                "gpuTypesInput": {"ids": [gpu_id]},
+                "lowestPriceInput": {
+                    "dataCenterId": data_center_id,
+                    "gpuCount": gpu_count,
+                    "secureCloud": True,
+                    "includeAiApi": True,
+                },
+            },
+        )
+        gpu_types = data.get("gpuTypes") or []
+        first = gpu_types[0] if gpu_types else {}
+        price = first.get("lowestPrice") if isinstance(first, dict) else None
+        return (price or {}).get("stockStatus")
+
+    async def cpu_stock_status(
+        self, instance_id: str, data_center_id: str
+    ) -> Optional[str]:
+        """stock signal for a cpu flavor in one datacenter."""
+        flavor = instance_id.split("-", 1)[0]
+        query = """
+        query CpuStock($cpuFlavorInput: CpuFlavorInput, $specificsInput: SpecificsInput) {
+            cpuFlavors(input: $cpuFlavorInput) {
+                specifics(input: $specificsInput) { stockStatus }
+            }
+        }
+        """
+        data = await self._execute(
+            query,
+            {
+                "cpuFlavorInput": {"id": flavor},
+                "specificsInput": {
+                    "dataCenterId": data_center_id,
+                    "instanceId": instance_id,
+                },
+            },
+        )
+        flavors = data.get("cpuFlavors") or []
+        first = flavors[0] if flavors else {}
+        specifics = first.get("specifics") if isinstance(first, dict) else None
+        return (specifics or {}).get("stockStatus")
+
+    # -- network volumes --
+
+    async def list_network_volumes(self) -> List[Dict[str, Any]]:
+        query = """
+        query myVolumes {
+            myself {
+                networkVolumes { id name size dataCenterId }
+            }
+        }
+        """
+        data = await self._execute(query)
+        return data["myself"].get("networkVolumes") or []
+
+    async def create_network_volume(
+        self, name: str, size: int, data_center_id: str
+    ) -> Dict[str, Any]:
+        mutation = """
+        mutation createNetworkVolume($input: CreateNetworkVolumeInput!) {
+            createNetworkVolume(input: $input) {
+                id
+                name
+                size
+                dataCenterId
+            }
+        }
+        """
+        data = await self._execute(
+            mutation,
+            {
+                "input": {
+                    "name": name,
+                    "size": size,
+                    "dataCenterId": data_center_id,
+                }
+            },
+        )
+        return data["createNetworkVolume"]
+
     # -- app / environment management --
 
     async def list_apps(self) -> List[Dict[str, Any]]:

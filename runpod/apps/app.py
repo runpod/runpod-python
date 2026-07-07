@@ -291,16 +291,19 @@ def _datacenter_list(
     return [str(d) for d in datacenter]
 
 
-def _volume_ref(volume: Any) -> Optional[str]:
-    """normalize a volume argument to a name-or-id string reference."""
+def _volume_ref(volume: Any) -> Optional[Any]:
+    """validate a volume argument: a Volume, or a name/id string.
+
+    Volume objects pass through whole so creation config (size,
+    datacenter) survives to provision time.
+    """
     if volume is None:
         return None
-    if isinstance(volume, str):
+    from .volume import Volume
+
+    if isinstance(volume, (str, Volume)):
         return volume
-    name = getattr(volume, "name", None) or getattr(volume, "id", None)
-    if name is None:
-        raise InvalidResourceError(
-            f"volume must be a string name/id or an object with .name/.id, "
-            f"got {type(volume).__name__}"
-        )
-    return str(name)
+    raise InvalidResourceError(
+        f"volume must be a runpod.Volume or a name/id string, "
+        f"got {type(volume).__name__}"
+    )

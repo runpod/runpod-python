@@ -111,7 +111,7 @@ class ResourceSpec:
     idle_timeout: int = 60
     dependencies: Optional[List[str]] = None
     system_dependencies: Optional[List[str]] = None
-    volume: Optional[str] = None
+    volume: Optional[Any] = None
     env: Optional[Dict[str, str]] = None
     datacenter: Optional[List[str]] = None
     image: Optional[str] = None
@@ -150,7 +150,9 @@ class ResourceSpec:
         if self.system_dependencies:
             data["systemDependencies"] = self.system_dependencies
         if self.volume:
-            data["networkVolume"] = self.volume
+            data["networkVolume"] = getattr(
+                self.volume, "name", None
+            ) or str(self.volume)
         if self.env:
             data["env"] = self.env
         if self.datacenter:

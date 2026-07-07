@@ -408,6 +408,11 @@ class DevEvents:
     def task_status(self, name: str, detail: str) -> None:
         console.print(f" [dim]○ {name}() {detail}[/dim]")
 
+    def volume_created(self, name: str, size: int, dc: str) -> None:
+        console.print(
+            f" [ok]+[/ok] [white]volume {name}[/white] [dim]{size}GB · {dc}[/dim]"
+        )
+
     def worker_ready(self, name: str, worker_id: str) -> None:
         console.print(
             f" [accent]●[/accent] [white]{name}()[/white] [dim]running on "

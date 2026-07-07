@@ -26,6 +26,7 @@ from .markers import delete, get, init, patch, post, put
 from .schedule import schedule
 from .spec import ResourceKind, ResourceSpec, RouteSpec
 from .stubs import Api, Queue
+from .volume import Volume
 
 __all__ = [
     "Api",
@@ -37,6 +38,7 @@ __all__ = [
     "EndpointNotFound",
     "FunctionHandle",
     "Queue",
+    "Volume",
     "RemoteExecutionError",
     "ResourceKind",
     "ResourceSpec",

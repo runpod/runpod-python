@@ -163,7 +163,9 @@ class TestPodInput:
             "t",
         )
         assert pod["imageName"] == "my/image:1"
-        assert pod["networkVolumeId"] == "vol-1"
+        # volumes resolve at TaskExecution.start (placement solve),
+        # not in the static pod input
+        assert "networkVolumeId" not in pod
         # custom images get the env-injection fallback
         env = {e["key"]: e["value"] for e in pod["env"]}
         assert "RUNPOD_TASK_RUNNER_B64" in env

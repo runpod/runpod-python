@@ -128,8 +128,6 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
 
         pool = CPU3_DATACENTERS if spec.is_cpu else DataCenter.all()
         pod["dataCenterIds"] = [dc.value for dc in pool]
-    if spec.volume:
-        pod["networkVolumeId"] = spec.volume
     if spec.is_cpu:
         pod["instanceIds"] = spec.cpu
     else:
@@ -152,12 +150,35 @@ class TaskExecution:
         return {"Authorization": f"Bearer {self.token}"}
 
     async def start(self) -> None:
+        pod = _pod_input(self.spec, self.token, self.spec.name)
+        if self.spec.volume:
+            pod = await self._attach_volume(pod)
         result = await self.api.deploy_task_pod(
-            _pod_input(self.spec, self.token, self.spec.name),
-            is_cpu=self.spec.is_cpu,
+            pod, is_cpu=self.spec.is_cpu
         )
         self.pod_id = result["id"]
         log.info("task pod %s deployed for %s", self.pod_id, self.spec.name)
+
+    async def _attach_volume(self, pod: Dict[str, Any]) -> Dict[str, Any]:
+        """resolve the task's volume and pin the pod to its datacenter."""
+        from .volume import VolumeError, VolumeResolver, volume_list
+
+        volumes = volume_list(self.spec.volume)
+        if len(volumes) > 1:
+            raise VolumeError(
+                f"task '{self.spec.name}': pods mount exactly one volume "
+                f"({len(volumes)} given)"
+            )
+        resolver = VolumeResolver(self.api)
+        resolved = await resolver.resolve(volumes[0], [self.spec])
+        from .volume import POD_MOUNT_PATH
+
+        pod["networkVolumeId"] = resolved["id"]
+        # the host bind-mounts to this target; empty means a broken
+        # mount config and the container never starts
+        pod["volumeMountPath"] = str(POD_MOUNT_PATH)
+        pod["dataCenterIds"] = [resolved["dataCenterId"]]
+        return pod
 
     async def wait_ready(self, timeout: float = READY_TIMEOUT) -> None:
         """poll the runner's /ping through the pod proxy until it answers."""
