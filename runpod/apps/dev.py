@@ -244,10 +244,17 @@ class DevSession:
             handler(*args)
 
     async def _attach_volumes(self, payload: Dict, spec, app) -> None:
-        """resolve the resource's volumes onto a dev endpoint payload."""
+        """resolve the resource's volumes and registry auth onto a
+        dev endpoint payload."""
         from .deploy import attach_endpoint_volumes
+        from .registry import resolve_registry_auth
         from .volume import VolumeResolver
 
+        if spec.registry_auth:
+            auth_id = await resolve_registry_auth(
+                spec.registry_auth, api=self.api
+            )
+            payload["template"]["containerRegistryAuthId"] = auth_id
         if not spec.volume:
             return
         if self._volume_resolver is None:

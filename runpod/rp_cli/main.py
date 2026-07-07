@@ -502,6 +502,88 @@ def app_delete(app_name, yes):
 
 
 @cli.group()
+def registry():
+    """Manage container registry credentials (private images)."""
+
+
+@registry.command(name="add")
+@click.argument("name", required=False)
+@click.option("--username", default=None, help="Registry username (prompted if omitted).")
+@click.option("--password", default=None, help="Registry password/token (prompted if omitted).")
+def registry_add(name, username, password):
+    """Create a registry credential. Reference it with registry_auth=NAME."""
+    from runpod.apps.api import AppsApiClient
+    from runpod.rp_cli import console as ui
+
+    if name is None:
+        name = click.prompt("name")
+    if username is None:
+        username = click.prompt("username")
+    if password is None:
+        password = click.prompt("password", hide_input=True)
+
+    try:
+        asyncio.run(
+            AppsApiClient().create_registry_auth(name, username, password)
+        )
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+    ui.success(
+        f"registry credential [white]{name}[/white] created · "
+        f'[dim]use registry_auth="{name}"[/dim]'
+    )
+
+
+@registry.command(name="list")
+def registry_list():
+    """List registry credential names."""
+    from runpod.apps.api import AppsApiClient
+    from runpod.rp_cli import console as ui
+
+    try:
+        creds = asyncio.run(AppsApiClient().list_registry_auths())
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+
+    if not creds:
+        ui.console.print(
+            "\n  no registry credentials · run [white]rp registry add <name>[/white]\n"
+        )
+        return
+    ui.console.print()
+    for entry in sorted(creds, key=lambda c: c["name"]):
+        ui.console.print(f"  [white]{entry['name']}[/white]  [dim]{entry['id']}[/dim]")
+    ui.console.print()
+
+
+@registry.command(name="rm")
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
+def registry_rm(name, yes):
+    """Delete a registry credential by name."""
+    from runpod.apps.api import AppsApiClient
+    from runpod.rp_cli import console as ui
+
+    async def _rm():
+        client = AppsApiClient()
+        creds = await client.list_registry_auths()
+        match = next((c for c in creds if c["name"] == name), None)
+        if match is None:
+            _fail(f"no registry credential named '{name}'")
+        await client.delete_registry_auth(match["id"])
+
+    if not yes:
+        click.confirm(f"delete registry credential '{name}'?", abort=True)
+    try:
+        asyncio.run(_rm())
+    except click.ClickException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+    ui.success(f"deleted registry credential [white]{name}[/white]")
+
+
+@cli.group()
 def secret():
     """Manage platform secrets (encrypted env values)."""
 

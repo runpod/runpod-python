@@ -361,6 +361,7 @@ async def reconcile_endpoints(
         if h.spec.kind in (ResourceKind.QUEUE, ResourceKind.API)
     }
 
+    from .registry import resolve_registry_auth
     from .volume import VolumeResolver
 
     resolver = VolumeResolver(client)
@@ -370,6 +371,11 @@ async def reconcile_endpoints(
             app, handle.spec, environment["id"], build_id, python_version
         )
         await attach_endpoint_volumes(payload, handle.spec, resolver, app)
+        auth_id = await resolve_registry_auth(
+            handle.spec.registry_auth, api=client
+        )
+        if auth_id:
+            payload["template"]["containerRegistryAuthId"] = auth_id
         if name in existing:
             payload["id"] = existing[name]
         result = await client.save_endpoint(payload)

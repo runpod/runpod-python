@@ -115,6 +115,7 @@ class ResourceSpec:
     env: Optional[Dict[str, Any]] = None
     datacenter: Optional[List[str]] = None
     image: Optional[str] = None
+    registry_auth: Optional[str] = None
     schedule: Optional[str] = None
     routes: List[RouteSpec] = field(default_factory=list)
     asgi_factory: Optional[str] = None
@@ -161,6 +162,8 @@ class ResourceSpec:
             data["locations"] = ",".join(self.datacenter)
         if self.image:
             data["imageName"] = self.image
+        if self.registry_auth:
+            data["registryAuth"] = self.registry_auth
         if self.schedule:
             data["schedule"] = self.schedule
         if self.routes:

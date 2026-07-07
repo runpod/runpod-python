@@ -153,6 +153,12 @@ class TaskExecution:
 
     async def start(self) -> None:
         pod = _pod_input(self.spec, self.token, self.spec.name)
+        if self.spec.registry_auth:
+            from .registry import resolve_registry_auth
+
+            pod["containerRegistryAuthId"] = await resolve_registry_auth(
+                self.spec.registry_auth, api=self.api
+            )
         if self.spec.volume:
             pod = await self._attach_volume(pod)
         result = await self.api.deploy_task_pod(

@@ -268,6 +268,48 @@ class AppsApiClient:
         )
         return data["createNetworkVolume"]
 
+    # -- registry credentials --
+
+    async def list_registry_auths(self) -> List[Dict[str, Any]]:
+        query = """
+        query myRegistryCreds {
+            myself {
+                containerRegistryCreds { id name }
+            }
+        }
+        """
+        data = await self._execute(query)
+        return data["myself"].get("containerRegistryCreds") or []
+
+    async def create_registry_auth(
+        self, name: str, username: str, password: str
+    ) -> Dict[str, Any]:
+        mutation = """
+        mutation SaveRegistryAuth($input: SaveRegistryAuthInput!) {
+            saveRegistryAuth(input: $input) { id name }
+        }
+        """
+        data = await self._execute(
+            mutation,
+            {
+                "input": {
+                    "name": name,
+                    "username": username,
+                    "password": password,
+                }
+            },
+        )
+        return data["saveRegistryAuth"]
+
+    async def delete_registry_auth(self, auth_id: str) -> bool:
+        mutation = """
+        mutation DeleteRegistryAuth($registryAuthId: String!) {
+            deleteRegistryAuth(registryAuthId: $registryAuthId)
+        }
+        """
+        data = await self._execute(mutation, {"registryAuthId": auth_id})
+        return "deleteRegistryAuth" in data
+
     # -- secrets --
 
     async def list_secrets(self) -> List[Dict[str, Any]]:

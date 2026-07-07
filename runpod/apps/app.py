@@ -92,6 +92,7 @@ class App:
         env: Optional[Dict[str, Any]] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
         image: Optional[str] = None,
+        registry_auth: Optional[str] = None,
     ) -> Callable[[Callable], FunctionHandle]:
         """declare a queue-based serverless endpoint from a function.
 
@@ -115,6 +116,7 @@ class App:
                 env=env,
                 datacenter=_datacenter_list(datacenter),
                 image=image,
+                registry_auth=registry_auth,
             )
             handle = FunctionHandle(self, fn, spec)
             self._register(spec.name, handle)
@@ -134,6 +136,7 @@ class App:
         volume: Optional[Any] = None,
         env: Optional[Dict[str, Any]] = None,
         image: Optional[str] = None,
+        registry_auth: Optional[str] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
     ) -> Callable[[Callable], FunctionHandle]:
         """declare ephemeral pod compute from a function.
@@ -155,6 +158,7 @@ class App:
                 volume=_volume_ref(volume),
                 env=env,
                 image=image,
+                registry_auth=registry_auth,
                 datacenter=_datacenter_list(datacenter),
             )
             handle = FunctionHandle(self, fn, spec)
@@ -178,6 +182,7 @@ class App:
         env: Optional[Dict[str, Any]] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
         image: Optional[str] = None,
+        registry_auth: Optional[str] = None,
     ) -> Callable[[Any], ApiHandle]:
         """declare a load-balanced serverless endpoint.
 
@@ -216,6 +221,7 @@ class App:
                 env=env,
                 datacenter=_datacenter_list(datacenter),
                 image=image,
+                registry_auth=registry_auth,
             )
             handle = ApiHandle(self, target, spec)
             self._register(spec.name, handle)
