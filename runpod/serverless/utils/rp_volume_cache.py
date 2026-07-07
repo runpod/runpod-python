@@ -1,61 +1,61 @@
-"""Bidirectional warm-cache sync between local directories and a network volume."""
+"""Directory-mirror warm cache between local directories and a network volume.
 
-import contextlib
-import glob
+``VolumeCache`` keeps a browsable mirror of one or more local directories on a
+mounted network volume, and reconciles the two directions on demand:
+
+- ``hydrate()``: copy files that are missing or newer on the volume mirror
+  into the container (used on cold start, before the cache is populated).
+- ``sync()``: copy files that are missing or newer in the container onto the
+  volume mirror (used after the cache has been populated/updated).
+
+Both directions are per-file, atomic (write-to-temp + ``os.replace``), and
+idempotent: unchanged files are skipped on repeat calls because ``shutil.copy2``
+preserves mtimes. Stdlib-only and best-effort: any failure degrades to a cold
+worker and never raises into the caller (unless ``best_effort=False``).
+"""
+
+import atexit
 import os
-import tarfile
-import tempfile
-import time
-import uuid
+import shutil
 import threading
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 log = RunPodLogger()
 
-_BASELINE_EPSILON_SECONDS = 2.0  # tolerate coarse (1s) network-filesystem mtime granularity
+_MTIME_TOLERANCE = 2.0  # seconds; tolerate coarse (NFS) mtime granularity
 
 
 class VolumeCache:
     """Warm-cache local directories across serverless workers via a network volume.
 
-    On cold start, ``hydrate()`` extracts previously-synced directories from a
-    mounted network volume into place; after use, ``sync()`` packs the newly
-    written files into a per-worker tar shard on the volume so the next cold
-    worker starts warm. Stdlib-only and best-effort: any failure degrades to a
-    cold worker and never raises into the caller.
+    Maintains a mirror of ``dirs`` at ``{volume_path}/.cache/{namespace}``.
+    ``hydrate()`` reconciles volume -> container; ``sync()`` reconciles
+    container -> volume. Used as a context manager, the object is itself the
+    "warm cache" closure: hydrate on enter, sync (in the background by
+    default) on exit.
 
     Requires a network volume mounted at ``volume_path`` (default
     ``/runpod-volume``) and a non-empty ``namespace`` (default
-    ``RUNPOD_ENDPOINT_ID``); otherwise ``available`` is False and all operations
-    are no-ops.
+    ``RUNPOD_ENDPOINT_ID``); otherwise ``available`` is False and all
+    operations are no-ops.
 
     Args:
         dirs: Local directories to cache (e.g. a model cache like ``HF_HOME``).
-        namespace: Isolation key for the on-volume shards. Must be a single safe
-            path component. Defaults to ``RUNPOD_ENDPOINT_ID``.
+        namespace: Isolation key for the on-volume mirror. Must be a single
+            safe path component. Defaults to ``RUNPOD_ENDPOINT_ID``.
         volume_path: Network-volume mount point. Defaults to ``/runpod-volume``.
-        max_size_gb: Prune oldest shards past this cap. ``None`` = no cap.
         best_effort: When True (default), swallow and log errors instead of
             raising.
 
     Example:
-        >>> vc = VolumeCache(dirs=["/root/.cache/huggingface"])
-        >>> with vc.warm():           # hydrate on enter, sync delta on exit
+        >>> with VolumeCache(dirs=["/root/.cache/huggingface"]):
         ...     model = load_model()  # downloads land in the cached dir
     """
 
     _EXCLUDE_SUBSTRINGS = (os.sep + "refs" + os.sep, os.sep + ".no_exist" + os.sep)
 
-    def __init__(
-        self,
-        dirs,
-        *,
-        namespace=None,
-        volume_path="/runpod-volume",
-        max_size_gb=None,
-        best_effort=True,
-    ):
+    def __init__(self, dirs, *, namespace=None, volume_path="/runpod-volume", best_effort=True):
         self._dirs = [os.path.realpath(os.fspath(d)) for d in dirs]
         self._namespace = namespace or os.environ.get("RUNPOD_ENDPOINT_ID") or ""
         if self._namespace and (
@@ -69,231 +69,175 @@ class VolumeCache:
                 f"namespace must be a single safe path component, got {self._namespace!r}"
             )
         self._volume_path = os.fspath(volume_path)
-        self._max_size_gb = max_size_gb
         self._best_effort = best_effort
-        self._worker_id = os.environ.get("RUNPOD_POD_ID") or uuid.uuid4().hex[:12]
-        self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
 
     @property
-    def _shard_dir(self):
+    def _mirror_root(self):
         return os.path.join(self._volume_path, ".cache", self._namespace)
 
     @property
     def available(self):
+        """True iff volume_path is a mounted dir AND namespace is non-empty."""
         return bool(self._namespace) and os.path.isdir(self._volume_path)
 
-    def _list_shards(self):
-        d = self._shard_dir
-        if not os.path.isdir(d):
-            return []
-        shards = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".tar")]
-        return sorted(shards, key=os.path.getmtime)
+    # ----------------------------------------------------------------- #
+    # reconcile helpers
+    # ----------------------------------------------------------------- #
 
-    def _iter_delta_files(self):
-        for root in self._dirs:
-            if not os.path.isdir(root):
-                continue
-            for dirpath, _dirs, files in os.walk(root):
-                for name in files:
-                    path = os.path.join(dirpath, name)
-                    if name.endswith(".lock") or name.startswith(".rp_volume_cache"):
+    def _iter_files(self, root):
+        for dirpath, _dirs, files in os.walk(root):
+            for name in files:
+                path = os.path.join(dirpath, name)
+                if name.endswith(".lock") or name.startswith(".rpvc"):
+                    continue
+                if any(sub in path for sub in self._EXCLUDE_SUBSTRINGS):
+                    continue
+                try:
+                    if os.path.islink(path):
                         continue
-                    if any(sub in path for sub in self._EXCLUDE_SUBSTRINGS):
-                        continue
-                    try:
-                        if os.path.getmtime(path) > self._baseline:
-                            yield path
-                    except OSError:
-                        continue
+                except OSError:
+                    continue
+                yield path
+
+    @staticmethod
+    def _needs_copy(src_path, dst_path):
+        try:
+            s = os.stat(src_path)
+        except OSError:
+            return False
+        try:
+            d = os.stat(dst_path)
+        except OSError:
+            return True
+        return s.st_size != d.st_size or s.st_mtime > d.st_mtime + _MTIME_TOLERANCE
+
+    def _is_safe_dest(self, dst_abs):
+        target = os.path.realpath(dst_abs)
+        return any(target == d or target.startswith(d + os.sep) for d in self._dirs)
+
+    def _copy_file(self, src, dst):
+        tmp = dst + ".rpvc.tmp"
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, tmp)  # preserves mtime so future diffs converge
+            os.replace(tmp, dst)  # atomic; last-writer-wins under concurrency
+            return True
+        except OSError as exc:
+            log.debug(f"VolumeCache: skip {src} -> {dst}: {exc}")
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
+            return False
 
     def _guard(self, fn, default):
         try:
             return fn()
-        except Exception as exc:                     # best-effort: never break the worker
+        except Exception as exc:  # best-effort: never break the worker
             if not self._best_effort:
                 raise
             log.warn(f"VolumeCache operation failed: {exc}")
             return default
 
-    def sync(self):
-        if not self.available:
-            return False
-        return self._guard(self._do_sync, False)
-
-    def _do_sync(self):
-        files = list(self._iter_delta_files())
-        if not files:
-            log.debug("VolumeCache: no delta files to sync")
-            return False
-        os.makedirs(self._shard_dir, exist_ok=True)
-        for stale in glob.glob(os.path.join(self._shard_dir, f"{self._worker_id}-*.tar.tmp")):
-            try:
-                os.remove(stale)
-            except OSError:
-                # best-effort cleanup: ignore temp files that vanish or can't be removed
-                pass
-        final = os.path.join(self._shard_dir, f"{self._worker_id}-{time.time_ns():020d}.tar")
-        tmp = final + ".tmp"
-        with tarfile.open(tmp, "w") as tar:
-            for path in files:
-                tar.add(path, arcname=os.path.relpath(path, "/"))
-        os.replace(tmp, final)
-        log.info(f"VolumeCache: synced {len(files)} files to {final}")
-        self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
-        self._enforce_retention()
-        return True
-
-    def _enforce_retention(self):
-        if not self._max_size_gb:
-            return
-        def _size(p):
-            try:
-                return os.path.getsize(p)
-            except OSError:
-                return 0
-
-        cap = self._max_size_gb * (1024 ** 3)
-        shards = self._list_shards()                 # oldest first
-        total = sum(_size(s) for s in shards)
-        for shard in shards:
-            if total <= cap:
-                break
-            size = _size(shard)
-            try:
-                os.remove(shard)
-                total -= size
-                log.info(f"VolumeCache: pruned old shard {shard}")
-            except OSError as exc:
-                log.warn(f"VolumeCache: failed to prune {shard}: {exc}")
-
-    @property
-    def _marker_path(self):
-        base = os.path.join(tempfile.gettempdir(), "rp_volume_cache")
-        return os.path.join(base, f"{self._namespace}.hydrated")
-
-    def _newest_shard_mtime(self):
-        shards = self._list_shards()
-        return os.path.getmtime(shards[-1]) if shards else 0.0
-
-    def _clear_marker_for_test(self):
-        if os.path.exists(self._marker_path):
-            os.remove(self._marker_path)
+    # ----------------------------------------------------------------- #
+    # hydrate / sync
+    # ----------------------------------------------------------------- #
 
     def hydrate(self):
+        """Reconcile volume mirror -> container.
+
+        Copy files missing or newer in the container. Returns the number of
+        files copied. No-op (0) if unavailable.
+        """
         if not self.available:
-            return False
-        return self._guard(self._do_hydrate, False)
+            return 0
+        return self._guard(self._do_hydrate, 0)
 
     def _do_hydrate(self):
-        shards = self._list_shards()
-        if not shards:
-            return False
-        newest = self._newest_shard_mtime()
-        if os.path.exists(self._marker_path) and os.path.getmtime(self._marker_path) >= newest:
-            log.debug("VolumeCache: cache already hydrated, skipping")
-            return False
-        extracted = False
-        # Use the tar data filter for defense-in-depth where the runtime provides
-        # it (Python 3.12+, and 3.10.12+/3.11.4+ backports) without requiring it --
-        # the >=3.10 floor may predate the API. _is_safe_member is the primary guard.
-        extract_kwargs = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
-        for shard in shards:                       # oldest -> newest (last wins)
-            with tarfile.open(shard) as tar:
-                safe = [m for m in tar.getmembers() if self._is_safe_member(m)]
-                tar.extractall(path="/", members=safe, **extract_kwargs)
-                extracted = extracted or bool(safe)
-        os.makedirs(os.path.dirname(self._marker_path), exist_ok=True)
-        with open(self._marker_path, "w") as fh:
-            fh.write(str(newest))
-        os.utime(self._marker_path, (newest, newest))
-        self._baseline = time.time() - _BASELINE_EPSILON_SECONDS
-        if extracted:
-            log.info(f"VolumeCache: hydrated from {len(shards)} shard(s)")
-        return extracted
+        root = self._mirror_root
+        if not os.path.isdir(root):
+            return 0
+        copied = 0
+        for m in self._iter_files(root):
+            dst = os.path.join("/", os.path.relpath(m, root))
+            if not self._is_safe_dest(dst):
+                continue  # skip anything that would escape configured dirs
+            if self._needs_copy(m, dst) and self._copy_file(m, dst):
+                copied += 1
+        if copied:
+            log.info(f"VolumeCache: hydrated {copied} file(s) from {root}")
+        return copied
 
-    def _is_safe_member(self, member):
-        if not (member.isfile() or member.isdir()):
-            return False                              # reject symlink/hardlink/device/fifo
-        target = os.path.realpath(os.path.join("/", member.name))
-        return any(
-            target == d or target.startswith(d + os.sep)
-            for d in self._dirs
-        )
+    def sync(self, *, background=True):
+        """Reconcile container -> volume mirror.
 
-    @contextlib.contextmanager
-    def warm(self):
-        self.hydrate()
-        try:
-            yield self
-        finally:
-            self.sync()
-
-
-_ACTIVE_CACHE = None
-_SYNCED = False
-_sync_lock = threading.Lock()
-
-_ENABLED_VALUES = ("1", "true", "yes", "on")
-
-
-def _discover_model_dirs():
-    dirs = [os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface")]
-    for var in ("HF_HUB_CACHE", "TORCH_HOME"):
-        if os.environ.get(var):
-            dirs.append(os.environ[var])
-    extra = os.environ.get("RUNPOD_CACHE_DIRS")
-    if extra:
-        dirs.extend(p for p in extra.split(os.pathsep) if p)
-    return list(dict.fromkeys(dirs))                 # de-dupe, preserve order
-
-
-def build_default_cache():
-    """Build the built-in VolumeCache when opt-in is enabled, else None.
-
-    The built-in is OFF by default. It activates only when RUNPOD_VOLUME_CACHE is
-    set to a truthy value ("1"/"true"/"yes"/"on") AND a network volume is mounted.
-
-    Known operational limitations (accepted, not bugs):
-    1. Cold-scale write amplification: when N workers cold-start simultaneously,
-       each misses the still-empty cache and each writes its own full-size shard
-       on first sync. Bounded by retention (RUNPOD_VOLUME_CACHE_MAX_GB).
-    2. Lost first warm on aggressive recycle: sync() runs in a daemon thread
-       dispatched after the job response; a large-model sync may not finish
-       before the worker is recycled, killing the thread mid-write. The partial
-       shard is cleaned up on the next sync from this worker, and the warm is
-       simply retried then.
-    """
-    if os.environ.get("RUNPOD_VOLUME_CACHE", "").lower() not in _ENABLED_VALUES:
-        return None
-    try:
-        max_gb = float(os.environ.get("RUNPOD_VOLUME_CACHE_MAX_GB", "50"))
-        vc = VolumeCache(_discover_model_dirs(), max_size_gb=max_gb)
-    except Exception as exc:  # never let cache setup crash worker startup
-        log.warn(f"VolumeCache: failed to build default cache, disabling: {exc}")
-        return None
-    return vc if vc.available else None
-
-
-def set_active_cache(vc):
-    global _ACTIVE_CACHE
-    _ACTIVE_CACHE = vc
-
-
-def sync_after_job():
-    global _SYNCED
-    try:
-        if _ACTIVE_CACHE is None:
+        Copy files missing or newer on the volume. When ``background=True``
+        (default), run on a daemon thread and return immediately; a
+        process-exit hook joins outstanding syncs so short-lived processes
+        still complete. When False, run inline and return when done.
+        """
+        if not self.available:
             return
-        with _sync_lock:
-            if _SYNCED:
-                return
-            _SYNCED = True
-        threading.Thread(target=_ACTIVE_CACHE.sync, daemon=True).start()
-    except Exception as exc:  # cache glue must never affect job outcome
-        log.warn(f"VolumeCache: sync_after_job failed to dispatch: {exc}")
+        if background:
+            t = threading.Thread(target=lambda: self._guard(self._do_sync, 0), daemon=True)
+            _register_pending(t)
+            t.start()
+        else:
+            self._guard(self._do_sync, 0)
+
+    def _do_sync(self):
+        os.makedirs(self._mirror_root, exist_ok=True)
+        copied = 0
+        for root in self._dirs:
+            if not os.path.isdir(root):
+                continue
+            for f in self._iter_files(root):
+                dst = os.path.join(self._mirror_root, os.path.relpath(f, "/"))
+                if self._needs_copy(f, dst) and self._copy_file(f, dst):
+                    copied += 1
+        if copied:
+            log.info(f"VolumeCache: synced {copied} file(s) to {self._mirror_root}")
+        return copied
+
+    # ----------------------------------------------------------------- #
+    # context manager
+    # ----------------------------------------------------------------- #
+
+    def __enter__(self):
+        self.hydrate()
+        return self
+
+    def __exit__(self, *exc):
+        self.sync(background=True)
+        return None
 
 
-def reset_builtin_state_for_test():
-    global _ACTIVE_CACHE, _SYNCED
-    _ACTIVE_CACHE = None
-    _SYNCED = False
+# ----------------------------------------------------------------------- #
+# background sync completion
+# ----------------------------------------------------------------------- #
+
+_pending_syncs = []
+_atexit_registered = False
+
+
+def _register_pending(thread):
+    global _atexit_registered
+    _pending_syncs[:] = [t for t in _pending_syncs if t.is_alive()]
+    _pending_syncs.append(thread)
+    if not _atexit_registered:
+        atexit.register(_join_pending_syncs)
+        _atexit_registered = True
+
+
+def _join_pending_syncs():
+    for t in list(_pending_syncs):
+        try:
+            t.join()
+        except Exception:
+            pass
+    _pending_syncs.clear()
+
+
+def _reset_pending_for_test():
+    _pending_syncs.clear()

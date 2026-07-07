@@ -15,7 +15,6 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
 from ..utils import rp_debugger
-from ..utils.rp_volume_cache import sync_after_job
 from .rp_handler import is_generator
 from .rp_http import send_result, stream_result
 from .rp_tips import check_return_size
@@ -283,8 +282,6 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         if run_result.get("output") == {}:
             run_result.pop("output")
 
-        sync_after_job()  # fire-and-forget cache warm on any successful output
-
         check_return_size(run_result)  # Checks the size of the return body.
 
     except Exception as err:
@@ -331,8 +328,6 @@ async def run_job_generator(
             for output_partial in job_output:
                 log.debug(f"Generator output: {output_partial}", job["id"])
                 yield {"output": output_partial}
-
-        sync_after_job()  # fire-and-forget cache warm on successful generator completion
 
     except Exception as err:
         log.error(err, job["id"])
