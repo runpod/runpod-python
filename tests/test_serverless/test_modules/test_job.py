@@ -15,6 +15,17 @@ from runpod.serverless.modules import rp_job
 class TestJob(IsolatedAsyncioTestCase):
     """Tests for the get_job function."""
 
+    async def test_run_job_preserves_empty_dict_output(self):
+        """Empty dict handler results are valid outputs."""
+
+        def handler(job):
+            del job
+            return {}
+
+        result = await rp_job.run_job(handler, {"id": "test-job", "input": {}})
+
+        self.assertEqual(result, {"output": {}})
+
     async def test_get_job_200(self):
         """Tests the get_job function with a valid 200 response."""
         # Mock the 200 response

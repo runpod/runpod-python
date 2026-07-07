@@ -198,6 +198,19 @@ class TestFastAPI(unittest.TestCase):
                 "output": {"result": "success"},
             }
 
+            # Empty dict outputs should be returned as valid results rather
+            # than raising KeyError while building the runsync response.
+            empty_handler = Mock(return_value={})
+            empty_worker_api = rp_fastapi.WorkerAPI({"handler": empty_handler})
+            empty_runsync_return = asyncio.run(
+                empty_worker_api._sim_runsync(default_input_object)
+            )
+            assert empty_runsync_return == {
+                "id": "test-123",
+                "status": "COMPLETED",
+                "output": {},
+            }
+
             # Test with generator handler
             def generator_handler(job):
                 del job
