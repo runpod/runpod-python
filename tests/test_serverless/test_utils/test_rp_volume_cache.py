@@ -1,5 +1,6 @@
 import os
 import shutil
+import threading
 import time
 
 import pytest
@@ -353,3 +354,40 @@ def test_volumecache_exported_from_serverless():
 
     assert sls.VolumeCache is sls_utils.VolumeCache
     assert "VolumeCache" in sls.__all__
+
+
+# --------------------------------------------------------------------------- #
+# v2 review fixes
+# --------------------------------------------------------------------------- #
+
+
+def test_iter_files_skips_inflight_temp_files(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    (cache / "model.bin").write_text("real")
+    (cache / "model.bin.12345.67890.rpvc.tmp").write_text("partial")
+    copied = vc._do_sync()
+    assert copied == 1  # only model.bin, not the .rpvc.tmp file
+    tmp_mirror = os.path.join(
+        vc._mirror_root, os.path.relpath(str(cache / "model.bin.12345.67890.rpvc.tmp"), "/")
+    )
+    assert not os.path.exists(tmp_mirror)
+
+
+def test_join_pending_syncs_bounded_by_timeout(monkeypatch):
+    vcmod._reset_pending_for_test()
+    monkeypatch.setattr(vcmod, "_JOIN_TIMEOUT_SECONDS", 0.05)
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow():
+        started.set()
+        release.wait(5)
+
+    t = threading.Thread(target=slow, daemon=True)
+    vcmod._register_pending(t)
+    t.start()
+    started.wait(1)
+    # Must return promptly despite the thread still running (bounded join).
+    vcmod._join_pending_syncs()
+    release.set()
+    vcmod._reset_pending_for_test()
