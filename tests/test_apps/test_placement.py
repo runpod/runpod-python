@@ -23,7 +23,10 @@ def _spec(name="r", gpu=None, cpu=None, datacenter=None):
 
 def _stock(gpu=None, cpu=None):
     stock = StockMap(api=object())
-    stock._gpu = gpu or {}
+    # task specs query the pod plane; mirror into both tables so the
+    # fixtures stay hardware-shaped rather than plane-shaped
+    stock._gpu = dict(gpu or {})
+    stock._gpu_pod = dict(gpu or {})
     stock._cpu = cpu or {}
     return stock
 

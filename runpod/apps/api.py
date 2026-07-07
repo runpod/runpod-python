@@ -176,9 +176,17 @@ class AppsApiClient:
     # -- stock (placement) --
 
     async def gpu_stock_status(
-        self, gpu_id: str, data_center_id: str, gpu_count: int = 1
+        self,
+        gpu_id: str,
+        data_center_id: str,
+        gpu_count: int = 1,
+        pods: bool = False,
     ) -> Optional[str]:
-        """stock signal for a gpu device in one datacenter."""
+        """stock signal for a gpu device in one datacenter.
+
+        the serverless plane (includeAiApi) and the pod plane have
+        different availability; pods=True queries pod stock (tasks).
+        """
         query = """
         query GpuStock($gpuTypesInput: GpuTypeFilter, $lowestPriceInput: GpuLowestPriceInput) {
             gpuTypes(input: $gpuTypesInput) {
@@ -194,7 +202,7 @@ class AppsApiClient:
                     "dataCenterId": data_center_id,
                     "gpuCount": gpu_count,
                     "secureCloud": True,
-                    "includeAiApi": True,
+                    "includeAiApi": not pods,
                 },
             },
         )

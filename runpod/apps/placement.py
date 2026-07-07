@@ -35,20 +35,25 @@ def _hardware_keys(spec) -> List[Tuple[str, str]]:
     """(kind, id) stock lookup keys for a resource's hardware.
 
     gpu entries may be pool ids or device names; pools expand to their
-    device names since the stock api takes devices.
+    device names since the stock api takes devices. tasks run on pods,
+    whose gpu availability differs from the serverless plane, so their
+    keys carry a distinct kind and query pod stock.
     """
+    from .spec import ResourceKind
+
     if spec.is_cpu:
         return [("cpu", c) for c in spec.cpu or []]
+    gpu_kind = "gpu-pod" if spec.kind is ResourceKind.TASK else "gpu"
     gpu = spec.gpu
     if not gpu or any(str(g).lower() == "any" for g in gpu):
-        return [("gpu", "*")]
+        return [(gpu_kind, "*")]
     keys: List[Tuple[str, str]] = []
     for entry in gpu:
         try:
             for device in GpuGroup(str(entry)).device_names():
-                keys.append(("gpu", device))
+                keys.append((gpu_kind, device))
         except ValueError:
-            keys.append(("gpu", str(entry)))
+            keys.append((gpu_kind, str(entry)))
     return keys
 
 
@@ -58,8 +63,10 @@ class StockMap:
     def __init__(self, api=None):
         self._api = api
         self._gpu: Dict[Tuple[str, str], int] = {}
+        self._gpu_pod: Dict[Tuple[str, str], int] = {}
         self._cpu: Dict[Tuple[str, str], int] = {}
         self._fetched_gpu: Set[str] = set()
+        self._fetched_gpu_pod: Set[str] = set()
         self._fetched_cpu: Set[str] = set()
 
     async def _client(self):
@@ -71,10 +78,18 @@ class StockMap:
 
     async def fetch(self, keys: Iterable[Tuple[str, str]]) -> None:
         """populate stock for the given hardware keys across all DCs."""
+        keys = list(keys)
         gpu_ids = {
             k[1]
             for k in keys
             if k[0] == "gpu" and k[1] != "*" and k[1] not in self._fetched_gpu
+        }
+        gpu_pod_ids = {
+            k[1]
+            for k in keys
+            if k[0] == "gpu-pod"
+            and k[1] != "*"
+            and k[1] not in self._fetched_gpu_pod
         }
         cpu_ids = {
             k[1] for k in keys if k[0] == "cpu" and k[1] not in self._fetched_cpu
@@ -84,7 +99,11 @@ class StockMap:
         for gpu_id in gpu_ids:
             self._fetched_gpu.add(gpu_id)
             for dc in DataCenter.all():
-                jobs.append(self._fetch_gpu(client, gpu_id, dc.value))
+                jobs.append(self._fetch_gpu(client, gpu_id, dc.value, False))
+        for gpu_id in gpu_pod_ids:
+            self._fetched_gpu_pod.add(gpu_id)
+            for dc in DataCenter.all():
+                jobs.append(self._fetch_gpu(client, gpu_id, dc.value, True))
         for cpu_id in cpu_ids:
             self._fetched_cpu.add(cpu_id)
             for dc in DataCenter.all():
@@ -92,13 +111,16 @@ class StockMap:
         if jobs:
             await asyncio.gather(*jobs)
 
-    async def _fetch_gpu(self, client, gpu_id: str, dc: str) -> None:
+    async def _fetch_gpu(
+        self, client, gpu_id: str, dc: str, pods: bool
+    ) -> None:
         try:
-            status = await client.gpu_stock_status(gpu_id, dc)
+            status = await client.gpu_stock_status(gpu_id, dc, pods=pods)
         except Exception:  # noqa: BLE001 - stock is advisory
             log.debug("gpu stock query failed for %s@%s", gpu_id, dc, exc_info=True)
             status = None
-        self._gpu[(gpu_id, dc)] = _score(status)
+        target = self._gpu_pod if pods else self._gpu
+        target[(gpu_id, dc)] = _score(status)
 
     async def _fetch_cpu(self, client, instance_id: str, dc: str) -> None:
         try:
@@ -110,14 +132,13 @@ class StockMap:
 
     def score(self, key: Tuple[str, str], dc: str) -> int:
         kind, hw = key
-        if kind == "gpu":
+        if kind in ("gpu", "gpu-pod"):
+            table = self._gpu_pod if kind == "gpu-pod" else self._gpu
             if hw == "*":
                 # any gpu: best signal among fetched devices, else assume ok
-                scores = [
-                    s for (g, d), s in self._gpu.items() if d == dc
-                ]
+                scores = [s for (g, d), s in table.items() if d == dc]
                 return max(scores, default=1)
-            return self._gpu.get((hw, dc), 0)
+            return table.get((hw, dc), 0)
         return self._cpu.get((hw, dc), 0)
 
 
