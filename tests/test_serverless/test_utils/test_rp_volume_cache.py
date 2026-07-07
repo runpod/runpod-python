@@ -308,6 +308,15 @@ def test_volumecache_exported_from_serverless():
     assert "VolumeCache" in sls.__all__
 
 
+def test_build_default_cache_off_by_default(tmp_path, monkeypatch):
+    # Opt-in: with RUNPOD_VOLUME_CACHE unset, the built-in is disabled even
+    # when a volume would be available.
+    monkeypatch.delenv("RUNPOD_VOLUME_CACHE", raising=False)
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
+    monkeypatch.setattr(vcmod.VolumeCache, "available", property(lambda self: True))
+    assert vcmod.build_default_cache() is None
+
+
 def test_build_default_cache_disabled_by_env(tmp_path, monkeypatch):
     monkeypatch.setenv("RUNPOD_VOLUME_CACHE", "0")
     monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
@@ -315,7 +324,7 @@ def test_build_default_cache_disabled_by_env(tmp_path, monkeypatch):
 
 
 def test_build_default_cache_none_when_no_volume(tmp_path, monkeypatch):
-    monkeypatch.delenv("RUNPOD_VOLUME_CACHE", raising=False)
+    monkeypatch.setenv("RUNPOD_VOLUME_CACHE", "1")
     monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
     monkeypatch.setattr(vcmod.VolumeCache, "available", property(lambda self: False))
     assert vcmod.build_default_cache() is None
@@ -369,7 +378,7 @@ def test_run_worker_hydrates_registered_cache(monkeypatch):
 
 def test_build_default_cache_survives_bad_max_gb(monkeypatch):
     vcmod.reset_builtin_state_for_test()
-    monkeypatch.delenv("RUNPOD_VOLUME_CACHE", raising=False)
+    monkeypatch.setenv("RUNPOD_VOLUME_CACHE", "1")
     monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
     monkeypatch.setenv("RUNPOD_VOLUME_CACHE_MAX_GB", "not-a-number")
     assert vcmod.build_default_cache() is None   # degrades, does not raise
@@ -399,7 +408,7 @@ def test_two_workers_produce_independently_hydratable_shards(tmp_path):
 
 def test_build_default_cache_returns_instance_when_available(monkeypatch):
     vcmod.reset_builtin_state_for_test()
-    monkeypatch.delenv("RUNPOD_VOLUME_CACHE", raising=False)
+    monkeypatch.setenv("RUNPOD_VOLUME_CACHE", "1")
     monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep1")
     monkeypatch.setattr(vcmod.VolumeCache, "available", property(lambda self: True))
     vc = vcmod.build_default_cache()

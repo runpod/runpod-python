@@ -149,6 +149,26 @@ runpod.serverless.start({"handler": handler})
 
 See [Worker Fitness Checks](https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker_fitness_checks.md) documentation for more examples and best practices.
 
+### Network-Volume Warm Cache
+
+When a network volume is attached, `VolumeCache` warms local directories (such as a model cache) across cold starts — restoring them on startup and syncing new files back — so a repeated multi-GB model download becomes a one-time cost per endpoint. It is opt-in and best-effort.
+
+```bash
+# Enable the built-in warm cache (requires a mounted network volume)
+RUNPOD_VOLUME_CACHE=1
+```
+
+Or use it explicitly around a model load:
+
+```python
+from runpod.serverless import VolumeCache
+
+with VolumeCache(dirs=["/root/.cache/huggingface"]).warm():
+    model = load_model()
+```
+
+See [Network-Volume Warm Cache](https://github.com/runpod/runpod-python/blob/main/docs/serverless/volume_cache.md) documentation for configuration and details.
+
 ## 📚 | API Language Library (GraphQL Wrapper)
 
 When interacting with the Runpod API you can use this library to make requests to the API.
