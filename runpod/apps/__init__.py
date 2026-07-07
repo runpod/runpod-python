@@ -26,6 +26,7 @@ from .markers import delete, get, init, patch, post, put
 from .schedule import schedule
 from .spec import ResourceKind, ResourceSpec, RouteSpec
 from .stubs import Api, Queue
+from .model import Model
 from .secret import Secret
 from .volume import Volume
 
@@ -38,6 +39,7 @@ __all__ = [
     "DataCenter",
     "EndpointNotFound",
     "FunctionHandle",
+    "Model",
     "Queue",
     "Secret",
     "Volume",

@@ -255,6 +255,10 @@ class DevSession:
                 spec.registry_auth, api=self.api
             )
             payload["template"]["containerRegistryAuthId"] = auth_id
+        if spec.model:
+            from .model import model_reference
+
+            payload["modelReferences"] = [model_reference(spec.model)]
         if not spec.volume:
             return
         if self._volume_resolver is None:

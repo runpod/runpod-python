@@ -376,6 +376,12 @@ async def reconcile_endpoints(
         )
         if auth_id:
             payload["template"]["containerRegistryAuthId"] = auth_id
+        if handle.spec.model:
+            from .model import model_reference
+
+            payload["modelReferences"] = [
+                model_reference(handle.spec.model)
+            ]
         if name in existing:
             payload["id"] = existing[name]
         result = await client.save_endpoint(payload)

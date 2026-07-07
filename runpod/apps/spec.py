@@ -116,6 +116,7 @@ class ResourceSpec:
     datacenter: Optional[List[str]] = None
     image: Optional[str] = None
     registry_auth: Optional[str] = None
+    model: Optional[Any] = None
     schedule: Optional[str] = None
     routes: List[RouteSpec] = field(default_factory=list)
     asgi_factory: Optional[str] = None
@@ -164,6 +165,10 @@ class ResourceSpec:
             data["imageName"] = self.image
         if self.registry_auth:
             data["registryAuth"] = self.registry_auth
+        if self.model:
+            from .model import model_reference
+
+            data["model"] = model_reference(self.model)
         if self.schedule:
             data["schedule"] = self.schedule
         if self.routes:

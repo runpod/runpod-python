@@ -34,6 +34,7 @@ from .apps import (
     App,
     DataCenter,
     EndpointNotFound,
+    Model,
     Queue,
     Secret,
     Volume,
