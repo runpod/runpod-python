@@ -1,5 +1,5 @@
 aiohttp[speedups] >= 3.14.1
-aiohttp-retry >= 2.8.3
+aiohttp-retry >= 2.9.1
 
 backoff >= 2.2.1
 boto3 >= 1.43.40
@@ -15,6 +15,6 @@ inquirerpy == 0.3.4
 requests >= 2.31.0
 tomli >= 2.4.1
 tomlkit >= 0.15.0
-tqdm-loggable >= 0.2
+tqdm-loggable >= 0.4.1
 urllib3 >= 1.26.6
-watchdog >= 3.0.0
+watchdog >= 6.0.0
