@@ -502,6 +502,84 @@ def app_delete(app_name, yes):
 
 
 @cli.group()
+def secret():
+    """Manage platform secrets (encrypted env values)."""
+
+
+@secret.command(name="add")
+@click.argument("name")
+@click.option("--value", default=None, help="Secret value (prompted if omitted).")
+@click.option("--description", default="", help="Optional description.")
+def secret_add(name, value, description):
+    """Create a secret. Reference it with runpod.Secret(NAME)."""
+    from runpod.apps.api import AppsApiClient
+    from runpod.rp_cli import console as ui
+
+    if value is None:
+        value = click.prompt("value", hide_input=True)
+
+    try:
+        asyncio.run(AppsApiClient().create_secret(name, value, description))
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+    ui.success(
+        f"secret [white]{name}[/white] created · "
+        f"[dim]use runpod.Secret(\"{name}\")[/dim]"
+    )
+
+
+@secret.command(name="list")
+def secret_list():
+    """List secret names (values are never shown)."""
+    from runpod.apps.api import AppsApiClient
+    from runpod.rp_cli import console as ui
+
+    try:
+        secrets = asyncio.run(AppsApiClient().list_secrets())
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+
+    if not secrets:
+        ui.console.print("\n  no secrets · run [white]rp secret add <name>[/white]\n")
+        return
+    ui.console.print()
+    width = max(len(s["name"]) for s in secrets)
+    for entry in sorted(secrets, key=lambda s: s["name"]):
+        description = entry.get("description") or ""
+        ui.console.print(
+            f"  [white]{entry['name']:<{width}}[/white]  [dim]{description}[/dim]"
+        )
+    ui.console.print()
+
+
+@secret.command(name="rm")
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
+def secret_rm(name, yes):
+    """Delete a secret by name."""
+    from runpod.apps.api import AppsApiClient
+    from runpod.rp_cli import console as ui
+
+    async def _rm():
+        client = AppsApiClient()
+        secrets = await client.list_secrets()
+        match = next((s for s in secrets if s["name"] == name), None)
+        if match is None:
+            _fail(f"no secret named '{name}'")
+        await client.delete_secret(match["id"])
+
+    if not yes:
+        click.confirm(f"delete secret '{name}'?", abort=True)
+    try:
+        asyncio.run(_rm())
+    except click.ClickException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+        raise click.ClickException(str(exc)) from exc
+    ui.success(f"deleted secret [white]{name}[/white]")
+
+
+@cli.group()
 def env():
     """Manage app environments."""
 

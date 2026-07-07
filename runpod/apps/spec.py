@@ -112,7 +112,7 @@ class ResourceSpec:
     dependencies: Optional[List[str]] = None
     system_dependencies: Optional[List[str]] = None
     volume: Optional[Any] = None
-    env: Optional[Dict[str, str]] = None
+    env: Optional[Dict[str, Any]] = None
     datacenter: Optional[List[str]] = None
     image: Optional[str] = None
     schedule: Optional[str] = None
@@ -154,7 +154,9 @@ class ResourceSpec:
                 self.volume, "name", None
             ) or str(self.volume)
         if self.env:
-            data["env"] = self.env
+            from .secret import render_env
+
+            data["env"] = render_env(self.env)
         if self.datacenter:
             data["locations"] = ",".join(self.datacenter)
         if self.image:

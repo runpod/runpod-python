@@ -89,7 +89,7 @@ class App:
         dependencies: Optional[List[str]] = None,
         system_dependencies: Optional[List[str]] = None,
         volume: Optional[Any] = None,
-        env: Optional[Dict[str, str]] = None,
+        env: Optional[Dict[str, Any]] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
         image: Optional[str] = None,
     ) -> Callable[[Callable], FunctionHandle]:
@@ -132,7 +132,7 @@ class App:
         dependencies: Optional[List[str]] = None,
         system_dependencies: Optional[List[str]] = None,
         volume: Optional[Any] = None,
-        env: Optional[Dict[str, str]] = None,
+        env: Optional[Dict[str, Any]] = None,
         image: Optional[str] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
     ) -> Callable[[Callable], FunctionHandle]:
@@ -175,7 +175,7 @@ class App:
         dependencies: Optional[List[str]] = None,
         system_dependencies: Optional[List[str]] = None,
         volume: Optional[Any] = None,
-        env: Optional[Dict[str, str]] = None,
+        env: Optional[Dict[str, Any]] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
         image: Optional[str] = None,
     ) -> Callable[[Any], ApiHandle]:

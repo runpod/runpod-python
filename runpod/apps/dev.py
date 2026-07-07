@@ -98,6 +98,12 @@ def _bootstrap_docker_args() -> str:
     return shell_launcher("RUNPOD_BOOTSTRAP_B64", "/bootstrap.py")
 
 
+def _render_env(env):
+    from .secret import render_env
+
+    return render_env(env)
+
+
 def _client_api_key() -> str:
     from .targets import _api_key
 
@@ -157,7 +163,10 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
                     else []
                 ),
                 {"key": "RUNPOD_DEV_APP", "value": app.name},
-                *({"key": k, "value": v} for k, v in (spec.env or {}).items()),
+                *(
+                    {"key": k, "value": v}
+                    for k, v in _render_env(spec.env).items()
+                ),
             ],
         },
     }
@@ -267,6 +276,15 @@ class DevSession:
         """provision (or adopt) a live endpoint per queue/api resource and
         register the targets on each app."""
         self._emit("session_starting")
+        from .secret import secret_names, validate_secrets
+
+        referenced = [
+            name
+            for app in self.apps
+            for handle in app.resources.values()
+            for name in secret_names(handle.spec.env)
+        ]
+        await validate_secrets(referenced, api=self.api)
         for app in self.apps:
             # task targets read the sink off the app at resolve time
             app._dev_events = self.events

@@ -268,6 +268,48 @@ class AppsApiClient:
         )
         return data["createNetworkVolume"]
 
+    # -- secrets --
+
+    async def list_secrets(self) -> List[Dict[str, Any]]:
+        query = """
+        query mySecrets {
+            myself {
+                secrets { id name description createdAt }
+            }
+        }
+        """
+        data = await self._execute(query)
+        return data["myself"].get("secrets") or []
+
+    async def create_secret(
+        self, name: str, value: str, description: str = ""
+    ) -> Dict[str, Any]:
+        mutation = """
+        mutation secretCreate($input: SecretCreateInput!) {
+            secretCreate(input: $input) { id name }
+        }
+        """
+        data = await self._execute(
+            mutation,
+            {
+                "input": {
+                    "name": name,
+                    "value": value,
+                    "description": description,
+                }
+            },
+        )
+        return data["secretCreate"]
+
+    async def delete_secret(self, secret_id: str) -> bool:
+        mutation = """
+        mutation secretDelete($id: ID!) {
+            secretDelete(id: $id)
+        }
+        """
+        data = await self._execute(mutation, {"id": secret_id})
+        return "secretDelete" in data
+
     # -- app / environment management --
 
     async def list_apps(self) -> List[Dict[str, Any]]:

@@ -246,11 +246,13 @@ def _deployed_endpoint_input(
     from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
     from .images import image_for_spec
 
+    from .secret import render_env
+
     template_env = {
         "FLASH_RESOURCE_NAME": spec.name,
         # version-triggering: a new build recreates all workers
         "RUNPOD_BUILD_ID": build_id,
-        **(spec.env or {}),
+        **render_env(spec.env),
     }
 
     # cross-resource calls from inside a worker go through the sentinel,
@@ -431,6 +433,17 @@ async def deploy_app(
     """run the full deploy pipeline for one app."""
     client = api or AppsApiClient()
     env_name = env_name or app.env
+
+    # fail fast on unresolvable secret references (workers would boot
+    # with the literal template string otherwise)
+    from .secret import secret_names, validate_secrets
+
+    referenced = [
+        name
+        for handle in app.resources.values()
+        for name in secret_names(handle.spec.env)
+    ]
+    await validate_secrets(referenced, api=client)
 
     _phase(events, "vendor", f"python {python_version}")
     build: BuildResult = build_environment(

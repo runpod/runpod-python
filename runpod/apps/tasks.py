@@ -89,10 +89,12 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
         datetime.now(timezone.utc) + DEFAULT_MAX_LIFETIME
     ).isoformat()
 
+    from .secret import render_env
+
     env = {
         "RUNPOD_TASK_TOKEN": token,
         "RUNPOD_TASK_PORT": str(TASK_PORT),
-        **(spec.env or {}),
+        **render_env(spec.env),
     }
 
     from .images import image_for_spec, local_python_version
