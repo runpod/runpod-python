@@ -332,6 +332,8 @@ async def run_job_generator(
                 log.debug(f"Generator output: {output_partial}", job["id"])
                 yield {"output": output_partial}
 
+        sync_after_job()  # fire-and-forget cache warm on successful generator completion
+
     except Exception as err:
         log.error(err, job["id"])
         yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
