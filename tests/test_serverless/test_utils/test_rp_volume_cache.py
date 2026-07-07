@@ -2,7 +2,9 @@ import os
 import tarfile
 import time
 import pytest
-from runpod.serverless.utils.rp_volume_cache import VolumeCache
+import runpod.serverless.utils.rp_volume_cache as vcmod
+
+VolumeCache = vcmod.VolumeCache
 
 
 def test_unavailable_when_volume_dir_missing(tmp_path):
@@ -24,6 +26,21 @@ def test_unavailable_without_namespace(tmp_path, monkeypatch):
     vol.mkdir()
     vc = VolumeCache([str(tmp_path / "cache")], volume_path=str(vol))
     assert vc.available is False
+
+
+@pytest.mark.parametrize("bad_namespace", ["../evil", "a/b", "/etc", ".."])
+def test_namespace_rejects_unsafe_values(tmp_path, bad_namespace):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    with pytest.raises(ValueError):
+        VolumeCache([str(tmp_path / "cache")], namespace=bad_namespace, volume_path=str(vol))
+
+
+def test_namespace_accepts_normal_value(tmp_path):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol))
+    assert vc._namespace == "ep1"
 
 
 def test_namespace_defaults_to_endpoint_id(tmp_path, monkeypatch):
@@ -204,6 +221,32 @@ def test_retention_prunes_oldest_shards_past_cap(tmp_path):
     assert total <= cap_bytes
 
 
+def test_retention_tolerates_shard_removed_concurrently(tmp_path, monkeypatch):
+    # A concurrent worker prunes/removes a shard between _list_shards() and the
+    # getsize() lookups; the size lookup must degrade to 0 instead of raising.
+    cache = tmp_path / "cache"; cache.mkdir()
+    vol = tmp_path / "volume"; vol.mkdir()
+    cap_bytes = 1000
+    vc = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol),
+                     max_size_gb=cap_bytes / (1024 ** 3))
+    for i in range(3):
+        vc._baseline = time.time() - 5
+        (cache / f"f{i}.bin").write_text("x" * 800)
+        vc.sync()
+        time.sleep(0.01)
+
+    real_getsize = os.path.getsize
+
+    def flaky_getsize(path):
+        if str(path).endswith(".tar") and "f0" not in str(path):
+            raise FileNotFoundError(path)
+        return real_getsize(path)
+
+    monkeypatch.setattr(os.path, "getsize", flaky_getsize)
+    # Should not raise despite getsize() failures on some shards.
+    vc._enforce_retention()
+
+
 def test_no_retention_when_cap_is_none(tmp_path):
     vc, cache, vol = _mk_cache_with_volume(tmp_path)
     for i in range(3):
@@ -248,20 +291,21 @@ def test_warm_syncs_even_on_exception(tmp_path):
     calls = []
     vc.hydrate = lambda: calls.append("hydrate")
     vc.sync = lambda: calls.append("sync")
-    with pytest.raises(ValueError):
+    raised = False
+    try:
         with vc.warm():
             raise ValueError("boom")
+    except ValueError:
+        raised = True
+    assert raised
     assert calls == ["hydrate", "sync"]
 
 
 def test_volumecache_exported_from_serverless():
-    import runpod.serverless as sls
-    import runpod.serverless.utils as utils
-    assert sls.VolumeCache is utils.VolumeCache
+    from runpod import serverless as sls
+    from runpod.serverless import utils as sls_utils
+    assert sls.VolumeCache is sls_utils.VolumeCache
     assert "VolumeCache" in sls.__all__
-
-
-import runpod.serverless.utils.rp_volume_cache as vcmod
 
 
 def test_build_default_cache_disabled_by_env(tmp_path, monkeypatch):
