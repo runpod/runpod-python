@@ -17,8 +17,33 @@ _BASELINE_EPSILON_SECONDS = 2.0  # tolerate coarse (1s) network-filesystem mtime
 
 
 class VolumeCache:
-    """Hydrate configured dirs from a network volume on cold start; sync their
-    delta back as a worker-owned tar shard. Best-effort and stdlib-only."""
+    """Warm-cache local directories across serverless workers via a network volume.
+
+    On cold start, ``hydrate()`` extracts previously-synced directories from a
+    mounted network volume into place; after use, ``sync()`` packs the newly
+    written files into a per-worker tar shard on the volume so the next cold
+    worker starts warm. Stdlib-only and best-effort: any failure degrades to a
+    cold worker and never raises into the caller.
+
+    Requires a network volume mounted at ``volume_path`` (default
+    ``/runpod-volume``) and a non-empty ``namespace`` (default
+    ``RUNPOD_ENDPOINT_ID``); otherwise ``available`` is False and all operations
+    are no-ops.
+
+    Args:
+        dirs: Local directories to cache (e.g. a model cache like ``HF_HOME``).
+        namespace: Isolation key for the on-volume shards. Must be a single safe
+            path component. Defaults to ``RUNPOD_ENDPOINT_ID``.
+        volume_path: Network-volume mount point. Defaults to ``/runpod-volume``.
+        max_size_gb: Prune oldest shards past this cap. ``None`` = no cap.
+        best_effort: When True (default), swallow and log errors instead of
+            raising.
+
+    Example:
+        >>> vc = VolumeCache(dirs=["/root/.cache/huggingface"])
+        >>> with vc.warm():           # hydrate on enter, sync delta on exit
+        ...     model = load_model()  # downloads land in the cached dir
+    """
 
     _EXCLUDE_SUBSTRINGS = (os.sep + "refs" + os.sep, os.sep + ".no_exist" + os.sep)
 
@@ -208,7 +233,7 @@ _ACTIVE_CACHE = None
 _SYNCED = False
 _sync_lock = threading.Lock()
 
-_DISABLED_VALUES = ("0", "false", "no")
+_ENABLED_VALUES = ("1", "true", "yes", "on")
 
 
 def _discover_model_dirs():
@@ -223,7 +248,10 @@ def _discover_model_dirs():
 
 
 def build_default_cache():
-    """Build the built-in VolumeCache from RUNPOD_* env vars, or None if disabled/unavailable.
+    """Build the built-in VolumeCache when opt-in is enabled, else None.
+
+    The built-in is OFF by default. It activates only when RUNPOD_VOLUME_CACHE is
+    set to a truthy value ("1"/"true"/"yes"/"on") AND a network volume is mounted.
 
     Known operational limitations (accepted, not bugs):
     1. Cold-scale write amplification: when N workers cold-start simultaneously,
@@ -235,7 +263,7 @@ def build_default_cache():
        shard is cleaned up on the next sync from this worker, and the warm is
        simply retried then.
     """
-    if os.environ.get("RUNPOD_VOLUME_CACHE", "1").lower() in _DISABLED_VALUES:
+    if os.environ.get("RUNPOD_VOLUME_CACHE", "").lower() not in _ENABLED_VALUES:
         return None
     try:
         max_gb = float(os.environ.get("RUNPOD_VOLUME_CACHE_MAX_GB", "50"))
