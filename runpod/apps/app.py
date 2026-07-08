@@ -22,10 +22,13 @@ from .errors import EndpointNotFound, InvalidResourceError
 from .gpu import GpuLike
 from .handles import ApiHandle, FunctionHandle
 from .spec import (
+    DEFAULT_SCALER_VALUE,
     ResourceKind,
     ResourceSpec,
     normalize_cpu,
+    normalize_cuda_version,
     normalize_gpu,
+    normalize_scaler_type,
     normalize_workers,
 )
 from .targets import InvocationTarget, PodTarget, SentinelTarget
@@ -94,12 +97,24 @@ class App:
         image: Optional[str] = None,
         registry_auth: Optional[str] = None,
         model: Optional[Any] = None,
+        max_concurrency: int = 1,
+        execution_timeout_ms: int = 0,
+        flashboot: bool = True,
+        scaler_type: Optional[str] = None,
+        scaler_value: int = DEFAULT_SCALER_VALUE,
+        min_cuda_version: Optional[str] = None,
+        accelerate_downloads: bool = True,
+        container_disk_gb: Optional[int] = None,
     ) -> Callable[[Callable], FunctionHandle]:
         """declare a queue-based serverless endpoint from a function.
 
         image selects a custom base image for the workers; the deployed
         code still arrives via the build artifact and is booted by the
         runtime bootstrap, so any image with a python3 binary works.
+
+        max_concurrency lets one worker process several jobs at once;
+        values above 1 only achieve real concurrency with async
+        functions. execution_timeout_ms caps a single job (0 = no cap).
         """
 
         def decorator(fn: Callable) -> FunctionHandle:
@@ -119,6 +134,14 @@ class App:
                 image=image,
                 registry_auth=registry_auth,
                 model=model,
+                max_concurrency=max_concurrency,
+                execution_timeout_ms=execution_timeout_ms,
+                flashboot=flashboot,
+                scaler_type=normalize_scaler_type(scaler_type),
+                scaler_value=scaler_value,
+                min_cuda_version=normalize_cuda_version(min_cuda_version),
+                accelerate_downloads=accelerate_downloads,
+                container_disk_gb=container_disk_gb,
             )
             handle = FunctionHandle(self, fn, spec)
             self._register(spec.name, handle)
@@ -141,6 +164,9 @@ class App:
         registry_auth: Optional[str] = None,
         model: Optional[Any] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
+        min_cuda_version: Optional[str] = None,
+        accelerate_downloads: bool = True,
+        container_disk_gb: Optional[int] = None,
     ) -> Callable[[Callable], FunctionHandle]:
         """declare ephemeral pod compute from a function.
 
@@ -164,6 +190,9 @@ class App:
                 registry_auth=registry_auth,
                 model=model,
                 datacenter=_datacenter_list(datacenter),
+                min_cuda_version=normalize_cuda_version(min_cuda_version),
+                accelerate_downloads=accelerate_downloads,
+                container_disk_gb=container_disk_gb,
             )
             handle = FunctionHandle(self, fn, spec)
             self._register(spec.name, handle)
@@ -188,6 +217,13 @@ class App:
         image: Optional[str] = None,
         registry_auth: Optional[str] = None,
         model: Optional[Any] = None,
+        execution_timeout_ms: int = 0,
+        flashboot: bool = True,
+        scaler_type: Optional[str] = None,
+        scaler_value: int = DEFAULT_SCALER_VALUE,
+        min_cuda_version: Optional[str] = None,
+        accelerate_downloads: bool = True,
+        container_disk_gb: Optional[int] = None,
     ) -> Callable[[Any], ApiHandle]:
         """declare a load-balanced serverless endpoint.
 
@@ -228,6 +264,13 @@ class App:
                 image=image,
                 registry_auth=registry_auth,
                 model=model,
+                execution_timeout_ms=execution_timeout_ms,
+                flashboot=flashboot,
+                scaler_type=normalize_scaler_type(scaler_type),
+                scaler_value=scaler_value,
+                min_cuda_version=normalize_cuda_version(min_cuda_version),
+                accelerate_downloads=accelerate_downloads,
+                container_disk_gb=container_disk_gb,
             )
             handle = ApiHandle(self, target, spec)
             self._register(spec.name, handle)

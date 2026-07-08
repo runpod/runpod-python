@@ -15,9 +15,19 @@ from pathlib import Path
 import click
 
 
+# commands whose output would be polluted by (or that manage) the
+# update notice
+_UPDATE_CHECK_EXCLUDED = frozenset({"dev", "update"})
+
+
 @click.group()
-def cli():
+@click.pass_context
+def cli(ctx):
     """Runpod CLI: deploy and manage apps, endpoints, and pods."""
+    if ctx.invoked_subcommand not in _UPDATE_CHECK_EXCLUDED:
+        from runpod.rp_cli.update import start_background_check
+
+        start_background_check()
 
 
 def _fail(message: str) -> None:
@@ -33,6 +43,92 @@ def _app_source(found, project_root: Path) -> str:
         return str(Path(source).resolve().relative_to(project_root))
     except ValueError:
         return str(source)
+
+
+# ------------------------------------------------------------------ init
+
+
+@cli.command()
+@click.argument("project_name", required=False)
+@click.option("--force", "-f", is_flag=True, help="Overwrite existing files.")
+def init(project_name, force):
+    """Create a new app project (PROJECT_NAME, or '.' for the cwd)."""
+    from runpod.apps.init import create_project, detect_conflicts
+    from runpod.rp_cli import console as ui
+
+    if project_name is None or project_name == ".":
+        project_dir = Path.cwd()
+        name = project_dir.name
+    else:
+        project_dir = Path(project_name)
+        name = project_name
+
+    conflicts = detect_conflicts(project_dir)
+    if conflicts and not force:
+        listing = ", ".join(conflicts)
+        _fail(
+            f"{listing} already exist{'s' if len(conflicts) == 1 else ''} "
+            f"in {project_dir}. pass --force to overwrite."
+        )
+
+    written = create_project(project_dir, name, overwrite=force)
+    ui.success(
+        f"initialized [white]{name}[/white] "
+        f"[dim]{len(written)} files[/dim]"
+    )
+    ui.console.print()
+    if project_dir != Path.cwd():
+        ui.console.print(f"  [dim]cd {project_name}[/dim]")
+    ui.console.print("  [dim]rp login[/dim]")
+    ui.console.print("  [dim]rp dev main.py[/dim]")
+    ui.console.print()
+
+
+# ---------------------------------------------------------------- update
+
+
+@cli.command()
+@click.option(
+    "--version", "-V", "version_opt", default=None, help="Target version."
+)
+def update(version_opt):
+    """Update the runpod package to the latest (or a given) version."""
+    from runpod.rp_cli import console as ui
+    from runpod.rp_cli.update import (
+        compare_versions,
+        current_version,
+        fetch_pypi_metadata,
+        parse_version,
+        run_install,
+    )
+
+    current = current_version()
+    ui.console.print(f"current version: [white]{current}[/white]")
+
+    with ui.console.status("[dim]checking pypi ...[/dim]"):
+        try:
+            latest, releases = fetch_pypi_metadata()
+        except (ConnectionError, RuntimeError) as exc:
+            _fail(str(exc))
+
+    target = version_opt or latest
+    if target not in releases:
+        _fail(f"version '{target}' not found on pypi")
+    if current == target:
+        ui.console.print(f"already on [white]{target}[/white], nothing to do")
+        return
+    if (
+        current != "unknown"
+        and compare_versions(parse_version(target), parse_version(current)) < 0
+    ):
+        ui.warn(f"downgrading from {current} to {target}")
+
+    with ui.console.status(f"[dim]installing runpod {target} ...[/dim]"):
+        try:
+            run_install(target)
+        except Exception as exc:  # noqa: BLE001 - surface installer errors cleanly
+            _fail(str(exc))
+    ui.success(f"updated to [white]{target}[/white]")
 
 
 # ---------------------------------------------------------------- deploy
@@ -54,11 +150,17 @@ def _app_source(found, project_root: Path) -> str:
     "(they must then come from the worker image). Torch packages are "
     "excluded automatically on builtin gpu images.",
 )
-def deploy(target, env, python_version, exclude):
+@click.option(
+    "--build-only",
+    is_flag=True,
+    help="Build the artifact without deploying; writes "
+    "<app>-artifact.tar.gz to the current directory.",
+)
+def deploy(target, env, python_version, exclude, build_only):
     """Package and deploy all apps found in TARGET (default: cwd)."""
     import logging
 
-    from runpod.apps.deploy import deploy_app
+    from runpod.apps.deploy import build_artifact, deploy_app
     from runpod.apps.discovery import DiscoveryError, discover_apps
     from runpod.rp_cli import console as ui
 
@@ -81,6 +183,30 @@ def deploy(target, env, python_version, exclude):
             "    from runpod import App\n"
             '    app = App("my-app")'
         )
+
+    if build_only:
+        for found in apps:
+            ui.set_name_width(list(found.resources))
+            events = ui.DeployEvents()
+            try:
+                artifact = build_artifact(
+                    found,
+                    project_root,
+                    python_version=python_version,
+                    exclude=exclude.split(",") if exclude else None,
+                    events=events,
+                    output=Path.cwd() / f"{found.name}-artifact.tar.gz",
+                )
+            except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+                raise click.ClickException(str(exc)) from exc
+            finally:
+                events.close()
+            size_mb = artifact.stat().st_size / (1024 * 1024)
+            ui.success(
+                f"built [white]{found.name}[/white] "
+                f"[dim]{artifact.name} ({size_mb:.1f} MB)[/dim]"
+            )
+        return
 
     if len(apps) > 1:
         ui.deploy_plan(

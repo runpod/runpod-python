@@ -142,15 +142,14 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
         "workersMin": spec.workers[0],
         "workersMax": spec.workers[1],
         "idleTimeout": spec.idle_timeout,
-        "scalerType": (
-            "REQUEST_COUNT" if spec.kind is ResourceKind.API else "QUEUE_DELAY"
-        ),
-        "scalerValue": 4,
-        "flashBootType": "FLASHBOOT",
+        "scalerType": spec.effective_scaler_type,
+        "scalerValue": spec.scaler_value,
+        "executionTimeoutMs": spec.execution_timeout_ms,
         "template": {
             "name": f"{dev_endpoint_name(app.name, spec.name)}-template",
             "imageName": _image_for(spec),
-            "containerDiskInGb": 10 if spec.is_cpu else 30,
+            "containerDiskInGb": spec.container_disk_gb
+            or (10 if spec.is_cpu else 30),
             "dockerArgs": "",
             "env": [
                 {"key": GENERATION_ENV, "value": str(generation)},
@@ -164,12 +163,24 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
                 ),
                 {"key": "RUNPOD_DEV_APP", "value": app.name},
                 *(
+                    [
+                        {
+                            "key": "RUNPOD_MAX_CONCURRENCY",
+                            "value": str(spec.max_concurrency),
+                        }
+                    ]
+                    if spec.max_concurrency > 1
+                    else []
+                ),
+                *(
                     {"key": k, "value": v}
                     for k, v in _render_env(spec.env).items()
                 ),
             ],
         },
     }
+    if spec.flashboot:
+        payload["flashBootType"] = "FLASHBOOT"
 
     if spec.image:
         # custom image: inject the bootstrap so the worker runtime starts
@@ -206,6 +217,8 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
 
         payload["gpuIds"] = gpu_ids_value(spec.gpu)
         payload["gpuCount"] = spec.gpu_count
+        if spec.min_cuda_version:
+            payload["minCudaVersion"] = spec.min_cuda_version
     return payload
 
 

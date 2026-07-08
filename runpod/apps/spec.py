@@ -14,6 +14,27 @@ from .gpu import GpuGroup, GpuType
 
 DEFAULT_WORKERS: Tuple[int, int] = (0, 3)
 
+SCALER_TYPES = frozenset({"QUEUE_DELAY", "REQUEST_COUNT"})
+DEFAULT_SCALER_VALUE = 4
+
+# cuda versions the platform can filter hosts by
+CUDA_VERSIONS = frozenset(
+    {
+        "11.8",
+        "12.0",
+        "12.1",
+        "12.2",
+        "12.3",
+        "12.4",
+        "12.5",
+        "12.6",
+        "12.7",
+        "12.8",
+        "12.9",
+        "13.0",
+    }
+)
+
 
 class ResourceKind(str, Enum):
     QUEUE = "queue"
@@ -98,6 +119,32 @@ def normalize_cpu(
     )
 
 
+def normalize_scaler_type(scaler_type: Optional[str]) -> Optional[str]:
+    """validate a scaler type string, tolerating lowercase."""
+    if scaler_type is None:
+        return None
+    normalized = str(scaler_type).strip().upper()
+    if normalized not in SCALER_TYPES:
+        raise InvalidResourceError(
+            f"scaler_type must be one of {sorted(SCALER_TYPES)}, "
+            f"got {scaler_type!r}"
+        )
+    return normalized
+
+
+def normalize_cuda_version(version: Optional[str]) -> Optional[str]:
+    """validate a minimum cuda version string."""
+    if version is None:
+        return None
+    normalized = str(version).strip()
+    if normalized not in CUDA_VERSIONS:
+        raise InvalidResourceError(
+            f"min_cuda_version must be one of "
+            f"{', '.join(sorted(CUDA_VERSIONS))}, got {version!r}"
+        )
+    return normalized
+
+
 @dataclass
 class ResourceSpec:
     """declarative config for one app resource."""
@@ -118,6 +165,14 @@ class ResourceSpec:
     registry_auth: Optional[str] = None
     model: Optional[Any] = None
     schedule: Optional[str] = None
+    max_concurrency: int = 1
+    execution_timeout_ms: int = 0
+    flashboot: bool = True
+    scaler_type: Optional[str] = None
+    scaler_value: int = DEFAULT_SCALER_VALUE
+    min_cuda_version: Optional[str] = None
+    accelerate_downloads: bool = True
+    container_disk_gb: Optional[int] = None
     routes: List[RouteSpec] = field(default_factory=list)
     asgi_factory: Optional[str] = None
 
@@ -128,10 +183,41 @@ class ResourceSpec:
             )
         if not self.name:
             raise InvalidResourceError("resource name must not be empty")
+        if self.max_concurrency < 1:
+            raise InvalidResourceError(
+                f"resource '{self.name}': max_concurrency must be >= 1, "
+                f"got {self.max_concurrency}"
+            )
+        if self.execution_timeout_ms < 0:
+            raise InvalidResourceError(
+                f"resource '{self.name}': execution_timeout_ms must be >= 0"
+            )
+        if self.scaler_value < 1:
+            raise InvalidResourceError(
+                f"resource '{self.name}': scaler_value must be >= 1"
+            )
+        if self.container_disk_gb is not None and self.container_disk_gb < 1:
+            raise InvalidResourceError(
+                f"resource '{self.name}': container_disk_gb must be >= 1"
+            )
+        if self.min_cuda_version is not None and self.is_cpu:
+            raise InvalidResourceError(
+                f"resource '{self.name}': min_cuda_version has no effect "
+                f"on cpu resources"
+            )
 
     @property
     def is_cpu(self) -> bool:
         return self.cpu is not None
+
+    @property
+    def effective_scaler_type(self) -> str:
+        """the scaler the endpoint deploys with: explicit or kind default."""
+        if self.scaler_type:
+            return self.scaler_type
+        return (
+            "REQUEST_COUNT" if self.kind is ResourceKind.API else "QUEUE_DELAY"
+        )
 
     def to_manifest(self) -> Dict[str, Any]:
         """serialize for the deploy manifest."""
@@ -171,6 +257,22 @@ class ResourceSpec:
             data["model"] = model_reference(self.model)
         if self.schedule:
             data["schedule"] = self.schedule
+        if self.max_concurrency != 1:
+            data["maxConcurrency"] = self.max_concurrency
+        if self.execution_timeout_ms:
+            data["executionTimeoutMs"] = self.execution_timeout_ms
+        if not self.flashboot:
+            data["flashboot"] = False
+        if self.scaler_type:
+            data["scalerType"] = self.scaler_type
+        if self.scaler_value != DEFAULT_SCALER_VALUE:
+            data["scalerValue"] = self.scaler_value
+        if self.min_cuda_version:
+            data["minCudaVersion"] = self.min_cuda_version
+        if not self.accelerate_downloads:
+            data["accelerateDownloads"] = False
+        if self.container_disk_gb:
+            data["containerDiskGb"] = self.container_disk_gb
         if self.routes:
             data["routes"] = [
                 {"method": r.method, "path": r.path, "handler": r.handler_name}

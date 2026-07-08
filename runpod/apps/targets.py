@@ -411,6 +411,7 @@ class LiveTarget(InvocationTarget):
             kwargs=serialize_kwargs(kwargs),
             dependencies=spec.dependencies,
             system_dependencies=spec.system_dependencies,
+            accelerate_downloads=spec.accelerate_downloads,
         )
         return {"input": request.to_input()}
 
@@ -588,6 +589,7 @@ class PodTarget(InvocationTarget):
             kwargs=serialize_kwargs(kwargs),
             dependencies=spec.dependencies,
             system_dependencies=spec.system_dependencies,
+            accelerate_downloads=spec.accelerate_downloads,
         )
         return request.to_input()
 

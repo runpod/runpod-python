@@ -108,13 +108,31 @@ def _live_handler(job: dict) -> dict:
     return execute_request(job.get("input") or {})
 
 
+def _max_concurrency() -> int:
+    """jobs one worker may run at once (RUNPOD_MAX_CONCURRENCY, min 1)."""
+    try:
+        return max(1, int(os.environ.get("RUNPOD_MAX_CONCURRENCY", "1")))
+    except ValueError:
+        return 1
+
+
+def _worker_config(handler) -> dict:
+    config: dict = {"handler": handler}
+    concurrency = _max_concurrency()
+    if concurrency > 1:
+        config["concurrency_modifier"] = lambda _current: concurrency
+    return config
+
+
 def main() -> None:
     if _is_deployed():
         handle = _load_deployed_handle()
         _run_init(handle)
-        runpod.serverless.start({"handler": _make_deployed_handler(handle)})
+        runpod.serverless.start(
+            _worker_config(_make_deployed_handler(handle))
+        )
     else:
-        runpod.serverless.start({"handler": _live_handler})
+        runpod.serverless.start(_worker_config(_live_handler))
 
 
 if __name__ == "__main__":

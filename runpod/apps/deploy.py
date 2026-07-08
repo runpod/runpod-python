@@ -215,6 +215,8 @@ GPU_CONTAINER_DISK_GB = 30
 
 
 def _container_disk_gb(spec) -> int:
+    if spec.container_disk_gb:
+        return spec.container_disk_gb
     return CPU_CONTAINER_DISK_GB if spec.is_cpu else GPU_CONTAINER_DISK_GB
 
 
@@ -271,17 +273,18 @@ def _deployed_endpoint_input(
     if tag and "RUNPOD_RUNTIME_TAG" not in template_env:
         template_env["RUNPOD_RUNTIME_TAG"] = tag
 
+    if spec.max_concurrency > 1:
+        template_env["RUNPOD_MAX_CONCURRENCY"] = str(spec.max_concurrency)
+
     payload: Dict[str, Any] = {
         "name": spec.name,
         "flashEnvironmentId": environment_id,
         "workersMin": spec.workers[0],
         "workersMax": spec.workers[1],
         "idleTimeout": spec.idle_timeout,
-        "scalerType": (
-            "REQUEST_COUNT" if spec.kind is ResourceKind.API else "QUEUE_DELAY"
-        ),
-        "scalerValue": 4,
-        "flashBootType": "FLASHBOOT",
+        "scalerType": spec.effective_scaler_type,
+        "scalerValue": spec.scaler_value,
+        "executionTimeoutMs": spec.execution_timeout_ms,
         "template": {
             "name": f"{app.name}-{spec.name}-template",
             "imageName": image_for_spec(spec, python_version=python_version),
@@ -292,6 +295,8 @@ def _deployed_endpoint_input(
             ],
         },
     }
+    if spec.flashboot:
+        payload["flashBootType"] = "FLASHBOOT"
 
     if spec.image:
         # custom image: inject the bootstrap; the vendored env in the
@@ -331,6 +336,8 @@ def _deployed_endpoint_input(
 
         payload["gpuIds"] = gpu_ids_value(spec.gpu)
         payload["gpuCount"] = spec.gpu_count
+        if spec.min_cuda_version:
+            payload["minCudaVersion"] = spec.min_cuda_version
         if not spec.datacenter:
             # artifact delivery rides the flash volume (network
             # storage); machines outside storage-cluster regions fail
@@ -430,6 +437,45 @@ def _phase(events, name: str, detail: str = "") -> None:
     handler = getattr(events, "phase", None)
     if handler is not None:
         handler(name, detail)
+
+
+def build_artifact(
+    app: App,
+    project_root: Path,
+    *,
+    python_version: str = DEFAULT_PYTHON_VERSION,
+    exclude: Optional[List[str]] = None,
+    events: Optional[object] = None,
+    output: Optional[Path] = None,
+) -> Path:
+    """vendor, build the manifest, and package one app's artifact."""
+    _phase(events, "vendor", f"python {python_version}")
+    build: BuildResult = build_environment(
+        app,
+        project_root,
+        python_version=python_version,
+        exclude=exclude,
+        events=events,
+    )
+    manifest = build_manifest(
+        app,
+        project_root,
+        python_version=python_version,
+        excluded_packages=build.excluded,
+    )
+    _phase(events, "package")
+    tar_path = package_project(
+        project_root, manifest, output=output, env_dir=build.env_dir
+    )
+    size_mb = tar_path.stat().st_size / (1024 * 1024)
+    if size_mb > MAX_ARTIFACT_MB:
+        raise BuildError(
+            f"artifact is {size_mb:.0f} MB (limit {MAX_ARTIFACT_MB} MB). "
+            f"exclude large packages with --exclude (they must then come "
+            f"from the worker image) or trim project files via .runpodignore"
+        )
+    log.info("packaged %s (%.1f MB)", app.name, size_mb)
+    return tar_path
 
 
 async def deploy_app(
