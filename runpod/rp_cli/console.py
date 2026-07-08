@@ -132,7 +132,7 @@ def _padded(name: str) -> str:
 
 
 def _pipe(name: str) -> str:
-    return f"[accent.light]{_padded(name)}[/accent.light][dim]:[/dim]"
+    return f"[accent.light]{_padded(name)}[/accent.light] [dim]│[/dim]"
 
 
 def kind_badge(kind: str) -> str:
@@ -444,7 +444,7 @@ class DevEvents:
     # -- request lifecycle (LiveTarget events) --
     # next.js/wrangler-style event lines: leading status glyph, the
     # function call in normal weight, everything else dim, timing at
-    # the end. function stdout renders as `name: line` so concurrent
+    # the end. function stdout renders as `name │ line` so concurrent
     # calls interleave without losing attribution.
 
     def dispatch(self, name: str, label: str = "") -> None:
