@@ -449,9 +449,7 @@ class AppsApiClient:
             }
         }
         """
-        response = await run_graphql_query_async(
-            mutation, api_key=self._api_key, allow_anonymous=True
-        )
+        response = await run_graphql_query_async(mutation, anonymous=True)
         return response["data"].get("createFlashAuthRequest") or {}
 
     async def get_auth_request_status(self, request_id: str) -> Dict[str, Any]:
@@ -465,11 +463,13 @@ class AppsApiClient:
             }
         }
         """
+        # anonymous by design: the server only releases the granted key
+        # to guest requests, so authenticating the poll (e.g. with a
+        # stale stored key) would return apiKey=null forever
         response = await run_graphql_query_async(
             query,
-            api_key=self._api_key,
             variables={"flashAuthRequestId": request_id},
-            allow_anonymous=True,
+            anonymous=True,
         )
         return response["data"].get("flashAuthRequestStatus") or {}
 

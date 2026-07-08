@@ -139,9 +139,9 @@ def update(version_opt):
 @click.option("--env", "-e", "env", default=None, help="Target environment name.")
 @click.option(
     "--python-version",
-    default="3.12",
-    show_default=True,
-    help="Worker python version for dependency wheels (3.10-3.14).",
+    default=None,
+    help="Worker python version for dependency wheels (3.10-3.14). "
+    "Defaults to the python running the cli.",
 )
 @click.option(
     "--exclude",
@@ -165,6 +165,24 @@ def deploy(target, env, python_version, exclude, build_only):
     from runpod.rp_cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
+
+    if python_version is None:
+        from runpod.apps.images import (
+            DEFAULT_PYTHON_VERSION,
+            local_python_version,
+        )
+
+        try:
+            python_version = local_python_version()
+        except RuntimeError:
+            # deployed calls are plain json (no pickle compat needed),
+            # so an unsupported local interpreter falls back instead of
+            # failing like dev does
+            ui.warn(
+                f"local python has no runtime image; building for "
+                f"{DEFAULT_PYTHON_VERSION} (override with --python-version)"
+            )
+            python_version = DEFAULT_PYTHON_VERSION
 
     target = (target or Path.cwd()).resolve()
     if not target.exists():
