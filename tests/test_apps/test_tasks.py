@@ -276,6 +276,88 @@ class TestPodTargetPayload:
         instance.submit.assert_awaited_once()
 
 
+class TestPollResult:
+    """poll_result must tolerate proxy propagation 404s."""
+
+    def _server(self, responses):
+        """a local server that pops one canned (status, body) per hit."""
+        import http.server
+        import threading
+
+        hits = {"count": 0}
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                hits["count"] += 1
+                status, body = responses[min(hits["count"], len(responses)) - 1]
+                payload = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *args):
+                pass
+
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        httpd.daemon_threads = True
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        return httpd, hits
+
+    def _poll(self, url):
+        import asyncio
+
+        from runpod.apps.tasks import TaskExecution
+
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(spec)
+        execution.pod_id = "fake"
+        with (
+            patch("runpod.apps.tasks._proxy_url", return_value=url),
+            patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()),
+        ):
+            return asyncio.run(execution.poll_result())
+
+    def test_retries_transient_404_then_returns_result(self):
+        httpd, hits = self._server(
+            [
+                (404, {"error": "not found"}),
+                (404, {"error": "not found"}),
+                (200, {"status": "DONE", "response": {"success": True}}),
+            ]
+        )
+        try:
+            url = f"http://127.0.0.1:{httpd.server_port}"
+            assert self._poll(url) == {"success": True}
+            assert hits["count"] == 3
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_persistent_404_raises(self):
+        import aiohttp
+
+        httpd, hits = self._server([(404, {"error": "not found"})])
+        try:
+            url = f"http://127.0.0.1:{httpd.server_port}"
+            with pytest.raises(aiohttp.ClientResponseError):
+                self._poll(url)
+            assert hits["count"] == 6
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_running_returns_none(self):
+        httpd, _ = self._server([(200, {"status": "RUNNING", "response": None})])
+        try:
+            url = f"http://127.0.0.1:{httpd.server_port}"
+            assert self._poll(url) is None
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+
 class TestGpuPoolExpansion:
     def test_pool_id_expands_to_device_names(self):
         from runpod.apps.tasks import _device_names

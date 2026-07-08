@@ -272,16 +272,28 @@ class TaskExecution:
                     return
 
     async def poll_result(self) -> Optional[Dict[str, Any]]:
-        """fetch /result; returns the response dict once DONE, else None."""
+        """fetch /result; returns the response dict once DONE, else None.
+
+        the proxy answers 404 for pods an edge node has not learned
+        about yet (the same race /submit tolerates), so 404s are
+        retried briefly; a persistent 404 means the pod is gone and
+        surfaces as an error.
+        """
         url = f"{_proxy_url(self.pod_id)}/result"
+        attempts = 6
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                headers=self._headers,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+            for attempt in range(attempts):
+                async with session.get(
+                    url,
+                    headers=self._headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status == 404 and attempt < attempts - 1:
+                        await asyncio.sleep(2 * (attempt + 1))
+                        continue
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    break
         if data.get("status") == "DONE":
             return data.get("response")
         return None
