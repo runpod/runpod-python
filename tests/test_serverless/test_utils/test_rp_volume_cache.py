@@ -120,7 +120,9 @@ def test_sync_recopies_modified_file(tmp_path):
     assert copied == 1
 
     mirror_file = os.path.join(vc._mirror_root, os.path.relpath(str(f), "/"))
-    assert open(mirror_file).read() == "v2-longer"
+    with open(mirror_file) as fh:
+        content = fh.read()
+    assert content == "v2-longer"
 
 
 def test_hydrate_skips_unchanged_after_first_hydrate(tmp_path):
@@ -225,9 +227,13 @@ def test_context_manager_does_not_suppress_exceptions(tmp_path):
     vc, cache, _vol = _mk_cache_with_volume(tmp_path)
     (cache / "model.bin").write_text("weights")
 
-    with pytest.raises(ValueError):
+    raised = False
+    try:
         with vc:
             raise ValueError("boom")
+    except ValueError:
+        raised = True
+    assert raised
 
     vcmod._join_pending_syncs()
     mirror_file = os.path.join(vc._mirror_root, os.path.relpath(str(cache / "model.bin"), "/"))
