@@ -13,6 +13,7 @@ rebinding, re-validates redirect hops, and caps download size.
 import ipaddress
 import os
 import socket
+from contextlib import suppress
 from typing import Iterator, List, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -189,6 +190,42 @@ def _build_pinned_session(pinned_ip: str) -> SyncClientSession:
     return session
 
 
+def _close_session_quietly(session: SyncClientSession) -> None:
+    """
+    Close a pinned session best-effort, tolerating teardown errors.
+
+    This runs only on cleanup paths (a failed request, a closing response) where
+    the caller's original exception is the meaningful one. A failure while
+    closing the session's connection pools must not mask that exception, so it is
+    suppressed rather than raised. Session.close() is idempotent and does no
+    actionable I/O, so nothing worth surfacing is lost.
+    """
+    with suppress(Exception):
+        session.close()
+
+
+def _bind_session_to_response(response, session: SyncClientSession) -> None:
+    """
+    Tie `session` cleanup to `response.close()`.
+
+    Each safe_get() call owns a single-use session; the caller only holds the
+    response. Closing a requests.Response releases its connection but not the
+    session (its adapters and connection pools), so without this the session
+    leaks one set of pooled sockets/FDs per download in a long-lived worker.
+    Wrapping close() makes `with safe_get(...) as r:` (and any direct
+    response.close()) tear down both.
+    """
+    original_close = response.close
+
+    def close_both(*args, **kwargs):
+        try:
+            original_close(*args, **kwargs)
+        finally:
+            _close_session_quietly(session)
+
+    response.close = close_both
+
+
 def _enforce_content_length(response, max_bytes: Optional[int]) -> None:
     if max_bytes is None:
         return
@@ -254,22 +291,32 @@ def safe_get(
         ips = resolve_and_validate(parsed.hostname, port)
 
         session = _build_pinned_session(ips[0])
-        response = session.get(
-            current,
-            headers=headers,
-            allow_redirects=False,
-            stream=stream,
-            timeout=timeout,
-        )
+        try:
+            response = session.get(
+                current,
+                headers=headers,
+                allow_redirects=False,
+                stream=stream,
+                timeout=timeout,
+            )
+        except BaseException:
+            _close_session_quietly(session)
+            raise
 
         if response.status_code in _REDIRECT_STATUS:
             location = response.headers.get("Location")
-            response.close()
+            try:
+                response.close()
+            finally:
+                _close_session_quietly(session)
             if not location:
                 raise SSRFError(f"redirect without Location header: {current}")
             current = urljoin(current, location)
             continue
 
+        # Bind before the cap check so a Content-Length breach (which closes
+        # the response) also tears down the session.
+        _bind_session_to_response(response, session)
         _enforce_content_length(response, max_bytes)
         return response
 
