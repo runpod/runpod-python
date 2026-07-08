@@ -23,13 +23,16 @@ from runpod.serverless.utils.rp_ssrf import (
 class _FakeResponse:
     """Minimal stand-in for requests.Response used by safe_get."""
 
-    def __init__(self, status_code, headers=None):
+    def __init__(self, status_code, headers=None, close_exc=None):
         self.status_code = status_code
         self.headers = headers or {}
         self.closed = False
+        self._close_exc = close_exc
 
     def close(self):
         self.closed = True
+        if self._close_exc is not None:
+            raise self._close_exc
 
 
 def _addrinfo(*ips):
@@ -145,6 +148,8 @@ class TestSafeGet(unittest.TestCase):
         with self.assertRaises(SSRFError):
             safe_get("https://example.com/image.jpg")
 
+        session.close.assert_called_once()  # redirect hop must not leak its session
+
     @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
     @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
     def test_too_many_redirects(self, _mock_resolve, mock_session):
@@ -167,6 +172,8 @@ class TestSafeGet(unittest.TestCase):
         with self.assertRaises(SSRFError):
             safe_get("https://example.com/big.bin", max_bytes=1024)
 
+        session.close.assert_called_once()  # cap breach must close the pinned session
+
     @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
     @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
     def test_returns_response_on_success(self, _mock_resolve, mock_session):
@@ -176,6 +183,52 @@ class TestSafeGet(unittest.TestCase):
         mock_session.return_value = session
 
         self.assertIs(safe_get("https://example.com/ok.jpg", max_bytes=4096), response)
+
+    @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
+    @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
+    def test_closing_response_closes_session(self, _mock_resolve, mock_session):
+        """The session outlives safe_get() only until the caller closes the response."""
+        response = _FakeResponse(200, {"Content-Length": "500"})
+        session = MagicMock()
+        session.get.return_value = response
+        mock_session.return_value = session
+
+        result = safe_get("https://example.com/ok.jpg", max_bytes=4096)
+        session.close.assert_not_called()  # still open for the caller to stream
+
+        result.close()
+        self.assertTrue(response.closed)  # original close still runs
+        session.close.assert_called_once()  # and the session is torn down with it
+
+    @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
+    @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
+    def test_request_error_closes_session(self, _mock_resolve, mock_session):
+        """A failed GET must tear down the session before the error propagates."""
+        session = MagicMock()
+        session.get.side_effect = RequestException("boom")
+        mock_session.return_value = session
+
+        with self.assertRaises(RequestException):
+            safe_get("https://example.com/x")
+
+        session.close.assert_called_once()
+
+    @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
+    @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
+    def test_session_close_error_does_not_mask_response_error(self, _mock_resolve, mock_session):
+        """Cleanup is best-effort: the caller's close error wins over a session-teardown error."""
+        response = _FakeResponse(200, {"Content-Length": "500"}, close_exc=RuntimeError("primary"))
+        session = MagicMock()
+        session.get.return_value = response
+        session.close.side_effect = RuntimeError("secondary pool teardown")
+        mock_session.return_value = session
+
+        result = safe_get("https://example.com/ok.jpg", max_bytes=4096)
+        with self.assertRaises(RuntimeError) as ctx:
+            result.close()
+
+        self.assertEqual(str(ctx.exception), "primary")  # response error surfaces
+        session.close.assert_called_once()  # teardown was still attempted
 
 
 class TestIterContentCapped(unittest.TestCase):
@@ -232,10 +285,11 @@ class TestPinnedIPAdapter(unittest.TestCase):
         thread.start()
         try:
             # URL host is example.com (won't route to our server); pin to loopback.
-            session = _build_pinned_session("127.0.0.1")
-            response = session.get(f"http://example.com:{port}/path", timeout=5)
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.content, b"ok")
+            with _build_pinned_session("127.0.0.1") as session, session.get(
+                f"http://example.com:{port}/path", timeout=5
+            ) as response:
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.content, b"ok")
             self.assertEqual(_RecordingHandler.received_host, f"example.com:{port}")
         finally:
             server.shutdown()
