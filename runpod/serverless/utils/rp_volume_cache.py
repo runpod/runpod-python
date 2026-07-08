@@ -129,6 +129,7 @@ class VolumeCache:
                 if os.path.exists(tmp):
                     os.remove(tmp)
             except OSError:
+                # best-effort cleanup; a leftover temp file is overwritten next sync
                 pass
             return False
 
@@ -219,16 +220,11 @@ class VolumeCache:
 # ----------------------------------------------------------------------- #
 
 _pending_syncs = []
-_atexit_registered = False
 
 
 def _register_pending(thread):
-    global _atexit_registered
     _pending_syncs[:] = [t for t in _pending_syncs if t.is_alive()]
     _pending_syncs.append(thread)
-    if not _atexit_registered:
-        atexit.register(_join_pending_syncs)
-        _atexit_registered = True
 
 
 def _join_pending_syncs():
@@ -241,9 +237,13 @@ def _join_pending_syncs():
                     f"{_JOIN_TIMEOUT_SECONDS:.0f}s at exit; cache may be incomplete"
                 )
         except Exception:
+            # best-effort shutdown: a join failure must not block interpreter exit
             pass
     _pending_syncs.clear()
 
 
 def _reset_pending_for_test():
     _pending_syncs.clear()
+
+
+atexit.register(_join_pending_syncs)
