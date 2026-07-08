@@ -602,7 +602,7 @@ class PodTarget(InvocationTarget):
         name = self.spec.name
         hardware = ",".join(self.spec.cpu or self.spec.gpu or ["any"])
         emit(self.events, "dispatch", name)
-        emit(self.events, "task_status", name, f"provisioning pod · {hardware}")
+        emit(self.events, "task_status", name, f"provisioning pod on {hardware}")
         start = time.monotonic()
 
         stream = None
@@ -614,7 +614,7 @@ class PodTarget(InvocationTarget):
                     self.events,
                     "task_status",
                     name,
-                    f"pod {execution.pod_id[:12]} · waiting for runtime",
+                    f"pod {execution.pod_id[:12]} waiting for runtime",
                 )
                 if self.events is not None:
                     from .monitor import PodLogStream

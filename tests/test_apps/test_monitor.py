@@ -45,7 +45,7 @@ class TestEmit:
 class TestFormatWorkerCounts:
     def test_only_nonzero(self):
         s = format_worker_counts({"initializing": 1, "ready": 2, "throttled": 0})
-        assert s == "1 initializing · 2 ready"
+        assert s == "1 initializing, 2 ready"
 
     def test_empty(self):
         assert format_worker_counts({"ready": 0}) == "no workers"

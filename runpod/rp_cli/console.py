@@ -17,6 +17,7 @@ from rich.progress import (
     TaskID,
     TextColumn,
 )
+from rich.spinner import SPINNERS
 from rich.text import Text
 from rich.theme import Theme
 
@@ -28,6 +29,49 @@ OK = "#34d399"
 ERR = "#f87171"
 WARN = "#fbbf24"
 DIM = "grey58"
+
+RUNPOD_SAND_SPINNER = "runpod_sand"
+RUNPOD_SAND_SPINNER_FRAMES = [
+    "⠁",
+    "⠂",
+    "⠄",
+    "⡀",
+    "⡈",
+    "⡐",
+    "⡠",
+    "⣀",
+    "⣁",
+    "⣂",
+    "⣄",
+    "⣌",
+    "⣔",
+    "⣤",
+    "⣥",
+    "⣦",
+    "⣮",
+    "⣶",
+    "⣷",
+    "⣿",
+    "⡿",
+    "⠿",
+    "⢟",
+    "⠟",
+    "⡛",
+    "⠛",
+    "⠫",
+    "⢋",
+    "⠋",
+    "⠍",
+    "⡉",
+    "⠉",
+    "⠑",
+    "⠡",
+    "⢁",
+]
+SPINNERS[RUNPOD_SAND_SPINNER] = {
+    "interval": 1000 / 16,
+    "frames": RUNPOD_SAND_SPINNER_FRAMES,
+}
 
 KIND_STYLES: Dict[str, str] = {
     "queue": "bold cyan",
@@ -48,6 +92,15 @@ theme = Theme(
 )
 
 console = Console(highlight=False, theme=theme)
+
+
+def _spinner_column(finished_text: str = "[ok]✓[/ok]") -> SpinnerColumn:
+    return SpinnerColumn(
+        RUNPOD_SAND_SPINNER,
+        style=ACCENT,
+        finished_text=finished_text,
+    )
+
 
 CONSOLE_URL = "https://console.runpod.io/serverless/user/endpoint"
 
@@ -79,7 +132,7 @@ def _padded(name: str) -> str:
 
 
 def _pipe(name: str) -> str:
-    return f"[accent.light]{_padded(name)}[/accent.light] [dim]│[/dim]"
+    return f"[accent.light]{_padded(name)}[/accent.light][dim]:[/dim]"
 
 
 def kind_badge(kind: str) -> str:
@@ -139,7 +192,7 @@ def request_failed(name: str, elapsed_s: float, err: Optional[str] = None) -> No
 
 def dev_banner(app_names: Iterable[str], module: str) -> None:
     console.print(
-        f"[bold white]dev[/bold white] [dim]{', '.join(app_names)} · {module}[/dim]"
+        f"[bold white]dev[/bold white] [dim]{', '.join(app_names)} in {module}[/dim]"
     )
 
 
@@ -151,7 +204,7 @@ def deploy_plan(apps: Iterable[Tuple[str, str, int]]) -> None:
     )
     width = max(len(name) for name, _, _ in apps)
     for name, source, count in apps:
-        detail = f"{source} · " if source else ""
+        detail = f"{source}, " if source else ""
         console.print(
             f"  [white]{name:<{width}}[/white]  "
             f"[dim]{detail}{count} resource{'s' if count != 1 else ''}[/dim]"
@@ -166,10 +219,10 @@ def deploy_banner(
 ) -> None:
     """resources: (name, kind) pairs."""
     names = ", ".join(name for name, _ in resources) or "(no resources)"
-    origin = f" · {source}" if source else ""
+    origin = f" from {source}" if source else ""
     console.print(
         f"[bold white]deploy[/bold white] [white]{app_name}[/white] "
-        f"[dim]→ {env}{origin} · {names}[/dim]"
+        f"[dim]→ {env}{origin}, {names}[/dim]"
     )
 
 
@@ -233,7 +286,7 @@ class DeployEvents:
 
     def __init__(self) -> None:
         self._progress = Progress(
-            SpinnerColumn("dots", style=ACCENT, finished_text=f"[ok]✓[/ok]"),
+            _spinner_column(),
             TextColumn("[white]{task.description}[/white]"),
             TextColumn("{task.fields[detail]}"),
             console=console,
@@ -284,7 +337,7 @@ class DeployEvents:
         self._package_count = count
         self._progress.update(
             self._current,
-            detail=f"[accent.light]{package}[/accent.light] [dim]· {count}[/dim]",
+            detail=f"[accent.light]{package}[/accent.light] [dim]({count})[/dim]",
         )
 
     def upload_progress(self, sent: int, total: int) -> None:
@@ -331,7 +384,7 @@ class DevEvents:
 
     def session_starting(self) -> None:
         self._progress = Progress(
-            SpinnerColumn("dots", style=ACCENT, finished_text="[ok]✓[/ok]"),
+            _spinner_column(),
             TextColumn("[white]{task.description}[/white]"),
             TextColumn("[dim]{task.fields[detail]}[/dim]"),
             console=console,
@@ -357,7 +410,7 @@ class DevEvents:
             self._progress.update(self._tasks[name], detail=detail)
 
     def provisioning(self, name: str, kind: str, hardware: str) -> None:
-        self._row(name, f"provisioning {kind} · {hardware}")
+        self._row(name, f"provisioning {kind} on {hardware}")
 
     def adopted(self, name: str, endpoint_id: str) -> None:
         self._row(name, "adopting")
@@ -376,7 +429,7 @@ class DevEvents:
     def resource_added(self, name: str, kind: str, hardware: str) -> None:
         console.print(
             f" [ok]+[/ok] [white]{name}[/white] "
-            f"[dim]{kind} · {hardware}[/dim]"
+            f"[dim]{kind} on {hardware}[/dim]"
         )
 
     def resource_changed(self, name: str, fields: List[str]) -> None:
@@ -391,32 +444,33 @@ class DevEvents:
     # -- request lifecycle (LiveTarget events) --
     # next.js/wrangler-style event lines: leading status glyph, the
     # function call in normal weight, everything else dim, timing at
-    # the end. function stdout renders as `name │ line` so concurrent
+    # the end. function stdout renders as `name: line` so concurrent
     # calls interleave without losing attribution.
 
     def dispatch(self, name: str, label: str = "") -> None:
         detail = f" [dim]{label}[/dim]" if label else ""
-        console.print(f" [accent]○[/accent] [white]{name}()[/white]{detail}")
+        console.print(f" [accent]→[/accent] [white]{name}()[/white]{detail}")
 
     def worker_status(self, name: str, counts: Dict[str, int]) -> None:
         from runpod.apps.monitor import format_worker_counts
 
         console.print(
-            f" [dim]○ {name}() waiting · {format_worker_counts(counts)}[/dim]"
+            f"   [dim]↳ {name}() waiting: {format_worker_counts(counts)}[/dim]"
         )
 
     def task_status(self, name: str, detail: str) -> None:
-        console.print(f" [dim]○ {name}() {detail}[/dim]")
+        console.print(f"   [dim]↳ {name}() {detail}[/dim]")
 
     def volume_created(self, name: str, size: int, dc: str) -> None:
         console.print(
-            f" [ok]+[/ok] [white]volume {name}[/white] [dim]{size}GB · {dc}[/dim]"
+            f" [ok]+[/ok] [white]volume {name}[/white] [dim]{size}GB in {dc}[/dim]"
         )
 
     def worker_ready(self, name: str, worker_id: str) -> None:
+        worker = worker_id[:12] if worker_id else "pod"
         console.print(
-            f" [accent]●[/accent] [white]{name}()[/white] [dim]running on "
-            f"worker {worker_id[:12]}[/dim]"
+            f"   [accent]↳[/accent] [white]{name}()[/white] [dim]worker "
+            f"{worker} ready[/dim]"
         )
 
     def worker_log(self, name: str, line: str) -> None:
@@ -452,7 +506,7 @@ class CleanupEvents:
             return
         console.print()
         self._progress = Progress(
-            SpinnerColumn("dots", style=ACCENT, finished_text="[ok]✓[/ok]"),
+            _spinner_column(),
             TextColumn("[white]{task.description}[/white]"),
             TextColumn("[dim]{task.fields[detail]}[/dim]"),
             console=console,
@@ -465,7 +519,7 @@ class CleanupEvents:
     def deleting(self, name: str) -> None:
         if self._progress is not None and self._task is not None:
             self._progress.update(
-                self._task, detail=f"{name} · {self._done}/{self._total}"
+                self._task, detail=f"{name} ({self._done}/{self._total})"
             )
 
     def deleted(self, name: str) -> None:
@@ -474,7 +528,7 @@ class CleanupEvents:
             self._progress.update(
                 self._task,
                 completed=self._done,
-                detail=f"{name} · {self._done}/{self._total}",
+                detail=f"{name} ({self._done}/{self._total})",
             )
 
     def delete_failed(self, name: str) -> None:
@@ -521,7 +575,7 @@ def entrypoint_header(fn_name: str = "") -> None:
     console.print()
     if fn_name:
         console.print(
-            f" [accent]▸[/accent] [white]{fn_name}()[/white] "
+            f" [accent]◆[/accent] [white]{fn_name}()[/white] "
             f"[dim]local entrypoint[/dim]"
         )
 
@@ -529,8 +583,8 @@ def entrypoint_header(fn_name: str = "") -> None:
 def entrypoint_success(elapsed: float) -> None:
     console.print()
     console.print(
-        f" [ok]✓[/ok] [white]done[/white] [dim]in {_fmt_elapsed(elapsed)} "
-        f"· enter re-run · edit reload · ^C quit[/dim]"
+        f" [ok]✓[/ok] [white]done[/white] [dim]in {_fmt_elapsed(elapsed)}, "
+        f"enter re-run, edit reload, ^C quit[/dim]"
     )
 
 
@@ -538,6 +592,6 @@ def entrypoint_failure(elapsed: float, err: str) -> None:
     console.print()
     console.print(f" [err]✗ {err}[/err]")
     console.print(
-        f" [err]✗[/err] [white]failed[/white] [dim]in {_fmt_elapsed(elapsed)} "
-        f"· enter re-run · edit reload · ^C quit[/dim]"
+        f" [err]✗[/err] [white]failed[/white] [dim]in {_fmt_elapsed(elapsed)}, "
+        f"enter re-run, edit reload, ^C quit[/dim]"
     )

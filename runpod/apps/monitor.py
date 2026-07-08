@@ -277,10 +277,10 @@ def _line_before(raw: str, since_iso: str) -> bool:
 
 
 def format_worker_counts(counts: Dict[str, int]) -> str:
-    """human summary like '1 initializing · 2 ready'."""
+    """human summary like '1 initializing, 2 ready'."""
     parts = [
         f"{count} {state}"
         for state, count in counts.items()
         if count
     ]
-    return " · ".join(parts) if parts else "no workers"
+    return ", ".join(parts) if parts else "no workers"

@@ -401,7 +401,7 @@ def login(no_open, api_key_opt):
         set_credentials(api_key, overwrite=True)
     except (LoginError, ValueError) as exc:
         _fail(str(exc))
-    ui.success("logged in · credentials saved to [dim]~/.runpod/config.toml[/dim]")
+    ui.success("logged in, credentials saved to [dim]~/.runpod/config.toml[/dim]")
 
 
 # ---------------------------------------------------------- app / env
@@ -431,7 +431,7 @@ def app_list():
         raise click.ClickException(str(exc)) from exc
 
     if not apps:
-        ui.console.print("\n  no apps deployed · run [white]rp deploy[/white]\n")
+        ui.console.print("\n  no apps deployed. run [white]rp deploy[/white]\n")
         return
 
     width = max(len(a["name"]) for a in apps)
@@ -529,7 +529,7 @@ def registry_add(name, username, password):
     except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
         raise click.ClickException(str(exc)) from exc
     ui.success(
-        f"registry credential [white]{name}[/white] created · "
+        f"registry credential [white]{name}[/white] created, "
         f'[dim]use registry_auth="{name}"[/dim]'
     )
 
@@ -547,7 +547,7 @@ def registry_list():
 
     if not creds:
         ui.console.print(
-            "\n  no registry credentials · run [white]rp registry add <name>[/white]\n"
+            "\n  no registry credentials. run [white]rp registry add <name>[/white]\n"
         )
         return
     ui.console.print()
@@ -611,7 +611,7 @@ def secret_add(name, value, description):
     except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
         raise click.ClickException(str(exc)) from exc
     ui.success(
-        f"secret [white]{name}[/white] created · "
+        f"secret [white]{name}[/white] created, "
         f"[dim]use runpod.Secret(\"{name}\")[/dim]"
     )
 
@@ -628,7 +628,7 @@ def secret_list():
         raise click.ClickException(str(exc)) from exc
 
     if not secrets:
-        ui.console.print("\n  no secrets · run [white]rp secret add <name>[/white]\n")
+        ui.console.print("\n  no secrets. run [white]rp secret add <name>[/white]\n")
         return
     ui.console.print()
     width = max(len(s["name"]) for s in secrets)
@@ -703,7 +703,7 @@ def env_list(app_name):
     envs = entry.get("flashEnvironments") or []
     if not envs:
         ui.console.print(
-            f"\n  no environments in [white]{name}[/white] · run [white]rp deploy[/white]\n"
+            f"\n  no environments in [white]{name}[/white]. run [white]rp deploy[/white]\n"
         )
         return
     ui.console.print()
@@ -712,7 +712,7 @@ def env_list(app_name):
         build = (env_entry.get("activeBuildId") or "-")[:12]
         ui.console.print(
             f"  [white]{env_entry['name']:<{width}}[/white] "
-            f"[dim]{build} · {_fmt_ts(env_entry.get('createdAt'))}[/dim]"
+            f"[dim]{build}, {_fmt_ts(env_entry.get('createdAt'))}[/dim]"
         )
     ui.console.print()
 

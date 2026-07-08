@@ -9,9 +9,9 @@ asserts on its results), and cleans up. requires `rp login` and, for
     rp secret add ex-demo-secret --value anything
 
 usage:
-    python examples/apps/run_all.py                # everything
-    python examples/apps/run_all.py 01 05 08      # by prefix
-    python examples/apps/run_all.py --jobs 4      # parallel
+    python tests/e2e/examples/run_all.py                # everything
+    python tests/e2e/examples/run_all.py 01 05 08      # by prefix
+    python tests/e2e/examples/run_all.py --jobs 4      # parallel
 """
 
 import argparse
