@@ -16,7 +16,11 @@ from urllib.parse import urlparse
 import backoff
 from requests import RequestException
 
-from runpod.http_client import SyncClientSession
+from runpod.serverless.utils.rp_ssrf import (
+    iter_content_capped,
+    max_download_bytes,
+    safe_get,
+)
 
 HEADERS = {"User-Agent": "runpod-python/0.0.0 (https://runpod.io; support@runpod.io)"}
 
@@ -57,7 +61,7 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
 
     @backoff.on_exception(backoff.expo, RequestException, max_tries=3)
     def download_file(url: str, path_to_save: str) -> str:
-        with SyncClientSession().get(url, headers=HEADERS, stream=True, timeout=5) as response:
+        with safe_get(url, stream=True, timeout=5, headers=HEADERS) as response:
             response.raise_for_status()
             content_disposition = response.headers.get("Content-Disposition")
             file_extension = ""
@@ -72,11 +76,10 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
             file_size = int(response.headers.get("Content-Length", 0))
             chunk_size = calculate_chunk_size(file_size)
 
-            # write the content in chunks to the file
+            # write the content in chunks to the file, aborting past the size cap
             with open(path_to_save + file_extension, "wb") as file_path:
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    if chunk:  # filter out keep-alive chunks
-                        file_path.write(chunk)
+                for chunk in iter_content_capped(response, chunk_size, max_download_bytes()):
+                    file_path.write(chunk)
 
             return file_extension
 
@@ -117,27 +120,32 @@ def file(file_url: str) -> dict:
     """
     os.makedirs("job_files", exist_ok=True)
 
-    download_response = SyncClientSession().get(file_url, headers=HEADERS, timeout=30)
+    with safe_get(file_url, stream=True, timeout=30, headers=HEADERS) as download_response:
+        content_disposition = download_response.headers.get("Content-Disposition")
 
-    content_disposition = download_response.headers.get("Content-Disposition")
+        original_file_name = ""
+        if content_disposition:
+            params = extract_disposition_params(content_disposition)
 
-    original_file_name = ""
-    if content_disposition:
-        params = extract_disposition_params(content_disposition)
+            original_file_name = params.get("filename", "")
 
-        original_file_name = params.get("filename", "")
+        if not original_file_name:
+            download_path = urlparse(file_url).path
+            original_file_name = os.path.basename(download_path)
 
-    if not original_file_name:
-        download_path = urlparse(file_url).path
-        original_file_name = os.path.basename(download_path)
+        file_type = os.path.splitext(original_file_name)[1].replace(".", "")
 
-    file_type = os.path.splitext(original_file_name)[1].replace(".", "")
+        file_name = f"{uuid.uuid4()}"
 
-    file_name = f"{uuid.uuid4()}"
+        output_file_path = os.path.join("job_files", f"{file_name}.{file_type}")
 
-    output_file_path = os.path.join("job_files", f"{file_name}.{file_type}")
-    with open(output_file_path, "wb") as output_file:
-        output_file.write(download_response.content)
+        # Stream to disk in chunks (aborting past the size cap) instead of
+        # buffering the entire untrusted body in memory.
+        file_size = int(download_response.headers.get("Content-Length", 0))
+        chunk_size = calculate_chunk_size(file_size)
+        with open(output_file_path, "wb") as output_file:
+            for chunk in iter_content_capped(download_response, chunk_size, max_download_bytes()):
+                output_file.write(chunk)
 
     if file_type == "zip":
         unzipped_directory = os.path.join("job_files", file_name)
