@@ -3,7 +3,7 @@
 the volume is created on first use; placement co-locates both tasks
 in the volume's datacenter automatically.
 
-    rp dev examples/apps/08_volumes.py --once
+    rp dev tests/e2e/examples/08_volumes.py --once
 """
 
 import runpod

@@ -1,7 +1,7 @@
 """a custom container image: the sdk bootstraps its runtime onto any
 image with python3.
 
-    rp dev examples/apps/12_custom_image.py --once
+    rp dev tests/e2e/examples/12_custom_image.py --once
 """
 
 import runpod

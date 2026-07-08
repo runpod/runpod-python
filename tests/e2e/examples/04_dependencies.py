@@ -1,6 +1,6 @@
 """pip and apt dependencies, available on the worker without a custom image.
 
-    rp dev examples/apps/04_dependencies.py --once
+    rp dev tests/e2e/examples/04_dependencies.py --once
 """
 
 import runpod

@@ -1,6 +1,6 @@
 """the smallest possible app: one queue function, one remote call.
 
-    rp dev examples/apps/01_hello_world.py --once
+    rp dev tests/e2e/examples/01_hello_world.py --once
 """
 
 import runpod

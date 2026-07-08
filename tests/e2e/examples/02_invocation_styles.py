@@ -1,6 +1,6 @@
 """every way to call a function: remote, async, spawn, local.
 
-    rp dev examples/apps/02_invocation_styles.py --once
+    rp dev tests/e2e/examples/02_invocation_styles.py --once
 """
 
 import asyncio
