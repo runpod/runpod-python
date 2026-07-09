@@ -11,7 +11,7 @@ pytestmark = _pytest.mark.filterwarnings(
 
 import base64
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import cloudpickle
 import pytest
@@ -387,3 +387,155 @@ class TestGpuPoolExpansion:
 
         names = _device_names(["AMPERE_48", "NVIDIA L40S"])
         assert "NVIDIA A40" in names and "NVIDIA L40S" in names
+
+
+class TestTaskExecutionLifecycle:
+    def _spec(self, **overrides):
+        from runpod.apps.spec import ResourceKind, ResourceSpec
+
+        defaults = dict(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        defaults.update(overrides)
+        return ResourceSpec(**defaults)
+
+    async def test_start_deploys_pod(self):
+        from runpod.apps.tasks import TaskExecution
+
+        api = MagicMock()
+        api.deploy_task_pod = AsyncMock(return_value={"id": "pod-9"})
+        execution = TaskExecution(self._spec(), api=api)
+        await execution.start()
+        assert execution.pod_id == "pod-9"
+        assert api.deploy_task_pod.call_args[1]["is_cpu"] is True
+
+    async def test_start_resolves_registry_auth(self):
+        from runpod.apps.tasks import TaskExecution
+
+        api = MagicMock()
+        api.deploy_task_pod = AsyncMock(return_value={"id": "pod-9"})
+        execution = TaskExecution(
+            self._spec(image="private/img", registry_auth="dh"), api=api
+        )
+        with patch(
+            "runpod.apps.registry.resolve_registry_auth",
+            AsyncMock(return_value="auth-1"),
+        ):
+            await execution.start()
+        pod = api.deploy_task_pod.call_args[0][0]
+        assert pod["containerRegistryAuthId"] == "auth-1"
+
+    async def test_terminate_swallows_api_errors(self):
+        from runpod.apps.tasks import TaskExecution
+
+        api = MagicMock()
+        api.terminate_pod = AsyncMock(side_effect=RuntimeError("api down"))
+        execution = TaskExecution(self._spec(), api=api)
+        execution.pod_id = "pod-9"
+        await execution.terminate()  # must not raise
+        assert execution.pod_id is None
+
+    async def test_terminate_noop_without_pod(self):
+        from runpod.apps.tasks import TaskExecution
+
+        api = MagicMock()
+        api.terminate_pod = AsyncMock()
+        execution = TaskExecution(self._spec(), api=api)
+        await execution.terminate()
+        api.terminate_pod.assert_not_awaited()
+
+    async def test_execute_polls_to_done(self):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(self._spec(), api=MagicMock())
+        execution.pod_id = "pod-9"
+        execution.submit = AsyncMock()
+        polls = [None, {"success": True, "json_result": 4}]
+        execution.poll_result = AsyncMock(side_effect=polls)
+        with patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()):
+            response = await execution.execute({"fn": "t"}, timeout=60)
+        assert response == {"success": True, "json_result": 4}
+
+    async def test_execute_timeout(self):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(self._spec(), api=MagicMock())
+        execution.pod_id = "pod-9"
+        execution.submit = AsyncMock()
+        execution.poll_result = AsyncMock(return_value=None)
+        with (
+            patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()),
+            patch(
+                "runpod.apps.tasks.time.monotonic",
+                side_effect=[0, 0, 100],
+            ),
+        ):
+            with pytest.raises(TimeoutError, match="did not finish"):
+                await execution.execute({"fn": "t"}, timeout=10)
+
+
+class TestUnwrapTaskResponse:
+    def test_failure_raises(self):
+        from runpod.apps.errors import RemoteExecutionError
+        from runpod.apps.tasks import unwrap_task_response
+
+        with pytest.raises(RemoteExecutionError, match="worker oom"):
+            unwrap_task_response({"success": False, "error": "worker oom"})
+
+    def test_json_result(self):
+        from runpod.apps.tasks import unwrap_task_response
+
+        assert unwrap_task_response(
+            {"success": True, "json_result": {"x": 1}}
+        ) == {"x": 1}
+
+    def test_pickled_result(self):
+        from runpod.apps.tasks import unwrap_task_response
+
+        assert unwrap_task_response({"success": True, "result": _b64(7)}) == 7
+
+
+class TestTaskJob:
+    def _job(self):
+        from runpod.apps.tasks import TaskExecution, TaskJob
+
+        execution = MagicMock(spec=TaskExecution)
+        execution.pod_id = "pod-9"
+        execution.terminate = AsyncMock()
+        return TaskJob(execution), execution
+
+    async def test_wait_returns_result_and_terminates(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(
+            side_effect=[None, {"success": True, "json_result": 9}]
+        )
+        with patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()):
+            result = await job.wait()
+        assert result == 9
+        execution.terminate.assert_awaited_once()
+
+    async def test_wait_timeout_keeps_pod(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(return_value=None)
+        with (
+            patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()),
+            patch(
+                "runpod.apps.tasks.time.monotonic", side_effect=[0, 100]
+            ),
+        ):
+            with pytest.raises(TimeoutError):
+                await job.wait(timeout=10)
+        execution.terminate.assert_not_awaited()
+
+    async def test_wait_after_done_returns_cached(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(
+            return_value={"success": True, "json_result": 9}
+        )
+        assert await job.wait() == 9
+        assert await job.wait() == 9
+        assert execution.poll_result.await_count == 1
+
+    async def test_cancel_terminates(self):
+        job, execution = self._job()
+        await job.cancel()
+        execution.terminate.assert_awaited_once()
+        assert job._done
