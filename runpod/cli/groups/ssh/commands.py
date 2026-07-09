@@ -8,12 +8,12 @@ from prettytable import PrettyTable
 from .functions import generate_ssh_key_pair, get_user_pub_keys
 
 
-@click.group("ssh", help="Manage and configure SSH keys for secure access to pods.")
+@click.group("ssh", help="Manage the SSH keys pods trust (connect with `rp pod connect`).")
 def ssh_cli():
-    """Manage and configure SSH keys."""
+    """Manage account SSH keys."""
 
 
-@ssh_cli.command("list-keys")
+@ssh_cli.command("list")
 def list_keys():
     """
     Lists the SSH keys for the current user.
@@ -25,7 +25,7 @@ def list_keys():
     click.echo(table)
 
 
-@ssh_cli.command("add-key")
+@ssh_cli.command("add")
 @click.option("--key", default=None, help="The public key to add.")
 @click.option(
     "--key-file", default=None, help="The file containing the public key to add."

@@ -700,15 +700,15 @@ def registry_list():
     ui.console.print()
 
 
-@registry.command(name="rm")
+@registry.command(name="delete")
 @click.argument("name")
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
-def registry_rm(name, yes):
+def registry_delete(name, yes):
     """Delete a registry credential by name."""
     from runpod.apps.api import AppsApiClient
     from runpod.rp_cli import console as ui
 
-    async def _rm():
+    async def _delete():
         client = AppsApiClient()
         creds = await client.list_registry_auths()
         match = next((c for c in creds if c["name"] == name), None)
@@ -719,7 +719,7 @@ def registry_rm(name, yes):
     if not yes:
         click.confirm(f"delete registry credential '{name}'?", abort=True)
     try:
-        asyncio.run(_rm())
+        asyncio.run(_delete())
     except click.ClickException:
         raise
     except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
@@ -784,15 +784,15 @@ def secret_list():
     ui.console.print()
 
 
-@secret.command(name="rm")
+@secret.command(name="delete")
 @click.argument("name")
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
-def secret_rm(name, yes):
+def secret_delete(name, yes):
     """Delete a secret by name."""
     from runpod.apps.api import AppsApiClient
     from runpod.rp_cli import console as ui
 
-    async def _rm():
+    async def _delete():
         client = AppsApiClient()
         secrets = await client.list_secrets()
         match = next((s for s in secrets if s["name"] == name), None)
@@ -803,7 +803,7 @@ def secret_rm(name, yes):
     if not yes:
         click.confirm(f"delete secret '{name}'?", abort=True)
     try:
-        asyncio.run(_rm())
+        asyncio.run(_delete())
     except click.ClickException:
         raise
     except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
@@ -891,10 +891,10 @@ def env_get(env_name, app_name):
     ui.console.print()
 
 
-@env.command(name="create")
+@env.command(name="add")
 @click.argument("env_name")
 @click.option("--app", "-a", "app_name", default=None, help="App name.")
-def env_create(env_name, app_name):
+def env_add(env_name, app_name):
     """Create a new environment in an app."""
     from runpod.apps.api import AppsApiClient
     from runpod.apps.manage import get_app

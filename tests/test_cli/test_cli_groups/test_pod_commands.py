@@ -184,7 +184,7 @@ class TestPodCommands(unittest.TestCase):
         # Verify error message was shown
         mock_echo.assert_any_call("❌ No SSH keys found in your Runpod account!")
         mock_echo.assert_any_call("🔑 To create an SSH key, run:")
-        mock_echo.assert_any_call("   runpod ssh add-key")
+        mock_echo.assert_any_call("   rp ssh add")
 
     @patch("runpod.cli.groups.pod.commands.uuid.uuid4")
     @patch("runpod.cli.groups.pod.commands.click.echo")

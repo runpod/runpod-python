@@ -8,7 +8,7 @@ through the sdk.
     def download(): ...
 
 the worker sees a plain HF_TOKEN env var with the decrypted value.
-create and manage secrets with `rp secret add/list/rm`.
+create and manage secrets with `rp secret add/list/delete`.
 """
 
 import re

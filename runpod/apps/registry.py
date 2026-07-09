@@ -5,7 +5,7 @@ credentials are pure provision-time config referenced by name:
     @app.queue(image="ghcr.io/me/private:latest", registry_auth="my-ghcr")
     def infer(): ...
 
-create and manage them with `rp registry add/list/rm`. resolution
+create and manage them with `rp registry add/list/delete`. resolution
 (name -> containerRegistryAuthId) happens when the resource provisions.
 """
 
