@@ -10,9 +10,11 @@ Note: This CLI is not the same as runpodctl and provides a different set of feat
 
 Store your Runpod API key by running `rp login` (browser approval) or `rp login --api-key YOUR_KEY`. Credentials are stored in `~/.runpod/config.toml`.
 
-### SSH keys
+### SSH
 
-Add an SSH key to your account by running `rp ssh add`. To use an existing key pass `--key` or `--key-file`. Keys are stored in `~/.runpod/ssh/`. If no key is specified a new one is generated and stored. Pods trust these keys, so `rp pod connect <pod_id>` works once a key is added.
+Add an SSH key to your account by running `rp ssh add`. To use an existing key pass `--key` or `--key-file`. Keys are stored in `~/.runpod/ssh/`. If no key is specified a new one is generated and stored.
+
+Once a key is added, open a terminal on any pod with `rp ssh <pod_id>` (or the equivalent `rp pod connect <pod_id>`).
 
 ## Apps
 

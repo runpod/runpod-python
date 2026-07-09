@@ -6,14 +6,15 @@ Note: This CLI is not the same as runpodctl and provides a different set of feat
 # Auth
 rp login
 
-# SSH keys (used by rp pod connect)
-rp ssh list
-rp ssh add
+# SSH
+rp ssh add          # add a key to your account
+rp ssh list         # list account keys
+rp ssh POD_ID       # open a terminal on a pod
 
 # Pods
 rp pod list
 rp pod create
-rp pod connect
+rp pod connect POD_ID
 ```
 
 ## Overview

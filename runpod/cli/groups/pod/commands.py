@@ -69,7 +69,9 @@ def create_new_pod(
 @click.argument("pod_id")
 def connect_to_pod(pod_id):
     """
-    Connects to a pod.
+    Open an interactive terminal on a pod over SSH.
+
+    Requires an SSH key on your account (rp ssh add).
     """
     click.echo(f"Connecting to pod {pod_id}...")
     ssh = ssh_cmd.SSHConnection(pod_id)
