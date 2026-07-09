@@ -243,3 +243,103 @@ class TestWatchdog:
         monkeypatch.setattr(task_runner, "_last_contact", {"ts": None})
         _request(f"{server}/result")
         assert task_runner._last_contact["ts"] is not None
+
+
+class TestSelfTermination:
+    def test_terminate_self_calls_graphql_then_exits(self, monkeypatch):
+        import contextlib
+        import io as _io
+
+        calls = []
+
+        @contextlib.contextmanager
+        def _response():
+            yield _io.BytesIO(b"{}")
+
+        def fake_urlopen(req, timeout=None):
+            calls.append((req.full_url, req.data))
+            return _response()
+
+        exits = []
+        monkeypatch.setenv("RUNPOD_POD_ID", "pod-1")
+        monkeypatch.setenv("RUNPOD_API_KEY", "pod-scoped-key")
+        monkeypatch.setattr(
+            "urllib.request.urlopen", fake_urlopen
+        )
+        monkeypatch.setattr(
+            task_runner.os, "_exit", lambda code: exits.append(code)
+        )
+        task_runner._terminate_self()
+
+        assert exits == [0]
+        url, body = calls[0]
+        assert url.endswith("/graphql")
+        assert b"podTerminate" in body
+        assert b"pod-1" in body
+
+    def test_terminate_self_exits_without_credentials(self, monkeypatch):
+        exits = []
+        monkeypatch.delenv("RUNPOD_POD_ID", raising=False)
+        monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
+        monkeypatch.setattr(
+            task_runner.os, "_exit", lambda code: exits.append(code)
+        )
+        task_runner._terminate_self()
+        assert exits == [0]
+
+    def test_terminate_self_survives_api_failure(self, monkeypatch):
+        def fail(req, timeout=None):
+            raise OSError("network down")
+
+        exits = []
+        monkeypatch.setenv("RUNPOD_POD_ID", "pod-1")
+        monkeypatch.setenv("RUNPOD_API_KEY", "k")
+        monkeypatch.setattr("urllib.request.urlopen", fail)
+        monkeypatch.setattr(
+            task_runner.os, "_exit", lambda code: exits.append(code)
+        )
+        task_runner._terminate_self()
+        assert exits == [0]
+
+
+class TestCloudpickleLoading:
+    def test_available_returns_module(self):
+        module = task_runner._load_cloudpickle()
+        assert module is not None
+        assert hasattr(module, "dumps")
+
+    def test_missing_without_install_returns_none(self, monkeypatch):
+        import builtins
+
+        real_import = builtins.__import__
+
+        def no_cloudpickle(name, *args, **kwargs):
+            if name == "cloudpickle":
+                raise ImportError("not installed")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", no_cloudpickle)
+        assert task_runner._load_cloudpickle(install=False) is None
+
+
+class TestInstallHelpers:
+    def test_install_empty_is_noop(self):
+        assert task_runner._install([], "nothing") is None
+
+    def test_install_failure_returns_message(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        result = MagicMock(returncode=1, stderr="resolver exploded")
+        monkeypatch.setattr(
+            task_runner.subprocess, "run", MagicMock(return_value=result)
+        )
+        message = task_runner._install(["ghost-package"], "deps")
+        assert "resolver exploded" in message
+
+    def test_install_system_requires_apt(self, monkeypatch):
+        monkeypatch.setattr(task_runner.shutil, "which", lambda _: None)
+        message = task_runner._install_system(["ffmpeg"])
+        assert "apt-get" in message
+
+    def test_install_system_empty_is_noop(self):
+        assert task_runner._install_system([]) is None
