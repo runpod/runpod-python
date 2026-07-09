@@ -12,6 +12,12 @@ on:
       - ".github/workflows/runtimes.yml"
   workflow_dispatch:
 
+# a branch with an open pr triggers both push and pull_request for the
+# same commit; superseded runs of the same flavor are cancelled
+concurrency:
+  group: runtimes-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: docker.io
   # the apps sdk branch publishes latest while the feature is prerelease:
@@ -55,9 +61,15 @@ jobs:
     runs-on: ubuntu-latest
     # the torch layer is multi-GB; only rebuild when the gpu-base
     # definition itself changes. runtime images build FROM the
-    # registry tag, so the previously published base keeps working
+    # registry tag, so the previously published base keeps working.
+    # same-repo prs skip builds entirely: the push event on the branch
+    # already builds these commits (pr path filters diff against the
+    # base branch, which would force full rebuilds every time)
     needs: [changes, test-runner]
-    if: needs.changes.outputs.gpu-base == 'true'
+    if: >-
+      needs.changes.outputs.gpu-base == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name != github.repository)
     strategy:
       # a transient registry/mirror failure on one leg must not cancel
       # the other python versions
@@ -102,7 +114,10 @@ jobs:
     # failed gpu-base rebuild (e.g. torch mirror outage) must not block
     # runtime images: the previously published base keeps working
     needs: [test-runner, build-gpu-base]
-    if: always() && needs.test-runner.result == 'success'
+    if: >-
+      always() && needs.test-runner.result == 'success' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name != github.repository)
     strategy:
       fail-fast: false
       matrix:
