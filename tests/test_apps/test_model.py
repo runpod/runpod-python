@@ -66,3 +66,23 @@ class TestSpecPlumbing:
             chat.spec.to_manifest()["model"]
             == "meta-llama/Llama-3.1-8B-Instruct"
         )
+
+    def test_task_decorator_rejects_model(self):
+        from runpod.apps.app import App
+
+        app = App("modeltest")
+
+        with pytest.raises(TypeError, match="model"):
+
+            @app.task(name="train", gpu="4090", model=Model("org/name"))
+            def train():
+                pass
+
+    def test_task_spec_rejects_model(self):
+        from runpod.apps.errors import InvalidResourceError
+        from runpod.apps.spec import ResourceKind, ResourceSpec
+
+        with pytest.raises(InvalidResourceError, match="queue and api"):
+            ResourceSpec(
+                kind=ResourceKind.TASK, name="train", model=Model("org/name")
+            )

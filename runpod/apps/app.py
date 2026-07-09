@@ -162,7 +162,6 @@ class App:
         env: Optional[Dict[str, Any]] = None,
         image: Optional[str] = None,
         registry_auth: Optional[str] = None,
-        model: Optional[Any] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
         min_cuda_version: Optional[str] = None,
         accelerate_downloads: bool = True,
@@ -173,6 +172,9 @@ class App:
         tasks have no standing infrastructure: `.remote()` provisions a
         pod, runs the body, returns the result, and terminates the pod.
         they never require `rp deploy` (except to register a schedule).
+
+        platform-cached models (`model=`) are only available on queue
+        and api resources; tasks download weights themselves.
         """
 
         def decorator(fn: Callable) -> FunctionHandle:
@@ -188,7 +190,6 @@ class App:
                 env=env,
                 image=image,
                 registry_auth=registry_auth,
-                model=model,
                 datacenter=_datacenter_list(datacenter),
                 min_cuda_version=normalize_cuda_version(min_cuda_version),
                 accelerate_downloads=accelerate_downloads,

@@ -205,6 +205,12 @@ class ResourceSpec:
                 f"resource '{self.name}': min_cuda_version has no effect "
                 f"on cpu resources"
             )
+        if self.model is not None and self.kind is ResourceKind.TASK:
+            raise InvalidResourceError(
+                f"resource '{self.name}': platform-cached models are only "
+                f"available on queue and api resources; tasks download "
+                f"weights themselves"
+            )
 
     @property
     def is_cpu(self) -> bool:
