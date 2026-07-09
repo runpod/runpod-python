@@ -1,7 +1,7 @@
 """worker monitor: metrics transitions, log attach, event emission."""
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -142,3 +142,132 @@ class TestLineFiltering:
 
         # user code printing json without the sdk frame shape
         assert _filter_line('{"result": 5}') == '{"result": 5}'
+
+
+class TestPodLogStream:
+    async def test_follow_emits_and_dedups(self):
+        from runpod.apps.monitor import PodLogStream
+
+        sink = Sink()
+        events = [
+            {"ts": "t1", "line": "hello"},
+            {"ts": "t1", "line": "hello"},  # duplicate frame
+            {"ts": "t2", "line": ""},  # blank filtered
+            {"ts": "t3", "line": "world"},
+        ]
+
+        calls = {"n": 0}
+
+        async def fake_stream(pod_id, **kwargs):
+            if calls["n"]:
+                # second attach: park forever so stop() cancels us
+                await asyncio.sleep(3600)
+            calls["n"] += 1
+            for event in events:
+                yield event
+
+        stream = PodLogStream("pod1", "calc", sink)
+        with patch("runpod.apps.logs.stream_pod_logs", fake_stream):
+            stream.attach()
+            await asyncio.sleep(0.05)
+            await stream.stop()
+
+        logs = [e for e in sink.events if e[0] == "worker_log"]
+        assert logs == [
+            ("worker_log", "calc", "hello"),
+            ("worker_log", "calc", "world"),
+        ]
+
+    async def test_stop_snapshots_when_stream_never_attached(self):
+        from datetime import datetime, timedelta, timezone
+
+        from runpod.apps.monitor import PodLogStream
+
+        sink = Sink()
+
+        async def failing_stream(pod_id, **kwargs):
+            raise RuntimeError("403")
+            yield  # pragma: no cover
+
+        stream = PodLogStream("pod1", "calc", sink)
+        after = (
+            datetime.now(timezone.utc) + timedelta(seconds=5)
+        ).isoformat()
+        snapshot = {
+            "container": [f"{after} recovered output"],
+            "system": [],
+        }
+        with (
+            patch("runpod.apps.logs.stream_pod_logs", failing_stream),
+            patch(
+                "runpod.apps.logs.pod_logs",
+                AsyncMock(return_value=snapshot),
+            ),
+        ):
+            stream.attach()
+            await asyncio.sleep(0.05)
+            await stream.stop()
+
+        logs = [e for e in sink.events if e[0] == "worker_log"]
+        assert logs == [("worker_log", "calc", "recovered output")]
+
+    async def test_snapshot_skips_lines_before_since(self):
+        from runpod.apps.monitor import PodLogStream
+
+        sink = Sink()
+        stale = "2000-01-01T00:00:00.000000000Z old line"
+        snapshot = {"container": [stale], "system": []}
+        stream = PodLogStream("pod1", "calc", sink)
+        with patch(
+            "runpod.apps.logs.pod_logs",
+            AsyncMock(return_value=snapshot),
+        ):
+            await stream._snapshot()
+
+        assert sink.events == []
+
+    async def test_attach_idempotent(self):
+        from runpod.apps.monitor import PodLogStream
+
+        async def parked(pod_id, **kwargs):
+            await asyncio.sleep(3600)
+            yield  # pragma: no cover
+
+        stream = PodLogStream("pod1", "calc", Sink())
+        with patch("runpod.apps.logs.stream_pod_logs", parked):
+            stream.attach()
+            first = stream._task
+            stream.attach()
+            assert stream._task is first
+            stream._lines_emitted = 1  # skip the snapshot fallback
+            await stream.stop()
+        assert stream._task is None
+
+
+class TestMonitorLifecycle:
+    async def test_start_without_metrics_key_is_noop(self):
+        monitor = WorkerMonitor("ep1", "calc", Sink())
+        await monitor.start()
+        assert monitor._tasks == []
+        await monitor.stop()
+
+    async def test_metrics_polling_reports_counts(self):
+        import runpod
+
+        sink = Sink()
+        monitor = WorkerMonitor("ep1", "calc", sink, metrics_key="mk")
+        payload = {"workers": {"initializing": 1, "ready": 0}}
+
+        async def fake_get(url, headers, timeout):
+            assert headers["Authorization"] == "Bearer mk"
+            return payload
+
+        with patch("runpod.apps.targets._get_json", fake_get):
+            await monitor.start()
+            await asyncio.sleep(0.05)
+            await monitor.stop()
+
+        statuses = [e for e in sink.events if e[0] == "worker_status"]
+        assert statuses
+        assert statuses[0][2]["initializing"] == 1
+
