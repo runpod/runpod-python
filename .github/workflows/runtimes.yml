@@ -1,38 +1,40 @@
 name: Runtimes
 
+# runtime images embed the runpod package, so they are published when a
+# release ships (release-please merge -> github release), not per pr.
+# the feature branch is a prerelease channel while the apps sdk is in
+# development; runtime tests for prs run in ci via the full test suite.
 on:
+  release:
+    types: [published]
   push:
-    branches: [main, feat/apps-sdk]
-    paths:
-      - "runpod/runtimes/**"
-      - ".github/workflows/runtimes.yml"
-  pull_request:
+    branches: [feat/apps-sdk]
     paths:
       - "runpod/runtimes/**"
       - ".github/workflows/runtimes.yml"
   workflow_dispatch:
 
-# a branch with an open pr triggers both push and pull_request for the
-# same commit; superseded runs of the same flavor are cancelled
 concurrency:
-  group: runtimes-${{ github.event_name }}-${{ github.ref }}
+  group: runtimes-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   REGISTRY: docker.io
-  # the apps sdk branch publishes latest while the feature is prerelease:
-  # the runtime image names are new, so nothing released depends on them
-  TAG_SUFFIX: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/apps-sdk') && 'latest' || 'dev' }}
+  TAG_SUFFIX: latest
 
 jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      gpu-base: ${{ steps.filter.outputs.gpu-base }}
+      gpu-base: ${{ steps.filter.outputs.gpu-base || 'true' }}
     steps:
       - uses: actions/checkout@v7
 
+      # branch pushes rebuild the multi-gb torch base only when its
+      # definition changed; releases and manual runs always rebuild so
+      # published images never lag the release content
       - uses: dorny/paths-filter@v3
+        if: github.event_name == 'push'
         id: filter
         with:
           filters: |
@@ -59,17 +61,8 @@ jobs:
 
   build-gpu-base:
     runs-on: ubuntu-latest
-    # the torch layer is multi-GB; only rebuild when the gpu-base
-    # definition itself changes. runtime images build FROM the
-    # registry tag, so the previously published base keeps working.
-    # same-repo prs skip builds entirely: the push event on the branch
-    # already builds these commits (pr path filters diff against the
-    # base branch, which would force full rebuilds every time)
     needs: [changes, test-runner]
-    if: >-
-      needs.changes.outputs.gpu-base == 'true' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name != github.repository)
+    if: needs.changes.outputs.gpu-base == 'true'
     strategy:
       # a transient registry/mirror failure on one leg must not cancel
       # the other python versions
@@ -87,7 +80,6 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -102,7 +94,7 @@ jobs:
           platforms: linux/amd64
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: |
             runpod/gpu-base:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
           cache-from: type=gha,scope=gpu-base-py${{ matrix.python-version }}
@@ -114,10 +106,7 @@ jobs:
     # failed gpu-base rebuild (e.g. torch mirror outage) must not block
     # runtime images: the previously published base keeps working
     needs: [test-runner, build-gpu-base]
-    if: >-
-      always() && needs.test-runner.result == 'success' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name != github.repository)
+    if: always() && needs.test-runner.result == 'success'
     strategy:
       fail-fast: false
       matrix:
@@ -136,7 +125,6 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -148,11 +136,17 @@ jobs:
         run: |
           if [ "${{ matrix.accelerator }}" = "gpu" ]; then
             echo "base=runpod/gpu-base:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}" >> "$GITHUB_OUTPUT"
-            echo "repo=runpod/${{ matrix.kind }}-gpu" >> "$GITHUB_OUTPUT"
+            repo="runpod/${{ matrix.kind }}-gpu"
           else
             echo "base=python:${{ matrix.python-version }}-slim" >> "$GITHUB_OUTPUT"
-            echo "repo=runpod/${{ matrix.kind }}" >> "$GITHUB_OUTPUT"
+            repo="runpod/${{ matrix.kind }}"
           fi
+          tags="$repo:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}"
+          # releases also pin a version tag for rollback
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tags="$tags,$repo:py${{ matrix.python-version }}-${{ github.event.release.tag_name }}"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
       - name: Build and push runtime image
         uses: docker/build-push-action@v6
@@ -162,8 +156,7 @@ jobs:
           platforms: linux/amd64
           build-args: |
             BASE_IMAGE=${{ steps.names.outputs.base }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ steps.names.outputs.repo }}:py${{ matrix.python-version }}-${{ env.TAG_SUFFIX }}
+          push: true
+          tags: ${{ steps.names.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.kind }}-${{ matrix.accelerator }}-py${{ matrix.python-version }}
           cache-to: type=gha,mode=max,scope=${{ matrix.kind }}-${{ matrix.accelerator }}-py${{ matrix.python-version }}
