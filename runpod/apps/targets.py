@@ -361,18 +361,23 @@ class LiveTarget(InvocationTarget):
         self.metrics_key = metrics_key
         self._source_target: Optional[Any] = None
         self._source_resource: str = ""
+        self._source_spec: Optional[ResourceSpec] = None
         # source hash the worker last confirmed; None forces a sync
         self._synced_hash: Optional[str] = None
 
-    def attach_source(self, target: Any, resource: str) -> None:
+    def attach_source(
+        self, target: Any, resource: str, spec: Optional[ResourceSpec] = None
+    ) -> None:
         """register the object whose module backs this api resource.
 
         live api endpoints materialize their routes from module source
         pushed over /_runpod/sync (once per source change), keeping dev
-        behavior identical to deployed.
+        behavior identical to deployed. the spec rides along so the
+        worker can install the resource's dependencies before @init.
         """
         self._source_target = target
         self._source_resource = resource
+        self._source_spec = spec
 
     async def _sync_source(self, timeout: float) -> None:
         """push the current module source to the worker if it changed."""
@@ -387,12 +392,16 @@ class LiveTarget(InvocationTarget):
         if digest == self._synced_hash:
             return
         url = f"https://{self.endpoint_id}.{_lb_domain()}/_runpod/sync"
-        await _post_json(
-            url,
-            {"source": source, "resource": self._source_resource},
-            _headers(),
-            timeout,
-        )
+        payload: Dict[str, Any] = {
+            "source": source,
+            "resource": self._source_resource,
+        }
+        if self._source_spec is not None:
+            payload["dependencies"] = self._source_spec.dependencies
+            payload["system_dependencies"] = (
+                self._source_spec.system_dependencies
+            )
+        await _post_json(url, payload, _headers(), timeout)
         self._synced_hash = digest
 
     def build_payload(

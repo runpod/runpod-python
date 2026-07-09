@@ -198,6 +198,47 @@ class TestLiveDispatcher:
         # core routes still work after materialization
         assert client.get("/ping").status_code == 200
 
+    def test_sync_installs_dependencies_before_materializing(self):
+        from unittest.mock import patch
+
+        from fastapi.testclient import TestClient
+
+        from runpod.runtimes.api.server import _build_live_app
+
+        source = (
+            "import runpod\n"
+            "from runpod.apps.markers import get\n"
+            "app = runpod.App('live-deps')\n"
+            "@app.api(cpu='cpu3c-1-2', dependencies=['somepkg'])\n"
+            "class D:\n"
+            "    @get('/ok')\n"
+            "    async def ok(self):\n"
+            "        return {'ok': True}\n"
+        )
+        client = TestClient(_build_live_app())
+        with (
+            patch(
+                "runpod.runtimes.task.runner._install", return_value=None
+            ) as install,
+            patch(
+                "runpod.runtimes.task.runner._install_system",
+                return_value=None,
+            ) as install_system,
+        ):
+            r = client.post(
+                "/_runpod/sync",
+                json={
+                    "source": source,
+                    "resource": "D",
+                    "dependencies": ["somepkg"],
+                    "system_dependencies": ["libfoo"],
+                },
+            )
+        assert r.status_code == 200
+        install.assert_called_once_with(["somepkg"], "dependencies")
+        install_system.assert_called_once_with(["libfoo"])
+        assert client.get("/ok").json() == {"ok": True}
+
     def test_resync_same_source_keeps_state(self):
         from fastapi.testclient import TestClient
 

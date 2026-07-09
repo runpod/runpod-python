@@ -164,6 +164,23 @@ def _build_factory_app(handle) -> Any:
     return app
 
 
+def _install_live_dependencies(request: dict) -> None:
+    """install a live resource's dependencies before its module runs.
+
+    dev workers boot on the bare runtime image; deployed workers get
+    dependencies baked into the build artifact, so live mode installs
+    them at sync time to match.
+    """
+    from runpod.runtimes.task.runner import _install, _install_system
+
+    error = _install_system(request.get("system_dependencies"))
+    if error:
+        raise RuntimeError(error)
+    error = _install(request.get("dependencies"), "dependencies")
+    if error:
+        raise RuntimeError(error)
+
+
 async def _materialize_live_api(source: str, resource: str) -> Any:
     """exec shipped module source and build the api app for a resource.
 
@@ -235,6 +252,7 @@ class _LiveDispatcher:
             resource = request.get("resource") or ""
             digest = hashlib.sha256(source.encode()).hexdigest()
             if digest != self._hash:
+                _install_live_dependencies(request)
                 self._inner = await _materialize_live_api(source, resource)
                 self._hash = digest
             return {"status": "synced", "hash": digest}

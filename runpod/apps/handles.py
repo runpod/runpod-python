@@ -181,7 +181,11 @@ class _RouteCaller:
         # server-side; other targets ignore the reference
         setter = getattr(target, "attach_source", None)
         if setter is not None:
-            setter(self._handle.__wrapped__, self._handle.spec.name)
+            setter(
+                self._handle.__wrapped__,
+                self._handle.spec.name,
+                self._handle.spec,
+            )
         return await target.request(self._method, path, body, **kwargs)
 
 
