@@ -281,6 +281,7 @@ class TaskExecution:
         """
         url = f"{_proxy_url(self.pod_id)}/result"
         attempts = 6
+        data: Dict[str, Any] = {}
         async with aiohttp.ClientSession() as session:
             for attempt in range(attempts):
                 async with session.get(

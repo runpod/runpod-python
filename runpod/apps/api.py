@@ -41,7 +41,8 @@ class AppsApiClient:
                 # transport-level failures (ssl hiccups, resets, dns)
                 # are transient; graphql/auth errors propagate untouched
                 last_exc = exc
-        raise last_exc  # type: ignore[misc]
+        assert last_exc is not None  # loop always runs at least once
+        raise last_exc
 
     # -- endpoints (dev session provisioning) --
 

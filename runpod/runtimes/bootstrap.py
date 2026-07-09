@@ -117,7 +117,8 @@ def _locate():
                 # and absolute paths
                 tar.extractall(path=APP_DIR, filter="data")
             else:
-                for member in tar.getmembers():
+                members = tar.getmembers()
+                for member in members:
                     dest = os.path.realpath(
                         os.path.join(APP_DIR, member.name)
                     )
@@ -125,7 +126,19 @@ def _locate():
                         raise PhaseError(
                             "locate", f"unsafe tar member path: {member.name}"
                         )
-                tar.extractall(path=APP_DIR)
+                    # links can point outside and later members write
+                    # through them; artifacts never contain links
+                    if member.issym() or member.islnk():
+                        raise PhaseError(
+                            "locate",
+                            f"unsafe tar link member: {member.name}",
+                        )
+                    if not (member.isfile() or member.isdir()):
+                        raise PhaseError(
+                            "locate",
+                            f"unsupported tar member type: {member.name}",
+                        )
+                tar.extractall(path=APP_DIR, members=members)  # noqa: S202 - members validated above
     except (OSError, tarfile.TarError) as exc:
         raise PhaseError("locate", f"failed to extract artifact: {exc}")
 

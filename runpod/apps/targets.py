@@ -184,7 +184,8 @@ async def _request_json(
             # decided retryability
             last_exc = exc
             continue
-    raise last_exc  # type: ignore[misc]
+    assert last_exc is not None  # loop always runs at least once
+    raise last_exc
 
 
 async def _post_json(

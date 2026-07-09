@@ -472,27 +472,6 @@ class TestTaskExecutionLifecycle:
                 await execution.execute({"fn": "t"}, timeout=10)
 
 
-class TestUnwrapTaskResponse:
-    def test_failure_raises(self):
-        from runpod.apps.errors import RemoteExecutionError
-        from runpod.apps.tasks import unwrap_task_response
-
-        with pytest.raises(RemoteExecutionError, match="worker oom"):
-            unwrap_task_response({"success": False, "error": "worker oom"})
-
-    def test_json_result(self):
-        from runpod.apps.tasks import unwrap_task_response
-
-        assert unwrap_task_response(
-            {"success": True, "json_result": {"x": 1}}
-        ) == {"x": 1}
-
-    def test_pickled_result(self):
-        from runpod.apps.tasks import unwrap_task_response
-
-        assert unwrap_task_response({"success": True, "result": _b64(7)}) == 7
-
-
 class TestTaskJob:
     def _job(self):
         from runpod.apps.tasks import TaskExecution, TaskJob

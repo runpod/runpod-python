@@ -72,9 +72,12 @@ class TestSpecPlumbing:
 
         app = App("modeltest")
 
+        # model= is not a parameter of @app.task; passed via a kwargs
+        # dict so the intentional misuse is constructed at runtime
+        kwargs = {"name": "train", "gpu": "4090", "model": Model("org/name")}
         with pytest.raises(TypeError, match="model"):
 
-            @app.task(name="train", gpu="4090", model=Model("org/name"))
+            @app.task(**kwargs)
             def train():
                 pass
 
