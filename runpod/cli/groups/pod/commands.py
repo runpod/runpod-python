@@ -74,7 +74,10 @@ def connect_to_pod(pod_id):
     Requires an SSH key on your account (rp ssh add).
     """
     click.echo(f"Connecting to pod {pod_id}...")
-    ssh = ssh_cmd.SSHConnection(pod_id)
+    try:
+        ssh = ssh_cmd.SSHConnection(pod_id)
+    except (ValueError, TimeoutError) as exc:
+        raise click.ClickException(str(exc)) from exc
     ssh.launch_terminal()
 
 

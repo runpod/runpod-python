@@ -26,21 +26,24 @@ class SSHGroup(click.Group):
 @click.group(
     "ssh",
     cls=SSHGroup,
-    help="SSH into pods and manage the keys they trust.",
+    help="SSH into a pod (rp ssh POD_ID) and manage the keys pods trust.",
     invoke_without_command=False,
 )
 def ssh_cli():
     """SSH into pods and manage account SSH keys."""
 
 
-@ssh_cli.command("connect")
+@ssh_cli.command("connect", hidden=True)
 @click.argument("pod_id")
 def connect(pod_id):
-    """Open an interactive terminal on a pod (also: rp ssh POD_ID)."""
+    """Open an interactive terminal on a pod."""
     from runpod.cli.utils import ssh_cmd
 
     click.echo(f"Connecting to pod {pod_id}...")
-    ssh = ssh_cmd.SSHConnection(pod_id)
+    try:
+        ssh = ssh_cmd.SSHConnection(pod_id)
+    except (ValueError, TimeoutError) as exc:
+        raise click.ClickException(str(exc)) from exc
     ssh.launch_terminal()
 
 
