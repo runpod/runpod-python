@@ -11,10 +11,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git ca-certificates \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# dependency layer: cached until requirements.txt changes, so code-only
+# edits skip the full dependency install
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt cloudpickle \
+ && rm /tmp/requirements.txt
+
 # install the runpod package: task payloads carry the user's full module
-# source, which imports runpod (decorators, nested .remote calls)
+# source, which imports runpod (decorators, nested .remote calls).
+# the context has no .git, so setuptools-scm needs a pretend version
 COPY . /src
-RUN pip install --no-cache-dir /src cloudpickle && rm -rf /src
+RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD=0.0.0.dev0 \
+    pip install --no-cache-dir --no-deps /src && rm -rf /src
 
 EXPOSE 8080
 CMD ["python", "-m", "runpod.runtimes.task.runner"]

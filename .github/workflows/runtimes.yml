@@ -19,6 +19,21 @@ env:
   TAG_SUFFIX: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/apps-sdk') && 'latest' || 'dev' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      gpu-base: ${{ steps.filter.outputs.gpu-base }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            gpu-base:
+              - 'runpod/runtimes/gpu-base/**'
+              - '.github/workflows/runtimes.yml'
+
   test-runner:
     runs-on: ubuntu-latest
     steps:
@@ -38,7 +53,11 @@ jobs:
 
   build-gpu-base:
     runs-on: ubuntu-latest
-    needs: [test-runner]
+    # the torch layer is multi-GB; only rebuild when the gpu-base
+    # definition itself changes. runtime images build FROM the
+    # registry tag, so the previously published base keeps working
+    needs: [changes, test-runner]
+    if: needs.changes.outputs.gpu-base == 'true'
     strategy:
       # a transient registry/mirror failure on one leg must not cancel
       # the other python versions
@@ -79,8 +98,8 @@ jobs:
 
   build-runtimes:
     runs-on: ubuntu-latest
-    # gpu legs build FROM the registry's gpu-base tag, so a failed
-    # gpu-base rebuild (e.g. torch mirror outage) must not block
+    # gpu legs build FROM the registry's gpu-base tag, so a skipped or
+    # failed gpu-base rebuild (e.g. torch mirror outage) must not block
     # runtime images: the previously published base keeps working
     needs: [test-runner, build-gpu-base]
     if: always() && needs.test-runner.result == 'success'
