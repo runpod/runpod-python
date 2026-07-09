@@ -6,8 +6,6 @@ The entry point for the CLI.
 
 import click
 
-from .groups.config.commands import config_wizard
-from .groups.exec.commands import exec_cli
 from .groups.pod.commands import pod_cli
 from .groups.ssh.commands import ssh_cli
 
@@ -17,8 +15,5 @@ def runpod_cli():
     """A collection of CLI functions for Runpod."""
 
 
-runpod_cli.add_command(config_wizard)  # runpod config
-
 runpod_cli.add_command(ssh_cli)  # runpod ssh
 runpod_cli.add_command(pod_cli)  # runpod pod
-runpod_cli.add_command(exec_cli)  # runpod exec

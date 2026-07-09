@@ -990,12 +990,10 @@ def undeploy(app_name, env_name, yes):
 
 
 def _mount_groups() -> None:
-    from runpod.cli.groups.config.commands import config_wizard
-    from runpod.cli.groups.exec.commands import exec_cli
     from runpod.cli.groups.pod.commands import pod_cli
     from runpod.cli.groups.ssh.commands import ssh_cli
 
-    for command in (config_wizard, ssh_cli, pod_cli, exec_cli):
+    for command in (ssh_cli, pod_cli):
         cli.add_command(command)
 
 
