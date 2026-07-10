@@ -279,7 +279,10 @@ async def run_fitness_checks() -> None:
 
             # Best-effort report to the host so the failure is queryable; never
             # allowed to block the force-exit below.
-            _report_unhealthy(check_name, f"{error_type}: {error_message}")
+            try:
+                _report_unhealthy(check_name, f"{error_type}: {error_message}")
+            except Exception:  # never let reporting block the force-exit
+                pass
 
             # Force-kill immediately; see _terminate_unhealthy for why this is
             # os._exit rather than sys.exit.

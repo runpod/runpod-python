@@ -127,6 +127,26 @@ def test_report_unhealthy_skipped_without_ping_url(monkeypatch):
     session_cls.assert_not_called()
 
 
+def test_report_unhealthy_truncates_long_reason(monkeypatch):
+    monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping")
+    monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
+
+    fake_session = MagicMock()
+    with patch("runpod.http_client.SyncClientSession", return_value=fake_session):
+        rp_fitness._report_unhealthy("_disk_check", "x" * 300)
+
+    params = fake_session.get.call_args.kwargs["params"]
+    assert len(params["reason"]) == 256
+
+
+def test_report_unhealthy_skipped_without_api_key(monkeypatch):
+    monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping")
+    monkeypatch.delenv("RUNPOD_AI_API_KEY", raising=False)
+    with patch("runpod.http_client.SyncClientSession") as session_cls:
+        rp_fitness._report_unhealthy("_memory_check", "RuntimeError: low")
+    session_cls.assert_not_called()
+
+
 def test_report_unhealthy_swallows_errors(monkeypatch):
     monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping")
     monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
