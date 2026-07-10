@@ -2,15 +2,17 @@
 Fitness check system for worker startup validation.
 
 Fitness checks run before handler initialization on the actual RunPod serverless
-platform to validate the worker environment. Any check failure causes immediate
-exit with sys.exit(1), signaling unhealthy state to the container orchestrator.
+platform to validate the worker environment. Any check failure force-kills the
+worker via os._exit(1), signaling unhealthy state to the container orchestrator.
 
 Fitness checks do NOT run in local development mode or testing mode.
 """
 
 from __future__ import annotations
 
+import contextlib
 import inspect
+import os
 import sys
 import time
 import traceback
@@ -19,6 +21,31 @@ from collections.abc import Callable
 from .rp_logger import RunPodLogger
 
 log = RunPodLogger()
+
+
+def _terminate_unhealthy(code: int = 1) -> None:
+    """
+    Force-kill the worker after a fitness check failure.
+
+    Uses os._exit rather than sys.exit because a fitness failure means the
+    environment is broken and the worker must die immediately so the
+    orchestrator can restart it. sys.exit only raises SystemExit, which
+    triggers cooperative interpreter shutdown and blocks joining non-daemon
+    threads. Workers routinely have such threads alive by the time checks run
+    (e.g. vLLM's AsyncLLMEngine, constructed at import before the checks), so
+    sys.exit can hang forever and the worker keeps serving jobs. os._exit
+    bypasses thread joins, atexit handlers, and asyncgen cleanup.
+
+    Args:
+        code: Process exit code (default 1, signaling unhealthy).
+    """
+    # Best-effort flush of buffered logs before the hard exit skips normal
+    # cleanup. A broken worker may have a closed/None stdio stream; never let a
+    # flush failure stop the exit, which is the whole point of this helper.
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            stream.flush()
+    os._exit(code)
 
 # Global registry for fitness check functions, preserves registration order
 _fitness_checks: list[Callable] = []
@@ -29,7 +56,7 @@ def register_fitness_check(func: Callable) -> Callable:
     Decorator to register a fitness check function.
 
     Fitness checks validate worker health at startup before handler initialization.
-    If any check fails, the worker exits with sys.exit(1).
+    If any check fails, the worker is force-killed with os._exit(1).
 
     Supports both sync and async functions (auto-detected via inspect.iscoroutinefunction()).
 
@@ -148,7 +175,10 @@ async def run_fitness_checks() -> None:
     5. On any exception:
        - Log detailed error with check name, exception type, and message
        - Log traceback at DEBUG level
-       - Call sys.exit(1) immediately (fail-fast)
+       - Force-kill the worker via os._exit(1) immediately (fail-fast). This is
+         a hard exit, not a cooperative sys.exit/SystemExit: it does not unwind
+         the stack or run cleanup, so callers cannot catch it and it cannot be
+         blocked by live non-daemon threads.
     6. On successful completion of all checks:
        - Log completion message with total execution time
 
@@ -158,8 +188,9 @@ async def run_fitness_checks() -> None:
         and handles checks with dependencies correctly.
         Timing uses high-precision perf_counter for accurate measurements.
 
-    Raises:
-        SystemExit: Calls sys.exit(1) if any check fails.
+    Note:
+        A failing check terminates the process via os._exit(1); this function
+        does not return in that case and does not raise SystemExit.
     """
     # Defer GPU check auto-registration until fitness checks are about to run
     # This avoids circular import issues during module initialization
@@ -203,9 +234,10 @@ async def run_fitness_checks() -> None:
             )
             log.debug(f"Traceback:\n{full_traceback}")
 
-            # Exit immediately with failure code
+            # Force-kill immediately; see _terminate_unhealthy for why this is
+            # os._exit rather than sys.exit.
             log.error("Worker is unhealthy, exiting.")
-            sys.exit(1)
+            _terminate_unhealthy(1)
 
     total_elapsed_ms = (time.perf_counter() - total_start_time) * 1000
     log.info(f"All fitness checks passed. ({total_elapsed_ms:.2f}ms)")
