@@ -85,7 +85,9 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   otherwise). Extraction always goes through `tarfile`, validating every
   member's resolved path against the configured `dirs` before writing.
 - **Idempotent.** Re-running `hydrate`/`sync` after nothing has changed
-  copies zero files and does not rewrite `small.tar` or `manifest.json`.
+  copies zero files and does not repack `small.tar`. `manifest.json` is still
+  refreshed on every `sync` call — a small atomic write that also drops
+  entries for files deleted locally since the last sync.
 - **Last-writer-wins.** Under concurrent workers, the mirror simply reflects
   whichever worker synced most recently — there's no locking or merge.
 - **Safety.** Symlinked sources are never followed/copied. Every archive
@@ -102,3 +104,7 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   a daemon thread; if the process exits without going through normal
   interpreter shutdown (e.g. `os._exit`, `SIGKILL`), the atexit hook never
   runs and the sync may not complete.
+- **Orphaned big files are never pruned.** If a large file is deleted or
+  renamed locally, its `big/<relpath>` copy stays on the volume — hydrate
+  is manifest-driven and simply ignores it, but volume space grows across
+  model-version swaps. Same behavior as the prior flat-mirror design.

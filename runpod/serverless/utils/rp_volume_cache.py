@@ -165,9 +165,15 @@ class VolumeCache:
     def _read_manifest(self):
         try:
             with open(self._manifest_path) as fh:
-                return json.load(fh)
+                obj = json.load(fh)
         except (OSError, ValueError):
             return None
+        if not isinstance(obj, dict) or obj.get("version") != _FORMAT_VERSION:
+            # Not a dict, or an unknown/future format version: treat as absent
+            # so callers self-heal (sync repacks and rewrites the manifest)
+            # instead of raising downstream on unexpected shapes.
+            return None
+        return obj
 
     def _meta_satisfied_by_local(self, meta):
         try:
@@ -245,9 +251,9 @@ class VolumeCache:
         try:
             if self._tar_binary():
                 listing = f"{tmp}.list"
-                with open(listing, "w") as fh:
-                    fh.write("\n".join(rels))
                 try:
+                    with open(listing, "w") as fh:
+                        fh.write("\n".join(rels))
                     subprocess.run(
                         ["tar", "-C", "/", "-c", "--no-recursion", "-f", tmp, "-T", listing],
                         check=True,

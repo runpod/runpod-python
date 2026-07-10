@@ -1,5 +1,7 @@
+import json
 import os
 import shutil
+import subprocess
 import tarfile
 import threading
 import time
@@ -397,6 +399,22 @@ def test_read_manifest_none_when_corrupt(tmp_path):
     assert vc._read_manifest() is None
 
 
+def test_read_manifest_none_when_valid_json_not_object(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    with open(vc._manifest_path, "w") as fh:
+        fh.write("42")
+    assert vc._read_manifest() is None
+
+
+def test_read_manifest_none_when_unknown_version(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    with open(vc._manifest_path, "w") as fh:
+        json.dump({"version": vcmod._FORMAT_VERSION + 1, "small": [], "big": []}, fh)
+    assert vc._read_manifest() is None
+
+
 def test_meta_satisfied_by_local(tmp_path):
     vc, cache, _vol = _mk_cache_with_volume(tmp_path)
     f = cache / "m.bin"
@@ -611,6 +629,23 @@ def test_pack_small_atomic_no_partial_on_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(tarfile, "open", boom)
     assert vc._pack_small([str(cache / "a.txt")]) is False
     assert not os.path.exists(vc._small_archive_path)  # atomic: no partial archive
+
+
+def test_pack_small_subprocess_tar_failure_leaves_no_partial(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    (cache / "a.txt").write_text("aaa")
+    # Force the subprocess-tar branch, then fail the subprocess call itself.
+    monkeypatch.setattr(vc, "_tar_binary", lambda: "/usr/bin/tar")
+
+    def boom(*a, **k):
+        raise subprocess.CalledProcessError(1, "tar")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert vc._pack_small([str(cache / "a.txt")]) is False
+    assert not os.path.exists(vc._small_archive_path)  # atomic: no partial archive
+    # No leftover .list temp file in the mirror root.
+    assert not any(name.endswith(".list") for name in os.listdir(vc._mirror_root))
 
 
 # --------------------------------------------------------------------------- #
