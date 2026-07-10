@@ -110,6 +110,49 @@ def _reset_registration_state() -> None:
     _registration_state["system_checks"] = False
 
 
+# Bound the best-effort unhealthy report so it never delays the exit.
+_REPORT_TIMEOUT_SECONDS = 2
+
+
+def _report_unhealthy(check: str, reason: str) -> None:
+    """
+    Best-effort report of a fitness-check failure to the host before exit.
+
+    Sends a single GET to the ping URL (same URL/credentials the heartbeat
+    uses) with status=unhealthy plus the failing check name and reason, so the
+    host can emit a queryable worker.fitness_failed event. Any failure — no
+    ping URL, no API key, HTTP error, timeout — is swallowed: this must never
+    delay or block the os._exit that follows.
+    """
+    ping_url = os.environ.get("RUNPOD_WEBHOOK_PING")
+    api_key = os.environ.get("RUNPOD_AI_API_KEY")
+    if not ping_url or ping_url == "PING_NOT_SET" or not api_key:
+        return
+
+    try:
+        # Deferred imports: keep module import light and avoid import cycles.
+        from runpod.http_client import SyncClientSession
+        from runpod.serverless.modules.worker_state import WORKER_ID
+        from runpod.version import __version__ as runpod_version
+
+        ping_url = ping_url.replace("$RUNPOD_POD_ID", WORKER_ID)
+        params = {
+            "status": "unhealthy",
+            "check": check,
+            "reason": reason[:256],
+            "runpod_version": runpod_version,
+        }
+        session = SyncClientSession()
+        try:
+            session.headers.update({"Authorization": api_key})
+            session.get(ping_url, params=params, timeout=_REPORT_TIMEOUT_SECONDS)
+        finally:
+            session.close()
+    except Exception:
+        # Best-effort only; the exit is the guarantee, not this report.
+        pass
+
+
 def _ensure_gpu_check_registered() -> None:
     """
     Ensure GPU fitness check is registered.
