@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 
 from ..api.graphql import run_graphql_query_async
+from ..api.mutations import apps as app_mutations
+from ..api.queries import apps as app_queries
 from ..error import QueryError
 
 
@@ -24,7 +26,11 @@ class AppsApiClient:
         self._api_key = api_key
 
     async def _execute(
-        self, query: str, variables: Optional[Dict[str, Any]] = None
+        self,
+        query: str,
+        variables: Optional[Dict[str, Any]] = None,
+        *,
+        anonymous: bool = False,
     ) -> Dict[str, Any]:
         import asyncio
 
@@ -34,7 +40,10 @@ class AppsApiClient:
                 await asyncio.sleep(2 ** (attempt - 1))
             try:
                 response = await run_graphql_query_async(
-                    query, api_key=self._api_key, variables=variables
+                    query,
+                    api_key=self._api_key,
+                    variables=variables,
+                    anonymous=anonymous,
                 )
                 return response["data"]
             except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as exc:
@@ -44,108 +53,46 @@ class AppsApiClient:
         assert last_exc is not None  # loop always runs at least once
         raise last_exc
 
-    # -- endpoints (dev session provisioning) --
-
     async def save_endpoint(self, endpoint_input: Dict[str, Any]) -> Dict[str, Any]:
         """create or update a serverless endpoint. include id to update."""
-        mutation = """
-        mutation saveEndpoint($input: EndpointInput!) {
-            saveEndpoint(input: $input) {
-                id
-                name
-                templateId
-                gpuIds
-                instanceIds
-                workersMin
-                workersMax
-                idleTimeout
-                aiKey
-            }
-        }
-        """
+        mutation = app_mutations.MUTATION_SAVE_ENDPOINT
         data = await self._execute(mutation, {"input": endpoint_input})
         return data["saveEndpoint"]
 
     async def delete_endpoint(self, endpoint_id: str) -> bool:
-        mutation = """
-        mutation deleteEndpoint($id: String!) {
-            deleteEndpoint(id: $id)
-        }
-        """
+        mutation = app_mutations.MUTATION_DELETE_ENDPOINT
         data = await self._execute(mutation, {"id": endpoint_id})
-        return "deleteEndpoint" in data
+        return bool(data.get("deleteEndpoint"))
 
     async def list_my_endpoints(self) -> List[Dict[str, Any]]:
-        query = """
-        query myEndpoints {
-            myself {
-                endpoints {
-                    id
-                    name
-                    templateId
-                    workersMin
-                    workersMax
-                    template { env { key value } }
-                }
-            }
-        }
-        """
+        query = app_queries.QUERY_MY_ENDPOINTS
         data = await self._execute(query)
         return data["myself"]["endpoints"]
-
-    # -- pods (task execution) --
 
     async def deploy_task_pod(
         self, pod_input: Dict[str, Any], *, is_cpu: bool
     ) -> Dict[str, Any]:
         """deploy an on-demand pod for a task run."""
+        pod_input = dict(pod_input)
         if is_cpu:
             # deployCpuPod takes a single instanceId
             instance_ids = pod_input.pop("instanceIds", None)
             if instance_ids:
                 pod_input["instanceId"] = instance_ids[0]
-            mutation = """
-            mutation deployCpuPod($input: deployCpuPodInput!) {
-                deployCpuPod(input: $input) { id desiredStatus }
-            }
-            """
+            mutation = app_mutations.MUTATION_DEPLOY_CPU_POD
             data = await self._execute(mutation, {"input": pod_input})
             return data["deployCpuPod"]
 
-        mutation = """
-        mutation deployPod($input: PodFindAndDeployOnDemandInput) {
-            podFindAndDeployOnDemand(input: $input) { id desiredStatus }
-        }
-        """
+        mutation = app_mutations.MUTATION_DEPLOY_POD
         data = await self._execute(mutation, {"input": pod_input})
         return data["podFindAndDeployOnDemand"]
 
     async def terminate_pod(self, pod_id: str) -> None:
-        mutation = """
-        mutation terminatePod($input: PodTerminateInput!) {
-            podTerminate(input: $input)
-        }
-        """
+        mutation = app_mutations.MUTATION_TERMINATE_POD
         await self._execute(mutation, {"input": {"podId": pod_id}})
 
-    # -- app lifecycle (deploy) --
-
     async def get_app_by_name(self, name: str) -> Optional[Dict[str, Any]]:
-        query = """
-        query getFlashAppByName($flashAppName: String!) {
-            flashAppByName(flashAppName: $flashAppName) {
-                id
-                name
-                flashEnvironments {
-                    id
-                    name
-                    state
-                    activeBuildId
-                    endpoints { id name }
-                }
-            }
-        }
-        """
+        query = app_queries.QUERY_FLASH_APP_BY_NAME
         try:
             data = await self._execute(query, {"flashAppName": name})
         except QueryError as exc:
@@ -155,26 +102,16 @@ class AppsApiClient:
         return data["flashAppByName"]
 
     async def create_app(self, name: str) -> Dict[str, Any]:
-        mutation = """
-        mutation createFlashApp($input: CreateFlashAppInput!) {
-            createFlashApp(input: $input) { id name }
-        }
-        """
+        mutation = app_mutations.MUTATION_CREATE_FLASH_APP
         data = await self._execute(mutation, {"input": {"name": name}})
         return data["createFlashApp"]
 
     async def create_environment(self, app_id: str, name: str) -> Dict[str, Any]:
-        mutation = """
-        mutation createFlashEnvironment($input: CreateFlashEnvironmentInput!) {
-            createFlashEnvironment(input: $input) { id name }
-        }
-        """
+        mutation = app_mutations.MUTATION_CREATE_FLASH_ENVIRONMENT
         data = await self._execute(
             mutation, {"input": {"flashAppId": app_id, "name": name}}
         )
         return data["createFlashEnvironment"]
-
-    # -- stock (placement) --
 
     async def gpu_stock_status(
         self,
@@ -188,13 +125,7 @@ class AppsApiClient:
         the serverless plane (includeAiApi) and the pod plane have
         different availability; pods=True queries pod stock (tasks).
         """
-        query = """
-        query GpuStock($gpuTypesInput: GpuTypeFilter, $lowestPriceInput: GpuLowestPriceInput) {
-            gpuTypes(input: $gpuTypesInput) {
-                lowestPrice(input: $lowestPriceInput) { stockStatus }
-            }
-        }
-        """
+        query = app_queries.QUERY_GPU_STOCK
         data = await self._execute(
             query,
             {
@@ -217,13 +148,7 @@ class AppsApiClient:
     ) -> Optional[str]:
         """stock signal for a cpu flavor in one datacenter."""
         flavor = instance_id.split("-", 1)[0]
-        query = """
-        query CpuStock($cpuFlavorInput: CpuFlavorInput, $specificsInput: SpecificsInput) {
-            cpuFlavors(input: $cpuFlavorInput) {
-                specifics(input: $specificsInput) { stockStatus }
-            }
-        }
-        """
+        query = app_queries.QUERY_CPU_STOCK
         data = await self._execute(
             query,
             {
@@ -239,32 +164,15 @@ class AppsApiClient:
         specifics = first.get("specifics") if isinstance(first, dict) else None
         return (specifics or {}).get("stockStatus")
 
-    # -- network volumes --
-
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
-        query = """
-        query myVolumes {
-            myself {
-                networkVolumes { id name size dataCenterId }
-            }
-        }
-        """
+        query = app_queries.QUERY_NETWORK_VOLUMES
         data = await self._execute(query)
         return data["myself"].get("networkVolumes") or []
 
     async def create_network_volume(
         self, name: str, size: int, data_center_id: str
     ) -> Dict[str, Any]:
-        mutation = """
-        mutation createNetworkVolume($input: CreateNetworkVolumeInput!) {
-            createNetworkVolume(input: $input) {
-                id
-                name
-                size
-                dataCenterId
-            }
-        }
-        """
+        mutation = app_mutations.MUTATION_CREATE_NETWORK_VOLUME
         data = await self._execute(
             mutation,
             {
@@ -277,27 +185,15 @@ class AppsApiClient:
         )
         return data["createNetworkVolume"]
 
-    # -- registry credentials --
-
     async def list_registry_auths(self) -> List[Dict[str, Any]]:
-        query = """
-        query myRegistryCreds {
-            myself {
-                containerRegistryCreds { id name }
-            }
-        }
-        """
+        query = app_queries.QUERY_REGISTRY_AUTHS
         data = await self._execute(query)
         return data["myself"].get("containerRegistryCreds") or []
 
     async def create_registry_auth(
         self, name: str, username: str, password: str
     ) -> Dict[str, Any]:
-        mutation = """
-        mutation SaveRegistryAuth($input: SaveRegistryAuthInput!) {
-            saveRegistryAuth(input: $input) { id name }
-        }
-        """
+        mutation = app_mutations.MUTATION_SAVE_REGISTRY_AUTH
         data = await self._execute(
             mutation,
             {
@@ -311,35 +207,19 @@ class AppsApiClient:
         return data["saveRegistryAuth"]
 
     async def delete_registry_auth(self, auth_id: str) -> bool:
-        mutation = """
-        mutation DeleteRegistryAuth($registryAuthId: String!) {
-            deleteRegistryAuth(registryAuthId: $registryAuthId)
-        }
-        """
+        mutation = app_mutations.MUTATION_DELETE_REGISTRY_AUTH
         data = await self._execute(mutation, {"registryAuthId": auth_id})
-        return "deleteRegistryAuth" in data
-
-    # -- secrets --
+        return bool(data.get("deleteRegistryAuth"))
 
     async def list_secrets(self) -> List[Dict[str, Any]]:
-        query = """
-        query mySecrets {
-            myself {
-                secrets { id name description createdAt }
-            }
-        }
-        """
+        query = app_queries.QUERY_SECRETS
         data = await self._execute(query)
         return data["myself"].get("secrets") or []
 
     async def create_secret(
         self, name: str, value: str, description: str = ""
     ) -> Dict[str, Any]:
-        mutation = """
-        mutation secretCreate($input: SecretCreateInput!) {
-            secretCreate(input: $input) { id name }
-        }
-        """
+        mutation = app_mutations.MUTATION_CREATE_SECRET
         data = await self._execute(
             mutation,
             {
@@ -353,36 +233,13 @@ class AppsApiClient:
         return data["secretCreate"]
 
     async def delete_secret(self, secret_id: str) -> bool:
-        mutation = """
-        mutation secretDelete($id: ID!) {
-            secretDelete(id: $id)
-        }
-        """
+        mutation = app_mutations.MUTATION_DELETE_SECRET
         data = await self._execute(mutation, {"id": secret_id})
-        return "secretDelete" in data
-
-    # -- app / environment management --
+        return bool(data.get("secretDelete"))
 
     async def list_apps(self) -> List[Dict[str, Any]]:
         """all flash apps with their environments and builds."""
-        query = """
-        query getFlashApps {
-            myself {
-                flashApps {
-                    id
-                    name
-                    flashEnvironments {
-                        id
-                        name
-                        state
-                        createdAt
-                        activeBuildId
-                    }
-                    flashBuilds { id createdAt }
-                }
-            }
-        }
-        """
+        query = app_queries.QUERY_FLASH_APPS
         data = await self._execute(query)
         return data["myself"].get("flashApps") or []
 
@@ -393,19 +250,7 @@ class AppsApiClient:
         app = await self.get_app_by_name(app_name)
         if app is None:
             return None
-        query = """
-        query getFlashEnvironmentByName($input: FlashEnvironmentByNameInput!) {
-            flashEnvironmentByName(input: $input) {
-                id
-                name
-                state
-                activeBuildId
-                createdAt
-                endpoints { id name }
-                networkVolumes { id name }
-            }
-        }
-        """
+        query = app_queries.QUERY_FLASH_ENVIRONMENT_BY_NAME
         try:
             data = await self._execute(
                 query,
@@ -418,74 +263,34 @@ class AppsApiClient:
         return data["flashEnvironmentByName"]
 
     async def delete_app(self, app_id: str) -> bool:
-        mutation = """
-        mutation deleteFlashApp($flashAppId: String!) {
-            deleteFlashApp(flashAppId: $flashAppId)
-        }
-        """
+        mutation = app_mutations.MUTATION_DELETE_FLASH_APP
         data = await self._execute(mutation, {"flashAppId": app_id})
-        return "deleteFlashApp" in data
+        return bool(data.get("deleteFlashApp"))
 
     async def delete_environment(self, environment_id: str) -> bool:
-        mutation = """
-        mutation deleteFlashEnvironment($flashEnvironmentId: String!) {
-            deleteFlashEnvironment(flashEnvironmentId: $flashEnvironmentId)
-        }
-        """
-        data = await self._execute(
-            mutation, {"flashEnvironmentId": environment_id}
-        )
-        return "deleteFlashEnvironment" in data
-
-    # -- browser auth (login) --
+        mutation = app_mutations.MUTATION_DELETE_FLASH_ENVIRONMENT
+        data = await self._execute(mutation, {"flashEnvironmentId": environment_id})
+        return bool(data.get("deleteFlashEnvironment"))
 
     async def create_auth_request(self) -> Dict[str, Any]:
         """open a browser-approval auth request; no credentials needed."""
-        mutation = """
-        mutation createFlashAuthRequest {
-            createFlashAuthRequest {
-                id
-                status
-                expiresAt
-            }
-        }
-        """
-        response = await run_graphql_query_async(mutation, anonymous=True)
-        return response["data"].get("createFlashAuthRequest") or {}
+        mutation = app_mutations.MUTATION_CREATE_FLASH_AUTH_REQUEST
+        data = await self._execute(mutation, anonymous=True)
+        return data.get("createFlashAuthRequest") or {}
 
     async def get_auth_request_status(self, request_id: str) -> Dict[str, Any]:
-        query = """
-        query flashAuthRequestStatus($flashAuthRequestId: String!) {
-            flashAuthRequestStatus(flashAuthRequestId: $flashAuthRequestId) {
-                id
-                status
-                expiresAt
-                apiKey
-            }
-        }
-        """
-        # anonymous by design: the server only releases the granted key
-        # to guest requests, so authenticating the poll (e.g. with a
-        # stale stored key) would return apiKey=null forever
-        response = await run_graphql_query_async(
+        query = app_queries.QUERY_FLASH_AUTH_REQUEST_STATUS
+        data = await self._execute(
             query,
-            variables={"flashAuthRequestId": request_id},
+            {"flashAuthRequestId": request_id},
             anonymous=True,
         )
-        return response["data"].get("flashAuthRequestStatus") or {}
+        return data.get("flashAuthRequestStatus") or {}
 
     async def prepare_artifact_upload(
         self, app_id: str, tarball_size: int
     ) -> Dict[str, Any]:
-        mutation = """
-        mutation PrepareArtifactUpload($input: PrepareFlashArtifactUploadInput!) {
-            prepareFlashArtifactUpload(input: $input) {
-                uploadUrl
-                objectKey
-                expiresAt
-            }
-        }
-        """
+        mutation = app_mutations.MUTATION_PREPARE_ARTIFACT_UPLOAD
         data = await self._execute(
             mutation, {"input": {"flashAppId": app_id, "tarballSize": tarball_size}}
         )
@@ -494,11 +299,7 @@ class AppsApiClient:
     async def finalize_artifact_upload(
         self, app_id: str, object_key: str, manifest: Dict[str, Any]
     ) -> Dict[str, Any]:
-        mutation = """
-        mutation FinalizeArtifactUpload($input: FinalizeFlashArtifactUploadInput!) {
-            finalizeFlashArtifactUpload(input: $input) { id manifest }
-        }
-        """
+        mutation = app_mutations.MUTATION_FINALIZE_ARTIFACT_UPLOAD
         data = await self._execute(
             mutation,
             {
@@ -511,14 +312,8 @@ class AppsApiClient:
         )
         return data["finalizeFlashArtifactUpload"]
 
-    async def deploy_build(
-        self, environment_id: str, build_id: str
-    ) -> Dict[str, Any]:
-        mutation = """
-        mutation deployBuildToEnvironment($input: DeployBuildToEnvironmentInput!) {
-            deployBuildToEnvironment(input: $input) { id name }
-        }
-        """
+    async def deploy_build(self, environment_id: str, build_id: str) -> Dict[str, Any]:
+        mutation = app_mutations.MUTATION_DEPLOY_BUILD
         data = await self._execute(
             mutation,
             {
