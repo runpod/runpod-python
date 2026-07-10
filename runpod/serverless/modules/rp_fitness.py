@@ -277,6 +277,10 @@ async def run_fitness_checks() -> None:
             )
             log.debug(f"Traceback:\n{full_traceback}")
 
+            # Best-effort report to the host so the failure is queryable; never
+            # allowed to block the force-exit below.
+            _report_unhealthy(check_name, f"{error_type}: {error_message}")
+
             # Force-kill immediately; see _terminate_unhealthy for why this is
             # os._exit rather than sys.exit.
             log.error("Worker is unhealthy, exiting.")

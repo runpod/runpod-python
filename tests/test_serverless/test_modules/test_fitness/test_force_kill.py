@@ -16,6 +16,8 @@ import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from runpod.serverless.modules import rp_fitness
 
 
@@ -132,3 +134,21 @@ def test_report_unhealthy_swallows_errors(monkeypatch):
     fake_session.get.side_effect = RuntimeError("network down")
     with patch("runpod.http_client.SyncClientSession", return_value=fake_session):
         rp_fitness._report_unhealthy("_disk_check", "RuntimeError: full")  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_failure_reports_before_exit():
+    from runpod.serverless.modules.rp_fitness import register_fitness_check, run_fitness_checks
+
+    @register_fitness_check
+    def _cuda_init_check():
+        raise RuntimeError("device busy")
+
+    with patch("runpod.serverless.modules.rp_fitness._report_unhealthy") as mock_report:
+        with pytest.raises(SystemExit):
+            await run_fitness_checks()
+
+    mock_report.assert_called_once()
+    args = mock_report.call_args.args
+    assert args[0] == "_cuda_init_check"
+    assert "RuntimeError" in args[1] and "device busy" in args[1]
