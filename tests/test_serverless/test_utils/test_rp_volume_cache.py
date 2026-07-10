@@ -108,7 +108,7 @@ def test_sync_is_idempotent_on_unchanged_file(tmp_path):
 
 
 def test_sync_recopies_modified_file(tmp_path):
-    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
     f = cache / "model.bin"
     f.write_text("v1")
     vc.sync(background=False)
@@ -116,14 +116,12 @@ def test_sync_recopies_modified_file(tmp_path):
     time.sleep(0.01)
     f.write_text("v2-longer")
     os.utime(f, (time.time() + 10, time.time() + 10))
+    assert vc._do_sync() == 1  # one changed small file repacked
 
-    copied = vc._do_sync()
-    assert copied == 1
-
-    mirror_file = os.path.join(vc._mirror_root, os.path.relpath(str(f), "/"))
-    with open(mirror_file) as fh:
-        content = fh.read()
-    assert content == "v2-longer"
+    f.unlink()
+    fresh = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    fresh.hydrate()
+    assert f.read_text() == "v2-longer"
 
 
 def test_hydrate_skips_unchanged_after_first_hydrate(tmp_path):
@@ -192,18 +190,37 @@ def test_sync_skips_symlink_source(tmp_path):
 
 
 def test_hydrate_skips_unsafe_destination(tmp_path):
-    vc, cache, vol = _mk_cache_with_volume(tmp_path)
-
-    # Craft a mirror file whose mapped destination escapes the configured dirs.
-    escape_rel = os.path.relpath(str(tmp_path / "outside" / "evil.txt"), "/")
-    mirror_file = os.path.join(vc._mirror_root, escape_rel)
-    os.makedirs(os.path.dirname(mirror_file), exist_ok=True)
-    with open(mirror_file, "w") as fh:
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._big_root, exist_ok=True)
+    # craft a manifest whose big entry maps outside the configured dirs
+    escape = str(tmp_path / "outside" / "evil.txt")
+    big_src = os.path.join(vc._big_root, os.path.relpath(escape, "/"))
+    os.makedirs(os.path.dirname(big_src), exist_ok=True)
+    with open(big_src, "w") as fh:
         fh.write("malicious")
+    vc._write_manifest([], [{"path": escape, "size": 9, "mtime": 1.0}])
+    assert vc.hydrate() == 0
+    assert not os.path.exists(escape)
 
-    copied = vc.hydrate()
-    assert copied == 0
-    assert not (tmp_path / "outside" / "evil.txt").exists()
+
+def test_hydrate_no_manifest_is_noop(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    assert vc._do_hydrate() == 0
+
+
+def test_hydrate_restores_big_and_small(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    (cache / "tiny.bin").write_bytes(b"s" * 100)
+    (cache / "weights.bin").write_bytes(b"w" * (256 * 1024 + 5))
+    vc.sync(background=False)
+    (cache / "tiny.bin").unlink()
+    (cache / "weights.bin").unlink()
+
+    fresh = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    assert fresh.hydrate() == 2
+    assert (cache / "tiny.bin").read_bytes() == b"s" * 100
+    assert (cache / "weights.bin").read_bytes() == b"w" * (256 * 1024 + 5)
 
 
 # --------------------------------------------------------------------------- #
@@ -220,8 +237,8 @@ def test_context_manager_hydrates_on_enter_and_syncs_on_exit(tmp_path):
 
     vcmod._join_pending_syncs()
 
-    mirror_file = os.path.join(vc._mirror_root, os.path.relpath(str(cache / "model.bin"), "/"))
-    assert os.path.exists(mirror_file)
+    m = vc._read_manifest()
+    assert [e["path"] for e in m["small"]] == [str(cache / "model.bin")]
 
 
 def test_context_manager_does_not_suppress_exceptions(tmp_path):
@@ -237,8 +254,8 @@ def test_context_manager_does_not_suppress_exceptions(tmp_path):
     assert raised
 
     vcmod._join_pending_syncs()
-    mirror_file = os.path.join(vc._mirror_root, os.path.relpath(str(cache / "model.bin"), "/"))
-    assert os.path.exists(mirror_file)
+    m = vc._read_manifest()
+    assert [e["path"] for e in m["small"]] == [str(cache / "model.bin")]
 
 
 # --------------------------------------------------------------------------- #
@@ -462,12 +479,42 @@ def test_iter_files_skips_inflight_temp_files(tmp_path):
     vc, cache, _vol = _mk_cache_with_volume(tmp_path)
     (cache / "model.bin").write_text("real")
     (cache / "model.bin.12345.67890.rpvc.tmp").write_text("partial")
-    copied = vc._do_sync()
-    assert copied == 1  # only model.bin, not the .rpvc.tmp file
-    tmp_mirror = os.path.join(
-        vc._mirror_root, os.path.relpath(str(cache / "model.bin.12345.67890.rpvc.tmp"), "/")
-    )
-    assert not os.path.exists(tmp_mirror)
+    assert vc._do_sync() == 1  # only model.bin
+    m = vc._read_manifest()
+    packed = [e["path"] for e in m["small"]] + [e["path"] for e in m["big"]]
+    assert str(cache / "model.bin") in packed
+    assert str(cache / "model.bin.12345.67890.rpvc.tmp") not in packed
+
+
+def test_sync_writes_manifest_and_archive_for_small(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    (cache / "tiny.bin").write_bytes(b"x" * 100)
+    vc._do_sync()
+    assert os.path.exists(vc._manifest_path)
+    assert os.path.exists(vc._small_archive_path)
+    m = vc._read_manifest()
+    assert [e["path"] for e in m["small"]] == [str(cache / "tiny.bin")]
+
+
+def test_sync_big_file_is_unpacked_and_incremental(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    big = cache / "weights.bin"
+    big.write_bytes(b"x" * (256 * 1024 + 10))
+    assert vc._do_sync() == 1
+    assert os.path.exists(os.path.join(vc._big_root, os.path.relpath(str(big), "/")))
+    assert vc._do_sync() == 0  # unchanged -> no recopy, no repack
+
+
+def test_sync_reclassifies_small_as_big_without_tar(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    (cache / "tiny.bin").write_bytes(b"x" * 100)
+    monkeypatch.setattr(vc, "_tar_binary", lambda: None)
+    monkeypatch.setattr(tarfile, "open", lambda *a, **k: (_ for _ in ()).throw(OSError("no tar")))
+    assert vc._do_sync() == 1
+    m = vc._read_manifest()
+    assert m["small"] == []  # nothing packed
+    assert [e["path"] for e in m["big"]] == [str(cache / "tiny.bin")]  # unpacked instead
+    assert not os.path.exists(vc._small_archive_path)
 
 
 def test_join_pending_syncs_bounded_by_timeout(monkeypatch):

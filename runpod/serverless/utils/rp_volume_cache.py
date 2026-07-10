@@ -245,6 +245,8 @@ class VolumeCache:
                         check=True,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
+                        # Suppress BSD tar AppleDouble (._*) sidecars; no-op for GNU tar.
+                        env={**os.environ, "COPYFILE_DISABLE": "1"},
                     )
                 finally:
                     _silent_remove(listing)
@@ -319,19 +321,20 @@ class VolumeCache:
         return self._guard(self._do_hydrate, 0)
 
     def _do_hydrate(self):
-        root = self._mirror_root
-        if not os.path.isdir(root):
+        manifest = self._read_manifest()
+        if manifest is None:
             return 0
-        copied = 0
-        for m in self._iter_files(root):
-            dst = os.path.join("/", os.path.relpath(m, root))
-            if not self._is_safe_dest(dst):
-                continue  # skip anything that would escape configured dirs
-            if self._needs_copy(m, dst) and self._copy_file(m, dst):
-                copied += 1
-        if copied:
-            log.info(f"VolumeCache: hydrated {copied} file(s) from {root}")
-        return copied
+        restored = self._extract_small()
+        big_pairs = []
+        for entry in manifest.get("big", []):
+            rel = os.path.relpath(entry["path"], "/")
+            dst = os.path.join("/", rel)
+            if self._is_safe_dest(dst):
+                big_pairs.append((os.path.join(self._big_root, rel), dst))
+        restored += self._copy_parallel(big_pairs)
+        if restored:
+            log.info(f"VolumeCache: hydrated {restored} file(s) from {self._mirror_root}")
+        return restored
 
     def sync(self, *, background=True):
         """Reconcile container -> volume mirror.
@@ -351,18 +354,36 @@ class VolumeCache:
             self._guard(self._do_sync, 0)
 
     def _do_sync(self):
-        os.makedirs(self._mirror_root, exist_ok=True)
-        copied = 0
+        all_files = []
         for root in self._dirs:
-            if not os.path.isdir(root):
-                continue
-            for f in self._iter_files(root):
-                dst = os.path.join(self._mirror_root, os.path.relpath(f, "/"))
-                if self._needs_copy(f, dst) and self._copy_file(f, dst):
-                    copied += 1
-        if copied:
-            log.info(f"VolumeCache: synced {copied} file(s) to {self._mirror_root}")
-        return copied
+            if os.path.isdir(root):
+                all_files.extend(self._iter_files(root))
+        small_files, big_files = self._partition(all_files)
+
+        manifest = self._read_manifest()
+        small_meta = [m for m in (self._file_meta(f) for f in small_files) if m]
+        small_transferred = 0
+        if small_meta:
+            changed = self._changed_vs_manifest(small_meta, manifest, "small")
+            if changed:
+                if self._pack_small([m["path"] for m in small_meta]):
+                    small_transferred = len(changed)
+                else:
+                    # pack failed (no tar binary and tarfile unusable): reclassify
+                    # the small files as big and copy them unpacked instead.
+                    big_files = big_files + [m["path"] for m in small_meta]
+                    small_meta = []
+            # else: unchanged -> the existing archive is still current
+
+        big_pairs = [(f, os.path.join(self._big_root, os.path.relpath(f, "/"))) for f in big_files]
+        big_copied = self._copy_parallel(big_pairs)
+        big_meta = [m for m in (self._file_meta(f) for f in big_files) if m]
+
+        self._write_manifest(small_meta, big_meta)
+        total = big_copied + small_transferred
+        if total:
+            log.info(f"VolumeCache: synced {total} file(s) to {self._mirror_root}")
+        return total
 
     # ----------------------------------------------------------------- #
     # context manager
