@@ -581,14 +581,22 @@ def test_extract_small_zero_when_archive_missing(tmp_path):
     assert vc._extract_small() == 0
 
 
-def test_extract_small_never_raises_on_corrupt_archive(tmp_path, monkeypatch):
+def test_extract_small_never_raises_when_getmembers_raises(tmp_path, monkeypatch):
     vc, cache, _vol = _mk_cache_with_volume(tmp_path)
     monkeypatch.setattr(vc, "_tar_binary", lambda: None)  # deterministic pure-Python tarfile pack
     os.makedirs(vc._mirror_root, exist_ok=True)
     (cache / "a.txt").write_text("hello")
     vc._pack_small([str(cache / "a.txt")])
-    # Truncate the archive mid-body: tarfile.open() succeeds but iterating
-    # members raises tarfile.TarError/OSError.
-    with open(vc._small_archive_path, "r+b") as fh:
-        fh.truncate(200)
+
+    # tarfile.open() succeeds (archive exists and opens fine), but the inner
+    # tf.getmembers() call raises tarfile.TarError. This exercises the inner
+    # guard in _extract_small, distinct from the outer open()-time guard.
+    class FakeTarFile:
+        def getmembers(self):
+            raise tarfile.TarError("corrupt member table")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tarfile, "open", lambda *a, **k: FakeTarFile())
     assert vc._extract_small() == 0
