@@ -1,20 +1,4 @@
-"""deploy-time environment build: vendor dependencies into the artifact.
-
-cold starts do no dependency resolution. everything a resource needs to
-run (including the runpod runtime itself) is resolved on the build
-machine into a site-packages tree that ships inside the artifact under
-env/. workers put it on sys.path and start.
-
-the exception is size-prohibitive CUDA packages (torch and friends)
-that the gpu worker images already provide: vendoring them would add
-gigabytes to every artifact for nothing. they are excluded here,
-recorded in the manifest, and the worker bootstrap verifies they exist
-in the image at startup (installing only if genuinely absent).
-
-wheels are selected for the worker platform (manylinux/amd64) and the
-target python version, not the build machine's, so a mac or windows
-build produces a linux-correct environment.
-"""
+"""deploy-time environment build: vendor dependencies into the artifact."""
 
 import logging
 import os
@@ -50,6 +34,26 @@ SIZE_PROHIBITIVE_PACKAGES = frozenset(
         "triton",
     }
 )
+
+# the worker runtime's actual dependency closure, a small subset of the
+# runpod package's full dependency list. the runpod package is vendored
+# without its dependencies (sdk/cli-only packages like boto3, paramiko,
+# and cryptography never load in a worker), so these must be vendored
+# explicitly to keep a dependency-free worker small.
+RUNTIME_REQUIREMENTS = (
+    "aiohttp[speedups]",
+    "aiohttp-retry",
+    "backoff",
+    "cloudpickle",
+    "py-cpuinfo",
+    "requests",
+    "tomli",
+    "tomlkit",
+    "tqdm-loggable",
+)
+
+# api workers additionally serve over fastapi/uvicorn
+API_RUNTIME_REQUIREMENTS = ("fastapi[standard]", "uvicorn>=0.30")
 
 # runpod's serverless limit for build artifacts
 MAX_ARTIFACT_MB = 1500
@@ -136,7 +140,8 @@ def _is_pinnable_name(spec: str) -> bool:
     """true if the spec is a plain requirement (name, optional pin), as
     opposed to a url, git ref, or filesystem path."""
     return not any(token in spec for token in ("/", "\\", ":", "@")) or bool(
-        _REQ_NAME_RE.match(spec) and re.match(r"^[A-Za-z0-9._-]+(\[[^\]]+\])?([<>=!~;].*)?$", spec)
+        _REQ_NAME_RE.match(spec)
+        and re.match(r"^[A-Za-z0-9._-]+(\[[^\]]+\])?([<>=!~;].*)?$", spec)
     )
 
 
@@ -180,8 +185,29 @@ def sync_running_package(env_dir: Path) -> None:
     )
 
 
+def _ensure_pip() -> None:
+    """make `python -m pip` work in venvs created without pip (uv)."""
+    probe = subprocess.run(
+        [sys.executable, "-m", "pip", "--version"],
+        capture_output=True,
+    )
+    if probe.returncode == 0:
+        return
+    bootstrap = subprocess.run(
+        [sys.executable, "-m", "ensurepip", "--upgrade"],
+        capture_output=True,
+        text=True,
+    )
+    if bootstrap.returncode != 0:
+        raise BuildError(
+            f"pip is not available in this environment and ensurepip "
+            f"failed: {bootstrap.stderr[-500:]}"
+        )
+
+
 def _build_wheel(spec: str, scratch_dir: Path) -> Path:
     """build a wheel from a url/path spec for binary-only vendoring."""
+    _ensure_pip()
     wheel_dir = scratch_dir / "wheels"
     wheel_dir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
@@ -313,22 +339,34 @@ def build_environment(
     # size-prohibitive packages come preinstalled on the builtin gpu
     # images; a custom image carries no such guarantee, so any custom
     # image in the app disables auto-exclusion and everything vendors
-    auto_exclude = not any(
-        h.spec.image for h in app.resources.values()
-    )
+    auto_exclude = not any(h.spec.image for h in app.resources.values())
     vendored, excluded = split_exclusions(
         user_requirements, exclude, auto_exclude=auto_exclude
     )
 
-    runtime = [runtime_requirement(scratch), "cloudpickle"]
     from .spec import ResourceKind
 
-    if any(
-        h.spec.kind is ResourceKind.API for h in app.resources.values()
-    ):
-        runtime.append("uvicorn>=0.30")
+    runtime_deps = list(RUNTIME_REQUIREMENTS)
+    if any(h.spec.kind is ResourceKind.API for h in app.resources.values()):
+        runtime_deps.extend(API_RUNTIME_REQUIREMENTS)
 
-    all_requirements = runtime + vendored
+    package_spec = os.environ.get("RUNPOD_PACKAGE_SPEC")
+    progress = getattr(events, "vendor_progress", None)
+
+    # the runpod package ships without its own dependency closure; the
+    # worker runtime pulls only runtime_deps. with an override the pinned
+    # version is installed no-deps; otherwise the client's own package
+    # tree is overlaid below, so no index install of runpod is needed.
+    if package_spec:
+        vendor(
+            env_dir,
+            [runtime_requirement(scratch)],
+            python_version,
+            no_deps=True,
+            progress=progress,
+        )
+
+    all_requirements = runtime_deps + vendored
     log.info(
         "vendoring %d packages for python %s (%d excluded: %s)",
         len(all_requirements),
@@ -336,13 +374,9 @@ def build_environment(
         len(excluded),
         ", ".join(excluded) or "none",
     )
-    vendor(
-        env_dir,
-        all_requirements,
-        python_version,
-        progress=getattr(events, "vendor_progress", None),
-    )
-    if not os.environ.get("RUNPOD_PACKAGE_SPEC"):
+    vendor(env_dir, all_requirements, python_version, progress=progress)
+
+    if not package_spec:
         sync_running_package(env_dir)
     _verify_runtime(env_dir)
 
