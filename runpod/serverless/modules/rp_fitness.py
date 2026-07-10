@@ -110,7 +110,7 @@ def _reset_registration_state() -> None:
     _registration_state["system_checks"] = False
 
 
-# Bound the best-effort unhealthy report so it never delays the exit.
+# Bound how long the best-effort unhealthy report may delay the exit.
 _REPORT_TIMEOUT_SECONDS = 2
 
 
@@ -121,8 +121,10 @@ def _report_unhealthy(check: str, reason: str) -> None:
     Sends a single GET to the ping URL (same URL/credentials the heartbeat
     uses) with status=unhealthy plus the failing check name and reason, so the
     host can emit a queryable worker.fitness_failed event. Any failure — no
-    ping URL, no API key, HTTP error, timeout — is swallowed: this must never
-    delay or block the os._exit that follows.
+    ping URL, no API key, HTTP error, timeout — is swallowed, so this can never
+    prevent the os._exit that follows. It is synchronous, so it may delay that
+    exit by up to _REPORT_TIMEOUT_SECONDS (network phases only; it adds no
+    delay when there is no ping URL/API key to report to).
     """
     ping_url = os.environ.get("RUNPOD_WEBHOOK_PING")
     api_key = os.environ.get("RUNPOD_AI_API_KEY")
@@ -277,11 +279,12 @@ async def run_fitness_checks() -> None:
             )
             log.debug(f"Traceback:\n{full_traceback}")
 
-            # Best-effort report to the host so the failure is queryable; never
-            # allowed to block the force-exit below.
+            # Best-effort report to the host so the failure is queryable. It is
+            # bounded (see _REPORT_TIMEOUT_SECONDS) and fully swallowed, so it
+            # can delay the force-exit below but can never prevent it.
             try:
                 _report_unhealthy(check_name, f"{error_type}: {error_message}")
-            except Exception:  # never let reporting block the force-exit
+            except Exception:  # a report failure must never prevent the exit
                 pass
 
             # Force-kill immediately; see _terminate_unhealthy for why this is
