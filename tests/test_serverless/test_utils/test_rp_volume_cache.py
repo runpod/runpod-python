@@ -363,6 +363,42 @@ def test_volumecache_exported_from_serverless():
 
 
 # --------------------------------------------------------------------------- #
+# size partition and packed format
+# --------------------------------------------------------------------------- #
+
+
+def test_partition_splits_at_threshold(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    small = cache / "small.bin"
+    small.write_bytes(b"x" * (256 * 1024 - 1))
+    exact = cache / "exact.bin"
+    exact.write_bytes(b"x" * (256 * 1024))  # >= threshold -> big
+    big = cache / "big.bin"
+    big.write_bytes(b"x" * (256 * 1024 + 1))
+    s, b = vc._partition([str(small), str(exact), str(big)])
+    assert s == [str(small)]
+    assert sorted(b) == sorted([str(exact), str(big)])
+
+
+def test_partition_drops_unstatable(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    s, b = vc._partition([str(tmp_path / "gone.bin")])
+    assert s == [] and b == []
+
+
+def test_default_max_workers_is_positive(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    assert isinstance(vc._max_workers, int) and vc._max_workers >= 1
+
+
+def test_mirror_layout_paths(tmp_path):
+    vc, _cache, vol = _mk_cache_with_volume(tmp_path)
+    assert vc._manifest_path == os.path.join(vc._mirror_root, "manifest.json")
+    assert vc._small_archive_path == os.path.join(vc._mirror_root, "small.tar")
+    assert vc._big_root == os.path.join(vc._mirror_root, "big")
+
+
+# --------------------------------------------------------------------------- #
 # v2 review fixes
 # --------------------------------------------------------------------------- #
 

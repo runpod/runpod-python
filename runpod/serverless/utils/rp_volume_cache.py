@@ -25,6 +25,11 @@ log = RunPodLogger()
 
 _MTIME_TOLERANCE = 2.0  # seconds; tolerate coarse (NFS) mtime granularity
 _JOIN_TIMEOUT_SECONDS = 30.0  # bound the atexit wait so stalled volume I/O can't hang shutdown
+_SMALL_FILE_THRESHOLD = 256 * 1024  # bytes; <-threshold packs into one tar (metadata collapse)
+_FORMAT_VERSION = 1
+_MANIFEST_NAME = "manifest.json"
+_SMALL_ARCHIVE_NAME = "small.tar"
+_BIG_SUBDIR = "big"
 
 
 class VolumeCache:
@@ -56,7 +61,9 @@ class VolumeCache:
 
     _EXCLUDE_SUBSTRINGS = (os.sep + "refs" + os.sep, os.sep + ".no_exist" + os.sep)
 
-    def __init__(self, dirs, *, namespace=None, volume_path="/runpod-volume", best_effort=True):
+    def __init__(
+        self, dirs, *, namespace=None, volume_path="/runpod-volume", best_effort=True, max_workers=None
+    ):
         self._dirs = [os.path.realpath(os.fspath(d)) for d in dirs]
         self._namespace = namespace or os.environ.get("RUNPOD_ENDPOINT_ID") or ""
         if self._namespace and (
@@ -71,10 +78,23 @@ class VolumeCache:
             )
         self._volume_path = os.fspath(volume_path)
         self._best_effort = best_effort
+        self._max_workers = max_workers or min(32, (os.cpu_count() or 4) * 4)
 
     @property
     def _mirror_root(self):
         return os.path.join(self._volume_path, ".cache", self._namespace)
+
+    @property
+    def _manifest_path(self):
+        return os.path.join(self._mirror_root, _MANIFEST_NAME)
+
+    @property
+    def _small_archive_path(self):
+        return os.path.join(self._mirror_root, _SMALL_ARCHIVE_NAME)
+
+    @property
+    def _big_root(self):
+        return os.path.join(self._mirror_root, _BIG_SUBDIR)
 
     @property
     def available(self):
@@ -99,6 +119,16 @@ class VolumeCache:
                 except OSError:
                     continue
                 yield path
+
+    def _partition(self, paths):
+        small, big = [], []
+        for p in paths:
+            try:
+                size = os.stat(p).st_size
+            except OSError:
+                continue
+            (small if size < _SMALL_FILE_THRESHOLD else big).append(p)
+        return small, big
 
     @staticmethod
     def _needs_copy(src_path, dst_path):
