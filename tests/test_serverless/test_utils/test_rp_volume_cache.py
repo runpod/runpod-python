@@ -350,6 +350,60 @@ def test_sync_noop_when_unavailable(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# manifest and metadata
+# --------------------------------------------------------------------------- #
+
+
+def test_manifest_round_trip(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    small = [{"path": "/a", "size": 1, "mtime": 100.0}]
+    big = [{"path": "/b", "size": 999999, "mtime": 200.0}]
+    vc._write_manifest(small, big)
+    m = vc._read_manifest()
+    assert m["version"] == 1 and m["threshold"] == 256 * 1024
+    assert m["small"] == small and m["big"] == big
+
+
+def test_read_manifest_none_when_absent(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    assert vc._read_manifest() is None
+
+
+def test_read_manifest_none_when_corrupt(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    with open(vc._manifest_path, "w") as fh:
+        fh.write("{not json")
+    assert vc._read_manifest() is None
+
+
+def test_meta_satisfied_by_local(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "m.bin"
+    f.write_bytes(b"1234")
+    st = os.stat(str(f))
+    assert vc._meta_satisfied_by_local({"path": str(f), "size": 4, "mtime": st.st_mtime}) is True
+    # older manifest mtime -> local (newer/equal) still satisfies
+    assert vc._meta_satisfied_by_local({"path": str(f), "size": 4, "mtime": st.st_mtime - 100}) is True
+    # size mismatch -> not satisfied
+    assert vc._meta_satisfied_by_local({"path": str(f), "size": 5, "mtime": st.st_mtime}) is False
+    # missing local -> not satisfied
+    assert vc._meta_satisfied_by_local({"path": str(cache / "gone"), "size": 1, "mtime": 1.0}) is False
+
+
+def test_changed_vs_manifest(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    manifest = {"small": [{"path": "/a", "size": 1, "mtime": 100.0}], "big": []}
+    metas = [
+        {"path": "/a", "size": 1, "mtime": 100.0},   # unchanged
+        {"path": "/c", "size": 2, "mtime": 100.0},   # new
+    ]
+    changed = vc._changed_vs_manifest(metas, manifest, "small")
+    assert [m["path"] for m in changed] == ["/c"]
+
+
+# --------------------------------------------------------------------------- #
 # exports
 # --------------------------------------------------------------------------- #
 

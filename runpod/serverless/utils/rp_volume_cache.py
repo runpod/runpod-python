@@ -15,6 +15,7 @@ worker and never raises into the caller (unless ``best_effort=False``).
 """
 
 import atexit
+import json
 import os
 import shutil
 import threading
@@ -129,6 +130,49 @@ class VolumeCache:
                 continue
             (small if size < _SMALL_FILE_THRESHOLD else big).append(p)
         return small, big
+
+    def _file_meta(self, path):
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        return {"path": path, "size": st.st_size, "mtime": st.st_mtime}
+
+    def _write_manifest(self, small_meta, big_meta):
+        os.makedirs(self._mirror_root, exist_ok=True)
+        payload = {
+            "version": _FORMAT_VERSION,
+            "threshold": _SMALL_FILE_THRESHOLD,
+            "small": small_meta,
+            "big": big_meta,
+        }
+        tmp = f"{self._manifest_path}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
+        with open(tmp, "w") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp, self._manifest_path)
+
+    def _read_manifest(self):
+        try:
+            with open(self._manifest_path) as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return None
+
+    def _meta_satisfied_by_local(self, meta):
+        try:
+            st = os.stat(meta["path"])
+        except OSError:
+            return False
+        return st.st_size == meta["size"] and st.st_mtime >= meta["mtime"] - _MTIME_TOLERANCE
+
+    def _changed_vs_manifest(self, metas, manifest, key):
+        prior = {e["path"]: e for e in (manifest.get(key, []) if manifest else [])}
+        changed = []
+        for m in metas:
+            p = prior.get(m["path"])
+            if p is None or p["size"] != m["size"] or m["mtime"] > p["mtime"] + _MTIME_TOLERANCE:
+                changed.append(m)
+        return changed
 
     @staticmethod
     def _needs_copy(src_path, dst_path):
