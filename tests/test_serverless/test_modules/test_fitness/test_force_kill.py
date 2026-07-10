@@ -13,8 +13,6 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-import pytest
-
 from runpod.serverless.modules import rp_fitness
 
 
@@ -77,6 +75,20 @@ def test_terminate_unhealthy_uses_os_exit():
     """The unhealthy exit must call os._exit (unconditional) rather than
     sys.exit (cooperative)."""
     with patch("runpod.serverless.modules.rp_fitness.os._exit") as mock_exit:
+        rp_fitness._terminate_unhealthy(1)
+
+    mock_exit.assert_called_once_with(1)
+
+
+def test_terminate_unhealthy_exits_even_if_flush_raises():
+    """A closed/broken stdio stream must not stop the hard exit; a failing
+    flush is swallowed so os._exit always runs."""
+    with patch("runpod.serverless.modules.rp_fitness.os._exit") as mock_exit, \
+        patch("sys.stdout") as mock_stdout, \
+        patch("sys.stderr") as mock_stderr:
+        mock_stdout.flush.side_effect = ValueError("I/O operation on closed file")
+        mock_stderr.flush.side_effect = ValueError("I/O operation on closed file")
+
         rp_fitness._terminate_unhealthy(1)
 
     mock_exit.assert_called_once_with(1)
