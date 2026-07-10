@@ -541,8 +541,9 @@ def test_pack_small_atomic_no_partial_on_failure(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-def test_extract_small_restores_files(tmp_path):
+def test_extract_small_restores_files(tmp_path, monkeypatch):
     vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    monkeypatch.setattr(vc, "_tar_binary", lambda: None)  # deterministic pure-Python tarfile pack
     os.makedirs(vc._mirror_root, exist_ok=True)
     (cache / "a.txt").write_text("hello")
     vc._pack_small([str(cache / "a.txt")])
@@ -553,6 +554,7 @@ def test_extract_small_restores_files(tmp_path):
 
 def test_extract_small_skips_unsafe_member(tmp_path, monkeypatch):
     vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    monkeypatch.setattr(vc, "_tar_binary", lambda: None)  # deterministic pure-Python tarfile pack
     os.makedirs(vc._mirror_root, exist_ok=True)
     outside = tmp_path / "outside" / "evil.txt"
     outside.parent.mkdir()
@@ -563,8 +565,9 @@ def test_extract_small_skips_unsafe_member(tmp_path, monkeypatch):
     assert not outside.exists()
 
 
-def test_extract_small_incremental_skips_satisfied(tmp_path):
+def test_extract_small_incremental_skips_satisfied(tmp_path, monkeypatch):
     vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    monkeypatch.setattr(vc, "_tar_binary", lambda: None)  # deterministic pure-Python tarfile pack
     os.makedirs(vc._mirror_root, exist_ok=True)
     (cache / "a.txt").write_text("hello")
     vc._pack_small([str(cache / "a.txt")])
@@ -575,4 +578,17 @@ def test_extract_small_incremental_skips_satisfied(tmp_path):
 def test_extract_small_zero_when_archive_missing(tmp_path):
     vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
     os.makedirs(vc._mirror_root, exist_ok=True)
+    assert vc._extract_small() == 0
+
+
+def test_extract_small_never_raises_on_corrupt_archive(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    monkeypatch.setattr(vc, "_tar_binary", lambda: None)  # deterministic pure-Python tarfile pack
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    (cache / "a.txt").write_text("hello")
+    vc._pack_small([str(cache / "a.txt")])
+    # Truncate the archive mid-body: tarfile.open() succeeds but iterating
+    # members raises tarfile.TarError/OSError.
+    with open(vc._small_archive_path, "r+b") as fh:
+        fh.truncate(200)
     assert vc._extract_small() == 0

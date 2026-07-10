@@ -257,26 +257,25 @@ class VolumeCache:
             return 0
         extracted = 0
         try:
-            for member in tf.getmembers():
+            try:
+                members = tf.getmembers()
+            except (OSError, tarfile.TarError) as exc:
+                log.debug(f"VolumeCache: corrupt archive {self._small_archive_path}: {exc}")
+                return extracted
+            for member in members:
                 # Skip non-files (directories, symlinks, etc.)
                 if not member.isfile():
-                    continue
-                # Skip macOS resource fork metadata (._filename entries)
-                if os.path.basename(member.name).startswith("._"):
                     continue
                 dst = os.path.join("/", member.name)
                 # Verify the destination is safe (within configured directories)
                 if not self._is_safe_dest(dst):
                     continue
-                # Resolve symlinks for accurate file comparison
-                actual_dst = os.path.realpath(dst)
                 # Check if the local file already satisfies this archive entry
-                meta = {"path": actual_dst, "size": member.size, "mtime": member.mtime}
+                meta = {"path": dst, "size": member.size, "mtime": member.mtime}
                 if self._meta_satisfied_by_local(meta):
                     continue
                 # Extract this member
                 try:
-                    os.makedirs(os.path.dirname(actual_dst), exist_ok=True)
                     self._extract_member(tf, member)
                     extracted += 1
                 except (OSError, tarfile.TarError) as exc:
