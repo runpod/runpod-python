@@ -55,6 +55,8 @@ class FunctionHandle:
         self._fn = fn
         self.spec = spec
         self._init_fn: Optional[Callable] = None
+        # per-job options merged into the run payload; set by with_options
+        self._job_options: Dict[str, Any] = {}
 
         # adopt a schedule stamped by @schedule below the app decorator
         stamped = getattr(fn, SCHEDULE_ATTR, None)
@@ -69,6 +71,38 @@ class FunctionHandle:
         self.__name__ = getattr(fn, "__name__", spec.name)
         self.__doc__ = getattr(fn, "__doc__", None)
         self.__wrapped__ = fn
+
+    def with_options(
+        self,
+        *,
+        webhook: Optional[str] = None,
+        execution_timeout: Optional[int] = None,
+        ttl: Optional[int] = None,
+        low_priority: Optional[bool] = None,
+        s3_config: Optional[Dict[str, Any]] = None,
+    ) -> "FunctionHandle":
+        """bind per-job options for the next call, returning a new handle.
+
+            transcribe.with_options(webhook="https://...").spawn(url)
+
+        options apply per invocation and stack across chained calls;
+        the original handle is untouched. queue only: tasks run on a
+        dedicated pod and take no job payload options.
+        """
+        from .targets import build_job_options, merge_job_options
+
+        if self.spec.kind is ResourceKind.TASK:
+            raise InvalidResourceError(
+                "per-job options apply only to @app.queue functions; "
+                "tasks run on a dedicated pod"
+            )
+        new_options = build_job_options(
+            webhook, execution_timeout, ttl, low_priority, s3_config
+        )
+        clone = FunctionHandle(self._app, self._fn, self.spec)
+        clone._init_fn = self._init_fn
+        clone._job_options = merge_job_options(self._job_options, new_options)
+        return clone
 
     def init(self, fn: Callable) -> Callable:
         """register a worker-startup hook; runs before the worker is ready,
@@ -100,7 +134,7 @@ class FunctionHandle:
 
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
-        return await target.invoke(payload)
+        return await target.invoke(self._apply_options(payload))
 
     async def _stream_async(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
         """invoke a generator function remotely, yielding partial outputs
@@ -121,7 +155,7 @@ class FunctionHandle:
 
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
-        data = await target.submit(payload)
+        data = await target.submit(self._apply_options(payload))
         async for chunk in target.stream_job(data["id"]):
             yield chunk
 
@@ -139,11 +173,16 @@ class FunctionHandle:
                 f"use .remote(...) instead"
             )
 
+    def _apply_options(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._job_options:
+            return payload
+        return {**payload, **self._job_options}
+
     async def _spawn_async(self, *args: Any, **kwargs: Any) -> Any:
         self._guard_discovery()
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
-        data = await target.submit(payload)
+        data = await target.submit(self._apply_options(payload))
         # queue targets return raw job data; task targets return a TaskJob
         if isinstance(data, dict):
             return Job(data, target)

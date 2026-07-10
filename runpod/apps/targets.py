@@ -85,6 +85,49 @@ def args_to_input(fn: Callable, args: tuple, kwargs: dict) -> Dict[str, Any]:
     return body
 
 
+def build_job_options(
+    webhook: Optional[str] = None,
+    execution_timeout: Optional[int] = None,
+    ttl: Optional[int] = None,
+    low_priority: Optional[bool] = None,
+    s3_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """shape per-job queue options into the wire payload.
+
+    these ride alongside `input` on the run/runsync request, matching
+    the raw data-plane api's job payload.
+    """
+    options: Dict[str, Any] = {}
+    if webhook is not None:
+        options["webhook"] = webhook
+    policy: Dict[str, Any] = {}
+    if execution_timeout is not None:
+        policy["executionTimeout"] = execution_timeout
+    if ttl is not None:
+        policy["ttl"] = ttl
+    if low_priority is not None:
+        policy["lowPriority"] = low_priority
+    if policy:
+        options["policy"] = policy
+    if s3_config is not None:
+        options["s3Config"] = s3_config
+    return options
+
+
+def merge_job_options(
+    base: Dict[str, Any], new: Dict[str, Any]
+) -> Dict[str, Any]:
+    """combine two option sets; policy fields accumulate rather than
+    overwrite so chained with_options calls compose."""
+    merged = dict(base)
+    for key, value in new.items():
+        if key == "policy" and isinstance(merged.get("policy"), dict):
+            merged["policy"] = {**merged["policy"], **value}
+        else:
+            merged[key] = value
+    return merged
+
+
 def unwrap_job_output(data: Dict[str, Any]) -> Any:
     """extract output from a runsync-style response, raising on failure."""
     if data.get("status") == "FAILED" or data.get("error"):

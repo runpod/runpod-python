@@ -129,6 +129,76 @@ class TestRemoteDispatch:
 
         assert result == {"ok": True}
 
+    def test_remote_with_options_merges_payload(self, monkeypatch):
+        for var in ("RUNPOD_ENDPOINT_ID", "RUNPOD_POD_ID", "RUNPOD_DEV_SESSION"):
+            monkeypatch.delenv(var, raising=False)
+        app = App("my-app")
+
+        @app.queue(name="q")
+        def q(x):
+            return x
+
+        with patch.object(
+            SentinelTarget, "invoke", new_callable=AsyncMock
+        ) as mock_invoke:
+            mock_invoke.return_value = {"ok": 1}
+            q.with_options(
+                webhook="https://hook", execution_timeout=5000, low_priority=True
+            ).remote(2)
+
+        mock_invoke.assert_awaited_once_with(
+            {
+                "input": {"x": 2},
+                "webhook": "https://hook",
+                "policy": {"executionTimeout": 5000, "lowPriority": True},
+            }
+        )
+
+    def test_spawn_with_options_merges_payload(self, monkeypatch):
+        for var in ("RUNPOD_ENDPOINT_ID", "RUNPOD_POD_ID", "RUNPOD_DEV_SESSION"):
+            monkeypatch.delenv(var, raising=False)
+        app = App("my-app")
+
+        @app.queue(name="q")
+        def q(x):
+            return x
+
+        with patch.object(
+            SentinelTarget, "submit", new_callable=AsyncMock
+        ) as mock_submit:
+            mock_submit.return_value = {"id": "job-1", "status": "IN_QUEUE"}
+            q.with_options(s3_config={"bucketName": "b"}).spawn(1)
+
+        mock_submit.assert_awaited_once_with(
+            {"input": {"x": 1}, "s3Config": {"bucketName": "b"}}
+        )
+
+    def test_with_options_returns_new_handle(self, monkeypatch):
+        for var in ("RUNPOD_ENDPOINT_ID", "RUNPOD_POD_ID", "RUNPOD_DEV_SESSION"):
+            monkeypatch.delenv(var, raising=False)
+        app = App("my-app")
+
+        @app.queue(name="q")
+        def q(x):
+            return x
+
+        bound = q.with_options(webhook="https://hook")
+        assert bound is not q
+        assert q._job_options == {}
+        # policy fields deep-merge across chained calls
+        chained = q.with_options(execution_timeout=1).with_options(ttl=2)
+        assert chained._job_options == {"policy": {"executionTimeout": 1, "ttl": 2}}
+
+    def test_with_options_rejects_tasks(self):
+        app = App("my-app")
+
+        @app.task(name="t")
+        def t(x):
+            return x
+
+        with pytest.raises(InvalidResourceError, match="only to @app.queue"):
+            t.with_options(webhook="https://hook")
+
     def test_worker_executes_own_body(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-1")
         monkeypatch.setenv("FLASH_RESOURCE_NAME", "q")
@@ -242,6 +312,25 @@ class TestStubs:
 
         assert result == {"ok": 1}
         mock_invoke.assert_awaited_once_with({"input": {"prompt": "hi"}})
+
+    def test_queue_stub_with_options(self):
+        stub = runpod.Queue(app="other-app", name="q")
+        bound = stub.with_options(webhook="https://hook", ttl=1000)
+        assert bound is not stub
+        assert stub._job_options == {}
+        with patch.object(
+            SentinelTarget, "invoke", new_callable=AsyncMock
+        ) as mock_invoke:
+            mock_invoke.return_value = {"ok": 1}
+            bound.remote(prompt="hi")
+
+        mock_invoke.assert_awaited_once_with(
+            {
+                "input": {"prompt": "hi"},
+                "webhook": "https://hook",
+                "policy": {"ttl": 1000},
+            }
+        )
 
     def test_queue_stub_spawn_returns_job(self):
         stub = runpod.Queue(app="other-app", name="q")

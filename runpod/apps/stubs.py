@@ -51,25 +51,57 @@ class Queue(_StubBase):
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
+        self._job_options: dict = {}
         self.remote = Invoker(self._remote_async)
         self.stream = StreamInvoker(self._stream_async)
         self.spawn = Invoker(self._spawn_async)
         self.job = Invoker(self._job_async)
 
-    async def _remote_async(self, **kwargs: Any) -> Any:
+    def with_options(
+        self,
+        *,
+        webhook: Optional[str] = None,
+        execution_timeout: Optional[int] = None,
+        ttl: Optional[int] = None,
+        low_priority: Optional[bool] = None,
+        s3_config: Optional[dict] = None,
+    ) -> "Queue":
+        """bind per-job options for the next call, returning a new stub.
+
+        options apply per invocation and stack across chained calls; the
+        original stub is untouched.
+        """
+        from .targets import build_job_options, merge_job_options
+
+        new_options = build_job_options(
+            webhook, execution_timeout, ttl, low_priority, s3_config
+        )
+        clone = Queue(
+            app=self.app_name,
+            name=self.resource_name,
+            id=self.resource_id,
+            env=self.env,
+        )
+        clone._job_options = merge_job_options(self._job_options, new_options)
+        return clone
+
+    def _payload(self, kwargs: dict) -> dict:
         payload = {"input": kwargs or {"__empty": True}}
-        return await self._target().invoke(payload)
+        if self._job_options:
+            payload.update(self._job_options)
+        return payload
+
+    async def _remote_async(self, **kwargs: Any) -> Any:
+        return await self._target().invoke(self._payload(kwargs))
 
     async def _spawn_async(self, **kwargs: Any) -> Job:
-        payload = {"input": kwargs or {"__empty": True}}
         target = self._target()
-        data = await target.submit(payload)
+        data = await target.submit(self._payload(kwargs))
         return Job(data, target)
 
     async def _stream_async(self, **kwargs: Any) -> AsyncIterator[Any]:
-        payload = {"input": kwargs or {"__empty": True}}
         target = self._target()
-        data = await target.submit(payload)
+        data = await target.submit(self._payload(kwargs))
         async for chunk in target.stream_job(data["id"]):
             yield chunk
 
