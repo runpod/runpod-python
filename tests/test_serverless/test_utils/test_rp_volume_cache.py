@@ -679,6 +679,22 @@ def test_extract_small_never_raises_when_getmembers_raises(tmp_path, monkeypatch
     assert vc._extract_small() == 0
 
 
+def test_extract_small_skips_non_file_members(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    (cache / "sub").mkdir()
+    (cache / "sub" / "a.txt").write_text("hello")
+    # Build the archive by hand so it contains a real directory member
+    # alongside the file member; _extract_small must skip the directory
+    # (member.isfile() is False) without raising.
+    with tarfile.open(vc._small_archive_path, "w") as tf:
+        tf.add(str(cache / "sub"), arcname=_rel(str(cache / "sub")), recursive=False)
+        tf.add(str(cache / "sub" / "a.txt"), arcname=_rel(str(cache / "sub" / "a.txt")))
+    (cache / "sub" / "a.txt").unlink()
+    assert vc._extract_small() == 1
+    assert (cache / "sub" / "a.txt").read_text() == "hello"
+
+
 # --------------------------------------------------------------------------- #
 # copy_parallel (Task 5)
 # --------------------------------------------------------------------------- #

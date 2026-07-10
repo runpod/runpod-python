@@ -8,10 +8,15 @@ mounted network volume, and reconciles the two directions on demand:
 - ``sync()``: copy files that are missing or newer in the container onto the
   volume mirror (used after the cache has been populated/updated).
 
-Both directions are per-file, atomic (write-to-temp + ``os.replace``), and
-idempotent: unchanged files are skipped on repeat calls because ``shutil.copy2``
-preserves mtimes. Stdlib-only and best-effort: any failure degrades to a cold
-worker and never raises into the caller (unless ``best_effort=False``).
+Transport adapts to the tree's shape: files below 256 KiB are packed into a
+single ``small.tar`` on the volume (collapsing per-file metadata round-trips),
+larger files are copied unpacked into ``big/`` across a thread pool, and a
+versioned ``manifest.json`` (written last) records the layout. Large-file
+transfers stay incremental (size/mtime diff); the small-file archive is
+re-packed whole when any small file changes. Packing uses the ``tar`` binary
+when present (else stdlib ``tarfile``); extraction always uses ``tarfile``,
+validating every member against the configured dirs. Best-effort: any failure
+degrades to a cold worker and never raises unless ``best_effort=False``.
 """
 
 import atexit
@@ -57,6 +62,9 @@ class VolumeCache:
         volume_path: Network-volume mount point. Defaults to ``/runpod-volume``.
         best_effort: When True (default), swallow and log errors instead of
             raising.
+        max_workers: Thread count for parallel copy of large files. Defaults
+            to ``min(32, (os.cpu_count() or 4) * 4)`` (I/O-bound, so
+            oversubscribing the CPU count is fine).
 
     Example:
         >>> with VolumeCache(dirs=["/root/.cache/huggingface"]):

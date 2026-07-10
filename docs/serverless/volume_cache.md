@@ -59,24 +59,39 @@ vc.sync(background=False)           # persist new files back to the volume, inli
 | `namespace` | `RUNPOD_ENDPOINT_ID` | Isolation key for the on-volume mirror. Must be a single safe path component. |
 | `volume_path` | `/runpod-volume` | Network-volume mount point. |
 | `best_effort` | `True` | Swallow and log errors instead of raising. Set `False` while debugging. |
+| `max_workers` | `min(32, (os.cpu_count() or 4) * 4)` | Thread count for parallel copy of large files (I/O-bound). |
 
 ## How it works
 
-- **Directory mirror.** Cached files live at `{volume_path}/.cache/{namespace}`,
-  laid out at the same absolute path they occupy in the container (so the
-  mirror is directly browsable — no archive format to unpack).
-- **Per-file, atomic reconcile.** Each direction (`hydrate`/`sync`) walks the
-  source tree and copies any file whose size differs or whose mtime is newer
-  than the destination's (beyond a small tolerance for coarse network-filesystem
-  mtimes). Copies are written to a temp file and atomically renamed into place
-  (`os.replace`), so a crash mid-copy never leaves a half-written file visible.
-- **Idempotent.** Copies preserve mtime (`shutil.copy2`), so re-running
-  `hydrate`/`sync` after nothing has changed copies zero files.
+- **Size-bucketed mirror.** Cached files live at
+  `{volume_path}/.cache/{namespace}`, split by size: files below 256 KiB are
+  packed into a single `small.tar` archive (collapsing per-file metadata
+  round-trips on the network volume), and larger files are copied unpacked
+  into a `big/` subdirectory, preserving their original relative path. A
+  versioned `manifest.json` — written last — records file metadata (size,
+  mtime) for every cached file and is the commit marker for a complete
+  mirror; a mirror without a valid, current-version manifest is treated as
+  absent.
+- **Incremental large files, whole-archive small files.** `big/` transfers
+  are diffed per file by size/mtime against the manifest, so unchanged large
+  files are skipped. The `small.tar` archive is re-packed as a whole whenever
+  any small file has changed, since unpacking and re-diffing many tiny files
+  individually is slower than the network volume's per-file overhead.
+- **Parallel copy.** Large-file transfers run across a thread pool sized by
+  `max_workers` (default `min(32, (os.cpu_count() or 4) * 4)`), since the
+  work is I/O-bound.
+- **Packing/extraction.** Packing the small-file archive uses the `tar`
+  binary when available (falling back to the stdlib `tarfile` module
+  otherwise). Extraction always goes through `tarfile`, validating every
+  member's resolved path against the configured `dirs` before writing.
+- **Idempotent.** Re-running `hydrate`/`sync` after nothing has changed
+  copies zero files and does not rewrite `small.tar` or `manifest.json`.
 - **Last-writer-wins.** Under concurrent workers, the mirror simply reflects
   whichever worker synced most recently — there's no locking or merge.
-- **Safety.** Symlinked sources are never followed/copied. Hydration destinations
-  are checked to resolve inside one of the configured `dirs` before any write,
-  so a mirror entry can't be used to write outside the cached directories.
+- **Safety.** Symlinked sources are never followed/copied. Every archive
+  member and every big-file destination is checked to resolve inside one of
+  the configured `dirs` before any write, so a mirror entry can't be used to
+  write outside the cached directories.
 
 ## Limitations
 
