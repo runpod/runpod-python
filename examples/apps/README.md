@@ -10,6 +10,7 @@ rp dev examples/apps/hello_world.py
 | example | shows |
 |---|---|
 | `hello_world` | one queue function, one `.remote()` call |
+| `streaming` | generator functions, `.stream()` chunks, `job.stream()` |
 | `gpu_inference` | gpu selection, dependencies, a cuda benchmark |
 | `web_service` | `@app.api` class with routes and per-worker state |
 | `train_and_eval` | gpu tasks sharing checkpoints through a volume |

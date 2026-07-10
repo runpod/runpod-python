@@ -1,4 +1,4 @@
-""" Allows runpod to be imported as a module. """
+"""Allows runpod to be imported as a module."""
 
 import logging
 import os
@@ -34,6 +34,7 @@ from .apps import (
     App,
     DataCenter,
     EndpointNotFound,
+    Job,
     Model,
     Queue,
     Secret,
@@ -50,13 +51,13 @@ from .version import __version__
 __all__ = [
     # API functions
     "create_container_registry_auth",
-    "create_endpoint", 
+    "create_endpoint",
     "create_pod",
     "create_template",
     "delete_container_registry_auth",
     "get_endpoints",
     "get_gpu",
-    "get_gpus", 
+    "get_gpus",
     "get_pod",
     "get_pods",
     "get_user",
@@ -68,7 +69,7 @@ __all__ = [
     "update_user_settings",
     # Config functions
     "check_credentials",
-    "get_credentials", 
+    "get_credentials",
     "set_credentials",
     # Endpoint classes
     "AsyncioEndpoint",
@@ -82,6 +83,7 @@ __all__ = [
     "EndpointNotFound",
     "GpuGroup",
     "GpuType",
+    "Job",
     "Queue",
     "delete",
     "get",
@@ -101,8 +103,8 @@ __all__ = [
     # Module variables
     "SSH_KEY_PATH",
     "profile",
-    "api_key", 
-    "endpoint_url_base"
+    "api_key",
+    "endpoint_url_base",
 ]
 
 # ------------------------------- Config Paths ------------------------------- #
@@ -111,13 +113,14 @@ SSH_KEY_PATH = os.path.expanduser("~/.runpod/ssh")
 
 profile = "default"  # pylint: disable=invalid-name
 
-_credentials = get_credentials(profile)
-if _credentials is not None:
-    api_key = _credentials["api_key"]  # pylint: disable=invalid-name
+if os.environ.get("RUNPOD_API_KEY"):
+    api_key = os.environ.get("RUNPOD_API_KEY")
 else:
-    # workers and ci have no config file; the env var is the standard
-    # way credentials reach them
-    api_key = os.environ.get("RUNPOD_API_KEY")  # pylint: disable=invalid-name
+    _credentials = get_credentials(profile)
+    if _credentials is not None:
+        api_key = _credentials["api_key"]  # pylint: disable=invalid-name
+    else:
+        api_key = None  # pylint: disable=invalid-name
 
 endpoint_url_base = os.environ.get(
     "RUNPOD_ENDPOINT_BASE_URL", "https://api.runpod.ai/v2"

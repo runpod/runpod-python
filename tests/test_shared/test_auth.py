@@ -3,6 +3,7 @@ Test shared functions related to authentication
 """
 
 import importlib
+import os
 import unittest
 from unittest.mock import mock_open, patch
 
@@ -24,6 +25,9 @@ class TestAPIKey(unittest.TestCase):
         """
         import runpod  # pylint: disable=import-outside-toplevel
 
-        importlib.reload(runpod)
+        # the env var outranks file credentials; clear it so the file wins
+        with patch.dict(os.environ):
+            os.environ.pop("RUNPOD_API_KEY", None)
+            importlib.reload(runpod)
         self.assertEqual(runpod.api_key, "RUNPOD_API_KEY")
         assert mock_file.called

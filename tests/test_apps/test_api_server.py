@@ -218,10 +218,10 @@ class TestLiveDispatcher:
         client = TestClient(_build_live_app())
         with (
             patch(
-                "runpod.runtimes.task.runner._install", return_value=None
+                "runpod.runtimes.executor._install", return_value=None
             ) as install,
             patch(
-                "runpod.runtimes.task.runner._install_system",
+                "runpod.runtimes.executor._install_system",
                 return_value=None,
             ) as install_system,
         ):

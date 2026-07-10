@@ -7,7 +7,11 @@ import pytest
 import runpod
 from runpod.apps import App, Context, current_context, is_local
 from runpod.apps.app import _clear_registry
-from runpod.apps.errors import EndpointNotFound, RemoteExecutionError
+from runpod.apps.errors import (
+    EndpointNotFound,
+    InvalidResourceError,
+    RemoteExecutionError,
+)
 from runpod.apps.targets import (
     SentinelTarget,
     args_to_input,
@@ -181,8 +185,44 @@ class TestRemoteDispatch:
             mock_submit.return_value = {"id": "job-1", "status": "IN_QUEUE"}
             job = q.spawn(1)
 
+        assert isinstance(job, runpod.Job)
         assert job.id == "job-1"
-        assert job.status == "IN_QUEUE"
+
+    def test_stream_generator_function(self, monkeypatch):
+        for var in ("RUNPOD_ENDPOINT_ID", "RUNPOD_POD_ID", "RUNPOD_DEV_SESSION"):
+            monkeypatch.delenv(var, raising=False)
+        app = App("my-app")
+
+        @app.queue(name="gen")
+        def gen(n):
+            yield from range(n)
+
+        async def fake_stream(self, job_id, *, timeout=300.0):
+            for chunk in ("x", "y"):
+                yield chunk
+
+        with (
+            patch.object(
+                SentinelTarget, "submit", new_callable=AsyncMock
+            ) as mock_submit,
+            patch.object(SentinelTarget, "stream_job", fake_stream),
+        ):
+            mock_submit.return_value = {"id": "job-1", "status": "IN_QUEUE"}
+            chunks = list(gen.stream(2))
+
+        assert chunks == ["x", "y"]
+
+    def test_stream_rejects_non_generator(self, monkeypatch):
+        for var in ("RUNPOD_ENDPOINT_ID", "RUNPOD_POD_ID", "RUNPOD_DEV_SESSION"):
+            monkeypatch.delenv(var, raising=False)
+        app = App("my-app")
+
+        @app.queue(name="plain")
+        def plain(x):
+            return x
+
+        with pytest.raises(InvalidResourceError, match="not a generator"):
+            list(plain.stream(1))
 
 
 class TestStubs:
@@ -202,6 +242,42 @@ class TestStubs:
 
         assert result == {"ok": 1}
         mock_invoke.assert_awaited_once_with({"input": {"prompt": "hi"}})
+
+    def test_queue_stub_spawn_returns_job(self):
+        stub = runpod.Queue(app="other-app", name="q")
+        with patch.object(
+            SentinelTarget, "submit", new_callable=AsyncMock
+        ) as mock_submit:
+            mock_submit.return_value = {"id": "job-1", "status": "IN_QUEUE"}
+            job = stub.spawn(prompt="hi")
+
+        assert isinstance(job, runpod.Job)
+        assert job.id == "job-1"
+
+    def test_queue_stub_stream(self):
+        stub = runpod.Queue(app="other-app", name="q")
+
+        async def fake_stream(self, job_id, *, timeout=300.0):
+            for chunk in ("x", "y"):
+                yield chunk
+
+        with (
+            patch.object(
+                SentinelTarget, "submit", new_callable=AsyncMock
+            ) as mock_submit,
+            patch.object(SentinelTarget, "stream_job", fake_stream),
+        ):
+            mock_submit.return_value = {"id": "job-1", "status": "IN_QUEUE"}
+            chunks = list(stub.stream(prompt="hi"))
+
+        assert chunks == ["x", "y"]
+
+    def test_queue_stub_reconnects_to_job(self):
+        stub = runpod.Queue(app="other-app", name="q")
+        job = stub.job("job-1")
+
+        assert isinstance(job, runpod.Job)
+        assert job.id == "job-1"
 
     def test_api_stub_http(self):
         stub = runpod.Api(app="other-app", name="api")
@@ -284,7 +360,7 @@ class TestModuleSourceShipping:
     def test_execute_request_unwraps_handles(self):
         # a shipped module defines decorated handles; the runner must
         # call the wrapped function, not the handle
-        from runpod.runtimes.task.runner import execute_request
+        from runpod.runtimes.executor import execute_request
 
         code = (
             "import runpod\n"
@@ -309,7 +385,7 @@ class TestModuleSourceShipping:
         # inside a live worker, a function calling sibling.remote()
         # re-extracts that sibling's source via inspect; the shipped
         # module must be inspectable after exec
-        from runpod.runtimes.task.runner import execute_request
+        from runpod.runtimes.executor import execute_request
 
         code = (
             "import runpod\n"

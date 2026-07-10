@@ -21,7 +21,7 @@ from runpod.apps import App
 from runpod.apps.app import _clear_registry
 from runpod.apps.errors import RemoteExecutionError
 from runpod.apps.spec import ResourceKind, ResourceSpec
-from runpod.runtimes.task.runner import execute_request
+from runpod.runtimes.executor import execute_request
 from runpod.apps.tasks import _pod_input, unwrap_task_response
 from runpod.apps.targets import PodTarget
 

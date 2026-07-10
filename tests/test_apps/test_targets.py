@@ -241,6 +241,57 @@ class TestSentinelTarget:
         assert job["id"] == "j1"
         assert await target.wait(job, timeout=10) == 42
 
+    async def test_job_operations(self, local_endpoint):
+        local_endpoint.state["responses"][f"/{SENTINEL_ID}/status/j1"] = {
+            "id": "j1",
+            "status": "IN_PROGRESS",
+        }
+        local_endpoint.state["responses"][f"/{SENTINEL_ID}/cancel/j1"] = {
+            "id": "j1",
+            "status": "CANCELLED",
+        }
+        local_endpoint.state["responses"][f"/{SENTINEL_ID}/retry/j1"] = {
+            "id": "j1",
+            "status": "IN_QUEUE",
+        }
+        target = SentinelTarget("demo", "production", "chat")
+
+        assert (await target.job_status("j1"))["status"] == "IN_PROGRESS"
+        assert (await target.cancel_job("j1"))["status"] == "CANCELLED"
+        assert (await target.retry_job("j1"))["status"] == "IN_QUEUE"
+
+        requests = local_endpoint.state["requests"]
+        assert [request["path"] for request in requests] == [
+            f"/{SENTINEL_ID}/status/j1",
+            f"/{SENTINEL_ID}/cancel/j1",
+            f"/{SENTINEL_ID}/retry/j1",
+        ]
+        assert requests[0]["headers"]["X-Flash-Environment"] == "production"
+
+    async def test_stream_job(self, local_endpoint):
+        local_endpoint.state["responses"][f"/{SENTINEL_ID}/stream/j1"] = {
+            "status": "COMPLETED",
+            "stream": [{"output": "a"}, {"output": "b"}],
+        }
+        target = SentinelTarget("demo", "default", "chat")
+
+        chunks = [c async for c in target.stream_job("j1", timeout=10)]
+        assert chunks == ["a", "b"]
+        request = local_endpoint.state["requests"][0]
+        assert request["path"] == f"/{SENTINEL_ID}/stream/j1"
+        assert request["headers"]["X-Flash-App"] == "demo"
+
+    async def test_stream_job_failed(self, local_endpoint):
+        local_endpoint.state["responses"][f"/{SENTINEL_ID}/stream/j1"] = {
+            "status": "FAILED",
+            "error": "boom",
+        }
+        target = SentinelTarget("demo", "default", "chat")
+
+        with pytest.raises(RemoteExecutionError, match="boom"):
+            async for _ in target.stream_job("j1", timeout=10):
+                pass
+
     def test_payload_is_plain_kwargs(self):
         target = SentinelTarget("demo", "default", "chat")
 
@@ -268,6 +319,27 @@ class TestLiveTarget:
         assert body["function_name"] == "fn"
         assert "def fn(" in body["function_code"]
 
+    def test_payload_args_are_plain_json(self):
+        target = LiveTarget("ep123", "chat")
+
+        def fn(prompt, n):
+            return prompt
+
+        payload = target.build_payload(fn, self._spec(), ("hi",), {"n": 2})
+        body = payload["input"]
+        assert body["args"] == ["hi"]
+        assert body["kwargs"] == {"n": 2}
+        assert body["serialization_format"] == "json"
+
+    def test_payload_rejects_non_json_args(self):
+        target = LiveTarget("ep123", "chat")
+
+        def fn(x):
+            return x
+
+        with pytest.raises(TypeError, match="json-serializable"):
+            target.build_payload(fn, self._spec(), (object(),), {})
+
     def test_unwrap_success_response(self):
         target = LiveTarget("ep123", "chat")
         output = {"success": True, "result": None, "json_result": {"x": 1}}
@@ -287,12 +359,62 @@ class TestLiveTarget:
             {"status": "COMPLETED", "output": {"plain": 1}}
         ) == {"plain": 1}
 
+    def test_unwrap_aggregated_plain_function(self):
+        # live handlers aggregate; a plain function is one unmarked envelope
+        target = LiveTarget("ep123", "chat")
+        output = [{"success": True, "json_result": {"x": 1}}]
+        assert target.unwrap(
+            {"status": "COMPLETED", "output": output}
+        ) == {"x": 1}
+
+    def test_unwrap_aggregated_generator(self):
+        target = LiveTarget("ep123", "chat")
+        output = [
+            {"success": True, "__stream__": True, "json_result": "a"},
+            {"success": True, "__stream__": True, "json_result": "b"},
+        ]
+        assert target.unwrap(
+            {"status": "COMPLETED", "output": output}
+        ) == ["a", "b"]
+
+    async def test_stream_job_unwraps_chunks(self, local_endpoint):
+        local_endpoint.state["responses"]["/ep123/stream/j1"] = {
+            "status": "COMPLETED",
+            "stream": [
+                {"output": {"success": True, "__stream__": True, "json_result": "a"}},
+                {"output": {"success": True, "__stream__": True, "json_result": "b"}},
+            ],
+        }
+        target = LiveTarget("ep123", "chat")
+
+        chunks = [c async for c in target.stream_job("j1", timeout=10)]
+        assert chunks == ["a", "b"]
+
     async def test_invoke(self, local_endpoint):
         target = LiveTarget("ep123", "chat")
         data = await target.invoke({"input": {"x": 1}}, timeout=10)
         assert data == {"ok": True}
         request = local_endpoint.state["requests"][0]
         assert request["path"] == "/ep123/runsync"
+
+    async def test_job_operations(self, local_endpoint):
+        local_endpoint.state["responses"]["/ep123/status/j1"] = {
+            "id": "j1",
+            "status": "IN_PROGRESS",
+        }
+        local_endpoint.state["responses"]["/ep123/cancel/j1"] = {
+            "id": "j1",
+            "status": "CANCELLED",
+        }
+        local_endpoint.state["responses"]["/ep123/retry/j1"] = {
+            "id": "j1",
+            "status": "IN_QUEUE",
+        }
+        target = LiveTarget("ep123", "chat")
+
+        assert (await target.job_status("j1"))["status"] == "IN_PROGRESS"
+        assert (await target.cancel_job("j1"))["status"] == "CANCELLED"
+        assert (await target.retry_job("j1"))["status"] == "IN_QUEUE"
 
     async def test_sync_source_skips_unchanged(self, monkeypatch):
         target = LiveTarget("ep123", "chat")

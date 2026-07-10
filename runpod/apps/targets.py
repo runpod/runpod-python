@@ -9,13 +9,13 @@ import inspect
 import json
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional
+from typing import Any, AsyncIterator, Callable, Dict, Optional
 
 import aiohttp
 
 from ..user_agent import USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
-from .protocol import FunctionRequest, FunctionResponse
+from .protocol import FORMAT_JSON, FunctionRequest, FunctionResponse
 from .spec import ResourceSpec
 
 # the sentinel pseudo-endpoint id; ai-api resolves the real endpoint from
@@ -120,8 +120,38 @@ class InvocationTarget(ABC):
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """submit without waiting; returns the raw job data."""
 
+    async def job_status(self, job_id: str) -> Dict[str, Any]:
+        """fetch the current state of a submitted job."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job status"
+        )
+
+    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
+        """cancel a submitted job."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job cancellation"
+        )
+
+    async def retry_job(self, job_id: str) -> Dict[str, Any]:
+        """retry a failed or timed-out job."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job retries"
+        )
+
+    def stream_job(
+        self, job_id: str, *, timeout: float
+    ) -> AsyncIterator[Any]:
+        """yield partial outputs of a generator job as they arrive."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job streaming"
+        )
+
     async def wait(
-        self, job_data: Dict[str, Any], *, timeout: float
+        self,
+        job_data: Dict[str, Any],
+        *,
+        timeout: float,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Any:
         """wait for a submitted job to finish and return its output."""
         raise NotImplementedError(
@@ -254,6 +284,126 @@ async def _wait_terminal(
     return data
 
 
+class QueueClient:
+    """queue data-plane client for a single endpoint id.
+
+    owns the run/runsync/status/cancel/retry routes and the lb subdomain
+    for http resources. targets compose it with their own routing
+    headers: the sentinel client carries flash headers, a live client
+    carries plain auth headers.
+    """
+
+    def __init__(
+        self,
+        endpoint_id: str,
+        headers: Callable[[], Dict[str, str]],
+        *,
+        app_name: str = "",
+        resource_name: str = "",
+    ):
+        self.endpoint_id = endpoint_id
+        self._headers = headers
+        self._app_name = app_name
+        self._resource_name = resource_name
+
+    @property
+    def base_url(self) -> str:
+        return f"{_endpoint_url_base()}/{self.endpoint_id}"
+
+    async def _call(
+        self,
+        method: str,
+        path: str,
+        payload: Any = None,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> Dict[str, Any]:
+        return await _request_json(
+            method,
+            f"{self.base_url}/{path}",
+            self._headers(),
+            timeout,
+            payload=payload,
+            app_name=self._app_name,
+            resource_name=self._resource_name,
+        )
+
+    async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._call("POST", "run", payload)
+
+    async def runsync(
+        self, payload: Dict[str, Any], *, timeout: float
+    ) -> Dict[str, Any]:
+        return await self._call("POST", "runsync", payload, timeout)
+
+    async def status(self, job_id: str) -> Dict[str, Any]:
+        return await self._call("GET", f"status/{job_id}")
+
+    async def cancel(self, job_id: str) -> Dict[str, Any]:
+        return await self._call("POST", f"cancel/{job_id}")
+
+    async def retry(self, job_id: str) -> Dict[str, Any]:
+        return await self._call("POST", f"retry/{job_id}")
+
+    async def stream(
+        self, job_id: str, *, timeout: float
+    ) -> AsyncIterator[Any]:
+        """yield partial outputs from /stream until the job is terminal.
+
+        the route long-polls (wait=) and drains buffered chunks, so each
+        call returns quickly with whatever is available.
+        """
+        import time
+
+        deadline = time.monotonic() + timeout
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"job {job_id} stream did not complete within {timeout}s"
+                )
+            data = await self._call("GET", f"stream/{job_id}")
+            if data.get("status") == "FAILED" or data.get("error"):
+                unwrap_job_output(data)
+            for chunk in data.get("stream") or []:
+                yield chunk.get("output")
+            if data.get("status") in FINAL_STATUSES:
+                return
+
+    async def wait(
+        self,
+        data: Dict[str, Any],
+        *,
+        timeout: float,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        return await _wait_terminal(
+            self.base_url, data, self._headers(), timeout, on_status
+        )
+
+    async def http(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> Any:
+        """plain http call through the endpoint's lb subdomain."""
+        url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            async with session.request(
+                method, url, json=body, headers=self._headers()
+            ) as resp:
+                if resp.status == 404 and self._app_name:
+                    raise EndpointNotFound(self._app_name, self._resource_name)
+                resp.raise_for_status()
+                text = await resp.text()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+
+
 class SentinelTarget(InvocationTarget):
     """routes through the sentinel endpoint; ai-api resolves the real
     endpoint server-side from app/env/resource headers.
@@ -266,6 +416,12 @@ class SentinelTarget(InvocationTarget):
         self.app_name = app_name
         self.env_name = env_name
         self.resource_name = resource_name
+        self._client = QueueClient(
+            SENTINEL_ID,
+            self._sentinel_headers,
+            app_name=app_name,
+            resource_name=resource_name,
+        )
 
     def _sentinel_headers(self) -> Dict[str, str]:
         return _headers(
@@ -279,41 +435,38 @@ class SentinelTarget(InvocationTarget):
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Any:
-        base = f"{_endpoint_url_base()}/{SENTINEL_ID}"
-        headers = self._sentinel_headers()
-        data = await _post_json(
-            f"{base}/runsync",
-            payload,
-            headers,
-            timeout,
-            app_name=self.app_name,
-            resource_name=self.resource_name,
-        )
-        data = await _wait_terminal(base, data, headers, timeout)
-        return unwrap_job_output(data)
+        data = await self._client.runsync(payload, timeout=timeout)
+        data = await self._client.wait(data, timeout=timeout)
+        return self.unwrap(data)
 
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        url = f"{_endpoint_url_base()}/{SENTINEL_ID}/run"
-        return await _post_json(
-            url,
-            payload,
-            self._sentinel_headers(),
-            DEFAULT_TIMEOUT_SECONDS,
-            app_name=self.app_name,
-            resource_name=self.resource_name,
-        )
+        return await self._client.run(payload)
+
+    async def job_status(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.status(job_id)
+
+    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.cancel(job_id)
+
+    async def retry_job(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.retry(job_id)
+
+    def stream_job(
+        self, job_id: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+    ) -> AsyncIterator[Any]:
+        return self._client.stream(job_id, timeout=timeout)
 
     async def wait(
         self,
         job_data: Dict[str, Any],
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Any:
-        base = f"{_endpoint_url_base()}/{SENTINEL_ID}"
-        data = await _wait_terminal(
-            base, job_data, self._sentinel_headers(), timeout
+        data = await self._client.wait(
+            job_data, timeout=timeout, on_status=on_status
         )
-        return unwrap_job_output(data)
+        return self.unwrap(data)
 
     async def request(
         self,
@@ -323,20 +476,7 @@ class SentinelTarget(InvocationTarget):
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> Any:
-        url = f"https://{SENTINEL_ID}.{_lb_domain()}{path}"
-        client_timeout = aiohttp.ClientTimeout(total=timeout)
-        async with aiohttp.ClientSession(timeout=client_timeout) as session:
-            async with session.request(
-                method, url, json=body, headers=self._sentinel_headers()
-            ) as resp:
-                if resp.status == 404:
-                    raise EndpointNotFound(self.app_name, self.resource_name)
-                resp.raise_for_status()
-                text = await resp.text()
-                try:
-                    return json.loads(text)
-                except json.JSONDecodeError:
-                    return text
+        return await self._client.http(method, path, body, timeout=timeout)
 
 
 class LiveTarget(InvocationTarget):
@@ -360,6 +500,7 @@ class LiveTarget(InvocationTarget):
         self.resource_name = resource_name
         self.events = events
         self.metrics_key = metrics_key
+        self._client = QueueClient(endpoint_id, _headers)
         self._source_target: Optional[Any] = None
         self._source_resource: str = ""
         self._source_spec: Optional[ResourceSpec] = None
@@ -408,25 +549,40 @@ class LiveTarget(InvocationTarget):
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
     ) -> Dict[str, Any]:
-        from .serialization import (
-            get_function_source,
-            serialize_args,
-            serialize_kwargs,
-        )
+        from .serialization import get_function_source, require_json_args
 
+        # queue arguments are plain json, the same contract deployed
+        # workers serve; non-json arguments fail here in dev exactly as
+        # they would against a deployed endpoint
+        require_json_args(fn, args, kwargs)
         request = FunctionRequest(
             function_name=fn.__name__,
             function_code=get_function_source(fn),
-            args=serialize_args(args),
-            kwargs=serialize_kwargs(kwargs),
+            args=list(args),
+            kwargs=dict(kwargs),
             dependencies=spec.dependencies,
             system_dependencies=spec.system_dependencies,
             accelerate_downloads=spec.accelerate_downloads,
+            serialization_format=FORMAT_JSON,
         )
         return {"input": request.to_input()}
 
     def unwrap(self, data: Dict[str, Any]) -> Any:
         output = unwrap_job_output(data)
+        # the live handler is a generator handler, so job output is an
+        # aggregated list: one plain response for normal functions,
+        # __stream__-marked chunk envelopes for generator functions
+        if isinstance(output, list):
+            if (
+                len(output) == 1
+                and isinstance(output[0], dict)
+                and not output[0].get("__stream__")
+            ):
+                return self._unwrap_response(output[0])
+            return [self._unwrap_response(o) for o in output]
+        return self._unwrap_response(output)
+
+    def _unwrap_response(self, output: Any) -> Any:
         if isinstance(output, dict) and "success" in output:
             response = FunctionResponse.from_output(output)
             if not response.success:
@@ -459,8 +615,6 @@ class LiveTarget(InvocationTarget):
 
         from .monitor import emit
 
-        base = f"{_endpoint_url_base()}/{self.endpoint_id}"
-        headers = _headers()
         monitor = self._monitor()
         emit(self.events, "dispatch", self.resource_name)
         start = time.monotonic()
@@ -471,16 +625,12 @@ class LiveTarget(InvocationTarget):
                 # async submit + status polling: runsync would hold the
                 # connection, hiding the workerId until completion and
                 # starving the live worker feed
-                data = await _post_json(f"{base}/run", payload, headers, timeout)
+                data = await self._client.run(payload)
             else:
-                data = await _post_json(
-                    f"{base}/runsync", payload, headers, timeout
-                )
-            data = await _wait_terminal(
-                base,
+                data = await self._client.runsync(payload, timeout=timeout)
+            data = await self._client.wait(
                 data,
-                headers,
-                timeout,
+                timeout=timeout,
                 on_status=monitor.on_status if monitor else None,
             )
             result = self.unwrap(data)
@@ -504,17 +654,35 @@ class LiveTarget(InvocationTarget):
         return result
 
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        url = f"{_endpoint_url_base()}/{self.endpoint_id}/run"
-        return await _post_json(url, payload, _headers(), DEFAULT_TIMEOUT_SECONDS)
+        return await self._client.run(payload)
+
+    async def job_status(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.status(job_id)
+
+    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.cancel(job_id)
+
+    async def retry_job(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.retry(job_id)
+
+    async def stream_job(
+        self, job_id: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+    ) -> AsyncIterator[Any]:
+        # live workers stream serialized chunk envelopes through the
+        # same /stream route deployed workers use
+        async for chunk in self._client.stream(job_id, timeout=timeout):
+            yield self._unwrap_response(chunk)
 
     async def wait(
         self,
         job_data: Dict[str, Any],
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Any:
-        base = f"{_endpoint_url_base()}/{self.endpoint_id}"
-        data = await _wait_terminal(base, job_data, _headers(), timeout)
+        data = await self._client.wait(
+            job_data, timeout=timeout, on_status=on_status
+        )
         return self.unwrap(data)
 
     async def request(
@@ -531,16 +699,9 @@ class LiveTarget(InvocationTarget):
 
         emit(self.events, "dispatch", self.resource_name, f"{method} {path}")
         start = time.monotonic()
-        url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
-        client_timeout = aiohttp.ClientTimeout(total=timeout)
         try:
             await self._sync_source(timeout)
-            async with aiohttp.ClientSession(timeout=client_timeout) as session:
-                async with session.request(
-                    method, url, json=body, headers=_headers()
-                ) as resp:
-                    resp.raise_for_status()
-                    text = await resp.text()
+            result = await self._client.http(method, path, body, timeout=timeout)
         except Exception:
             emit(
                 self.events,
@@ -555,10 +716,7 @@ class LiveTarget(InvocationTarget):
             self.resource_name,
             time.monotonic() - start,
         )
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return text
+        return result
 
 
 class PodTarget(InvocationTarget):

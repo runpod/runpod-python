@@ -12,7 +12,19 @@ import sys
 import time
 import traceback
 
-from main import Svc, app, q_basic, q_caller, q_custom, q_deps, q_gpu, t_gpu, t_mul  # noqa: E402
+from main import (  # noqa: E402
+    Svc,
+    app,
+    q_basic,
+    q_caller,
+    q_custom,
+    q_deps,
+    q_gpu,
+    q_stream,
+    q_stream_async,
+    t_gpu,
+    t_mul,
+)
 
 
 async def check_q_basic():
@@ -74,6 +86,44 @@ async def check_spawn():
     return r
 
 
+async def check_job_ops():
+    job = await q_basic.spawn.aio(5)
+    status = await job.status.aio()
+    assert status, status
+    r = await job.result.aio()
+    assert r == {"doubled": 10}, r
+    # reconnect by id and read the terminal status
+    reconnected = await q_basic.job.aio(job.id)
+    status = await reconnected.status.aio()
+    assert status == "COMPLETED", status
+    return {"id": job.id, "status": status}
+
+
+async def check_stream():
+    chunks = [c async for c in q_stream.stream.aio(3)]
+    assert chunks == [{"i": 0}, {"i": 1}, {"i": 2}], chunks
+    return chunks
+
+
+async def check_stream_async_gen():
+    chunks = [c async for c in q_stream_async.stream.aio(3)]
+    assert chunks == [3, 2, 1], chunks
+    return chunks
+
+
+async def check_stream_aggregate():
+    r = await q_stream.remote.aio(2)
+    assert r == [{"i": 0}, {"i": 1}], r
+    return r
+
+
+async def check_stream_from_job():
+    job = await q_stream.spawn.aio(2)
+    chunks = [c async for c in job.stream.aio()]
+    assert chunks == [{"i": 0}, {"i": 1}], chunks
+    return chunks
+
+
 CHECKS = {
     "q-basic": check_q_basic,
     "q-deps": check_q_deps,
@@ -84,6 +134,11 @@ CHECKS = {
     "t-gpu": check_t_gpu,
     "api": check_api,
     "spawn": check_spawn,
+    "job-ops": check_job_ops,
+    "stream": check_stream,
+    "stream-async-gen": check_stream_async_gen,
+    "stream-aggregate": check_stream_aggregate,
+    "stream-from-job": check_stream_from_job,
 }
 
 

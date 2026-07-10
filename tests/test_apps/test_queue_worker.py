@@ -113,6 +113,25 @@ class TestDeployedHandler:
         )
         assert await handler({}) == "ok"
 
+    async def test_sync_generator(self):
+        def fn(n):
+            for i in range(n):
+                yield i
+
+        handler = worker._make_deployed_handler(self._handle(fn))
+        assert inspect.isgeneratorfunction(handler)
+        assert list(handler({"input": {"n": 3}})) == [0, 1, 2]
+
+    async def test_async_generator(self):
+        async def fn(n):
+            for i in range(n):
+                yield i
+
+        handler = worker._make_deployed_handler(self._handle(fn))
+        assert inspect.isasyncgenfunction(handler)
+        chunks = [c async for c in handler({"input": {"n": 2}})]
+        assert chunks == [0, 1]
+
 
 class TestInitHook:
     def test_no_init(self):
@@ -165,6 +184,20 @@ class TestConcurrency:
         config = worker._worker_config(lambda job: job)
         assert config["concurrency_modifier"](1) == 4
 
+    def test_worker_config_plain_handler(self, monkeypatch):
+        monkeypatch.delenv("RUNPOD_MAX_CONCURRENCY", raising=False)
+        config = worker._worker_config(lambda job: job)
+        assert "return_aggregate_stream" not in config
+
+    def test_worker_config_generator_handler(self, monkeypatch):
+        monkeypatch.delenv("RUNPOD_MAX_CONCURRENCY", raising=False)
+
+        def gen_handler(job):
+            yield job
+
+        config = worker._worker_config(gen_handler)
+        assert config["return_aggregate_stream"] is True
+
 
 class TestMain:
     def test_live_mode(self, monkeypatch):
@@ -195,11 +228,55 @@ class TestMain:
         handler = start.call_args[0][0]["handler"]
         assert inspect.iscoroutinefunction(handler)
 
-    def test_live_handler_delegates(self):
-        with patch(
-            "runpod.runtimes.task.runner.execute_request",
-            return_value={"ok": True},
-        ) as execute:
-            result = worker._live_handler({"input": {"foo": 1}})
-        assert result == {"ok": True}
+    async def test_live_handler_plain_function(self):
+        def fn(x):
+            return {"ok": x}
+
+        with (
+            patch(
+                "runpod.runtimes.executor.resolve_request",
+                return_value=((fn, [1], {}), None),
+            ),
+            patch(
+                "runpod.runtimes.executor.execute_request",
+                return_value={"success": True, "json_result": {"ok": 1}},
+            ) as execute,
+        ):
+            chunks = [c async for c in worker._live_handler({"input": {"foo": 1}})]
+        assert chunks == [{"success": True, "json_result": {"ok": 1}}]
         execute.assert_called_once_with({"foo": 1})
+
+    async def test_live_handler_resolve_error(self):
+        with patch(
+            "runpod.runtimes.executor.resolve_request",
+            return_value=(None, {"success": False, "error": "boom"}),
+        ):
+            chunks = [c async for c in worker._live_handler({"input": {}})]
+        assert chunks == [{"success": False, "error": "boom"}]
+
+    async def test_live_handler_streams_generator(self):
+        def fn(n):
+            for i in range(n):
+                yield i
+
+        with patch(
+            "runpod.runtimes.executor.resolve_request",
+            return_value=((fn, [], {"n": 2}), None),
+        ):
+            chunks = [c async for c in worker._live_handler({"input": {}})]
+        assert all(c["__stream__"] for c in chunks)
+        assert all(c["success"] for c in chunks)
+        assert len(chunks) == 2
+
+    async def test_live_handler_streams_async_generator(self):
+        async def fn(n):
+            for i in range(n):
+                yield i
+
+        with patch(
+            "runpod.runtimes.executor.resolve_request",
+            return_value=((fn, [], {"n": 3}), None),
+        ):
+            chunks = [c async for c in worker._live_handler({"input": {}})]
+        assert len(chunks) == 3
+        assert all(c["__stream__"] for c in chunks)

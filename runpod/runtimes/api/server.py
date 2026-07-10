@@ -171,7 +171,7 @@ def _install_live_dependencies(request: dict) -> None:
     dependencies baked into the build artifact, so live mode installs
     them at sync time to match.
     """
-    from runpod.runtimes.task.runner import _install, _install_system
+    from runpod.runtimes.executor import _install, _install_system
 
     error = _install_system(request.get("system_dependencies"))
     if error:
@@ -190,7 +190,7 @@ async def _materialize_live_api(source: str, resource: str) -> Any:
     from fastapi import FastAPI
 
     from runpod.apps.handles import ApiHandle
-    from runpod.runtimes.task.runner import _materialize_source
+    from runpod.runtimes.executor import _materialize_source
 
     path = _materialize_source(source)
     namespace: dict = {"__name__": "__runpod_live__", "__file__": path}
@@ -242,7 +242,7 @@ class _LiveDispatcher:
 
         @app.post("/execute")
         async def execute(request: dict):
-            from runpod.runtimes.task.runner import execute_request
+            from runpod.runtimes.executor import execute_request
 
             return execute_request(request.get("input", request))
 

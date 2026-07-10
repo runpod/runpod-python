@@ -59,6 +59,20 @@ def q_gpu():
     }
 
 
+# -- streaming ---------------------------------------------------------
+
+@app.queue(name="q-stream", cpu="cpu3c-1-2", workers=(0, 1))
+def q_stream(n: int):
+    for i in range(n):
+        yield {"i": i}
+
+
+@app.queue(name="q-stream-async", cpu="cpu3c-1-2", workers=(0, 1))
+async def q_stream_async(n: int):
+    for i in range(n, 0, -1):
+        yield i
+
+
 # -- cross-calls -------------------------------------------------------
 
 @app.queue(name="q-caller", cpu="cpu3c-2-4", workers=(0, 1))

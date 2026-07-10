@@ -11,52 +11,35 @@ with the resource:
     transcribe.spawn("https://...")          # fire and forget -> job handle
     transcribe.local("https://...")          # run the body here
 
+    for chunk in generate.stream(prompt="hi"):   # generator functions
+        ...
+
     @transcribe.init
     def load_model(): ...                    # worker startup hook
 """
 
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+)
 
 from .context import Context, current_context
-from .invoker import Invoker
-from .markers import INIT_ATTR, RESERVED_PATHS, is_init, route_of
+from .errors import InvalidResourceError
+from .invoker import Invoker, StreamInvoker
+from .job import Job
+from .markers import INIT_ATTR, is_init, route_of
 from .schedule import SCHEDULE_ATTR
 from .spec import ResourceKind, ResourceSpec, RouteSpec
-from .errors import InvalidResourceError, RemoteExecutionError
 
 if TYPE_CHECKING:
     from .app import App
-
-
-class Job:
-    """a submitted queue job, returned by .spawn().
-
-    `job.result()` blocks until the job finishes and returns its
-    output; `await job.result.aio()` is the async form.
-    """
-
-    def __init__(self, data: Dict[str, Any], handle: "FunctionHandle"):
-        self._data = data
-        self._handle = handle
-        from .invoker import Invoker
-
-        self.result = Invoker(self._result_async)
-
-    @property
-    def id(self) -> str:
-        return self._data.get("id", "")
-
-    @property
-    def status(self) -> str:
-        return self._data.get("status", "UNKNOWN")
-
-    async def _result_async(self, timeout: float = 300.0) -> Any:
-        target = await self._handle._app._resolve(self._handle.spec)
-        return await target.wait(self._data, timeout=timeout)
-
-    def __repr__(self) -> str:
-        return f"Job(id={self.id!r}, status={self.status!r})"
 
 
 class FunctionHandle:
@@ -79,13 +62,13 @@ class FunctionHandle:
             spec.schedule = stamped
 
         self.remote = Invoker(self._remote_async)
+        self.stream = StreamInvoker(self._stream_async)
         self.spawn = Invoker(self._spawn_async)
+        self.job = Invoker(self._job_async)
 
         self.__name__ = getattr(fn, "__name__", spec.name)
         self.__doc__ = getattr(fn, "__doc__", None)
         self.__wrapped__ = fn
-
-    # -- lifecycle --
 
     def init(self, fn: Callable) -> Callable:
         """register a worker-startup hook; runs before the worker is ready,
@@ -94,14 +77,10 @@ class FunctionHandle:
         self._init_fn = fn
         return fn
 
-    # -- local execution --
-
     def local(self, *args: Any, **kwargs: Any) -> Any:
         """run the function body here. returns a coroutine iff the
         function is async."""
         return self._fn(*args, **kwargs)
-
-    # -- remote execution --
 
     async def _remote_async(self, *args: Any, **kwargs: Any) -> Any:
         self._guard_discovery()
@@ -111,11 +90,54 @@ class FunctionHandle:
             result = self._fn(*args, **kwargs)
             if inspect.isawaitable(result):
                 result = await result
+            # generators aggregate, matching the deployed worker's
+            # return_aggregate_stream output for .remote()
+            if inspect.isasyncgen(result):
+                return [chunk async for chunk in result]
+            if inspect.isgenerator(result):
+                return list(result)
             return result
 
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
         return await target.invoke(payload)
+
+    async def _stream_async(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        """invoke a generator function remotely, yielding partial outputs
+        as the worker produces them."""
+        self._guard_discovery()
+        self._guard_generator()
+        ctx = current_context()
+
+        if ctx is Context.WORKER and self._is_current_worker():
+            gen = self._fn(*args, **kwargs)
+            if inspect.isasyncgen(gen):
+                async for chunk in gen:
+                    yield chunk
+            else:
+                for chunk in gen:
+                    yield chunk
+            return
+
+        target = await self._app._resolve(self.spec)
+        payload = target.build_payload(self._fn, self.spec, args, kwargs)
+        data = await target.submit(payload)
+        async for chunk in target.stream_job(data["id"]):
+            yield chunk
+
+    def _guard_generator(self) -> None:
+        if self.spec.kind is ResourceKind.TASK:
+            raise InvalidResourceError(
+                "tasks do not stream; use @app.queue for generator functions"
+            )
+        if not (
+            inspect.isgeneratorfunction(self._fn)
+            or inspect.isasyncgenfunction(self._fn)
+        ):
+            raise InvalidResourceError(
+                f"'{self.__name__}' is not a generator function; "
+                f"use .remote(...) instead"
+            )
 
     async def _spawn_async(self, *args: Any, **kwargs: Any) -> Any:
         self._guard_discovery()
@@ -124,8 +146,18 @@ class FunctionHandle:
         data = await target.submit(payload)
         # queue targets return raw job data; task targets return a TaskJob
         if isinstance(data, dict):
-            return Job(data, self)
+            return Job(data, target)
         return data
+
+    async def _job_async(self, job_id: str) -> Job:
+        """reconnect to a submitted queue job by id."""
+        if self.spec.kind is ResourceKind.TASK:
+            raise InvalidResourceError(
+                "task jobs cannot be reconnected by id; retain the job "
+                "returned by .spawn()"
+            )
+        target = await self._app._resolve(self.spec)
+        return Job({"id": job_id, "status": "UNKNOWN"}, target)
 
     def _guard_discovery(self) -> None:
         from .discovery import DiscoveryInvocationError, in_discovery
@@ -136,12 +168,8 @@ class FunctionHandle:
     def _is_current_worker(self) -> bool:
         import os
 
-        current = os.getenv("FLASH_RESOURCE_NAME") or os.getenv(
-            "RUNPOD_RESOURCE_NAME"
-        )
+        current = os.getenv("FLASH_RESOURCE_NAME") or os.getenv("RUNPOD_RESOURCE_NAME")
         return current is not None and current == self.spec.name
-
-    # calling the handle directly is a common mistake; be explicit
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         raise TypeError(

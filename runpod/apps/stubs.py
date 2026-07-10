@@ -14,11 +14,11 @@ handles, so a stub is just a handle without a function body.
 """
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, AsyncIterator, Optional
 
-from .errors import EndpointNotFound, RemoteExecutionError
-from .invoker import Invoker
-from .targets import DEFAULT_TIMEOUT_SECONDS, SentinelTarget
+from .invoker import Invoker, StreamInvoker
+from .job import Job
+from .targets import SentinelTarget
 
 DEFAULT_ENV = "default"
 
@@ -52,15 +52,32 @@ class Queue(_StubBase):
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.remote = Invoker(self._remote_async)
+        self.stream = StreamInvoker(self._stream_async)
         self.spawn = Invoker(self._spawn_async)
+        self.job = Invoker(self._job_async)
 
     async def _remote_async(self, **kwargs: Any) -> Any:
         payload = {"input": kwargs or {"__empty": True}}
         return await self._target().invoke(payload)
 
-    async def _spawn_async(self, **kwargs: Any) -> Dict[str, Any]:
+    async def _spawn_async(self, **kwargs: Any) -> Job:
         payload = {"input": kwargs or {"__empty": True}}
-        return await self._target().submit(payload)
+        target = self._target()
+        data = await target.submit(payload)
+        return Job(data, target)
+
+    async def _stream_async(self, **kwargs: Any) -> AsyncIterator[Any]:
+        payload = {"input": kwargs or {"__empty": True}}
+        target = self._target()
+        data = await target.submit(payload)
+        async for chunk in target.stream_job(data["id"]):
+            yield chunk
+
+    async def _job_async(self, job_id: str) -> Job:
+        return Job(
+            {"id": job_id, "status": "UNKNOWN"},
+            self._target(),
+        )
 
     def __repr__(self) -> str:
         ref = self.resource_name or self.resource_id

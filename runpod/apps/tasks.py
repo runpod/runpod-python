@@ -43,9 +43,16 @@ RESULT_POLL_INTERVAL = 2.0
 
 
 def _runner_source() -> str:
-    return (
-        Path(__file__).parent.parent / "runtimes" / "task" / "runner.py"
-    ).read_text()
+    """single-file runner for bare-image bootstrap.
+
+    the shared executor is concatenated ahead of the task server so the
+    shipped file has no runpod imports; the server's executor import
+    fails on the pod and falls through to the names already in scope.
+    """
+    runtimes = Path(__file__).parent.parent / "runtimes"
+    executor = (runtimes / "executor.py").read_text()
+    server = (runtimes / "task" / "runner.py").read_text()
+    return f"{executor}\n\n{server}"
 
 
 def _bootstrap_command() -> str:

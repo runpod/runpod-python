@@ -41,6 +41,25 @@ def deserialize_result(result_b64: str) -> Any:
         ) from exc
 
 
+def require_json_args(fn: Callable, args: tuple, kwargs: dict) -> None:
+    """reject arguments that cannot cross the queue data plane.
+
+    queue jobs are json on the wire in every mode, so non-json
+    arguments fail at call time with a pointed error instead of a
+    worker-side decode failure.
+    """
+    import json
+
+    try:
+        json.dumps(list(args))
+        json.dumps(kwargs)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            f"{fn.__name__}() arguments must be json-serializable "
+            f"(queue jobs are plain json): {exc}"
+        ) from exc
+
+
 def get_function_source(fn: Callable) -> str:
     """the full source of the function's module.
 

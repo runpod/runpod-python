@@ -1,15 +1,4 @@
-"""app-centric sdk surface: App, decorated handles, and execution primitives.
-
-the public entry points here are:
-
-- App: the registry a project defines its resources on
-- @app.queue: queue-based serverless endpoint from a function
-- @app.api: load-balanced serverless endpoint from a class (or asgi factory)
-- @app.task: ephemeral pod compute from a function
-- runpod.local_entrypoint: dev-session entry hook
-- runpod.is_local: context check
-- runpod.Queue / runpod.Api: stubs for resources deployed from elsewhere
-"""
+"""app-centric sdk surface: App, decorated handles, and execution primitives."""
 
 from .app import App, get_registered_apps
 from .context import Context, current_context, is_local
@@ -22,6 +11,7 @@ from .errors import (
     ScheduleNotSupported,
 )
 from .handles import ApiHandle, FunctionHandle
+from .job import Job
 from .markers import delete, get, init, patch, post, put
 from .schedule import schedule
 from .spec import ResourceKind, ResourceSpec, RouteSpec
@@ -39,6 +29,7 @@ __all__ = [
     "DataCenter",
     "EndpointNotFound",
     "FunctionHandle",
+    "Job",
     "Model",
     "Queue",
     "Secret",

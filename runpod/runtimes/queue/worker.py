@@ -12,8 +12,8 @@ deployed mode (rp deploy):
 
 live mode (rp dev):
     no artifact. each job carries a FunctionRequest (source +
-    serialized args) which is executed via the task runner's
-    execute_request.
+    serialized args) which is executed via the shared engine in
+    runpod.runtimes.executor.
 """
 
 import importlib
@@ -75,14 +75,37 @@ def _load_deployed_handle():
     )
 
 
+def _job_kwargs(job: dict) -> dict:
+    body = dict(job.get("input") or {})
+    body.pop("__empty", None)
+    return body
+
+
 def _make_deployed_handler(handle):
-    """serverless handler that calls the user function directly."""
+    """serverless handler that calls the user function directly.
+
+    generator functions become generator handlers so the serverless
+    core streams partial outputs to /stream as they are yielded.
+    """
     fn = handle._fn
 
+    if inspect.isasyncgenfunction(fn):
+
+        async def async_gen_handler(job: dict):
+            async for chunk in fn(**_job_kwargs(job)):
+                yield chunk
+
+        return async_gen_handler
+
+    if inspect.isgeneratorfunction(fn):
+
+        def gen_handler(job: dict):
+            yield from fn(**_job_kwargs(job))
+
+        return gen_handler
+
     async def handler(job: dict) -> dict:
-        body = dict(job.get("input") or {})
-        body.pop("__empty", None)
-        result = fn(**body)
+        result = fn(**_job_kwargs(job))
         if inspect.isawaitable(result):
             result = await result
         return result
@@ -102,10 +125,32 @@ def _run_init(handle) -> None:
         asyncio.run(result)
 
 
-def _live_handler(job: dict) -> dict:
-    from runpod.runtimes.task.runner import execute_request
+async def _live_handler(job: dict):
+    """execute a FunctionRequest, streaming when the function is a
+    generator so dev sessions behave exactly like deployed workers."""
+    from runpod.runtimes.executor import (
+        execute_request,
+        resolve_request,
+        serialize_chunk,
+    )
 
-    return execute_request(job.get("input") or {})
+    request = job.get("input") or {}
+    prepared, error_response = resolve_request(request)
+    if error_response is not None:
+        yield error_response
+        return
+    fn, args, kwargs = prepared
+
+    if inspect.isasyncgenfunction(fn):
+        async for chunk in fn(*args, **kwargs):
+            yield serialize_chunk(chunk, request)
+        return
+    if inspect.isgeneratorfunction(fn):
+        for chunk in fn(*args, **kwargs):
+            yield serialize_chunk(chunk, request)
+        return
+
+    yield execute_request(request)
 
 
 def _max_concurrency() -> int:
@@ -118,6 +163,12 @@ def _max_concurrency() -> int:
 
 def _worker_config(handler) -> dict:
     config: dict = {"handler": handler}
+    from runpod.serverless.modules.rp_handler import is_generator
+
+    if is_generator(handler):
+        # generator jobs stream partials and still finish with a full
+        # output, so .remote()/result() work alongside .stream()
+        config["return_aggregate_stream"] = True
     concurrency = _max_concurrency()
     if concurrency > 1:
         config["concurrency_modifier"] = lambda _current: concurrency
@@ -132,6 +183,8 @@ def main() -> None:
             _worker_config(_make_deployed_handler(handle))
         )
     else:
+        # the live handler is a generator so it can stream; aggregation
+        # keeps .remote() working for plain functions and generators alike
         runpod.serverless.start(_worker_config(_live_handler))
 
 
