@@ -1,5 +1,6 @@
 import os
 import shutil
+import tarfile
 import threading
 import time
 
@@ -487,3 +488,49 @@ def test_join_pending_syncs_bounded_by_timeout(monkeypatch):
     vcmod._join_pending_syncs()
     release.set()
     vcmod._reset_pending_for_test()
+
+
+# --------------------------------------------------------------------------- #
+# pack small
+# --------------------------------------------------------------------------- #
+
+
+def _rel(p):
+    return os.path.relpath(p, "/")
+
+
+def test_pack_small_with_binary_round_trips(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    (cache / "a.txt").write_text("aaa")
+    (cache / "sub").mkdir()
+    (cache / "sub" / "b.txt").write_text("bbb")
+    files = [str(cache / "a.txt"), str(cache / "sub" / "b.txt")]
+    assert vc._pack_small(files) is True
+    with tarfile.open(vc._small_archive_path) as tf:
+        names = set(tf.getnames())
+    assert _rel(files[0]) in names and _rel(files[1]) in names
+
+
+def test_pack_small_falls_back_to_tarfile(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    (cache / "a.txt").write_text("aaa")
+    monkeypatch.setattr(vc, "_tar_binary", lambda: None)
+    assert vc._pack_small([str(cache / "a.txt")]) is True
+    with tarfile.open(vc._small_archive_path) as tf:
+        assert _rel(str(cache / "a.txt")) in tf.getnames()
+
+
+def test_pack_small_atomic_no_partial_on_failure(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    (cache / "a.txt").write_text("aaa")
+    monkeypatch.setattr(vc, "_tar_binary", lambda: None)
+
+    def boom(*a, **k):
+        raise OSError("no space")
+
+    monkeypatch.setattr(tarfile, "open", boom)
+    assert vc._pack_small([str(cache / "a.txt")]) is False
+    assert not os.path.exists(vc._small_archive_path)  # atomic: no partial archive

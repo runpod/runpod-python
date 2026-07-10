@@ -18,6 +18,8 @@ import atexit
 import json
 import os
 import shutil
+import subprocess
+import tarfile
 import threading
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -216,6 +218,38 @@ class VolumeCache:
             log.warn(f"VolumeCache operation failed: {exc}")
             return default
 
+    def _tar_binary(self):
+        return shutil.which("tar")
+
+    def _pack_small(self, files):
+        os.makedirs(self._mirror_root, exist_ok=True)
+        tmp = f"{self._small_archive_path}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
+        rels = [os.path.relpath(f, "/") for f in files]
+        try:
+            if self._tar_binary():
+                listing = f"{tmp}.list"
+                with open(listing, "w") as fh:
+                    fh.write("\n".join(rels))
+                try:
+                    subprocess.run(
+                        ["tar", "-C", "/", "-c", "--no-recursion", "-f", tmp, "-T", listing],
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                finally:
+                    _silent_remove(listing)
+            else:
+                with tarfile.open(tmp, "w") as tf:
+                    for f, rel in zip(files, rels):
+                        tf.add(f, arcname=rel, recursive=False)
+            os.replace(tmp, self._small_archive_path)
+            return True
+        except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
+            log.debug(f"VolumeCache: pack small bucket failed: {exc}")
+            _silent_remove(tmp)
+            return False
+
     # ----------------------------------------------------------------- #
     # hydrate / sync
     # ----------------------------------------------------------------- #
@@ -287,6 +321,19 @@ class VolumeCache:
     def __exit__(self, *exc):
         self.sync(background=True)
         return None
+
+
+# ----------------------------------------------------------------------- #
+# utilities
+# ----------------------------------------------------------------------- #
+
+
+def _silent_remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        # best-effort cleanup; a leftover temp is overwritten or ignored next run
+        pass
 
 
 # ----------------------------------------------------------------------- #
