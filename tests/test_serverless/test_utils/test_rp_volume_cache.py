@@ -600,3 +600,28 @@ def test_extract_small_never_raises_when_getmembers_raises(tmp_path, monkeypatch
 
     monkeypatch.setattr(tarfile, "open", lambda *a, **k: FakeTarFile())
     assert vc._extract_small() == 0
+
+
+# --------------------------------------------------------------------------- #
+# copy_parallel (Task 5)
+# --------------------------------------------------------------------------- #
+
+
+def test_copy_parallel_copies_needed_only(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    src1 = cache / "s1"
+    src1.write_text("one")
+    src2 = cache / "s2"
+    src2.write_text("two")
+    dst1 = tmp_path / "d1"
+    dst2 = tmp_path / "d2"
+    # pre-satisfy dst1 so it is skipped
+    shutil.copy2(str(src1), str(dst1))
+    n = vc._copy_parallel([(str(src1), str(dst1)), (str(src2), str(dst2))])
+    assert n == 1
+    assert dst2.read_text() == "two"
+
+
+def test_copy_parallel_empty_is_zero(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    assert vc._copy_parallel([]) == 0

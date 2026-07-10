@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import tarfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
@@ -208,6 +209,14 @@ class VolumeCache:
                 # best-effort cleanup; a leftover temp file is overwritten next sync
                 pass
             return False
+
+    def _copy_parallel(self, pairs):
+        todo = [(s, d) for s, d in pairs if self._needs_copy(s, d)]
+        if not todo:
+            return 0
+        with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
+            results = list(pool.map(lambda sd: self._copy_file(sd[0], sd[1]), todo))
+        return sum(1 for ok in results if ok)
 
     def _guard(self, fn, default):
         try:
