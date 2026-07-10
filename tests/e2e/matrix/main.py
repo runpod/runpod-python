@@ -90,6 +90,12 @@ def t_mul(a: int, b: int):
     return {"product": a * b}
 
 
+@app.task(name="t-gen", cpu="cpu3c-1-2")
+def t_gen(n: int):
+    for i in range(n):
+        yield i * i
+
+
 @app.task(name="t-gpu", gpu=runpod.GpuGroup.ADA_24)
 def t_gpu(size: int):
     import torch
@@ -115,3 +121,13 @@ class Svc:
     @runpod.get("/stats")
     def stats(self):
         return {"counter": self.counter}
+
+    @runpod.get("/tokens")
+    def tokens(self):
+        from fastapi.responses import StreamingResponse
+
+        def gen():
+            for word in ("alpha", "beta", "gamma"):
+                yield word + "\n"
+
+        return StreamingResponse(gen(), media_type="text/plain")

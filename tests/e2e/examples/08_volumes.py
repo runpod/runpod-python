@@ -37,3 +37,7 @@ def main():
     result = read.remote()
     print("read back:", result)
     assert result == message
+
+
+if __name__ == "__main__":
+    main()

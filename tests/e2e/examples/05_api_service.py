@@ -39,3 +39,7 @@ def main():
     value = Counter.get("/value")
     print("value:", value)
     assert value["count"] == 5
+
+
+if __name__ == "__main__":
+    main()

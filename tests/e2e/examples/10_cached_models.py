@@ -31,3 +31,7 @@ def main():
     print("result:", result)
     assert result["path"].startswith("/runpod/model-store/huggingface/")
     assert result["text"]
+
+
+if __name__ == "__main__":
+    main()

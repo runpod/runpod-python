@@ -67,3 +67,7 @@ def main():
     print("eval:", fit)
     assert abs(fit["weight"] - 3.0) < 0.3
     assert abs(fit["bias"] - 1.0) < 0.3
+
+
+if __name__ == "__main__":
+    main()

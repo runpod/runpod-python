@@ -20,3 +20,7 @@ def main():
     result = hello.remote("world")
     print("result:", result)
     assert result == "hello world"
+
+
+if __name__ == "__main__":
+    main()

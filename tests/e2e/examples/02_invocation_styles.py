@@ -35,3 +35,7 @@ def main():
     assert square.local(7) == 49
 
     print("all four invocation styles ok")
+
+
+if __name__ == "__main__":
+    main()

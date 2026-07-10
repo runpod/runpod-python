@@ -22,3 +22,7 @@ def main():
     version = python_version.remote()
     print("worker python:", version)
     assert version == "3.12"
+
+
+if __name__ == "__main__":
+    main()

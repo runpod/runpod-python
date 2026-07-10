@@ -35,3 +35,7 @@ def main():
     print("pipeline:", result)
     assert result["total"] == 4
     assert result["tokens"][0] == "the"
+
+
+if __name__ == "__main__":
+    main()

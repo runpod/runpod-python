@@ -29,3 +29,7 @@ def main():
     info = gpu_task.remote()
     print("gpu task:", info)
     assert info["cuda"] is True
+
+
+if __name__ == "__main__":
+    main()

@@ -22,6 +22,7 @@ from main import (  # noqa: E402
     q_gpu,
     q_stream,
     q_stream_async,
+    t_gen,
     t_gpu,
     t_mul,
 )
@@ -79,6 +80,13 @@ async def check_api():
     return {"bump": r1, "stats": r2}
 
 
+async def check_api_streaming_response():
+    # api routes may stream; the client delivers the body intact
+    r = await Svc.get.aio("/tokens")
+    assert r == "alpha\nbeta\ngamma\n", repr(r)
+    return {"body": r}
+
+
 async def check_spawn():
     job = await q_basic.spawn.aio(4)
     r = await job.result.aio()
@@ -124,6 +132,24 @@ async def check_stream_from_job():
     return chunks
 
 
+async def check_task_generator_aggregates():
+    r = await t_gen.remote.aio(4)
+    assert r == [0, 1, 4, 9], r
+    return r
+
+
+async def check_task_stream_rejected():
+    from runpod.apps.errors import InvalidResourceError
+
+    try:
+        async for _ in t_gen.stream.aio(2):
+            pass
+    except InvalidResourceError as exc:
+        assert "do not stream" in str(exc), exc
+        return {"rejected": True}
+    raise AssertionError("task .stream() should raise InvalidResourceError")
+
+
 CHECKS = {
     "q-basic": check_q_basic,
     "q-deps": check_q_deps,
@@ -139,6 +165,9 @@ CHECKS = {
     "stream-async-gen": check_stream_async_gen,
     "stream-aggregate": check_stream_aggregate,
     "stream-from-job": check_stream_from_job,
+    "task-gen-aggregate": check_task_generator_aggregates,
+    "task-stream-rejected": check_task_stream_rejected,
+    "api-streaming-response": check_api_streaming_response,
 }
 
 

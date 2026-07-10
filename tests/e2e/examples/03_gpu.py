@@ -31,3 +31,7 @@ def main():
     assert info["cuda"] is True
     assert "4090" in info["device"]
     assert info["mode"] == "example"
+
+
+if __name__ == "__main__":
+    main()

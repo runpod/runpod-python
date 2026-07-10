@@ -31,3 +31,7 @@ def main():
     print("peek:", result)
     assert result["token_present"] is True
     assert result["mode"] == "example"
+
+
+if __name__ == "__main__":
+    main()

@@ -32,3 +32,7 @@ def main():
     version = jq_version.remote()
     print("jq:", version)
     assert version.startswith("jq-")
+
+
+if __name__ == "__main__":
+    main()
