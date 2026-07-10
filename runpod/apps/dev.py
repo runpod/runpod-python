@@ -26,12 +26,22 @@ import os as _os
 
 
 def dev_endpoint_name(app_name: str, resource_name: str) -> str:
-    return f"{DEV_PREFIX}-{app_name}-{resource_name}"
+    """unique endpoint name for a dev (app, resource) pair.
+
+    dash-joined names alone are ambiguous (("a-b","c") vs ("a","b-c")),
+    so a short digest of the exact pair disambiguates.
+    """
+    import hashlib
+
+    digest = hashlib.sha256(
+        f"{app_name}/{resource_name}".encode()
+    ).hexdigest()[:6]
+    return f"{DEV_PREFIX}-{app_name}-{resource_name}-{digest}"
 
 
 def _resource_of(endpoint_name: str) -> str:
-    """resource name from a dev endpoint name (last dash segment)."""
-    return endpoint_name.rsplit("-", 1)[-1]
+    """resource name from a dev endpoint name (display only)."""
+    return endpoint_name.rsplit("-", 2)[-2]
 
 
 def _comparable(payload: Dict) -> Dict:

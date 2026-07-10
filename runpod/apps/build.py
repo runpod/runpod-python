@@ -336,10 +336,13 @@ def build_environment(
     env_dir.mkdir(parents=True, exist_ok=True)
 
     user_requirements = collect_requirements(project_root, app)
-    # size-prohibitive packages come preinstalled on the builtin gpu
-    # images; a custom image carries no such guarantee, so any custom
-    # image in the app disables auto-exclusion and everything vendors
-    auto_exclude = not any(h.spec.image for h in app.resources.values())
+    # size-prohibitive packages come preinstalled only on the builtin
+    # gpu images. custom images carry no guarantee, and builtin cpu
+    # images ship without them, so every resource must be gpu-on-builtin
+    # for auto-exclusion to be sound (the artifact is shared app-wide)
+    auto_exclude = all(
+        h.spec.gpu and not h.spec.image for h in app.resources.values()
+    )
     vendored, excluded = split_exclusions(
         user_requirements, exclude, auto_exclude=auto_exclude
     )

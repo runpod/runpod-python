@@ -248,6 +248,8 @@ class _Tee(io.TextIOBase):
                 stream.write(s)
                 stream.flush()
             except (ValueError, OSError):
+                # one sink failing (closed pipe) must not lose the
+                # write on the other sinks
                 pass
         return len(s)
 
@@ -256,6 +258,7 @@ class _Tee(io.TextIOBase):
             try:
                 stream.flush()
             except (ValueError, OSError):
+                # closed sinks are skipped, same as write
                 pass
 
 

@@ -49,6 +49,9 @@ WATCHDOG_INTERVAL = 15.0
 _job_lock = threading.Lock()
 _job_state = {"status": "NONE", "response": None}
 _last_contact = {"ts": None}  # set at server start
+# inline /execute requests in flight; the watchdog must not terminate
+# the pod while one runs (long executes outlive the idle timeout)
+_inline_executions = {"count": 0}
 
 
 def _touch_contact():
@@ -57,9 +60,9 @@ def _touch_contact():
     _last_contact["ts"] = time.time()
 
 
-def _should_self_terminate(status, last_contact, now, idle_timeout):
+def _should_self_terminate(status, last_contact, now, idle_timeout, inline=0):
     """the watchdog decision: kill only provably-abandoned pods."""
-    if status == "RUNNING":
+    if status == "RUNNING" or inline > 0:
         return False
     if last_contact is None:
         return False
@@ -117,6 +120,7 @@ def _watchdog():
             _last_contact["ts"],
             time.time(),
             IDLE_TIMEOUT,
+            inline=_inline_executions["count"],
         ):
             _terminate_self()
 
@@ -166,7 +170,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(401, {"error": "unauthorized"})
             return
         if self.path == "/execute":
-            self._send(200, execute_request(self._read_request()))
+            with _job_lock:
+                _inline_executions["count"] += 1
+            try:
+                self._send(200, execute_request(self._read_request()))
+            finally:
+                with _job_lock:
+                    _inline_executions["count"] -= 1
             return
         if self.path == "/submit":
             request = self._read_request()

@@ -151,17 +151,41 @@ def _mount_routes(app: Any, handle, instance) -> None:
 
 
 def _build_factory_app(handle) -> Any:
-    """call the user's asgi factory and ensure /ping exists."""
+    """call the user's asgi factory and ensure /ping exists.
+
+    fastapi/starlette apps get a /ping route added when missing; other
+    asgi callables are wrapped so /ping is answered before delegating.
+    """
     app = handle._asgi_factory()
 
-    routes = getattr(app, "routes", [])
-    if not any(getattr(r, "path", None) == "/ping" for r in routes):
+    routes = getattr(app, "routes", None)
+    if routes is not None and hasattr(app, "get"):
+        if not any(getattr(r, "path", None) == "/ping" for r in routes):
 
-        @app.get("/ping")
-        async def ping():
-            return {"status": "healthy"}
+            @app.get("/ping")
+            async def ping():
+                return {"status": "healthy"}
 
-    return app
+        return app
+
+    async def with_ping(scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/ping":
+            body = b'{"status": "healthy"}'
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode()),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
+        await app(scope, receive, send)
+
+    return with_ping
 
 
 def _install_live_dependencies(request: dict) -> None:

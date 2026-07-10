@@ -18,6 +18,7 @@ def _snapshot(roots: Iterable[Path]) -> Dict[str, float]:
             try:
                 state[str(root)] = root.stat().st_mtime
             except OSError:
+                # file deleted mid-scan; picked up on the next pass
                 pass
             continue
         for path in root.rglob("*.py"):

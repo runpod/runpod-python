@@ -35,7 +35,7 @@ class TestEndpointInput:
             pass
 
         payload = _endpoint_input(app, q.spec)
-        assert payload["name"] == "dev-a-q"
+        assert payload["name"].startswith("dev-a-q-")
         assert payload["instanceIds"] == ["cpu3c-1-2"]
         assert "EU-RO-1" in payload["locations"]
         assert "US-KS-2" in payload["locations"]

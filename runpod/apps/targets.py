@@ -257,7 +257,8 @@ async def _request_json(
             # decided retryability
             last_exc = exc
             continue
-    assert last_exc is not None  # loop always runs at least once
+    if last_exc is None:  # pragma: no cover - loop always runs once
+        raise RuntimeError("request retry loop exited cleanly")
     raise last_exc
 
 

@@ -100,8 +100,8 @@ class TestRunpodInit:
             'AsyncioEndpoint', 'AsyncioJob', 'Endpoint',
             # Apps surface
             'Api', 'App', 'CpuInstanceType', 'DataCenter', 'EndpointNotFound', 'GpuGroup',
-            'GpuType', 'Job', 'Queue', 'delete', 'get', 'init', 'is_local',
-            'local_entrypoint', 'patch', 'post', 'put', 'schedule',
+            'GpuType', 'Job', 'Model', 'Queue', 'Secret', 'Volume', 'delete', 'get',
+            'init', 'is_local', 'local_entrypoint', 'patch', 'post', 'put', 'schedule',
             # Serverless module
             'serverless',
             # Logger class

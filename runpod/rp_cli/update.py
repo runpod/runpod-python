@@ -87,10 +87,23 @@ def fetch_pypi_metadata() -> Tuple[str, Set[str]]:
 
 
 def install_command(version: str) -> list:
-    """the installer invocation, preferring uv when present."""
+    """the installer invocation targeting the running interpreter.
+
+    `uv pip install` is used only with an explicit --python pointing at
+    this interpreter: bare uv resolves against an activated venv, which
+    is not necessarily where this cli runs from.
+    """
     package_spec = f"runpod=={version}"
     if shutil.which("uv"):
-        return ["uv", "pip", "install", package_spec, "--quiet"]
+        return [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            package_spec,
+            "--quiet",
+        ]
     return [sys.executable, "-m", "pip", "install", package_spec, "--quiet"]
 
 
@@ -135,6 +148,7 @@ def _write_cache(latest_version: str) -> None:
             encoding="utf-8",
         )
     except OSError:
+        # cache write is best-effort; the check reruns next invocation
         pass
 
 

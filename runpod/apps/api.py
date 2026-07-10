@@ -50,7 +50,8 @@ class AppsApiClient:
                 # transport-level failures (ssl hiccups, resets, dns)
                 # are transient; graphql/auth errors propagate untouched
                 last_exc = exc
-        assert last_exc is not None  # loop always runs at least once
+        if last_exc is None:  # pragma: no cover - loop always runs once
+            raise RuntimeError("graphql transport retry loop exited cleanly")
         raise last_exc
 
     async def save_endpoint(self, endpoint_input: Dict[str, Any]) -> Dict[str, Any]:

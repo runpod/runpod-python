@@ -229,6 +229,8 @@ class TaskExecution:
                         if resp.status == 200:
                             return
                 except (aiohttp.ClientError, asyncio.TimeoutError):
+                    # pod not reachable yet; the surrounding deadline
+                    # decides when to stop trying
                     pass
                 await asyncio.sleep(READY_POLL_INTERVAL)
         raise TimeoutError(

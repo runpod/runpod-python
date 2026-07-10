@@ -218,6 +218,7 @@ def gpu_ids_value(gpu: Optional[List[str]]) -> str:
             pool = pool_for_gpu_type(GpuType(value))
             value = pool.value if pool is not None else value
         except ValueError:
+            # not a known GpuType: pass the raw pool/id string through
             pass
         if value not in pools:
             pools.append(value)

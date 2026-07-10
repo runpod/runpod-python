@@ -315,6 +315,11 @@ def dev(module, once):
     os.environ["RUNPOD_DEV_SESSION"] = "1"
 
     def _scan():
+        # each rescan registers entrypoints anew; clearing first keeps
+        # get_entrypoint() reflecting the current file, not stale runs
+        from runpod.apps.entrypoint import _clear_entrypoints
+
+        _clear_entrypoints()
         try:
             apps = discover_apps(module)
         except DiscoveryError as exc:
@@ -382,6 +387,7 @@ def dev(module, once):
                     else:
                         return "enter"
                 except _queue.Empty:
+                    # no keypress this tick; fall through to the sleep
                     pass
             await asyncio.sleep(0.5)
 
@@ -408,6 +414,8 @@ def dev(module, once):
         def _runner() -> None:
             try:
                 run_entrypoint(fn)
+            # BaseException on purpose: SystemExit/KeyboardInterrupt from
+            # the entrypoint must reach the loop, not die on this thread
             except BaseException as exc:  # noqa: BLE001 - marshalled to the loop
                 # bind the exception now: `as exc` is unbound once the
                 # except block exits, before the loop callback runs
@@ -497,6 +505,7 @@ def logs(pod_id, follow, log_type, tail):
     try:
         asyncio.run(_run())
     except KeyboardInterrupt:
+        # ctrl-c ends the log follow; not an error
         pass
 
 
