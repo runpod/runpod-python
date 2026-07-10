@@ -10,6 +10,7 @@ Fitness checks do NOT run in local development mode or testing mode.
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import os
 import sys
@@ -42,10 +43,8 @@ def _terminate_unhealthy(code: int = 1) -> None:
     # cleanup. A broken worker may have a closed/None stdio stream; never let a
     # flush failure stop the exit, which is the whole point of this helper.
     for stream in (sys.stdout, sys.stderr):
-        try:
+        with contextlib.suppress(Exception):
             stream.flush()
-        except Exception:
-            pass
     os._exit(code)
 
 # Global registry for fitness check functions, preserves registration order
