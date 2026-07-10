@@ -324,7 +324,9 @@ class VolumeCache:
         manifest = self._read_manifest()
         if manifest is None:
             return 0
-        restored = self._extract_small()
+        restored = 0
+        if manifest.get("small"):
+            restored += self._extract_small()
         big_pairs = []
         for entry in manifest.get("big", []):
             rel = os.path.relpath(entry["path"], "/")
@@ -374,6 +376,11 @@ class VolumeCache:
                     big_files = big_files + [m["path"] for m in small_meta]
                     small_meta = []
             # else: unchanged -> the existing archive is still current
+        if not small_meta:
+            # No small files (or pack failed and reclassified them as big):
+            # remove any stale archive before the manifest is written so a
+            # crash can't leave manifest.small=[] with a live archive.
+            _silent_remove(self._small_archive_path)
 
         big_pairs = [(f, os.path.join(self._big_root, os.path.relpath(f, "/"))) for f in big_files]
         big_copied = self._copy_parallel(big_pairs)

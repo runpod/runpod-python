@@ -180,8 +180,9 @@ def test_sync_skips_symlink_source(tmp_path):
     copied = vc._do_sync()
     assert copied == 1  # only real.bin, not the symlink
 
-    mirror_link = os.path.join(vc._mirror_root, os.path.relpath(str(link), "/"))
-    assert not os.path.exists(mirror_link)
+    manifest = vc._read_manifest()
+    manifest_paths = [e["path"] for e in manifest["small"] + manifest["big"]]
+    assert str(link) not in manifest_paths
 
 
 # --------------------------------------------------------------------------- #
@@ -515,6 +516,35 @@ def test_sync_reclassifies_small_as_big_without_tar(tmp_path, monkeypatch):
     assert m["small"] == []  # nothing packed
     assert [e["path"] for e in m["big"]] == [str(cache / "tiny.bin")]  # unpacked instead
     assert not os.path.exists(vc._small_archive_path)
+
+
+def test_hydrate_ignores_stale_archive_after_reclassify(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    tiny = cache / "tiny.bin"
+    tiny.write_bytes(b"v1" * 10)
+
+    vc.sync(background=False)
+    assert os.path.exists(vc._small_archive_path)
+    manifest = vc._read_manifest()
+    assert [e["path"] for e in manifest["small"]] == [str(tiny)]
+
+    # Modify the file, then force sync #2's pack to fail so it reclassifies
+    # the file as big -- the stale small.tar must not survive this.
+    tiny.write_bytes(b"v2-longer-content")
+    monkeypatch.setattr(vc, "_tar_binary", lambda: None)
+    monkeypatch.setattr(tarfile, "open", lambda *a, **k: (_ for _ in ()).throw(OSError("no tar")))
+    vc._do_sync()
+
+    manifest = vc._read_manifest()
+    assert manifest["small"] == []
+    assert not os.path.exists(vc._small_archive_path)
+
+    # Read normally (unpatched) from here on.
+    tiny.unlink()
+    fresh = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    fresh.hydrate()
+
+    assert tiny.read_bytes() == b"v2-longer-content"
 
 
 def test_join_pending_syncs_bounded_by_timeout(monkeypatch):
