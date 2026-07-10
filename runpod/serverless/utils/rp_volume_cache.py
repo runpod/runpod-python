@@ -250,6 +250,52 @@ class VolumeCache:
             _silent_remove(tmp)
             return False
 
+    def _extract_small(self):
+        try:
+            tf = tarfile.open(self._small_archive_path)
+        except (OSError, tarfile.TarError):
+            return 0
+        extracted = 0
+        try:
+            for member in tf.getmembers():
+                # Skip non-files (directories, symlinks, etc.)
+                if not member.isfile():
+                    continue
+                # Skip macOS resource fork metadata (._filename entries)
+                if os.path.basename(member.name).startswith("._"):
+                    continue
+                dst = os.path.join("/", member.name)
+                # Verify the destination is safe (within configured directories)
+                if not self._is_safe_dest(dst):
+                    continue
+                # Resolve symlinks for accurate file comparison
+                actual_dst = os.path.realpath(dst)
+                # Check if the local file already satisfies this archive entry
+                meta = {"path": actual_dst, "size": member.size, "mtime": member.mtime}
+                if self._meta_satisfied_by_local(meta):
+                    continue
+                # Extract this member
+                try:
+                    os.makedirs(os.path.dirname(actual_dst), exist_ok=True)
+                    self._extract_member(tf, member)
+                    extracted += 1
+                except (OSError, tarfile.TarError) as exc:
+                    log.debug(f"VolumeCache: skip extract {member.name}: {exc}")
+        finally:
+            tf.close()
+        if extracted:
+            log.info(f"VolumeCache: extracted {extracted} small file(s)")
+        return extracted
+
+    @staticmethod
+    def _extract_member(tf, member):
+        # Extract to "/" using the data filter when available (3.12+ path-traversal
+        # hardening); the per-member _is_safe_dest check above is the portable guard.
+        if hasattr(tarfile, "data_filter"):
+            tf.extract(member, "/", filter="data")
+        else:
+            tf.extract(member, "/")
+
     # ----------------------------------------------------------------- #
     # hydrate / sync
     # ----------------------------------------------------------------- #

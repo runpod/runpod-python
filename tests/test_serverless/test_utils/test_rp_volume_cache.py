@@ -534,3 +534,45 @@ def test_pack_small_atomic_no_partial_on_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(tarfile, "open", boom)
     assert vc._pack_small([str(cache / "a.txt")]) is False
     assert not os.path.exists(vc._small_archive_path)  # atomic: no partial archive
+
+
+# --------------------------------------------------------------------------- #
+# extract small
+# --------------------------------------------------------------------------- #
+
+
+def test_extract_small_restores_files(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    (cache / "a.txt").write_text("hello")
+    vc._pack_small([str(cache / "a.txt")])
+    (cache / "a.txt").unlink()
+    assert vc._extract_small() == 1
+    assert (cache / "a.txt").read_text() == "hello"
+
+
+def test_extract_small_skips_unsafe_member(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    outside = tmp_path / "outside" / "evil.txt"
+    outside.parent.mkdir()
+    outside.write_text("malicious")
+    vc._pack_small([str(outside)])          # archive contains an escaping path
+    outside.unlink()
+    assert vc._extract_small() == 0          # refused by _is_safe_dest
+    assert not outside.exists()
+
+
+def test_extract_small_incremental_skips_satisfied(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    (cache / "a.txt").write_text("hello")
+    vc._pack_small([str(cache / "a.txt")])
+    # local file already present and current -> nothing to extract
+    assert vc._extract_small() == 0
+
+
+def test_extract_small_zero_when_archive_missing(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    os.makedirs(vc._mirror_root, exist_ok=True)
+    assert vc._extract_small() == 0
