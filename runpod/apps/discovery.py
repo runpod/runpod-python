@@ -40,6 +40,7 @@ class DiscoveryInvocationError(Exception):
             f"has no side effects."
         )
 
+
 _SKIP_DIRS = {
     ".git",
     ".venv",
@@ -144,13 +145,13 @@ def discover_apps(target: Path) -> List[App]:
             sys.path.remove(root_str)
 
     found = [a for a in get_registered_apps() if id(a) not in before]
-    # a file imported both by the scan (synthetic name) and by another
-    # file (real name, e.g. `from main import q1`) registers its app
-    # twice; deploying duplicates would be wasteful and confusing
+
+    # dedupe
     by_name = {}
     for app in found:
         by_name.setdefault(app.name, app)
     found = list(by_name.values())
+
     if not found and failures:
         raise DiscoveryError(
             "no runpod.App found; some files failed to import:\n  "

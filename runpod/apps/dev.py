@@ -6,16 +6,15 @@ the local entrypoint, and delete every session endpoint on exit. the
 api is the only source of truth; nothing is persisted locally.
 """
 
-import asyncio
 import base64
 import logging
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from .api import AppsApiClient
 from .app import App
 from .handles import ApiHandle, FunctionHandle
+from .utils.events import emit
 from .spec import ResourceKind, ResourceSpec
 from .targets import LiveTarget
 
@@ -47,9 +46,7 @@ def _comparable(payload: Dict) -> Dict:
     clean.pop("id", None)
     template = clean.get("template") or {}
     template["env"] = [
-        e
-        for e in template.get("env") or []
-        if e.get("key") != GENERATION_ENV
+        e for e in template.get("env") or [] if e.get("key") != GENERATION_ENV
     ]
     return clean
 
@@ -74,20 +71,21 @@ def _image_for(spec: ResourceSpec) -> str:
     """dev worker image: custom image, env override, or the builtin
     runtime image matched to the local python (dev requests carry
     pickled source, so client and worker versions should align)."""
+
     if spec.image:
         return spec.image
+
     override = _os.getenv("RUNPOD_DEV_IMAGE")
     if override:
         return override
+
     from .images import image_for_spec, local_python_version
 
     return image_for_spec(spec, python_version=local_python_version())
 
 
 def _bootstrap_source() -> str:
-    return (
-        Path(__file__).parent.parent / "runtimes" / "bootstrap.py"
-    ).read_text()
+    return (Path(__file__).parent.parent / "runtimes" / "bootstrap.py").read_text()
 
 
 def _bootstrap_docker_args() -> str:
@@ -126,6 +124,7 @@ def _cpu_locations(instance_ids: List[str]) -> str:
         return ",".join(dc.value for dc in CPU5_DATACENTERS)
     return ",".join(dc.value for dc in CPU3_DATACENTERS)
 
+
 # template env var bumped on refresh; env is a version-triggering template
 # property, so changing it recreates all workers server-side
 GENERATION_ENV = "RUNPOD_DEV_GENERATION"
@@ -137,6 +136,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
     the template is nested in the saveEndpoint input so it is bound to
     the endpoint and cascades on deleteEndpoint.
     """
+
     payload: Dict = {
         "name": dev_endpoint_name(app.name, spec.name),
         "workersMin": spec.workers[0],
@@ -148,8 +148,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
         "template": {
             "name": f"{dev_endpoint_name(app.name, spec.name)}-template",
             "imageName": _image_for(spec),
-            "containerDiskInGb": spec.container_disk_gb
-            or (10 if spec.is_cpu else 30),
+            "containerDiskInGb": spec.container_disk_gb or (10 if spec.is_cpu else 30),
             "dockerArgs": "",
             "env": [
                 {"key": GENERATION_ENV, "value": str(generation)},
@@ -172,13 +171,11 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
                     if spec.max_concurrency > 1
                     else []
                 ),
-                *(
-                    {"key": k, "value": v}
-                    for k, v in _render_env(spec.env).items()
-                ),
+                *({"key": k, "value": v} for k, v in _render_env(spec.env).items()),
             ],
         },
     }
+
     if spec.flashboot:
         payload["flashBootType"] = "FLASHBOOT"
 
@@ -189,9 +186,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
             [
                 {
                     "key": "RUNPOD_BOOTSTRAP_B64",
-                    "value": base64.b64encode(
-                        _bootstrap_source().encode()
-                    ).decode(),
+                    "value": base64.b64encode(_bootstrap_source().encode()).decode(),
                 },
                 {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
             ]
@@ -252,9 +247,7 @@ class DevSession:
         self._volume_resolver = None
 
     def _emit(self, event: str, *args) -> None:
-        handler = getattr(self.events, event, None)
-        if handler is not None:
-            handler(*args)
+        emit(self.events, event, *args)
 
     async def _attach_volumes(self, payload: Dict, spec, app) -> None:
         """resolve the resource's volumes and registry auth onto a
@@ -264,9 +257,7 @@ class DevSession:
         from .volume import VolumeResolver
 
         if spec.registry_auth:
-            auth_id = await resolve_registry_auth(
-                spec.registry_auth, api=self.api
-            )
+            auth_id = await resolve_registry_auth(spec.registry_auth, api=self.api)
             payload["template"]["containerRegistryAuthId"] = auth_id
         if spec.model:
             from .model import model_reference
@@ -275,20 +266,14 @@ class DevSession:
         if not spec.volume:
             return
         if self._volume_resolver is None:
-            self._volume_resolver = VolumeResolver(
-                self.api, events=self.events
-            )
-        await attach_endpoint_volumes(
-            payload, spec, self._volume_resolver, app
-        )
+            self._volume_resolver = VolumeResolver(self.api, events=self.events)
+        await attach_endpoint_volumes(payload, spec, self._volume_resolver, app)
 
     @property
     def _endpoint_ids(self) -> List[str]:
         return list(self._endpoints.values())
 
-    def _provisionable(
-        self, app: App
-    ) -> List[Union[FunctionHandle, ApiHandle]]:
+    def _provisionable(self, app: App) -> List[Union[FunctionHandle, ApiHandle]]:
         """endpoints only; tasks have no standing infra to manage."""
         return [
             h
@@ -332,9 +317,7 @@ class DevSession:
                     endpoint_id = result["id"]
                     log.info("adopted dev endpoint %s (%s)", name, endpoint_id)
                 else:
-                    self._emit(
-                        "provisioning", spec.name, spec.kind.value, hardware
-                    )
+                    self._emit("provisioning", spec.name, spec.kind.value, hardware)
                     result = await self.api.save_endpoint(payload)
                     endpoint_id = result["id"]
                     log.info("provisioned dev endpoint %s (%s)", name, endpoint_id)
@@ -359,6 +342,7 @@ class DevSession:
         property, so the platform recreates all workers and subsequent
         requests execute in fresh processes. added resources are
         provisioned, removed ones deleted."""
+
         self.generation += 1
         self.apps = apps
         for app in apps:
@@ -388,13 +372,17 @@ class DevSession:
         for name, (app, handle) in desired.items():
             payload = _endpoint_input(app, handle.spec, self.generation)
             await self._attach_volumes(payload, handle.spec, app)
+
             existing_id = self._endpoints.get(name)
             comparable = _comparable(payload)
             previous = self._payloads.get(name)
+
             if existing_id:
                 payload["id"] = existing_id
+
             result = await self.api.save_endpoint(payload)
             endpoint_id = result["id"]
+
             self._endpoints[name] = endpoint_id
             self._payloads[name] = comparable
             app._dev_targets[handle.spec.name] = LiveTarget(
@@ -403,18 +391,19 @@ class DevSession:
                 events=self.events,
                 metrics_key=result.get("aiKey"),
             )
+
             spec = handle.spec
             hardware = ",".join(spec.cpu or spec.gpu or ["any"])
+
             if previous is None:
-                self._emit(
-                    "resource_added", spec.name, spec.kind.value, hardware
-                )
+                self._emit("resource_added", spec.name, spec.kind.value, hardware)
             elif previous != comparable:
                 self._emit(
                     "resource_changed",
                     spec.name,
                     _changed_fields(previous, comparable),
                 )
+
             log.info(
                 "refreshed dev endpoint %s (%s, generation %d)",
                 name,
@@ -431,25 +420,18 @@ class DevSession:
         """
         sink = events if events is not None else self.events
 
-        def _tell(event: str, *args) -> None:
-            handler = getattr(sink, event, None)
-            if handler is not None:
-                handler(*args)
-
         pending = list(self._endpoints.items())
-        _tell("cleanup_started", len(pending))
+        emit(sink, "cleanup_started", len(pending))
         for name, endpoint_id in pending:
             resource = _resource_of(name)
-            _tell("deleting", resource)
+            emit(sink, "deleting", resource)
             try:
                 await self.api.delete_endpoint(endpoint_id)
-                _tell("deleted", resource)
+                emit(sink, "deleted", resource)
                 log.info("deleted dev endpoint %s (%s)", name, endpoint_id)
             except Exception as exc:
-                _tell("delete_failed", resource)
-                log.warning(
-                    "failed to delete dev endpoint %s: %s", endpoint_id, exc
-                )
+                emit(sink, "delete_failed", resource)
+                log.warning("failed to delete dev endpoint %s: %s", endpoint_id, exc)
         self._endpoints.clear()
         for app in self.apps:
             app._dev_targets.clear()

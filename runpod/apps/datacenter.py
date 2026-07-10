@@ -1,16 +1,12 @@
 """datacenter selection for app resources.
 
-only datacenters with storage support and S3 API support are listed;
-resources may attach network volumes at any time, so every deployable
-location must be able to host them.
-"""
+only datacenters with storage support and S3 API support are listed"""
 
 from enum import Enum
 from typing import List
 
 
 class DataCenter(str, Enum):
-    """runpod datacenters with storage and S3 API support."""
 
     # north america
     US_CA_2 = "US-CA-2"
@@ -31,6 +27,7 @@ class DataCenter(str, Enum):
     def from_string(cls, value: str) -> "DataCenter":
         """parse a datacenter id, accepting lowercase and underscores."""
         normalized = value.strip().upper().replace("_", "-")
+
         try:
             return cls(normalized)
         except ValueError:

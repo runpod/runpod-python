@@ -1,32 +1,17 @@
-"""deploy pipeline: discovered apps -> manifest -> artifact -> activated build.
-
-per app:
-  1. validate resources
-  2. build the manifest from the app registry
-  3. vendor the runtime environment (runpod + all deps, resolved for
-     the worker platform) so cold starts install nothing
-  4. package source + env + manifest into a tarball (.runpodignore
-     honored for source)
-  5. get-or-create the flash app + environment
-  6. upload via presigned url, finalize the build
-  7. activate the build on the environment (hosts deliver the artifact
-     to workers via the flash volume)
-  8. reconcile endpoints: one per queue/api resource, named exactly
-     the resource name and bound to the environment via
-     flashEnvironmentId (the relation the sentinel's
-     resolveFlashEndpoint walks). removed resources' endpoints are
-     deleted; tasks have no standing infra.
-"""
+"""deploy pipeline: discovered apps -> manifest -> artifact -> activated build."""
 
 import base64
 import fnmatch
 import json
 import logging
+import os
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import runpod
 
 from .api import AppsApiClient
 from .app import App
@@ -40,6 +25,7 @@ from .build import (
 from .errors import InvalidResourceError, ScheduleNotSupported
 from .schedule import SCHEDULES_ENABLED
 from .spec import ResourceKind
+from .utils.events import emit
 
 log = logging.getLogger(__name__)
 
@@ -60,12 +46,7 @@ DEFAULT_IGNORES = [
 
 
 def _module_path_for(fn, project_root: Path) -> str:
-    """dotted import path for fn's file relative to the project root.
-
-    discovery imports files under synthetic module names, so
-    fn.__module__ is meaningless on the worker; the import path must be
-    derived from where the file sits in the shipped tree.
-    """
+    """dotted import path for fn's file relative to the project root."""
     import inspect
 
     module = getattr(fn, "__module__", "") or ""
@@ -98,40 +79,41 @@ def build_manifest(
 ) -> Dict[str, Any]:
     """serialize an app's resources for the coordinator and workers."""
     resources = []
+
     for handle in app.resources.values():
         spec = handle.spec
         if spec.schedule and not SCHEDULES_ENABLED:
             raise ScheduleNotSupported()
-        if (
-            spec.kind in (ResourceKind.QUEUE, ResourceKind.API)
-            and len(spec.name) < 3
-        ):
-            # deployed queue/api resources become endpoints named
-            # exactly the resource name; the api floor is 3 chars
+
+        if spec.kind in (ResourceKind.QUEUE, ResourceKind.API) and len(spec.name) < 3:
             raise InvalidResourceError(
                 f"resource name '{spec.name}' is too short to deploy; "
                 f"queue and api names must be at least 3 characters"
             )
+
         entry = spec.to_manifest()
+
         fn = (
             getattr(handle, "_fn", None)
             or getattr(handle, "_cls", None)
             or getattr(handle, "__wrapped__", None)
         )
+
         if fn is not None:
             entry["module"] = _module_path_for(fn, project_root)
             entry["qualname"] = getattr(fn, "__qualname__", fn.__name__)
         resources.append(entry)
+
     manifest: Dict[str, Any] = {
         "version": MANIFEST_VERSION,
         "app": app.name,
         "pythonVersion": python_version,
         "resources": resources,
     }
+
     if excluded_packages:
-        # packages the build expects from the worker image rather than
-        # the vendored env (size-prohibitive CUDA packages)
         manifest["excludedPackages"] = excluded_packages
+
     return manifest
 
 
@@ -208,8 +190,7 @@ def package_project(
     return output
 
 
-# gpu runtime images carry the torch family (~9 GB uncompressed); the
-# container disk must hold the image layers plus the unpacked artifact
+# gpu images have some hefty dependencies pre-installed
 CPU_CONTAINER_DISK_GB = 10
 GPU_CONTAINER_DISK_GB = 30
 
@@ -218,17 +199,6 @@ def _container_disk_gb(spec) -> int:
     if spec.container_disk_gb:
         return spec.container_disk_gb
     return CPU_CONTAINER_DISK_GB if spec.is_cpu else GPU_CONTAINER_DISK_GB
-
-
-def _account_api_key() -> Optional[str]:
-    import os
-
-    key = os.getenv("RUNPOD_API_KEY")
-    if key:
-        return key
-    import runpod
-
-    return runpod.api_key
 
 
 def _deployed_endpoint_input(
@@ -260,16 +230,14 @@ def _deployed_endpoint_input(
     # cross-resource calls from inside a worker go through the sentinel,
     # which authenticates with the account api key; without it any
     # .remote() from worker code would fail
-    api_key = _account_api_key()
+    api_key = runpod.api_key
     if api_key and "RUNPOD_API_KEY" not in template_env:
         template_env["RUNPOD_API_KEY"] = api_key
 
     # workers that spawn tasks must select runtime images from the same
     # channel the deploy used (the vendored env supplies the code, so
     # only the image channel needs to travel)
-    import os as _os
-
-    tag = _os.environ.get("RUNPOD_RUNTIME_TAG")
+    tag = os.environ.get("RUNPOD_RUNTIME_TAG")
     if tag and "RUNPOD_RUNTIME_TAG" not in template_env:
         template_env["RUNPOD_RUNTIME_TAG"] = tag
 
@@ -290,11 +258,10 @@ def _deployed_endpoint_input(
             "imageName": image_for_spec(spec, python_version=python_version),
             "containerDiskInGb": _container_disk_gb(spec),
             "dockerArgs": "",
-            "env": [
-                {"key": k, "value": v} for k, v in template_env.items()
-            ],
+            "env": [{"key": k, "value": v} for k, v in template_env.items()],
         },
     }
+
     if spec.flashboot:
         payload["flashBootType"] = "FLASHBOOT"
 
@@ -307,9 +274,7 @@ def _deployed_endpoint_input(
             [
                 {
                     "key": "RUNPOD_BOOTSTRAP_B64",
-                    "value": base64.b64encode(
-                        _bootstrap_source().encode()
-                    ).decode(),
+                    "value": base64.b64encode(_bootstrap_source().encode()).decode(),
                 },
                 {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
             ]
@@ -324,13 +289,9 @@ def _deployed_endpoint_input(
         payload["instanceIds"] = spec.cpu
         if not spec.datacenter:
             if any(i.startswith("cpu5") for i in spec.cpu or []):
-                payload["locations"] = ",".join(
-                    dc.value for dc in CPU5_DATACENTERS
-                )
+                payload["locations"] = ",".join(dc.value for dc in CPU5_DATACENTERS)
             else:
-                payload["locations"] = ",".join(
-                    dc.value for dc in CPU3_DATACENTERS
-                )
+                payload["locations"] = ",".join(dc.value for dc in CPU3_DATACENTERS)
     else:
         from .gpu import gpu_ids_value
 
@@ -359,9 +320,7 @@ async def reconcile_endpoints(
     endpoints (matched by name) are updated in place; endpoints whose
     resources disappeared are deleted.
     """
-    existing = {
-        e["name"]: e["id"] for e in environment.get("endpoints") or []
-    }
+    existing = {e["name"]: e["id"] for e in environment.get("endpoints") or []}
     provisionable = {
         h.spec.name: h
         for h in app.resources.values()
@@ -378,17 +337,13 @@ async def reconcile_endpoints(
             app, handle.spec, environment["id"], build_id, python_version
         )
         await attach_endpoint_volumes(payload, handle.spec, resolver, app)
-        auth_id = await resolve_registry_auth(
-            handle.spec.registry_auth, api=client
-        )
+        auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
         if auth_id:
             payload["template"]["containerRegistryAuthId"] = auth_id
         if handle.spec.model:
             from .model import model_reference
 
-            payload["modelReferences"] = [
-                model_reference(handle.spec.model)
-            ]
+            payload["modelReferences"] = [model_reference(handle.spec.model)]
         if name in existing:
             payload["id"] = existing[name]
         result = await client.save_endpoint(payload)
@@ -408,9 +363,7 @@ async def reconcile_endpoints(
     return endpoints
 
 
-async def attach_endpoint_volumes(
-    payload: Dict[str, Any], spec, resolver, app
-) -> None:
+async def attach_endpoint_volumes(payload: Dict[str, Any], spec, resolver, app) -> None:
     """resolve a resource's volumes onto an endpoint payload.
 
     endpoints may span regions: one volume per datacenter, locations
@@ -425,18 +378,12 @@ async def attach_endpoint_volumes(
     for volume in volumes:
         sharing = specs_sharing_volume([app], volume.name) or [spec]
         resolved.append(await resolver.resolve(volume, sharing))
-    payload["networkVolumeIds"] = [
-        {"networkVolumeId": r["id"]} for r in resolved
-    ]
-    payload["locations"] = ",".join(
-        dict.fromkeys(r["dataCenterId"] for r in resolved)
-    )
+    payload["networkVolumeIds"] = [{"networkVolumeId": r["id"]} for r in resolved]
+    payload["locations"] = ",".join(dict.fromkeys(r["dataCenterId"] for r in resolved))
 
 
 def _phase(events, name: str, detail: str = "") -> None:
-    handler = getattr(events, "phase", None)
-    if handler is not None:
-        handler(name, detail)
+    emit(events, "phase", name, detail)
 
 
 def build_artifact(
@@ -537,9 +484,7 @@ async def deploy_app(
         log.info("created app %s (%s)", app.name, remote_app["id"])
     app_id = remote_app["id"]
 
-    environments = {
-        e["name"]: e for e in remote_app.get("flashEnvironments") or []
-    }
+    environments = {e["name"]: e for e in remote_app.get("flashEnvironments") or []}
     environment = environments.get(env_name)
     if environment is None:
         environment = await client.create_environment(app_id, env_name)
@@ -549,9 +494,7 @@ async def deploy_app(
     await client.upload_tarball(
         upload["uploadUrl"], str(tar_path), progress=upload_progress
     )
-    build = await client.finalize_artifact_upload(
-        app_id, upload["objectKey"], manifest
-    )
+    build = await client.finalize_artifact_upload(app_id, upload["objectKey"], manifest)
     log.info("uploaded build %s", build["id"])
 
     await client.deploy_build(environment["id"], build["id"])

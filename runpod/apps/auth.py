@@ -1,9 +1,4 @@
-"""browser-approval login flow.
-
-opens a console url tied to a short-lived auth request; the api key
-lands when the user approves in the browser. no credentials are sent
-before approval, so an expired local key can never poison the flow.
-"""
+"""browser-approval login flow."""
 
 import asyncio
 import datetime as dt
@@ -53,15 +48,14 @@ async def browser_login(
     client = api or AppsApiClient()
     request: Dict[str, Any] = await client.create_auth_request()
     request_id = request.get("id")
+
     if not request_id:
         raise LoginError("auth request failed to initialize")
 
     if on_url is not None:
         on_url(auth_url(request_id))
 
-    deadline = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
-        seconds=timeout_seconds
-    )
+    deadline = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=timeout_seconds)
     expires_at = _parse_expires_at(request.get("expiresAt"))
     if expires_at and expires_at < deadline:
         deadline = expires_at

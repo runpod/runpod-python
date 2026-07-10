@@ -13,6 +13,7 @@ import logging
 from typing import Optional
 
 from .errors import AppError
+from .utils.lookup import find_by_id_or_name
 
 log = logging.getLogger(__name__)
 
@@ -32,17 +33,11 @@ async def resolve_registry_auth(
 
         api = AppsApiClient()
     creds = await api.list_registry_auths()
-    for cred in creds:
-        if cred["id"] == name:
-            return cred["id"]
-    matches = [c for c in creds if c.get("name") == name]
-    if len(matches) > 1:
-        raise RegistryAuthError(
-            f"multiple registry credentials named '{name}' "
-            f"({', '.join(m['id'] for m in matches)}); reference by id"
-        )
-    if matches:
-        return matches[0]["id"]
+    match = find_by_id_or_name(
+        creds, name, noun="registry credentials", error=RegistryAuthError
+    )
+    if match:
+        return match["id"]
     available = ", ".join(sorted(c["name"] for c in creds)) or "(none)"
     raise RegistryAuthError(
         f"registry credential '{name}' not found. available: {available}. "

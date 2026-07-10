@@ -14,6 +14,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 from .datacenter import DataCenter
 from .errors import AppError
 from .gpu import GpuGroup
+from .utils.client import default_client
 
 log = logging.getLogger(__name__)
 
@@ -70,10 +71,7 @@ class StockMap:
         self._fetched_cpu: Set[str] = set()
 
     async def _client(self):
-        if self._api is None:
-            from .api import AppsApiClient
-
-            self._api = AppsApiClient()
+        self._api = default_client(self._api)
         return self._api
 
     async def fetch(self, keys: Iterable[Tuple[str, str]]) -> None:

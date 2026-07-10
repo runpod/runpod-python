@@ -14,6 +14,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from .utils.events import emit
+
 log = logging.getLogger(__name__)
 
 METRICS_POLL_INTERVAL = 2.0
@@ -55,16 +57,6 @@ def _filter_line(line: str) -> Optional[str]:
     if frame.get("level", "").upper() in ("ERROR", "WARN", "WARNING"):
         return str(frame.get("message", ""))
     return None
-
-
-def emit(sink: Optional[object], event: str, *args: Any) -> None:
-    """invoke a handler on the sink if it exists."""
-    handler = getattr(sink, event, None)
-    if handler is not None:
-        try:
-            handler(*args)
-        except Exception:  # noqa: BLE001 - rendering must never break calls
-            log.debug("event sink %s failed", event, exc_info=True)
 
 
 class PodLogStream:

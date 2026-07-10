@@ -22,6 +22,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .errors import AppError
+from .utils.client import default_client
+from .utils.events import emit
+from .utils.lookup import find_by_id_or_name
 
 log = logging.getLogger(__name__)
 
@@ -109,10 +112,7 @@ class VolumeResolver:
         self._stock = None
 
     async def _client(self):
-        if self._api is None:
-            from .api import AppsApiClient
-
-            self._api = AppsApiClient()
+        self._api = default_client(self._api)
         return self._api
 
     async def resolve(
@@ -127,25 +127,14 @@ class VolumeResolver:
         if cached is not None:
             return cached
 
-        from .monitor import emit
         from .placement import PlacementError, StockMap, solve_placement
 
         client = await self._client()
         existing = await client.list_network_volumes()
 
-        record = None
-        for entry in existing:
-            if entry["id"] == volume.name:
-                record = entry
-                break
-        if record is None:
-            matches = [e for e in existing if e.get("name") == volume.name]
-            if len(matches) > 1:
-                raise VolumeError(
-                    f"multiple volumes named '{volume.name}' "
-                    f"({', '.join(m['id'] for m in matches)}); reference by id"
-                )
-            record = matches[0] if matches else None
+        record = find_by_id_or_name(
+            existing, volume.name, noun="volumes", error=VolumeError
+        )
 
         if self._stock is None:
             self._stock = StockMap(client)

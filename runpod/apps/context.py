@@ -70,11 +70,6 @@ class _LoopThread:
         loop = cls._ensure_loop()
         future = asyncio.run_coroutine_threadsafe(coro, loop)
         try:
-            # wait in short slices: an uninterruptible result() would
-            # block signal delivery, making ctrl-c useless while a
-            # remote call is in flight. TimeoutError is ambiguous (the
-            # wait slice and the coroutine's own timeouts share the
-            # type since 3.11), so future.done() decides
             while True:
                 try:
                     return future.result(timeout=0.2)
@@ -82,7 +77,6 @@ class _LoopThread:
                     if future.done():
                         raise
         except BaseException:
-            # ctrl-c (or anything else) abandons the in-flight call
             future.cancel()
             raise
 

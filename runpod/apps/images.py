@@ -17,7 +17,7 @@ from typing import Optional
 from .spec import ResourceKind, ResourceSpec
 
 # policy: non-EOL cpython versions with torch wheel support. 3.10
-# ages out at its 2026-10 EOL; new versions join once torch ships
+# ages out at its 2026-10 EOL. new versions join once torch ships
 # wheels for them.
 SUPPORTED_PYTHON_VERSIONS = ("3.10", "3.11", "3.12", "3.13", "3.14")
 DEFAULT_PYTHON_VERSION = "3.12"
@@ -73,12 +73,8 @@ def runtime_image(
     return f"{repo}:py{version}-{runtime_tag()}"
 
 
-def image_for_spec(
-    spec: ResourceSpec, *, python_version: Optional[str] = None
-) -> str:
+def image_for_spec(spec: ResourceSpec, *, python_version: Optional[str] = None) -> str:
     """the image a resource runs on: its custom image or the builtin."""
     if spec.image:
         return spec.image
-    return runtime_image(
-        spec.kind, gpu=not spec.is_cpu, python_version=python_version
-    )
+    return runtime_image(spec.kind, gpu=not spec.is_cpu, python_version=python_version)

@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 
 from .api import AppsApiClient
 from .errors import AppError
+from .utils.events import emit
 
 log = logging.getLogger(__name__)
 
@@ -82,25 +83,20 @@ async def undeploy_environment(
     client = api or AppsApiClient()
     env = await get_environment(app_name, env_name, api=client)
 
-    def _tell(event: str, *args) -> None:
-        handler = getattr(events, event, None)
-        if handler is not None:
-            handler(*args)
-
     result = UndeployResult()
     endpoints = env.get("endpoints") or []
-    _tell("cleanup_started", len(endpoints))
+    emit(events, "cleanup_started", len(endpoints))
     for endpoint in endpoints:
         name = endpoint.get("name") or endpoint.get("id")
-        _tell("deleting", name)
+        emit(events, "deleting", name)
         try:
             await client.delete_endpoint(endpoint["id"])
             result.endpoints_deleted += 1
-            _tell("deleted", name)
+            emit(events, "deleted", name)
             log.info("deleted endpoint %s (%s)", name, endpoint["id"])
         except Exception as exc:  # noqa: BLE001 - collected for the caller
             result.failures.append(f"endpoint {name}: {exc}")
-            _tell("delete_failed", name)
+            emit(events, "delete_failed", name)
 
     if delete_env and not result.failures:
         try:

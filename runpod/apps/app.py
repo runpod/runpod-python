@@ -35,8 +35,6 @@ from .targets import InvocationTarget, PodTarget, SentinelTarget
 
 DEFAULT_ENV = "default"
 
-# module-level registry populated as user modules import; `rp deploy` and
-# `rp dev` read it after importing the target modules
 _REGISTRY: List["App"] = []
 
 
@@ -59,9 +57,7 @@ class App:
         self.name = name
         self.env = env
         self._resources: Dict[str, Union[FunctionHandle, ApiHandle]] = {}
-        # event sink for task lifecycle rendering, set by dev sessions
         self._dev_events: Optional[object] = None
-        # populated by an `rp dev` session: resource name -> live target
         self._dev_targets: Dict[str, InvocationTarget] = {}
         _REGISTRY.append(self)
 
@@ -69,16 +65,12 @@ class App:
     def resources(self) -> Dict[str, Union[FunctionHandle, ApiHandle]]:
         return dict(self._resources)
 
-    def _register(
-        self, name: str, handle: Union[FunctionHandle, ApiHandle]
-    ) -> None:
+    def _register(self, name: str, handle: Union[FunctionHandle, ApiHandle]) -> None:
         if name in self._resources:
             raise InvalidResourceError(
                 f"duplicate resource name '{name}' in app '{self.name}'"
             )
         self._resources[name] = handle
-
-    # -- decorators --
 
     def queue(
         self,
@@ -106,16 +98,7 @@ class App:
         accelerate_downloads: bool = True,
         container_disk_gb: Optional[int] = None,
     ) -> Callable[[Callable], FunctionHandle]:
-        """declare a queue-based serverless endpoint from a function.
-
-        image selects a custom base image for the workers; the deployed
-        code still arrives via the build artifact and is booted by the
-        runtime bootstrap, so any image with a python3 binary works.
-
-        max_concurrency lets one worker process several jobs at once;
-        values above 1 only achieve real concurrency with async
-        functions. execution_timeout_ms caps a single job (0 = no cap).
-        """
+        """declare a queue-based serverless endpoint from a function."""
 
         def decorator(fn: Callable) -> FunctionHandle:
             spec = ResourceSpec(
@@ -167,15 +150,7 @@ class App:
         accelerate_downloads: bool = True,
         container_disk_gb: Optional[int] = None,
     ) -> Callable[[Callable], FunctionHandle]:
-        """declare ephemeral pod compute from a function.
-
-        tasks have no standing infrastructure: `.remote()` provisions a
-        pod, runs the body, returns the result, and terminates the pod.
-        they never require `rp deploy` (except to register a schedule).
-
-        platform-cached models (`model=`) are only available on queue
-        and api resources; tasks download weights themselves.
-        """
+        """declare ephemeral pod compute from a function."""
 
         def decorator(fn: Callable) -> FunctionHandle:
             spec = ResourceSpec(
@@ -279,19 +254,11 @@ class App:
 
         return decorator
 
-    # -- resolution --
-
     async def _resolve(self, spec: ResourceSpec) -> InvocationTarget:
-        """resolve a resource spec to an invocation target.
-
-        stateless by design: deployed resources resolve through the
-        sentinel (server-side name resolution); dev sessions register
-        live targets in memory; tasks provision per call.
-        """
+        """resolve a resource spec to an invocation target."""
         if spec.kind is ResourceKind.TASK:
             handle = self._resources.get(spec.name)
             fn = getattr(handle, "_fn", None)
-            # dev sessions attach an event sink for lifecycle rendering
             return PodTarget(spec, fn, events=self._dev_events)
 
         ctx = current_context()
@@ -300,13 +267,9 @@ class App:
             target = self._dev_targets.get(spec.name)
             if target is not None:
                 return target
-            # a dev session should have provisioned every endpoint at
-            # startup; a miss means the resource was added mid-session
             raise EndpointNotFound(self.name, spec.name)
 
         if ctx is Context.WORKER and os.getenv("RUNPOD_DEV_APP") == self.name:
-            # nested call inside a dev worker: siblings live on dev
-            # endpoints (named dev-{app}-{resource}), not the sentinel
             return await self._resolve_dev_sibling(spec)
 
         env_name = os.getenv("FLASH_ENVIRONMENT") or self.env
