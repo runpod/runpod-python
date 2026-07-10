@@ -11,6 +11,7 @@ Fitness checks do NOT run in local development mode or testing mode.
 from __future__ import annotations
 
 import inspect
+import os
 import sys
 import time
 import traceback
@@ -19,6 +20,28 @@ from collections.abc import Callable
 from .rp_logger import RunPodLogger
 
 log = RunPodLogger()
+
+
+def _terminate_unhealthy(code: int = 1) -> None:
+    """
+    Force-kill the worker after a fitness check failure.
+
+    Uses os._exit rather than sys.exit because a fitness failure means the
+    environment is broken and the worker must die immediately so the
+    orchestrator can restart it. sys.exit only raises SystemExit, which
+    triggers cooperative interpreter shutdown and blocks joining non-daemon
+    threads. Workers routinely have such threads alive by the time checks run
+    (e.g. vLLM's AsyncLLMEngine, constructed at import before the checks), so
+    sys.exit can hang forever and the worker keeps serving jobs. os._exit
+    bypasses thread joins, atexit handlers, and asyncgen cleanup.
+
+    Args:
+        code: Process exit code (default 1, signaling unhealthy).
+    """
+    # Flush buffered logs before the hard exit skips normal cleanup.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 # Global registry for fitness check functions, preserves registration order
 _fitness_checks: list[Callable] = []
@@ -203,9 +226,10 @@ async def run_fitness_checks() -> None:
             )
             log.debug(f"Traceback:\n{full_traceback}")
 
-            # Exit immediately with failure code
+            # Force-kill immediately; see _terminate_unhealthy for why this is
+            # os._exit rather than sys.exit.
             log.error("Worker is unhealthy, exiting.")
-            sys.exit(1)
+            _terminate_unhealthy(1)
 
     total_elapsed_ms = (time.perf_counter() - total_start_time) * 1000
     log.info(f"All fitness checks passed. ({total_elapsed_ms:.2f}ms)")
