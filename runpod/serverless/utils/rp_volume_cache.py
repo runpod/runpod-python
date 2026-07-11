@@ -76,6 +76,10 @@ class VolumeCache:
     def __init__(
         self, dirs, *, namespace=None, volume_path="/runpod-volume", best_effort=True, max_workers=None
     ):
+        if isinstance(dirs, (str, bytes, os.PathLike)):
+            # A bare path is one directory, not an iterable of path characters:
+            # `dirs="/root/.cache"` must not be split into "/", "r", "o", ...
+            dirs = [dirs]
         self._dirs = [os.path.realpath(os.fspath(d)) for d in dirs]
         self._namespace = namespace or os.environ.get("RUNPOD_ENDPOINT_ID") or ""
         if self._namespace and (
