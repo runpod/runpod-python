@@ -78,6 +78,24 @@ def test_namespace_accepts_normal_value(tmp_path):
     assert vc._namespace == "ep1"
 
 
+def test_scalar_dirs_path_is_treated_as_single_dir(tmp_path):
+    # A bare string/Path must be one directory, not iterated character-by-character
+    # (which would put "/" and other roots into _dirs).
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    cache = tmp_path / "cache"
+    expected = [os.path.realpath(str(cache))]
+
+    vc_str = VolumeCache(str(cache), namespace="ep1", volume_path=str(vol))
+    assert vc_str._dirs == expected
+
+    vc_path = VolumeCache(cache, namespace="ep1", volume_path=str(vol))  # os.PathLike
+    assert vc_path._dirs == expected
+
+    vc_list = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    assert vc_list._dirs == expected  # list input still works
+
+
 # --------------------------------------------------------------------------- #
 # sync -> hydrate round trip
 # --------------------------------------------------------------------------- #
