@@ -233,8 +233,18 @@ class VolumeCache:
         if not todo:
             return 0
         with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
-            results = list(pool.map(lambda sd: self._copy_file(sd[0], sd[1]), todo))
-        return sum(1 for ok in results if ok)
+            # Stream the success count rather than materializing a results list,
+            # which would hold one entry per file for large (40k+) trees.
+            return sum(
+                1 for ok in pool.map(lambda sd: self._copy_file(sd[0], sd[1]), todo) if ok
+            )
+
+    @staticmethod
+    def _within(base, path):
+        """True iff ``path`` resolves inside ``base`` (symlinks resolved)."""
+        base_real = os.path.realpath(base)
+        path_real = os.path.realpath(path)
+        return path_real == base_real or path_real.startswith(base_real + os.sep)
 
     def _guard(self, fn, default):
         try:
@@ -349,8 +359,12 @@ class VolumeCache:
         for entry in manifest.get("big", []):
             rel = os.path.relpath(entry["path"], "/")
             dst = os.path.join("/", rel)
-            if self._is_safe_dest(dst):
-                big_pairs.append((os.path.join(self._big_root, rel), dst))
+            src = os.path.join(self._big_root, rel)
+            # Guard both ends against a crafted manifest: the destination must
+            # stay inside a configured dir, and the source must resolve inside
+            # big/ so a malicious entry can't read outside the mirror.
+            if self._is_safe_dest(dst) and self._within(self._big_root, src):
+                big_pairs.append((src, dst))
         restored += self._copy_parallel(big_pairs)
         if restored:
             log.info(f"VolumeCache: hydrated {restored} file(s) from {self._mirror_root}")

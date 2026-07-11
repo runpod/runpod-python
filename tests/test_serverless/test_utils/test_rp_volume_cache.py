@@ -224,6 +224,16 @@ def test_hydrate_skips_unsafe_destination(tmp_path):
     assert not os.path.exists(escape)
 
 
+def test_within_confines_source_to_base(tmp_path):
+    # Defense-in-depth: the big-bucket source must resolve inside big/.
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    base = vc._big_root
+    assert vc._within(base, os.path.join(base, "root/.cache/x")) is True
+    assert vc._within(base, base) is True
+    assert vc._within(base, os.path.join(base, "..", "escape.txt")) is False
+    assert vc._within(base, "/etc/passwd") is False
+
+
 def test_hydrate_no_manifest_is_noop(tmp_path):
     vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
     os.makedirs(vc._mirror_root, exist_ok=True)
