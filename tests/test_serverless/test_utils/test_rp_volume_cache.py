@@ -565,6 +565,36 @@ def test_hydrate_ignores_stale_archive_after_reclassify(tmp_path, monkeypatch):
     assert tiny.read_bytes() == b"v2-longer-content"
 
 
+def test_hydrate_does_not_resurrect_deleted_small_file(tmp_path):
+    # A small file deleted locally while other small files remain must be
+    # repacked out of small.tar; _changed_vs_manifest reports only
+    # additions/modifications, so without a deletion check the stale archive
+    # would resurrect the file on a later hydrate.
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    a = cache / "a.bin"
+    b = cache / "b.bin"
+    a.write_bytes(b"aaa")
+    b.write_bytes(b"bbb")
+    vc.sync(background=False)
+    assert sorted(e["path"] for e in vc._read_manifest()["small"]) == sorted(
+        [str(a), str(b)]
+    )
+
+    # Delete b; re-sync. a is unchanged, but the small set shrank -> repack.
+    b.unlink()
+    vc._do_sync()
+    assert [e["path"] for e in vc._read_manifest()["small"]] == [str(a)]
+    with tarfile.open(vc._small_archive_path) as tf:
+        assert os.path.relpath(str(b), "/") not in tf.getnames()
+
+    # Fresh cold worker: both gone locally. Hydrate restores a, never b.
+    a.unlink()
+    fresh = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    fresh.hydrate()
+    assert a.read_bytes() == b"aaa"
+    assert not b.exists()
+
+
 def test_join_pending_syncs_bounded_by_timeout(monkeypatch):
     vcmod._reset_pending_for_test()
     monkeypatch.setattr(vcmod, "_JOIN_TIMEOUT_SECONDS", 0.05)

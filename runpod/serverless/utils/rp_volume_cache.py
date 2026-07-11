@@ -381,7 +381,14 @@ class VolumeCache:
         small_transferred = 0
         if small_meta:
             changed = self._changed_vs_manifest(small_meta, manifest, "small")
-            if changed:
+            prior_small = {e["path"] for e in (manifest.get("small", []) if manifest else [])}
+            deleted = bool(prior_small - {m["path"] for m in small_meta})
+            if changed or deleted:
+                # Repack on any small-set change, including deletions. small.tar
+                # is extracted member-by-member on hydrate, so a stale archive
+                # that still holds a locally-deleted file would resurrect it;
+                # _changed_vs_manifest only reports additions/modifications, so
+                # deletions are detected separately here.
                 if self._pack_small([m["path"] for m in small_meta]):
                     small_transferred = len(changed)
                 else:
