@@ -1,0 +1,470 @@
+"""tests for dev session provisioning."""
+
+from unittest.mock import AsyncMock
+
+import pytest
+
+import runpod
+from runpod.apps import App
+from runpod.apps.app import _clear_registry
+from runpod.apps.dev import DevSession, _endpoint_input, dev_endpoint_name
+from runpod.apps.targets import LiveTarget
+
+
+@pytest.fixture(autouse=True)
+def clean_registry():
+    _clear_registry()
+    yield
+    _clear_registry()
+
+
+def _mock_api():
+    api = AsyncMock()
+    api.list_my_endpoints.return_value = []
+    api.save_endpoint.return_value = {"id": "ep-new"}
+    api.delete_endpoint.return_value = True
+    return api
+
+
+class TestEndpointInput:
+    def test_cpu_queue_payload(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2", workers=(0, 1))
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        assert payload["name"].startswith("dev-a-q-")
+        assert payload["instanceIds"] == ["cpu3c-1-2"]
+        assert "EU-RO-1" in payload["locations"]
+        assert "US-KS-2" in payload["locations"]
+        assert payload["scalerType"] == "QUEUE_DELAY"
+        assert payload["flashBootType"] == "FLASHBOOT"
+
+    def test_cpu5_pins_to_stocked_datacenters(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu5c-2-4")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        assert payload["locations"] == "EU-RO-1"
+
+    def test_cpu_locations_are_storage_supported(self):
+        from runpod.apps.datacenter import DataCenter
+
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        valid = {dc.value for dc in DataCenter}
+        for loc in payload["locations"].split(","):
+            assert loc in valid
+        template = payload["template"]
+        assert template["dockerArgs"] == ""
+        env = {e["key"]: e["value"] for e in template["env"]}
+        assert env["RUNPOD_DEV_GENERATION"] == "1"
+        # nested .remote() support: dev-session marker always present
+        assert env["RUNPOD_DEV_APP"] == app.name
+
+    def test_api_key_forwarded_when_configured(self, monkeypatch):
+        monkeypatch.setenv("RUNPOD_API_KEY", "rpa_test123")
+        app = App("keyed")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        env = {e["key"]: e["value"] for e in payload["template"]["env"]}
+        assert env["RUNPOD_API_KEY"] == "rpa_test123"
+        assert "gpuIds" not in payload
+
+    def test_gpu_queue_payload(self):
+        app = App("a")
+
+        @app.queue(name="q", gpu=runpod.GpuGroup.ADA_24)
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        assert payload["gpuIds"] == "ADA_24"
+        assert payload["gpuCount"] == 1
+        assert "instanceIds" not in payload
+        assert "locations" not in payload
+
+    def test_api_payload_is_lb(self):
+        app = App("a")
+
+        @app.api(name="api", cpu="cpu3c-1-2")
+        class Api:
+            @runpod.post("/x")
+            def x(self, body: dict):
+                return body
+
+        payload = _endpoint_input(app, Api.spec)
+        assert payload["type"] == "LB"
+        assert payload["scalerType"] == "REQUEST_COUNT"
+
+    def test_datacenter_pins_locations(self):
+        app = App("a")
+
+        @app.queue(name="q", gpu=runpod.GpuGroup.ADA_24, datacenter="US-KS-2")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        assert payload["locations"] == "US-KS-2"
+
+    def test_env_forwarded_to_template(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2", env={"K": "v"})
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        assert {"key": "K", "value": "v"} in payload["template"]["env"]
+
+    def test_generation_stamped_in_template_env(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec, generation=7)
+        assert {"key": "RUNPOD_DEV_GENERATION", "value": "7"} in payload[
+            "template"
+        ]["env"]
+
+
+class TestDevSession:
+    async def test_start_provisions_and_registers_targets(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = _mock_api()
+        session = DevSession([app], api=api)
+        await session.start()
+
+        api.save_endpoint.assert_awaited_once()
+        target = app._dev_targets["q"]
+        assert isinstance(target, LiveTarget)
+        assert target.endpoint_id == "ep-new"
+
+    async def test_start_adopts_and_reconciles_existing_endpoint(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = _mock_api()
+        api.list_my_endpoints.return_value = [
+            {"id": "ep-old", "name": dev_endpoint_name("a", "q")}
+        ]
+        api.save_endpoint.return_value = {"id": "ep-old"}
+        session = DevSession([app], api=api)
+        await session.start()
+
+        # adopted endpoints are reconciled via saveEndpoint with the id set
+        payload = api.save_endpoint.await_args.args[0]
+        assert payload["id"] == "ep-old"
+        assert app._dev_targets["q"].endpoint_id == "ep-old"
+
+    async def test_stop_deletes_all_session_endpoints(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = _mock_api()
+        session = DevSession([app], api=api)
+        await session.start()
+        await session.stop()
+
+        api.delete_endpoint.assert_awaited_once_with("ep-new")
+        assert app._dev_targets == {}
+
+    async def test_tasks_not_provisioned(self):
+        app = App("a")
+
+        @app.task(name="t", cpu="cpu3c-1-2")
+        def t():
+            pass
+
+        api = _mock_api()
+        session = DevSession([app], api=api)
+        await session.start()
+
+        api.save_endpoint.assert_not_awaited()
+
+
+class TestDevRefresh:
+    async def test_refresh_bumps_generation_and_updates(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = _mock_api()
+        api.save_endpoint.return_value = {"id": "ep-1"}
+        session = DevSession([app], api=api)
+        await session.start()
+
+        await session.refresh([app])
+
+        payload = api.save_endpoint.await_args.args[0]
+        assert payload["id"] == "ep-1"
+        assert {"key": "RUNPOD_DEV_GENERATION", "value": "2"} in payload[
+            "template"
+        ]["env"]
+        assert session.generation == 2
+
+    async def test_refresh_provisions_added_resource(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = _mock_api()
+        api.save_endpoint.return_value = {"id": "ep-1"}
+        session = DevSession([app], api=api)
+        await session.start()
+
+        _clear_registry()
+        app2 = App("a")
+
+        @app2.queue(name="q", cpu="cpu3c-1-2")
+        def q2():
+            pass
+
+        @app2.queue(name="extra", cpu="cpu3c-1-2")
+        def extra():
+            pass
+
+        api.save_endpoint.return_value = {"id": "ep-2"}
+        await session.refresh([app2])
+
+        names = {
+            c.args[0]["name"] for c in api.save_endpoint.await_args_list
+        }
+        assert dev_endpoint_name("a", "extra") in names
+        assert "extra" in app2._dev_targets
+
+    async def test_refresh_deletes_removed_resource(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        @app.queue(name="gone", cpu="cpu3c-1-2")
+        def gone():
+            pass
+
+        api = _mock_api()
+        api.save_endpoint.side_effect = [{"id": "ep-q"}, {"id": "ep-gone"}]
+        session = DevSession([app], api=api)
+        await session.start()
+
+        _clear_registry()
+        app2 = App("a")
+
+        @app2.queue(name="q", cpu="cpu3c-1-2")
+        def q2():
+            pass
+
+        api.save_endpoint.side_effect = None
+        api.save_endpoint.return_value = {"id": "ep-q"}
+        await session.refresh([app2])
+
+        api.delete_endpoint.assert_awaited_once_with("ep-gone")
+
+
+class TestDevEvents:
+    async def test_lifecycle_events_emitted(self):
+        events = []
+
+        class Sink:
+            def provisioning(self, name, kind, hardware):
+                events.append(("provisioning", name, kind, hardware))
+
+            def adopted(self, name, endpoint_id):
+                events.append(("adopted", name, endpoint_id))
+
+            def ready(self, name, endpoint_id):
+                events.append(("ready", name, endpoint_id))
+
+            def resource_changed(self, name, fields):
+                events.append(("resource_changed", name, fields))
+
+            def resource_added(self, name, kind, hardware):
+                events.append(("resource_added", name, kind, hardware))
+
+            def resource_removed(self, name):
+                events.append(("resource_removed", name))
+
+            def deleted(self, name):
+                events.append(("deleted", name))
+
+        app = App("ev-app")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-1"}
+        api.delete_endpoint.return_value = True
+
+        session = DevSession([app], api=api, events=Sink())
+        await session.start()
+        await session.refresh([app])
+        await session.stop()
+
+        kinds = [e[0] for e in events]
+        assert "provisioning" in kinds
+        assert "ready" in kinds
+        assert "deleted" in kinds
+        # unchanged resource refreshes silently: no diff events
+        assert "resource_changed" not in kinds
+        assert "resource_added" not in kinds
+        assert ("provisioning", "q", "queue", "cpu3c-1-2") in events
+        # deleted reports the resource name, not the endpoint name
+        assert ("deleted", "q") in events
+
+    async def test_refresh_diff_events(self):
+        events = []
+
+        class Sink:
+            def resource_added(self, name, kind, hardware):
+                events.append(("added", name, kind, hardware))
+
+            def resource_changed(self, name, fields):
+                events.append(("changed", name, tuple(fields)))
+
+            def resource_removed(self, name):
+                events.append(("removed", name))
+
+        app = App("diff-app")
+
+        @app.queue(name="stays", cpu="cpu3c-1-2")
+        def stays():
+            pass
+
+        @app.queue(name="goes", cpu="cpu3c-1-2")
+        def goes():
+            pass
+
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.side_effect = lambda p: {"id": f"ep-{p['name']}"}
+        api.delete_endpoint.return_value = True
+
+        session = DevSession([app], api=api, events=Sink())
+        await session.start()
+
+        # rescan: 'goes' removed, 'stays' reconfigured, 'fresh' added
+        app2 = App("diff-app")
+
+        @app2.queue(name="stays", cpu="cpu3c-1-2", workers=(1, 4))
+        def stays2():
+            pass
+
+        @app2.queue(name="fresh", cpu="cpu5c-2-4")
+        def fresh():
+            pass
+
+        await session.refresh([app2])
+
+        assert ("removed", "goes") in events
+        added = [e for e in events if e[0] == "added"]
+        assert ("added", "fresh", "queue", "cpu5c-2-4") in added
+        changed = [e for e in events if e[0] == "changed"]
+        assert len(changed) == 1
+        assert changed[0][1] == "stays"
+        assert "workersMin" in changed[0][2] or "workersMax" in changed[0][2]
+
+    async def test_missing_event_methods_ignored(self):
+        app = App("ev-app2")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-1"}
+
+        # events object with no handlers at all must not break anything
+        session = DevSession([app], api=api, events=object())
+        await session.start()
+        await session.stop()
+
+
+class TestGpuIdsPayload:
+    def test_no_gpu_selection_expands_to_all_pools(self):
+        # the api rejects "any"; an unconstrained gpu queue asks for
+        # every pool id instead
+        app = App("gpu-any")
+
+        @app.queue(name="q")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        gpu_ids = payload["gpuIds"].split(",")
+        assert "any" not in gpu_ids
+        assert "ADA_24" in gpu_ids and "AMPERE_80" in gpu_ids
+
+    def test_explicit_pools_pass_through(self):
+        app = App("gpu-explicit")
+
+        @app.queue(name="q", gpu="ADA_24")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        assert payload["gpuIds"] == "ADA_24"
+
+
+class TestRefreshKeepsTaskEvents:
+    async def test_dev_events_reattached_after_refresh(self):
+        sink = object()
+        app = App("evt-app")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-1"}
+
+        session = DevSession([app], api=api, events=sink)
+        await session.start()
+        assert app._dev_events is sink
+
+        # file change: discovery builds a brand-new app instance
+        app2 = App("evt-app")
+
+        @app2.queue(name="q", cpu="cpu3c-1-2")
+        def q2():
+            pass
+
+        await session.refresh([app2])
+        assert app2._dev_events is sink

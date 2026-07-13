@@ -1,0 +1,847 @@
+"""invocation targets: where a `.remote()` call actually goes.
+
+a target is resolved per-call by App._resolve and knows how to reach one
+deployed resource. all resolution is server-side (sentinel headers or the
+runpod api); no local state is kept.
+"""
+
+import inspect
+import json
+from abc import ABC, abstractmethod
+from typing import Any, AsyncIterator, Callable, Dict, Optional
+
+import aiohttp
+
+from ..user_agent import USER_AGENT
+from .errors import EndpointNotFound, RemoteExecutionError
+from .protocol import FORMAT_JSON, FunctionRequest, FunctionResponse
+from .spec import ResourceSpec
+from .utils.events import emit
+from .utils.network import api_key as _api_key
+from .utils.network import endpoint_url_base as _endpoint_url_base
+
+# the sentinel pseudo-endpoint id; ai-api resolves the real endpoint from
+# the X-Flash-App / X-Flash-Environment / X-Flash-Endpoint headers.
+SENTINEL_ID = "flash"
+
+DEFAULT_TIMEOUT_SECONDS = 300.0
+
+# terminal job statuses on the queue data plane
+FINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"})
+
+
+def _lb_domain() -> str:
+    """host portion of the data-plane base url, for lb subdomain urls."""
+    base = _endpoint_url_base()
+    host = base.split("://", 1)[-1]
+    return host.split("/", 1)[0]
+
+
+def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {_api_key()}",
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+    }
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def args_to_input(fn: Callable, args: tuple, kwargs: dict) -> Dict[str, Any]:
+    """map positional args onto parameter names so the job input is a dict."""
+    sig = inspect.signature(fn)
+    params = [n for n in sig.parameters if n not in ("self", "cls")]
+    body: Dict[str, Any] = {}
+    for i, arg in enumerate(args):
+        if i >= len(params):
+            raise TypeError(
+                f"{fn.__name__}() got {len(args)} positional args, "
+                f"expected at most {len(params)}"
+            )
+        body[params[i]] = arg
+    body.update(kwargs)
+    # the platform strips empty input dicts from jobs; keep one field so
+    # the worker's job polling never sees a missing input
+    if not body:
+        body = {"__empty": True}
+    return body
+
+
+def build_job_options(
+    webhook: Optional[str] = None,
+    execution_timeout: Optional[int] = None,
+    ttl: Optional[int] = None,
+    low_priority: Optional[bool] = None,
+    s3_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """shape per-job queue options into the wire payload.
+
+    these ride alongside `input` on the run/runsync request, matching
+    the raw data-plane api's job payload.
+    """
+    options: Dict[str, Any] = {}
+    if webhook is not None:
+        options["webhook"] = webhook
+    policy: Dict[str, Any] = {}
+    if execution_timeout is not None:
+        policy["executionTimeout"] = execution_timeout
+    if ttl is not None:
+        policy["ttl"] = ttl
+    if low_priority is not None:
+        policy["lowPriority"] = low_priority
+    if policy:
+        options["policy"] = policy
+    if s3_config is not None:
+        options["s3Config"] = s3_config
+    return options
+
+
+def merge_job_options(
+    base: Dict[str, Any], new: Dict[str, Any]
+) -> Dict[str, Any]:
+    """combine two option sets; policy fields accumulate rather than
+    overwrite so chained with_options calls compose."""
+    merged = dict(base)
+    for key, value in new.items():
+        if key == "policy" and isinstance(merged.get("policy"), dict):
+            merged["policy"] = {**merged["policy"], **value}
+        else:
+            merged[key] = value
+    return merged
+
+
+def unwrap_job_output(data: Dict[str, Any]) -> Any:
+    """extract output from a runsync-style response, raising on failure."""
+    if data.get("status") == "FAILED" or data.get("error"):
+        err = data.get("error") or data.get("output", {}).get("error", "unknown")
+        raise RemoteExecutionError(f"remote execution failed: {err}")
+    output = data.get("output", data)
+    if isinstance(output, dict) and "error" in output:
+        raise RemoteExecutionError(f"remote execution failed: {output['error']}")
+    return output
+
+
+class InvocationTarget(ABC):
+    """one resolved destination for remote calls.
+
+    each target owns its payload shape: sentinel targets send plain
+    kwargs (the deployed worker resolves functions from the unpacked
+    build), live targets send the full FunctionRequest with source.
+    """
+
+    def build_payload(
+        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
+    ) -> Dict[str, Any]:
+        return {"input": args_to_input(fn, args, kwargs)}
+
+    def unwrap(self, data: Dict[str, Any]) -> Any:
+        return unwrap_job_output(data)
+
+    @abstractmethod
+    async def invoke(self, payload: Dict[str, Any], *, timeout: float) -> Any:
+        """submit and wait for the result."""
+
+    @abstractmethod
+    async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """submit without waiting; returns the raw job data."""
+
+    async def job_status(self, job_id: str) -> Dict[str, Any]:
+        """fetch the current state of a submitted job."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job status"
+        )
+
+    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
+        """cancel a submitted job."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job cancellation"
+        )
+
+    async def retry_job(self, job_id: str) -> Dict[str, Any]:
+        """retry a failed or timed-out job."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job retries"
+        )
+
+    def stream_job(
+        self, job_id: str, *, timeout: float
+    ) -> AsyncIterator[Any]:
+        """yield partial outputs of a generator job as they arrive."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job streaming"
+        )
+
+    async def wait(
+        self,
+        job_data: Dict[str, Any],
+        *,
+        timeout: float,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Any:
+        """wait for a submitted job to finish and return its output."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support job polling"
+        )
+
+    async def request(
+        self, method: str, path: str, body: Any = None, *, timeout: float
+    ) -> Any:
+        """plain http call (lb resources only)."""
+        raise NotImplementedError(f"{type(self).__name__} does not serve http routes")
+
+
+# transient statuses worth retrying: gateway/edge errors that occur
+# while the sentinel cache warms or an edge node hiccups. 4xx (other
+# than 429) are never retried; the request itself is wrong.
+RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504, 520, 522, 524})
+RETRY_ATTEMPTS = 4
+RETRY_BASE_DELAY = 0.5
+
+
+async def _request_json(
+    method: str,
+    url: str,
+    headers: Dict[str, str],
+    timeout: float,
+    *,
+    payload: Any = None,
+    app_name: str = "",
+    resource_name: str = "",
+) -> Dict[str, Any]:
+    """http json call with exponential backoff on transient failures."""
+    import asyncio
+
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+    last_exc: Optional[Exception] = None
+    for attempt in range(RETRY_ATTEMPTS):
+        if attempt:
+            await asyncio.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+        try:
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                async with session.request(
+                    method, url, json=payload, headers=headers
+                ) as resp:
+                    if resp.status == 404:
+                        raise EndpointNotFound(app_name, resource_name)
+                    if resp.status in RETRYABLE_STATUSES:
+                        last_exc = aiohttp.ClientResponseError(
+                            resp.request_info,
+                            resp.history,
+                            status=resp.status,
+                            message=await resp.text(),
+                        )
+                        continue
+                    resp.raise_for_status()
+                    return await resp.json()
+        except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exc:
+            # connection-level failures (reset, ssl hiccup, dns) are
+            # transient by nature; response-level errors above already
+            # decided retryability
+            last_exc = exc
+            continue
+    if last_exc is None:  # pragma: no cover - loop always runs once
+        raise RuntimeError("request retry loop exited cleanly")
+    raise last_exc
+
+
+async def _post_json(
+    url: str,
+    payload: Any,
+    headers: Dict[str, str],
+    timeout: float,
+    *,
+    app_name: str = "",
+    resource_name: str = "",
+) -> Dict[str, Any]:
+    return await _request_json(
+        "POST",
+        url,
+        headers,
+        timeout,
+        payload=payload,
+        app_name=app_name,
+        resource_name=resource_name,
+    )
+
+
+async def _get_json(
+    url: str, headers: Dict[str, str], timeout: float
+) -> Dict[str, Any]:
+    return await _request_json("GET", url, headers, timeout)
+
+
+async def _wait_terminal(
+    base_url: str,
+    data: Dict[str, Any],
+    headers: Dict[str, str],
+    timeout: float,
+    on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
+    """poll /status until the job reaches a terminal state.
+
+    runsync returns early (e.g. IN_QUEUE) when the job outlives the sync
+    window, typically on cold starts; polling covers the rest. on_status,
+    when given, sees every payload (observability hooks read workerId).
+    """
+    import asyncio
+    import time
+
+    if on_status is not None:
+        on_status(data)
+    deadline = time.monotonic() + timeout
+    interval = 0.5
+    # observed polls (dev sessions) stay tight so the worker id
+    # surfaces fast enough for log streams to attach in realtime
+    max_interval = 1.0 if on_status is not None else 5.0
+    while data.get("status") not in FINAL_STATUSES:
+        job_id = data.get("id")
+        if not job_id:
+            return data
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"job {job_id} did not complete within {timeout}s "
+                f"(last status: {data.get('status', 'UNKNOWN')})"
+            )
+        await asyncio.sleep(interval)
+        interval = min(interval * 1.5, max_interval)
+        data = await _get_json(f"{base_url}/status/{job_id}", headers, 30.0)
+        if on_status is not None:
+            on_status(data)
+    return data
+
+
+class QueueClient:
+    """queue data-plane client for a single endpoint id.
+
+    owns the run/runsync/status/cancel/retry routes and the lb subdomain
+    for http resources. targets compose it with their own routing
+    headers: the sentinel client carries flash headers, a live client
+    carries plain auth headers.
+    """
+
+    def __init__(
+        self,
+        endpoint_id: str,
+        headers: Callable[[], Dict[str, str]],
+        *,
+        app_name: str = "",
+        resource_name: str = "",
+    ):
+        self.endpoint_id = endpoint_id
+        self._headers = headers
+        self._app_name = app_name
+        self._resource_name = resource_name
+
+    @property
+    def base_url(self) -> str:
+        return f"{_endpoint_url_base()}/{self.endpoint_id}"
+
+    async def _call(
+        self,
+        method: str,
+        path: str,
+        payload: Any = None,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> Dict[str, Any]:
+        return await _request_json(
+            method,
+            f"{self.base_url}/{path}",
+            self._headers(),
+            timeout,
+            payload=payload,
+            app_name=self._app_name,
+            resource_name=self._resource_name,
+        )
+
+    async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._call("POST", "run", payload)
+
+    async def runsync(
+        self, payload: Dict[str, Any], *, timeout: float
+    ) -> Dict[str, Any]:
+        return await self._call("POST", "runsync", payload, timeout)
+
+    async def status(self, job_id: str) -> Dict[str, Any]:
+        return await self._call("GET", f"status/{job_id}")
+
+    async def cancel(self, job_id: str) -> Dict[str, Any]:
+        return await self._call("POST", f"cancel/{job_id}")
+
+    async def retry(self, job_id: str) -> Dict[str, Any]:
+        return await self._call("POST", f"retry/{job_id}")
+
+    async def stream(
+        self, job_id: str, *, timeout: float
+    ) -> AsyncIterator[Any]:
+        """yield partial outputs from /stream until the job is terminal.
+
+        the route long-polls (wait=) and drains buffered chunks, so each
+        call returns quickly with whatever is available.
+        """
+        import time
+
+        deadline = time.monotonic() + timeout
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"job {job_id} stream did not complete within {timeout}s"
+                )
+            data = await self._call("GET", f"stream/{job_id}")
+            if data.get("status") == "FAILED" or data.get("error"):
+                unwrap_job_output(data)
+            for chunk in data.get("stream") or []:
+                yield chunk.get("output")
+            if data.get("status") in FINAL_STATUSES:
+                return
+
+    async def wait(
+        self,
+        data: Dict[str, Any],
+        *,
+        timeout: float,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        return await _wait_terminal(
+            self.base_url, data, self._headers(), timeout, on_status
+        )
+
+    async def http(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> Any:
+        """plain http call through the endpoint's lb subdomain."""
+        url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            async with session.request(
+                method, url, json=body, headers=self._headers()
+            ) as resp:
+                if resp.status == 404 and self._app_name:
+                    raise EndpointNotFound(self._app_name, self._resource_name)
+                resp.raise_for_status()
+                text = await resp.text()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+
+
+class SentinelTarget(InvocationTarget):
+    """routes through the sentinel endpoint; ai-api resolves the real
+    endpoint server-side from app/env/resource headers.
+
+    used for deployed resources from every context (worker-to-worker and
+    local caller alike), which is what makes resolution stateless.
+    """
+
+    def __init__(self, app_name: str, env_name: str, resource_name: str):
+        self.app_name = app_name
+        self.env_name = env_name
+        self.resource_name = resource_name
+        self._client = QueueClient(
+            SENTINEL_ID,
+            self._sentinel_headers,
+            app_name=app_name,
+            resource_name=resource_name,
+        )
+
+    def _sentinel_headers(self) -> Dict[str, str]:
+        return _headers(
+            {
+                "X-Flash-App": self.app_name,
+                "X-Flash-Environment": self.env_name,
+                "X-Flash-Endpoint": self.resource_name,
+            }
+        )
+
+    async def invoke(
+        self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+    ) -> Any:
+        data = await self._client.runsync(payload, timeout=timeout)
+        data = await self._client.wait(data, timeout=timeout)
+        return self.unwrap(data)
+
+    async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._client.run(payload)
+
+    async def job_status(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.status(job_id)
+
+    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.cancel(job_id)
+
+    async def retry_job(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.retry(job_id)
+
+    def stream_job(
+        self, job_id: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+    ) -> AsyncIterator[Any]:
+        return self._client.stream(job_id, timeout=timeout)
+
+    async def wait(
+        self,
+        job_data: Dict[str, Any],
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Any:
+        data = await self._client.wait(
+            job_data, timeout=timeout, on_status=on_status
+        )
+        return self.unwrap(data)
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> Any:
+        return await self._client.http(method, path, body, timeout=timeout)
+
+
+class LiveTarget(InvocationTarget):
+    """a dev-session live endpoint: source code ships with every request,
+    so the worker executes whatever is currently on disk.
+
+    provisioning of the live endpoint itself is owned by the dev session
+    (see runpod.apps.dev); this target only speaks to an endpoint id.
+    when an event sink is attached, each call gets a dispatch line,
+    live worker status/log feed, and a completion line.
+    """
+
+    def __init__(
+        self,
+        endpoint_id: str,
+        resource_name: str = "",
+        events: Optional[object] = None,
+        metrics_key: Optional[str] = None,
+    ):
+        self.endpoint_id = endpoint_id
+        self.resource_name = resource_name
+        self.events = events
+        self.metrics_key = metrics_key
+        self._client = QueueClient(endpoint_id, _headers)
+        self._source_target: Optional[Any] = None
+        self._source_resource: str = ""
+        self._source_spec: Optional[ResourceSpec] = None
+        # source hash the worker last confirmed; None forces a sync
+        self._synced_hash: Optional[str] = None
+
+    def attach_source(
+        self, target: Any, resource: str, spec: Optional[ResourceSpec] = None
+    ) -> None:
+        """register the object whose module backs this api resource.
+
+        live api endpoints materialize their routes from module source
+        pushed over /_runpod/sync (once per source change), keeping dev
+        behavior identical to deployed. the spec rides along so the
+        worker can install the resource's dependencies before @init.
+        """
+        self._source_target = target
+        self._source_resource = resource
+        self._source_spec = spec
+
+    async def _sync_source(self, timeout: float) -> None:
+        """push the current module source to the worker if it changed."""
+        if self._source_target is None:
+            return
+        import hashlib
+
+        from .serialization import get_function_source
+
+        source = get_function_source(self._source_target)
+        digest = hashlib.sha256(source.encode()).hexdigest()
+        if digest == self._synced_hash:
+            return
+        url = f"https://{self.endpoint_id}.{_lb_domain()}/_runpod/sync"
+        payload: Dict[str, Any] = {
+            "source": source,
+            "resource": self._source_resource,
+        }
+        if self._source_spec is not None:
+            payload["dependencies"] = self._source_spec.dependencies
+            payload["system_dependencies"] = (
+                self._source_spec.system_dependencies
+            )
+        await _post_json(url, payload, _headers(), timeout)
+        self._synced_hash = digest
+
+    def build_payload(
+        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
+    ) -> Dict[str, Any]:
+        from .serialization import get_function_source, require_json_args
+
+        # queue arguments are plain json, the same contract deployed
+        # workers serve; non-json arguments fail here in dev exactly as
+        # they would against a deployed endpoint
+        require_json_args(fn, args, kwargs)
+        request = FunctionRequest(
+            function_name=fn.__name__,
+            function_code=get_function_source(fn),
+            args=list(args),
+            kwargs=dict(kwargs),
+            dependencies=spec.dependencies,
+            system_dependencies=spec.system_dependencies,
+            accelerate_downloads=spec.accelerate_downloads,
+            serialization_format=FORMAT_JSON,
+        )
+        return {"input": request.to_input()}
+
+    def unwrap(self, data: Dict[str, Any]) -> Any:
+        output = unwrap_job_output(data)
+        # the live handler is a generator handler, so job output is an
+        # aggregated list: one plain response for normal functions,
+        # __stream__-marked chunk envelopes for generator functions
+        if isinstance(output, list):
+            if (
+                len(output) == 1
+                and isinstance(output[0], dict)
+                and not output[0].get("__stream__")
+            ):
+                return self._unwrap_response(output[0])
+            return [self._unwrap_response(o) for o in output]
+        return self._unwrap_response(output)
+
+    def _unwrap_response(self, output: Any) -> Any:
+        if isinstance(output, dict) and "success" in output:
+            response = FunctionResponse.from_output(output)
+            if not response.success:
+                raise RemoteExecutionError(
+                    f"remote execution failed: {response.error or 'unknown'}"
+                )
+            if response.result is not None:
+                from .serialization import deserialize_result
+
+                return deserialize_result(response.result)
+            return response.json_result
+        return output
+
+    def _monitor(self):
+        if self.events is None:
+            return None
+        from .monitor import WorkerMonitor
+
+        return WorkerMonitor(
+            self.endpoint_id,
+            self.resource_name,
+            self.events,
+            metrics_key=self.metrics_key,
+        )
+
+    async def invoke(
+        self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+    ) -> Any:
+        import time
+
+        monitor = self._monitor()
+        emit(self.events, "dispatch", self.resource_name)
+        start = time.monotonic()
+        if monitor is not None:
+            await monitor.start()
+        try:
+            if monitor is not None:
+                # async submit + status polling: runsync would hold the
+                # connection, hiding the workerId until completion and
+                # starving the live worker feed
+                data = await self._client.run(payload)
+            else:
+                data = await self._client.runsync(payload, timeout=timeout)
+            data = await self._client.wait(
+                data,
+                timeout=timeout,
+                on_status=monitor.on_status if monitor else None,
+            )
+            result = self.unwrap(data)
+        except Exception:
+            emit(
+                self.events,
+                "request_failed",
+                self.resource_name,
+                time.monotonic() - start,
+            )
+            raise
+        finally:
+            if monitor is not None:
+                await monitor.stop()
+        emit(
+            self.events,
+            "request_completed",
+            self.resource_name,
+            time.monotonic() - start,
+        )
+        return result
+
+    async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._client.run(payload)
+
+    async def job_status(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.status(job_id)
+
+    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.cancel(job_id)
+
+    async def retry_job(self, job_id: str) -> Dict[str, Any]:
+        return await self._client.retry(job_id)
+
+    async def stream_job(
+        self, job_id: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+    ) -> AsyncIterator[Any]:
+        # live workers stream serialized chunk envelopes through the
+        # same /stream route deployed workers use
+        async for chunk in self._client.stream(job_id, timeout=timeout):
+            yield self._unwrap_response(chunk)
+
+    async def wait(
+        self,
+        job_data: Dict[str, Any],
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Any:
+        data = await self._client.wait(
+            job_data, timeout=timeout, on_status=on_status
+        )
+        return self.unwrap(data)
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> Any:
+        import time
+
+        emit(self.events, "dispatch", self.resource_name, f"{method} {path}")
+        start = time.monotonic()
+        try:
+            await self._sync_source(timeout)
+            result = await self._client.http(method, path, body, timeout=timeout)
+        except Exception:
+            emit(
+                self.events,
+                "request_failed",
+                self.resource_name,
+                time.monotonic() - start,
+            )
+            raise
+        emit(
+            self.events,
+            "request_completed",
+            self.resource_name,
+            time.monotonic() - start,
+        )
+        return result
+
+
+class PodTarget(InvocationTarget):
+    """ephemeral pod execution for @app.task: provision a pod, run the
+    function body, collect the result, terminate.
+
+    tasks run to completion far beyond the queue data plane's sync
+    window, so the transport is a direct http channel to a single-shot
+    runner on the pod (see runpod.apps.tasks).
+    """
+
+    # tasks default to a long window; the pod's terminateAfter is the backstop
+    TASK_TIMEOUT_SECONDS = 3600.0
+
+    def __init__(
+        self,
+        spec: ResourceSpec,
+        fn: Callable,
+        events: Optional[object] = None,
+    ):
+        self.spec = spec
+        self.fn = fn
+        self.events = events
+
+    def build_payload(
+        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
+    ) -> Dict[str, Any]:
+        from .serialization import (
+            get_function_source,
+            serialize_args,
+            serialize_kwargs,
+        )
+
+        request = FunctionRequest(
+            function_name=fn.__name__,
+            function_code=get_function_source(fn),
+            args=serialize_args(args),
+            kwargs=serialize_kwargs(kwargs),
+            dependencies=spec.dependencies,
+            system_dependencies=spec.system_dependencies,
+            accelerate_downloads=spec.accelerate_downloads,
+        )
+        return request.to_input()
+
+    async def invoke(
+        self, payload: Dict[str, Any], *, timeout: float = TASK_TIMEOUT_SECONDS
+    ) -> Any:
+        import time
+
+        from .tasks import TaskExecution, unwrap_task_response
+
+        name = self.spec.name
+        hardware = ",".join(self.spec.cpu or self.spec.gpu or ["any"])
+        emit(self.events, "dispatch", name)
+        emit(self.events, "task_status", name, f"provisioning pod on {hardware}")
+        start = time.monotonic()
+
+        stream = None
+        execution = TaskExecution(self.spec)
+        try:
+            await execution.start()
+            if execution.pod_id:
+                emit(
+                    self.events,
+                    "task_status",
+                    name,
+                    f"pod {execution.pod_id[:12]} waiting for runtime",
+                )
+                if self.events is not None:
+                    from .monitor import PodLogStream
+
+                    stream = PodLogStream(execution.pod_id, name, self.events)
+                    stream.attach()
+            await execution.wait_ready()
+            emit(self.events, "worker_ready", name, execution.pod_id or "")
+            response = await execution.execute(payload, timeout)
+        except Exception:
+            emit(
+                self.events,
+                "request_failed",
+                name,
+                time.monotonic() - start,
+            )
+            raise
+        finally:
+            if stream is not None:
+                await stream.stop()
+            await execution.terminate()
+        result = unwrap_task_response(response)
+        emit(
+            self.events,
+            "request_completed",
+            name,
+            time.monotonic() - start,
+        )
+        return result
+
+    async def submit(self, payload: Dict[str, Any]) -> Any:
+        from .tasks import TaskExecution, TaskJob
+
+        execution = TaskExecution(self.spec)
+        await execution.start()
+        await execution.wait_ready()
+        await execution.submit(payload)
+        return TaskJob(execution)

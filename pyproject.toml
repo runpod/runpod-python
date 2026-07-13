@@ -52,6 +52,8 @@ include-package-data = true
 runpod = [
     "serverless/binaries/gpu_test",
     "serverless/binaries/README.md",
+    "runtimes/**/*.py",
+    "runtimes/**/Dockerfile*",
 ]
 
 [tool.setuptools_scm]
@@ -60,7 +62,8 @@ local_scheme = "no-local-version"
 
 
 [project.scripts]
-runpod = "runpod.cli.entry:runpod_cli"
+runpod = "runpod.rp_cli.main:run"
+rp = "runpod.rp_cli.main:run"
 
 
 [dependency-groups]
