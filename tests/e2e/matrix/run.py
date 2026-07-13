@@ -14,7 +14,6 @@ import traceback
 
 from main import (  # noqa: E402
     Svc,
-    app,
     q_basic,
     q_caller,
     q_custom,

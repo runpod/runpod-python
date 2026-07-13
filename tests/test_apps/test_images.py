@@ -1,5 +1,7 @@
 """tests for runtime image selection."""
 
+import sys
+
 import pytest
 
 from runpod.apps.images import (
@@ -63,12 +65,10 @@ class TestLocalPythonVersion:
     def test_unsupported_local_python_fails_loudly(self, monkeypatch):
         # cloudpickle payloads are version-bound; a silent fallback
         # would break at deserialization time on the worker
-        import runpod.apps.images as images
-
         class FakeVersion:
             major, minor = 3, 9
 
-        monkeypatch.setattr(images.sys, "version_info", FakeVersion)
+        monkeypatch.setattr(sys, "version_info", FakeVersion)
         with pytest.raises(RuntimeError, match="3.9"):
             local_python_version()
 

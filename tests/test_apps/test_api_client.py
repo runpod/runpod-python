@@ -1,6 +1,5 @@
 """unit tests for the apps control-plane client."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp

@@ -28,7 +28,7 @@ def matmul_benchmark(size: int = 4096):
     torch.cuda.synchronize()
     start = time.time()
     for _ in range(10):
-        result = a @ b
+        _ = a @ b
     torch.cuda.synchronize()
     elapsed = time.time() - start
 

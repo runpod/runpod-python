@@ -3,9 +3,6 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from runpod.apps import logs as pod_logs_mod
 from runpod.apps.logs import pod_logs, stream_pod_logs, tail_summary
 
 

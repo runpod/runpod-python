@@ -3,8 +3,6 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from runpod.apps.monitor import WorkerMonitor, emit, format_worker_counts
 
 
@@ -252,8 +250,6 @@ class TestMonitorLifecycle:
         await monitor.stop()
 
     async def test_metrics_polling_reports_counts(self):
-        import runpod
-
         sink = Sink()
         monitor = WorkerMonitor("ep1", "calc", sink, metrics_key="mk")
         payload = {"workers": {"initializing": 1, "ready": 0}}

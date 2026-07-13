@@ -16,7 +16,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import cloudpickle
 import pytest
 
-import runpod
 from runpod.apps import App
 from runpod.apps.app import _clear_registry
 from runpod.apps.errors import RemoteExecutionError

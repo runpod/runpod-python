@@ -3,8 +3,6 @@
 import base64
 import subprocess
 
-import pytest
-
 from runpod.apps.shim import shell_launcher
 
 

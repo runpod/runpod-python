@@ -1,6 +1,5 @@
 """tests for discovery, manifest building, and packaging."""
 
-import io
 import json
 import tarfile
 import textwrap

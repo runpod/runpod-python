@@ -204,7 +204,7 @@ def solve_placement(
         raise PlacementError(
             f"cannot place volume '{volume_name}': no datacenter can host "
             f"every resource using it\n" + "\n".join(lines) + "\n"
-            f"use separate volumes or compatible hardware"
+            "use separate volumes or compatible hardware"
         )
 
     # maximin: rank each DC by the worst resource's stock there,

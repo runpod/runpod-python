@@ -5,9 +5,8 @@ permutation of the surface.
 """
 
 import runpod
-from runpod import App
 
-app = App("e2e-matrix")
+app = runpod.App("e2e-matrix")
 
 
 # -- queue permutations ------------------------------------------------

@@ -127,7 +127,7 @@ class VolumeResolver:
         if cached is not None:
             return cached
 
-        from .placement import PlacementError, StockMap, solve_placement
+        from .placement import StockMap, solve_placement
 
         client = await self._client()
         existing = await client.list_network_volumes()

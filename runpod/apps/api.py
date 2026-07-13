@@ -362,7 +362,7 @@ class AppsApiClient:
             try:
                 await self._put_tarball(upload_url, _reader(), total, timeout)
                 return
-            except (aiohttp.ClientError, OSError) as exc:
+            except (aiohttp.ClientError, OSError):
                 if attempt == attempts - 1:
                     raise
                 await asyncio.sleep(2**attempt)

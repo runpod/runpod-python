@@ -18,7 +18,6 @@ from rich.progress import (
     TextColumn,
 )
 from rich.spinner import SPINNERS
-from rich.text import Text
 from rich.theme import Theme
 
 # -- brand ----------------------------------------------------------------
