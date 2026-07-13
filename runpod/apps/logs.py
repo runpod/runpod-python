@@ -21,9 +21,9 @@ STREAM_TIMEOUT_SECONDS = 3600.0
 
 
 def _headers() -> Dict[str, str]:
-    from .targets import _api_key
+    from .utils.network import api_key
 
-    return {"Authorization": f"Bearer {_api_key()}"}
+    return {"Authorization": f"Bearer {api_key()}"}
 
 
 async def pod_logs(

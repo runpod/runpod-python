@@ -258,7 +258,7 @@ class TestMonitorLifecycle:
             assert headers["Authorization"] == "Bearer mk"
             return payload
 
-        with patch("runpod.apps.targets._get_json", fake_get):
+        with patch("runpod.apps.utils.network.get_json", fake_get):
             await monitor.start()
             await asyncio.sleep(0.05)
             await monitor.stop()

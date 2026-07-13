@@ -19,6 +19,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import traceback
 from contextlib import redirect_stdout
 
@@ -53,12 +54,11 @@ def _install(packages, label):
     return None
 
 
-_apt_updated = False
+_apt_updated = threading.Event()
 
 
 def _install_system(packages):
     """install apt packages; requires a debian-family image with root."""
-    global _apt_updated
     if not packages:
         return None
     if shutil.which("apt-get") is None:
@@ -68,13 +68,13 @@ def _install_system(packages):
             f"them in"
         )
     env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
-    if not _apt_updated:
+    if not _apt_updated.is_set():
         update = subprocess.run(
             ["apt-get", "update", "-qq"], capture_output=True, text=True, env=env
         )
         if update.returncode != 0:
             return f"apt-get update failed: {update.stderr[-2000:]}"
-        _apt_updated = True
+        _apt_updated.set()
     result = subprocess.run(
         ["apt-get", "install", "-y", "-qq", "--no-install-recommends", *packages],
         capture_output=True,

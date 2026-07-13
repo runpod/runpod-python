@@ -8,35 +8,19 @@ api is the only source of truth; nothing is persisted locally.
 
 import base64
 import logging
-from pathlib import Path
+import os as _os
 from typing import Dict, List, Optional, Union
 
 from .api import AppsApiClient
 from .app import App
 from .handles import ApiHandle, FunctionHandle
-from .utils.events import emit
+from .shim import bootstrap_docker_args, bootstrap_source
 from .spec import ResourceKind, ResourceSpec
 from .targets import LiveTarget
+from .utils.events import emit
+from .utils.names import dev_endpoint_name
 
 log = logging.getLogger(__name__)
-
-DEV_PREFIX = "dev"
-
-import os as _os
-
-
-def dev_endpoint_name(app_name: str, resource_name: str) -> str:
-    """unique endpoint name for a dev (app, resource) pair.
-
-    dash-joined names alone are ambiguous (("a-b","c") vs ("a","b-c")),
-    so a short digest of the exact pair disambiguates.
-    """
-    import hashlib
-
-    digest = hashlib.sha256(
-        f"{app_name}/{resource_name}".encode()
-    ).hexdigest()[:6]
-    return f"{DEV_PREFIX}-{app_name}-{resource_name}-{digest}"
 
 
 def _resource_of(endpoint_name: str) -> str:
@@ -94,18 +78,6 @@ def _image_for(spec: ResourceSpec) -> str:
     return image_for_spec(spec, python_version=local_python_version())
 
 
-def _bootstrap_source() -> str:
-    return (Path(__file__).parent.parent / "runtimes" / "bootstrap.py").read_text()
-
-
-def _bootstrap_docker_args() -> str:
-    """shell command that materializes and starts the bootstrap on a
-    custom image."""
-    from .shim import shell_launcher
-
-    return shell_launcher("RUNPOD_BOOTSTRAP_B64", "/bootstrap.py")
-
-
 def _render_env(env):
     from .secret import render_env
 
@@ -113,10 +85,10 @@ def _render_env(env):
 
 
 def _client_api_key() -> str:
-    from .targets import _api_key
+    from .utils.network import api_key
 
     try:
-        return _api_key()
+        return api_key()
     except RuntimeError:
         # payload construction must not require credentials (tests,
         # dry runs); the session itself fails loudly on its first call
@@ -196,7 +168,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
             [
                 {
                     "key": "RUNPOD_BOOTSTRAP_B64",
-                    "value": base64.b64encode(_bootstrap_source().encode()).decode(),
+                    "value": base64.b64encode(bootstrap_source().encode()).decode(),
                 },
                 {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
             ]
@@ -208,7 +180,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
             payload["template"]["env"].append(
                 {"key": "RUNPOD_PACKAGE_SPEC", "value": package_spec}
             )
-        payload["template"]["dockerArgs"] = _bootstrap_docker_args()
+        payload["template"]["dockerArgs"] = bootstrap_docker_args()
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"
     if spec.datacenter:
@@ -262,9 +234,8 @@ class DevSession:
     async def _attach_volumes(self, payload: Dict, spec, app) -> None:
         """resolve the resource's volumes and registry auth onto a
         dev endpoint payload."""
-        from .deploy import attach_endpoint_volumes
         from .registry import resolve_registry_auth
-        from .volume import VolumeResolver
+        from .volume import VolumeResolver, attach_endpoint_volumes
 
         if spec.registry_auth:
             auth_id = await resolve_registry_auth(spec.registry_auth, api=self.api)

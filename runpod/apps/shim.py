@@ -16,6 +16,8 @@ dockerArgs with a shell lexer and the whole script rides inside one
 pair of single quotes.
 """
 
+from pathlib import Path
+
 # well-known interpreter locations beyond PATH
 _PYTHON_CANDIDATES = (
     "python3",
@@ -49,3 +51,13 @@ def shell_launcher(env_var: str, dest: str) -> str:
         f'exec "$PY" {dest}'
     )
     return f"sh -c '{script}'"
+
+
+def bootstrap_source() -> str:
+    """return the runtime bootstrap injected into custom images."""
+    return (Path(__file__).parent.parent / "runtimes" / "bootstrap.py").read_text()
+
+
+def bootstrap_docker_args() -> str:
+    """return the command that starts the injected runtime bootstrap."""
+    return shell_launcher("RUNPOD_BOOTSTRAP_B64", "/bootstrap.py")

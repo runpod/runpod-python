@@ -203,3 +203,22 @@ def specs_sharing_volume(apps: List, name: str) -> List:
                 if ref.name == name:
                     out.append(handle.spec)
     return out
+
+
+async def attach_endpoint_volumes(
+    payload: Dict[str, Any], spec, resolver: VolumeResolver, app
+) -> None:
+    """resolve a resource's volumes onto an endpoint payload."""
+    volumes = volume_list(spec.volume)
+    if not volumes:
+        return
+    resolved = []
+    for volume in volumes:
+        sharing = specs_sharing_volume([app], volume.name) or [spec]
+        resolved.append(await resolver.resolve(volume, sharing))
+    payload["networkVolumeIds"] = [
+        {"networkVolumeId": result["id"]} for result in resolved
+    ]
+    payload["locations"] = ",".join(
+        dict.fromkeys(result["dataCenterId"] for result in resolved)
+    )

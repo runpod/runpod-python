@@ -31,6 +31,7 @@ from typing import (
 )
 
 from .context import Context, current_context
+from .discovery_state import DiscoveryInvocationError, in_discovery
 from .errors import InvalidResourceError
 from .invoker import Invoker, StreamInvoker
 from .job import Job
@@ -199,8 +200,6 @@ class FunctionHandle:
         return Job({"id": job_id, "status": "UNKNOWN"}, target)
 
     def _guard_discovery(self) -> None:
-        from .discovery import DiscoveryInvocationError, in_discovery
-
         if in_discovery():
             raise DiscoveryInvocationError(self.spec.name)
 
@@ -239,8 +238,6 @@ class _RouteCaller:
         return block(self.aio(path, body, **kwargs))
 
     async def aio(self, path: str, body: Any = None, **kwargs: Any) -> Any:
-        from .discovery import DiscoveryInvocationError, in_discovery
-
         if in_discovery():
             raise DiscoveryInvocationError(self._handle.spec.name)
         target = await self._handle._app._resolve(self._handle.spec)

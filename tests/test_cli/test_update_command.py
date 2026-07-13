@@ -239,7 +239,7 @@ class TestUpdateNotice:
 
 class TestStartBackgroundCheck:
     def test_starts_once(self, monkeypatch):
-        monkeypatch.setattr(upd, "_started", False)
+        monkeypatch.setattr(upd, "_started", threading.Event())
         monkeypatch.setattr(upd, "_is_interactive", lambda: True)
         threads = []
         monkeypatch.setattr(
@@ -252,7 +252,7 @@ class TestStartBackgroundCheck:
         assert len(threads) == 1
 
     def test_skips_non_tty(self, monkeypatch):
-        monkeypatch.setattr(upd, "_started", False)
+        monkeypatch.setattr(upd, "_started", threading.Event())
         monkeypatch.setattr(upd, "_is_interactive", lambda: False)
         threads = []
         monkeypatch.setattr(

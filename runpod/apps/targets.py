@@ -7,7 +7,6 @@ runpod api); no local state is kept.
 
 import inspect
 import json
-import os
 from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator, Callable, Dict, Optional
 
@@ -17,6 +16,9 @@ from ..user_agent import USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest, FunctionResponse
 from .spec import ResourceSpec
+from .utils.events import emit
+from .utils.network import api_key as _api_key
+from .utils.network import endpoint_url_base as _endpoint_url_base
 
 # the sentinel pseudo-endpoint id; ai-api resolves the real endpoint from
 # the X-Flash-App / X-Flash-Environment / X-Flash-Endpoint headers.
@@ -26,25 +28,6 @@ DEFAULT_TIMEOUT_SECONDS = 300.0
 
 # terminal job statuses on the queue data plane
 FINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"})
-
-
-def _api_key() -> str:
-    key = os.getenv("RUNPOD_API_KEY")
-    if not key:
-        import runpod
-
-        key = runpod.api_key
-    if not key:
-        raise RuntimeError(
-            "no api key configured. run `rp login` or set RUNPOD_API_KEY."
-        )
-    return key
-
-
-def _endpoint_url_base() -> str:
-    import runpod
-
-    return runpod.endpoint_url_base.rstrip("/")
 
 
 def _lb_domain() -> str:
@@ -657,8 +640,6 @@ class LiveTarget(InvocationTarget):
     ) -> Any:
         import time
 
-        from .monitor import emit
-
         monitor = self._monitor()
         emit(self.events, "dispatch", self.resource_name)
         start = time.monotonic()
@@ -739,8 +720,6 @@ class LiveTarget(InvocationTarget):
     ) -> Any:
         import time
 
-        from .monitor import emit
-
         emit(self.events, "dispatch", self.resource_name, f"{method} {path}")
         start = time.monotonic()
         try:
@@ -810,7 +789,6 @@ class PodTarget(InvocationTarget):
     ) -> Any:
         import time
 
-        from .monitor import emit
         from .tasks import TaskExecution, unwrap_task_response
 
         name = self.spec.name

@@ -87,7 +87,7 @@ class TestSystemDependencies:
         import shutil
 
         monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/apt-get")
-        monkeypatch.setattr(executor, "_apt_updated", False)
+        monkeypatch.setattr(executor, "_apt_updated", executor.threading.Event())
         calls = []
 
         class R:
@@ -116,7 +116,7 @@ class TestSystemDependencies:
         import shutil
 
         monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/apt-get")
-        monkeypatch.setattr(executor, "_apt_updated", False)
+        monkeypatch.setattr(executor, "_apt_updated", executor.threading.Event())
         calls = []
 
         class R:

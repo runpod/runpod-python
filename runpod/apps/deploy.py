@@ -24,6 +24,7 @@ from .build import (
 )
 from .errors import InvalidResourceError, ScheduleNotSupported
 from .schedule import SCHEDULES_ENABLED
+from .shim import bootstrap_docker_args, bootstrap_source
 from .spec import ResourceKind
 from .utils.events import emit
 
@@ -268,18 +269,16 @@ def _deployed_endpoint_input(
     if spec.image:
         # custom image: inject the bootstrap; the vendored env in the
         # artifact provides the runtime once the bootstrap unpacks it
-        from .dev import _bootstrap_docker_args, _bootstrap_source
-
         payload["template"]["env"].extend(
             [
                 {
                     "key": "RUNPOD_BOOTSTRAP_B64",
-                    "value": base64.b64encode(_bootstrap_source().encode()).decode(),
+                    "value": base64.b64encode(bootstrap_source().encode()).decode(),
                 },
                 {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
             ]
         )
-        payload["template"]["dockerArgs"] = _bootstrap_docker_args()
+        payload["template"]["dockerArgs"] = bootstrap_docker_args()
 
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"
@@ -328,7 +327,7 @@ async def reconcile_endpoints(
     }
 
     from .registry import resolve_registry_auth
-    from .volume import VolumeResolver
+    from .volume import VolumeResolver, attach_endpoint_volumes
 
     resolver = VolumeResolver(client)
     endpoints: Dict[str, str] = {}
@@ -361,25 +360,6 @@ async def reconcile_endpoints(
             log.info("deleted removed endpoint %s (%s)", name, endpoint_id)
 
     return endpoints
-
-
-async def attach_endpoint_volumes(payload: Dict[str, Any], spec, resolver, app) -> None:
-    """resolve a resource's volumes onto an endpoint payload.
-
-    endpoints may span regions: one volume per datacenter, locations
-    derived from the resolved volumes so lists cannot disagree.
-    """
-    from .volume import specs_sharing_volume, volume_list
-
-    volumes = volume_list(spec.volume)
-    if not volumes:
-        return
-    resolved = []
-    for volume in volumes:
-        sharing = specs_sharing_volume([app], volume.name) or [spec]
-        resolved.append(await resolver.resolve(volume, sharing))
-    payload["networkVolumeIds"] = [{"networkVolumeId": r["id"]} for r in resolved]
-    payload["locations"] = ",".join(dict.fromkeys(r["dataCenterId"] for r in resolved))
 
 
 def _phase(events, name: str, detail: str = "") -> None:

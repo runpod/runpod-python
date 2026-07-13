@@ -214,13 +214,13 @@ class WorkerMonitor:
             await stream.stop()
 
     async def _poll_metrics(self) -> None:
-        from .targets import _endpoint_url_base, _get_json
+        from .utils.network import endpoint_url_base, get_json
 
-        url = f"{_endpoint_url_base()}/{self.endpoint_id}/metrics"
+        url = f"{endpoint_url_base()}/{self.endpoint_id}/metrics"
         headers = {"Authorization": f"Bearer {self.metrics_key}"}
         while True:
             try:
-                data = await _get_json(url, headers, 10.0)
+                data = await get_json(url, headers, 10.0)
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - observability is best-effort

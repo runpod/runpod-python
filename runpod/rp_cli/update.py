@@ -28,7 +28,7 @@ CHECK_INTERVAL_HOURS = 24
 
 _newer_version: Optional[str] = None
 _check_done = threading.Event()
-_started = False
+_started = threading.Event()
 _start_lock = threading.Lock()
 
 
@@ -212,11 +212,10 @@ def _is_interactive() -> bool:
 
 def start_background_check() -> None:
     """spawn the daemon check thread once per process (ttys only)."""
-    global _started  # noqa: PLW0603
     with _start_lock:
-        if _started:
+        if _started.is_set():
             return
-        _started = True
+        _started.set()
     if not _is_interactive():
         return
     atexit.register(_print_update_notice)

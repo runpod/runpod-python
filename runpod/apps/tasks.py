@@ -16,6 +16,7 @@ crashed client cannot leak a running pod indefinitely.
 import asyncio
 import base64
 import logging
+import os as _os
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -34,8 +35,6 @@ TASK_PORT = 8080
 
 # safety net: pods self-terminate server-side after this long
 DEFAULT_MAX_LIFETIME = timedelta(hours=1)
-
-import os as _os
 
 READY_POLL_INTERVAL = 2.0
 READY_TIMEOUT = 600.0

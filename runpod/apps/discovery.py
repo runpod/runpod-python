@@ -14,32 +14,11 @@ from pathlib import Path
 from typing import List
 
 from .app import App, get_registered_apps
+from .discovery_state import DISCOVERY_ENV
 
 log = logging.getLogger(__name__)
 
 IMPORT_TIMEOUT_SECONDS = 30
-
-# set while discovery imports modules; handle invocation checks it so
-# module-level .remote()/.spawn() calls fail fast with a precise
-# diagnosis instead of attempting network calls mid-scan
-DISCOVERY_ENV = "RUNPOD_DISCOVERY_SCAN"
-
-
-def in_discovery() -> bool:
-    return bool(os.environ.get(DISCOVERY_ENV))
-
-
-class DiscoveryInvocationError(Exception):
-    """a handle was invoked at module level during a discovery scan."""
-
-    def __init__(self, resource_name: str):
-        super().__init__(
-            f"'{resource_name}' was invoked at import time. move calls "
-            f"into a function, an entrypoint, or an "
-            f'`if __name__ == "__main__":` guard so importing the file '
-            f"has no side effects."
-        )
-
 
 _SKIP_DIRS = {
     ".git",

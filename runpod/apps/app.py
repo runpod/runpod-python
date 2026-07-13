@@ -284,7 +284,7 @@ class App:
             return target
 
         from .api import AppsApiClient
-        from .dev import dev_endpoint_name
+        from .utils.names import dev_endpoint_name
 
         wanted = dev_endpoint_name(self.name, spec.name)
         endpoints = await AppsApiClient().list_my_endpoints()
