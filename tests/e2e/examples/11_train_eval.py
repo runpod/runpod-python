@@ -4,11 +4,10 @@
 """
 
 import runpod
-from runpod import App, Volume
 
-app = App("ex-train-eval")
+app = runpod.App("ex-train-eval")
 
-models = Volume("ex-models", size=10)
+models = runpod.Volume("ex-models", size=10)
 
 
 @app.task(gpu="4090", volume=models)

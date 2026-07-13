@@ -9,9 +9,8 @@ worker needs no custom image.
 """
 
 import runpod
-from runpod import App
 
-app = App("gpu-demo")
+app = runpod.App("gpu-demo")
 
 
 @app.queue(gpu="4090", dependencies=["numpy"])
@@ -29,7 +28,7 @@ def matmul_benchmark(size: int = 4096):
     torch.cuda.synchronize()
     start = time.time()
     for _ in range(10):
-        a @ b
+        result = a @ b
     torch.cuda.synchronize()
     elapsed = time.time() - start
 

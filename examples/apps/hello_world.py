@@ -13,9 +13,8 @@ re-run — the worker picks up your new code automatically.
 """
 
 import runpod
-from runpod import App
 
-app = App("hello")
+app = runpod.App("hello")
 
 
 @app.queue(cpu="cpu3c-1-2")

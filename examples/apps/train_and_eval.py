@@ -11,11 +11,10 @@ placed in its datacenter.
 """
 
 import runpod
-from runpod import App, Volume
 
-app = App("trainer")
+app = runpod.App("trainer")
 
-checkpoints = Volume("checkpoints", size=10)
+checkpoints = runpod.Volume("checkpoints", size=10)
 
 
 @app.task(gpu="4090", volume=checkpoints)

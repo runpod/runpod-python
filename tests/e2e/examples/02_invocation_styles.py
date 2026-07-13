@@ -6,9 +6,8 @@
 import asyncio
 
 import runpod
-from runpod import App
 
-app = App("ex-invoke")
+app = runpod.App("ex-invoke")
 
 
 @app.queue(cpu="cpu3c-1-2")

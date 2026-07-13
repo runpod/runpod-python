@@ -13,9 +13,8 @@ Try it:
 import time
 
 import runpod
-from runpod import App
 
-app = App("streaming")
+app = runpod.App("streaming")
 
 
 @app.queue(cpu="cpu3c-1-2")

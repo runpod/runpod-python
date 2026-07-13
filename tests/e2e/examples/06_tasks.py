@@ -4,9 +4,8 @@
 """
 
 import runpod
-from runpod import App
 
-app = App("ex-tasks")
+app = runpod.App("ex-tasks")
 
 
 @app.task(cpu="cpu3c-1-2")

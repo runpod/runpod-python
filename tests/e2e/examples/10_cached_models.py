@@ -4,11 +4,10 @@
 """
 
 import runpod
-from runpod import App, Model
 
-app = App("ex-models")
+app = runpod.App("ex-models")
 
-tiny = Model("sshleifer/tiny-gpt2")
+tiny = runpod.Model("sshleifer/tiny-gpt2")
 
 
 @app.queue(gpu="4090", model=tiny, dependencies=["transformers"])

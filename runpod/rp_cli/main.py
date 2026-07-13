@@ -401,7 +401,7 @@ def dev(module, once):
         free, and cancellation simply abandons the in-flight call.
         """
         loop = asyncio.get_running_loop()
-        done: asyncio.Future = loop.create_future()
+        done: asyncio.Future[None] = loop.create_future()
 
         def _finish(exc: "BaseException | None") -> None:
             if done.done():
@@ -414,9 +414,9 @@ def dev(module, once):
         def _runner() -> None:
             try:
                 run_entrypoint(fn)
-            # BaseException on purpose: SystemExit/KeyboardInterrupt from
-            # the entrypoint must reach the loop, not die on this thread
-            except BaseException as exc:  # noqa: BLE001 - marshalled to the loop
+            # entrypoint control-flow exceptions must reach the loop,
+            # not die on this thread
+            except (Exception, KeyboardInterrupt, SystemExit) as exc:
                 # bind the exception now: `as exc` is unbound once the
                 # except block exits, before the loop callback runs
                 loop.call_soon_threadsafe(_finish, exc)
@@ -424,7 +424,7 @@ def dev(module, once):
                 loop.call_soon_threadsafe(_finish, None)
 
         threading.Thread(target=_runner, daemon=True).start()
-        await done
+        return await done
 
     async def _session() -> int:
         nonlocal apps, entrypoint

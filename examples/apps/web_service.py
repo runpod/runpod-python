@@ -12,25 +12,24 @@ class itself, as shown in the entrypoint.
 """
 
 import runpod
-from runpod import App, get, init, post
 
-app = App("web")
+app = runpod.App("web")
 
 
 @app.api(cpu="cpu3c-1-2")
 class Counter:
-    @init
+    @runpod.init
     def setup(self):
         # runs once when a worker starts, before any request
         self.count = 0
         print("worker ready, counter at 0")
 
-    @post("/bump")
+    @runpod.post("/bump")
     async def bump(self, body: dict):
         self.count += body.get("by", 1)
         return {"count": self.count}
 
-    @get("/value")
+    @runpod.get("/value")
     async def value(self):
         return {"count": self.count}
 

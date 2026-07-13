@@ -4,9 +4,8 @@
 """
 
 import runpod
-from runpod import App
 
-app = App("ex-hello")
+app = runpod.App("ex-hello")
 
 
 @app.queue(cpu="cpu3c-1-2")

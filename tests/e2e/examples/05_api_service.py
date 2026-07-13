@@ -4,25 +4,24 @@
 """
 
 import runpod
-from runpod import App, get, init, post
 
-app = App("ex-api")
+app = runpod.App("ex-api")
 
 
 @app.api(cpu="cpu3c-1-2")
 class Counter:
-    @init
+    @runpod.init
     def setup(self):
         # runs once per worker before it takes traffic
         self.count = 0
         print("counter initialized")
 
-    @post("/bump")
+    @runpod.post("/bump")
     async def bump(self, body: dict):
         self.count += body.get("by", 1)
         return {"count": self.count}
 
-    @get("/value")
+    @runpod.get("/value")
     async def value(self):
         return {"count": self.count}
 

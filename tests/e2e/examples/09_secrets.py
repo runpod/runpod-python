@@ -7,12 +7,14 @@ requires the secret to exist first:
 """
 
 import runpod
-from runpod import App, Secret
 
-app = App("ex-secrets")
+app = runpod.App("ex-secrets")
 
 
-@app.queue(cpu="cpu3c-1-2", env={"DEMO_TOKEN": Secret("ex-demo-secret"), "MODE": "example"})
+@app.queue(
+    cpu="cpu3c-1-2",
+    env={"DEMO_TOKEN": runpod.Secret("ex-demo-secret"), "MODE": "example"},
+)
 def peek():
     import os
 

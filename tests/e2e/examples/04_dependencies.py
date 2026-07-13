@@ -4,9 +4,8 @@
 """
 
 import runpod
-from runpod import App
 
-app = App("ex-deps")
+app = runpod.App("ex-deps")
 
 
 @app.queue(cpu="cpu3c-1-2", dependencies=["pyfiglet"])

@@ -5,9 +5,8 @@ image with python3.
 """
 
 import runpod
-from runpod import App
 
-app = App("ex-image")
+app = runpod.App("ex-image")
 
 
 @app.queue(cpu="cpu3c-1-2", image="python:3.12-slim")

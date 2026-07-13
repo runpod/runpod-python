@@ -7,11 +7,10 @@ in the volume's datacenter automatically.
 """
 
 import runpod
-from runpod import App, Volume
 
-app = App("ex-volumes")
+app = runpod.App("ex-volumes")
 
-scratch = Volume("ex-scratch", size=10)
+scratch = runpod.Volume("ex-scratch", size=10)
 
 
 @app.task(cpu="cpu3c-1-2", volume=scratch)

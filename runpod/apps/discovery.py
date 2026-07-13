@@ -85,10 +85,9 @@ def _import_module(path: Path) -> None:
     def run() -> None:
         try:
             spec.loader.exec_module(module)
-        # BaseException on purpose: user module top-level code can raise
-        # SystemExit/KeyboardInterrupt; those must surface as discovery
+        # user module control-flow exceptions must surface as discovery
         # errors on the caller thread, not kill this worker thread
-        except BaseException as exc:  # noqa: BLE001 - reported to caller
+        except (Exception, KeyboardInterrupt, SystemExit) as exc:
             error.append(exc)
 
     thread = threading.Thread(target=run, daemon=True)

@@ -4,9 +4,8 @@
 """
 
 import runpod
-from runpod import App
 
-app = App("ex-gpu")
+app = runpod.App("ex-gpu")
 
 
 @app.queue(gpu="4090", env={"MODE": "example"})
