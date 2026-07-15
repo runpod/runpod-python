@@ -7,11 +7,16 @@ constructed at import time before fitness checks run). ``sys.exit(1)`` only
 raises ``SystemExit`` and then blocks in interpreter shutdown joining those
 threads, so the worker logs "unhealthy, exiting." but never terminates.
 The exit must go through ``os._exit`` to terminate unconditionally.
+
+Also covers SLS-380: the best-effort unhealthy report the worker sends to the
+host before force-exiting.
 """
 
 import subprocess
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from runpod.serverless.modules import rp_fitness
 
@@ -92,3 +97,78 @@ def test_terminate_unhealthy_exits_even_if_flush_raises():
         rp_fitness._terminate_unhealthy(1)
 
     mock_exit.assert_called_once_with(1)
+
+
+def test_report_unhealthy_posts_check_and_reason(monkeypatch):
+    monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping/$RUNPOD_POD_ID")
+    monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
+
+    fake_session = MagicMock()
+    with patch("runpod.http_client.SyncClientSession", return_value=fake_session), \
+        patch("runpod.serverless.modules.worker_state.WORKER_ID", "podABC"):
+        rp_fitness._report_unhealthy("_cuda_init_check", "RuntimeError: boom")
+
+    assert fake_session.get.call_count == 1
+    call = fake_session.get.call_args
+    url = call.args[0] if call.args else call.kwargs["url"]
+    params = call.kwargs["params"]
+    assert "podABC" in url  # $RUNPOD_POD_ID substituted
+    assert params["status"] == "unhealthy"
+    assert params["check"] == "_cuda_init_check"
+    assert params["reason"] == "RuntimeError: boom"
+    fake_session.headers.update.assert_called_once_with({"Authorization": "key-123"})
+
+
+def test_report_unhealthy_skipped_without_ping_url(monkeypatch):
+    monkeypatch.delenv("RUNPOD_WEBHOOK_PING", raising=False)
+    monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
+    with patch("runpod.http_client.SyncClientSession") as session_cls:
+        rp_fitness._report_unhealthy("_memory_check", "RuntimeError: low")
+    session_cls.assert_not_called()
+
+
+def test_report_unhealthy_truncates_long_reason(monkeypatch):
+    monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping")
+    monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
+
+    fake_session = MagicMock()
+    with patch("runpod.http_client.SyncClientSession", return_value=fake_session):
+        rp_fitness._report_unhealthy("_disk_check", "x" * 300)
+
+    params = fake_session.get.call_args.kwargs["params"]
+    assert len(params["reason"]) == 256
+
+
+def test_report_unhealthy_skipped_without_api_key(monkeypatch):
+    monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping")
+    monkeypatch.delenv("RUNPOD_AI_API_KEY", raising=False)
+    with patch("runpod.http_client.SyncClientSession") as session_cls:
+        rp_fitness._report_unhealthy("_memory_check", "RuntimeError: low")
+    session_cls.assert_not_called()
+
+
+def test_report_unhealthy_swallows_errors(monkeypatch):
+    monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping")
+    monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
+    fake_session = MagicMock()
+    fake_session.get.side_effect = RuntimeError("network down")
+    with patch("runpod.http_client.SyncClientSession", return_value=fake_session):
+        rp_fitness._report_unhealthy("_disk_check", "RuntimeError: full")  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_failure_reports_before_exit():
+    from runpod.serverless.modules.rp_fitness import register_fitness_check, run_fitness_checks
+
+    @register_fitness_check
+    def _cuda_init_check():
+        raise RuntimeError("device busy")
+
+    with patch("runpod.serverless.modules.rp_fitness._report_unhealthy") as mock_report:
+        with pytest.raises(SystemExit):
+            await run_fitness_checks()
+
+    mock_report.assert_called_once()
+    args = mock_report.call_args.args
+    assert args[0] == "_cuda_init_check"
+    assert "RuntimeError" in args[1] and "device busy" in args[1]
