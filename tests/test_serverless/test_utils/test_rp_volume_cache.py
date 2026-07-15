@@ -99,6 +99,20 @@ def test_scalar_dirs_path_is_treated_as_single_dir(tmp_path):
     assert vc_list._dirs == expected  # list input still works
 
 
+def test_bytes_dirs_are_normalized_to_text(tmp_path):
+    # A bytes path must be decoded to text; otherwise os.walk yields bytes
+    # names and _is_safe_dest compares bytes against str prefixes, raising a
+    # TypeError that best-effort mode would silently swallow.
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    cache = tmp_path / "cache"
+    expected = [os.path.realpath(str(cache))]
+
+    vc_bytes = VolumeCache(str(cache).encode(), namespace="ep1", volume_path=str(vol))
+    assert vc_bytes._dirs == expected
+    assert all(isinstance(d, str) for d in vc_bytes._dirs)
+
+
 # --------------------------------------------------------------------------- #
 # sync -> hydrate round trip
 # --------------------------------------------------------------------------- #

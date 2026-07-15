@@ -80,7 +80,10 @@ class VolumeCache:
             # A bare path is one directory, not an iterable of path characters:
             # `dirs="/root/.cache"` must not be split into "/", "r", "o", ...
             dirs = [dirs]
-        self._dirs = [os.path.realpath(os.fspath(d)) for d in dirs]
+        # Normalize to text paths: a bytes entry (e.g. dirs=b"...") would keep
+        # os.walk yielding bytes names and make _is_safe_dest compare bytes
+        # against str prefixes, raising TypeError that best-effort mode swallows.
+        self._dirs = [os.path.realpath(os.fsdecode(os.fspath(d))) for d in dirs]
         self._namespace = namespace or os.environ.get("RUNPOD_ENDPOINT_ID") or ""
         if self._namespace and (
             os.path.isabs(self._namespace)
