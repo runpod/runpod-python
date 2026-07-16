@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("runpod upload utility")
 FMT = "%(filename)-20s:%(lineno)-4d %(asctime)s %(message)s"
-logging.basicConfig(level=logging.INFO, format=FMT, handlers=[logging.StreamHandler()])
 
 
 def _import_boto3_dependencies():
