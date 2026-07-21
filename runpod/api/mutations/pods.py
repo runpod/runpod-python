@@ -31,6 +31,7 @@ def generate_pod_deployment_mutation(
     min_download: Optional[int] = None,
     min_upload: Optional[int] = None,
     instance_id: Optional[str] = None,
+    container_registry_auth_id: Optional[str] = None,
 ) -> str:
     """
     Generates a mutation to deploy a pod on demand.
@@ -92,6 +93,13 @@ def generate_pod_deployment_mutation(
         if allowed_cuda_versions is not None:
             cuda_versions = ", ".join(f'"{v}"' for v in allowed_cuda_versions)
             input_fields.append(f"allowedCudaVersions: [{cuda_versions}]")
+
+        if container_registry_auth_id is not None:
+            escaped_auth_id = (
+                container_registry_auth_id.replace(
+                    "\\", "\\\\").replace('"', "\\\"")
+                )
+            input_fields.append(f'containerRegistryAuthId: "{escaped_auth_id}"')
 
     # CPU Pod Fields
     else:
