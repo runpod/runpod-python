@@ -439,3 +439,4 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert mock_log.error.call_count == 1
         assert mock_log.info.call_count == 1
         mock_log.info.assert_called_with("Finished running generator.", "123")
+

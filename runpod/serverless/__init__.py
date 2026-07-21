@@ -17,12 +17,14 @@ from . import worker
 from .modules.rp_logger import RunPodLogger
 from .modules.rp_progress import progress_update
 from .modules.rp_fitness import register_fitness_check
+from .utils.rp_volume_cache import VolumeCache
 
 __all__ = [
     "start",
     "progress_update",
     "register_fitness_check",
-    "runpod_version"
+    "runpod_version",
+    "VolumeCache",
 ]
 
 log = RunPodLogger()
