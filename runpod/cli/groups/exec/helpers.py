@@ -30,6 +30,8 @@ def get_session_pod():
 
     # If file doesn't exist or is empty, prompt user for the pod_id
     pod_id = click.prompt("Please provide the pod ID")
+    if get_pod(pod_id) is None:
+        raise click.ClickException("Invalid pod ID.")
     os.makedirs(os.path.dirname(POD_ID_FILE), exist_ok=True)
     with open(POD_ID_FILE, "w", encoding="UTF-8") as pod_file:
         pod_file.write(pod_id)
