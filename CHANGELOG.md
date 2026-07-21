@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.11.0](https://github.com/runpod/runpod-python/compare/v1.10.1...v1.11.0) (2026-07-21)
+
+
+### Features
+
+* **serverless:** report fitness failure to host before force-exit ([#537](https://github.com/runpod/runpod-python/issues/537)) ([f95aef8](https://github.com/runpod/runpod-python/commit/f95aef892f673875f2cc9801e440486c40b1bc48))
+
+
+### Bug Fixes
+
+* **serverless:** force-kill worker on fitness check failure ([#536](https://github.com/runpod/runpod-python/issues/536)) ([08e07cb](https://github.com/runpod/runpod-python/commit/08e07cb5dded275b1bab0451940433fe2a1c8244))
+
 ## [1.10.1](https://github.com/runpod/runpod-python/compare/v1.10.0...v1.10.1) (2026-07-08)
 
 
