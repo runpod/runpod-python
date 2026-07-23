@@ -103,7 +103,7 @@ jobs:
           verbose: true
 
   # ──────────────────────────────────────────────
-  # Linear release tracking (SLS-171)
+  # Linear release tracking
   # ──────────────────────────────────────────────
 
   linear-sync:
