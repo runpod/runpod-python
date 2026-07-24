@@ -110,6 +110,8 @@ jobs:
     name: Linear Release Sync
     needs: release-please
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -127,6 +129,8 @@ jobs:
     if: ${{ needs.release-please.outputs.release_created }}
     needs: [release-please, linear-sync]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
