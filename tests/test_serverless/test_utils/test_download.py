@@ -170,6 +170,13 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
 class FileDownloaderTestCase(unittest.TestCase):
     """Tests for file()"""
 
+    def setUp(self):
+        # file() creates "job_files" (and an extraction dir for zips) relative to
+        # the cwd; keep the suite from writing into the working tree.
+        patcher = patch("os.makedirs", return_value=None)
+        self.mock_makedirs = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("runpod.serverless.utils.rp_download.safe_get")
     @patch("builtins.open", new_callable=mock_open)
     def test_download_file(self, mock_file, mock_get):

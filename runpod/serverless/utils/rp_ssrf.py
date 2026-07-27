@@ -17,6 +17,7 @@ from contextlib import suppress
 from typing import Iterator, List, Optional
 from urllib.parse import urljoin, urlparse
 
+from requests import ConnectionError as RequestsConnectionError
 from requests.adapters import HTTPAdapter
 
 from runpod.http_client import SyncClientSession
@@ -257,6 +258,46 @@ def iter_content_capped(response, chunk_size: int, max_bytes: Optional[int]) -> 
         yield chunk
 
 
+def _get_via_first_reachable_ip(ips, url: str, *, headers, stream, timeout):
+    """
+    GET `url` pinned to each validated IP in turn, returning the first that connects.
+
+    A hostname commonly resolves to several addresses (dual-stack AAAA + A), and
+    the first one may be unroutable from the worker — e.g. an IPv6 address on a
+    pod with no IPv6 route. Plain requests walks the address list; pinning to a
+    single IP would turn that into a hard download failure, so this preserves
+    the fallback while keeping every candidate pre-validated.
+
+    Only connection-level errors advance to the next address; an HTTP response
+    (any status) or any other exception is returned/raised immediately. Returns
+    the (session, response) pair so the caller owns teardown. Raises the last
+    connection error if no address is reachable.
+    """
+    last_error = None
+    for ip in ips:
+        session = _build_pinned_session(ip)
+        try:
+            response = session.get(
+                url,
+                headers=headers,
+                allow_redirects=False,
+                stream=stream,
+                timeout=timeout,
+            )
+        except RequestsConnectionError as err:
+            _close_session_quietly(session)
+            last_error = err
+            continue
+        except BaseException:
+            _close_session_quietly(session)
+            raise
+        return session, response
+
+    if last_error is None:  # resolve_and_validate never returns an empty list
+        raise SSRFError(f"no candidate addresses to connect to: {url}")
+    raise last_error
+
+
 def safe_get(
     url: str,
     *,
@@ -290,18 +331,9 @@ def safe_get(
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         ips = resolve_and_validate(parsed.hostname, port)
 
-        session = _build_pinned_session(ips[0])
-        try:
-            response = session.get(
-                current,
-                headers=headers,
-                allow_redirects=False,
-                stream=stream,
-                timeout=timeout,
-            )
-        except BaseException:
-            _close_session_quietly(session)
-            raise
+        session, response = _get_via_first_reachable_ip(
+            ips, current, headers=headers, stream=stream, timeout=timeout
+        )
 
         if response.status_code in _REDIRECT_STATUS:
             location = response.headers.get("Location")

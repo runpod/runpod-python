@@ -7,6 +7,7 @@ import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
+from requests import ConnectionError as RequestsConnectionError
 from requests import RequestException
 
 from runpod.serverless.utils.rp_ssrf import (
@@ -183,6 +184,54 @@ class TestSafeGet(unittest.TestCase):
         mock_session.return_value = session
 
         self.assertIs(safe_get("https://example.com/ok.jpg", max_bytes=4096), response)
+
+    @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
+    @patch(
+        "runpod.serverless.utils.rp_ssrf.resolve_and_validate",
+        return_value=["2606:2800:220:1:248:1893:25c8:1946", "93.184.216.34"],
+    )
+    def test_falls_back_to_next_validated_ip_when_first_is_unreachable(
+        self, _mock_resolve, mock_session
+    ):
+        """
+        A dual-stack host whose first address is unroutable from the worker (no
+        IPv6 route) must still download via the next validated address, as
+        plain requests would.
+        """
+        response = _FakeResponse(200, {"Content-Length": "500"})
+        unreachable, reachable = MagicMock(), MagicMock()
+        unreachable.get.side_effect = RequestsConnectionError("no route to host")
+        reachable.get.return_value = response
+        mock_session.side_effect = [unreachable, reachable]
+
+        result = safe_get("https://example.com/ok.jpg", max_bytes=4096)
+
+        self.assertIs(result, response)
+        # Both addresses were pinned, in resolution order, and the dead
+        # session was torn down rather than leaked.
+        self.assertEqual(
+            [call.args[0] for call in mock_session.call_args_list],
+            ["2606:2800:220:1:248:1893:25c8:1946", "93.184.216.34"],
+        )
+        unreachable.close.assert_called_once()
+
+    @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
+    @patch(
+        "runpod.serverless.utils.rp_ssrf.resolve_and_validate",
+        return_value=["203.0.113.10", "93.184.216.34"],
+    )
+    def test_raises_when_every_validated_ip_is_unreachable(self, _mock_resolve, mock_session):
+        """Exhausting all addresses surfaces the connection error, not a silent None."""
+        first, second = MagicMock(), MagicMock()
+        first.get.side_effect = RequestsConnectionError("no route to host")
+        second.get.side_effect = RequestsConnectionError("refused")
+        mock_session.side_effect = [first, second]
+
+        with self.assertRaises(RequestsConnectionError):
+            safe_get("https://example.com/ok.jpg")
+
+        first.close.assert_called_once()
+        second.close.assert_called_once()
 
     @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
     @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
