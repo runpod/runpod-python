@@ -2,20 +2,20 @@ aiohttp[speedups] >= 3.14.1
 aiohttp-retry >= 2.9.1
 
 backoff >= 2.2.1
-boto3 >= 1.43.40
-click >= 8.1.7
+boto3 >= 1.43.51
+click >= 8.4.2
 cloudpickle >= 3.0.0
 colorama >= 0.4.6, < 0.4.7
-cryptography >= 48.0.1
-fastapi[all] >= 0.138.1
+cryptography >= 49.0.0
+fastapi[all] >= 0.139.2
 paramiko >= 5.0.0
 prettytable >= 3.18.0
-psutil >= 5.9.0
+psutil >= 7.2.2
 py-cpuinfo >= 9.0.0
 inquirerpy == 0.3.4
 requests >= 2.34.2
 rich >= 13.0.0
 tomli >= 2.4.1
-tomlkit >= 0.15.0
+tomlkit >= 0.15.1
 tqdm-loggable >= 0.4.1
-urllib3 >= 1.26.6
+urllib3 >= 2.7.0

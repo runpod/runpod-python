@@ -102,6 +102,46 @@ jobs:
         with:
           verbose: true
 
+  # ──────────────────────────────────────────────
+  # Linear release tracking
+  # ──────────────────────────────────────────────
+
+  linear-sync:
+    name: Linear Release Sync
+    needs: release-please
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: linear/linear-release-action@v0
+        with:
+          access_key: ${{ secrets.LINEAR_RELEASE_ACCESS_KEY }}
+          command: sync
+          version: ${{ needs.release-please.outputs.tag_name }}
+          name: ${{ needs.release-please.outputs.tag_name && format('runpod-python {0}', needs.release-please.outputs.tag_name) || '' }}
+
+  linear-complete:
+    name: Linear Release Complete
+    if: ${{ needs.release-please.outputs.release_created }}
+    needs: [release-please, linear-sync]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: linear/linear-release-action@v0
+        with:
+          access_key: ${{ secrets.LINEAR_RELEASE_ACCESS_KEY }}
+          command: complete
+          version: ${{ needs.release-please.outputs.tag_name }}
+
   # TODO: Re-enable after optimizing (17 parallel jobs each sleeping 5min is wasteful).
   #        Consider a single job that sleeps once then dispatches sequentially.
   # notify-workers:
