@@ -5,8 +5,8 @@
 # @runpod.local_entrypoint and an `if __name__ == "__main__"` block, so
 # the same main() runs under all three:
 #
-#   dev     rp dev <file> --once   ephemeral endpoints, run entrypoint, tear down
-#   deploy  rp deploy <file>       persistent endpoints for the app
+#   dev     rp flash dev <file> --once   ephemeral endpoints, run entrypoint, tear down
+#   deploy  rp flash deploy <file>       persistent endpoints for the app
 #   invoke  python3 <file>         run main() against the deployed endpoints
 #
 # the deploy phase runs deploy -> invoke -> undeploy per file, so no
@@ -21,8 +21,8 @@
 #     ./run_all.sh 01 05 08        # subset by prefix
 #
 # env toggles:
-#     SKIP_DEV=1     skip the rp dev phase
-#     SKIP_DEPLOY=1  skip the rp deploy/python3 phase
+#     SKIP_DEV=1     skip the rp flash dev phase
+#     SKIP_DEPLOY=1  skip the rp flash deploy/python3 phase
 #     KEEP=1         leave deployed endpoints up (skip undeploy)
 
 set -uo pipefail
@@ -85,7 +85,7 @@ echo
 # ---------------------------------------------------------------- dev
 if [ -z "${SKIP_DEV:-}" ]; then
     for f in "${files[@]}"; do
-        run_step dev "$(basename "$f")" rp dev "$f" --once
+        run_step dev "$(basename "$f")" rp flash dev "$f" --once
     done
 fi
 
@@ -95,11 +95,11 @@ if [ -z "${SKIP_DEPLOY:-}" ]; then
         name="$(basename "$f")"
         app="$(app_name_of "$f")"
 
-        if run_step deploy "$name" rp deploy "$f"; then
+        if run_step deploy "$name" rp flash deploy "$f"; then
             run_step invoke "$name" python3 "$f"
             if [ -z "${KEEP:-}" ] && [ -n "$app" ]; then
-                echo ">>> cleanup: rp undeploy -a $app -y"
-                rp undeploy -a "$app" -y || echo "!!! cleanup failed for $app" >&2
+                echo ">>> cleanup: rp flash undeploy -a $app -y"
+                rp flash undeploy -a "$app" -y || echo "!!! cleanup failed for $app" >&2
                 echo
             fi
         fi

@@ -1,4 +1,4 @@
-"""drive the deployed e2e matrix. run AFTER `rp deploy tests/e2e/matrix`.
+"""drive the deployed e2e matrix. run AFTER `rp flash deploy tests/e2e/matrix`.
 
     RUNPOD_RUNTIME_TAG=dev python tests/e2e/matrix/run.py [--only q-basic,...]
 

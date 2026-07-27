@@ -1,6 +1,6 @@
 """a load-balanced http service from a class with route markers.
 
-    rp dev tests/e2e/examples/05_api_service.py --once
+    rp flash dev tests/e2e/examples/05_api_service.py --once
 """
 
 import runpod

@@ -14,7 +14,7 @@ class Context(Enum):
     """dev machine, plain `python main.py`."""
 
     DEV = "dev"
-    """inside an `rp dev` session (ephemeral live provisioning)."""
+    """inside an `rp flash dev` session (ephemeral live provisioning)."""
 
     WORKER = "worker"
     """inside a runpod serverless endpoint or pod."""

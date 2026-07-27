@@ -7,7 +7,7 @@ writes a checkpoint, evaluate() reads it from a different pod. The
 volume is created on first use, and both tasks are automatically
 placed in its datacenter.
 
-    rp dev examples/apps/train_and_eval.py
+    rp flash dev examples/apps/train_and_eval.py
 """
 
 import runpod

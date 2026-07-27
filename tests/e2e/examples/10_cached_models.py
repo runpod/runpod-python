@@ -1,6 +1,6 @@
 """platform-cached model weights: staged on the host before the worker starts.
 
-    rp dev tests/e2e/examples/10_cached_models.py --once
+    rp flash dev tests/e2e/examples/10_cached_models.py --once
 """
 
 import runpod

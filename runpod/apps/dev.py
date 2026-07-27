@@ -1,4 +1,4 @@
-"""dev session: ephemeral live endpoints for `rp dev`.
+"""dev session: ephemeral live endpoints for `rp flash dev`.
 
 lifecycle: get-or-create endpoints named dev-{app}-{resource} on the
 generic worker images (adopting leftovers from a killed session), run
@@ -188,7 +188,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
 
 
 class DevSession:
-    """owns the live endpoints for one `rp dev` invocation.
+    """owns the live endpoints for one `rp flash dev` invocation.
 
     lifecycle: adopt-or-create by name on start, reconcile on refresh
     (config updates + a generation bump that recreates workers so every

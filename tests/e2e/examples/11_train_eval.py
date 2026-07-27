@@ -1,6 +1,6 @@
 """a real workflow: train on one gpu pod, save to a volume, eval on another.
 
-    rp dev tests/e2e/examples/11_train_eval.py --once
+    rp flash dev tests/e2e/examples/11_train_eval.py --once
 """
 
 import runpod

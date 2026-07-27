@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 class AppNotFound(AppError):
     def __init__(self, app_name: str):
         super().__init__(
-            f"no app named '{app_name}' found. run `rp deploy` to create one."
+            f"no app named '{app_name}' found. run `rp flash deploy` to create one."
         )
 
 

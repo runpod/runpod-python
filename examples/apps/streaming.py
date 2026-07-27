@@ -7,7 +7,7 @@ job can be streamed later with job.stream().
 
 Try it:
 
-    rp dev examples/apps/streaming.py
+    rp flash dev examples/apps/streaming.py
 """
 
 import time

@@ -1,6 +1,6 @@
 """gpu selection: shorthand names resolve to real devices.
 
-    rp dev tests/e2e/examples/03_gpu.py --once
+    rp flash dev tests/e2e/examples/03_gpu.py --once
 """
 
 import runpod

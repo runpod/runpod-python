@@ -65,8 +65,8 @@ def main():
 ```
 
 ```bash
-rp dev main.py    # live dev session: edit, re-run, logs stream back
-rp deploy         # deploy production endpoints
+rp flash dev main.py    # live dev session: edit, re-run, logs stream back
+rp flash deploy         # deploy production endpoints
 ```
 
 Functions keep their Python identity: `chat.remote(...)` runs in the cloud, `await chat.remote.aio(...)` is the async form, `chat.local(...)` runs in-process. See [`examples/apps`](examples/apps) for runnable examples and [docs.runpod.io](https://docs.runpod.io) for the full guide.

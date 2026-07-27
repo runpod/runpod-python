@@ -1,4 +1,4 @@
-"""module discovery for `rp deploy` and `rp dev`.
+"""module discovery for `rp flash deploy` and `rp flash dev`.
 
 imports target modules under __name__ != "__main__" (so main guards
 never run) and collects App instances from the registry. a per-module

@@ -5,7 +5,7 @@ pool ids like GpuGroup.ADA_24 and exact device names. Dependencies
 listed on the decorator are ready before your function runs, so the
 worker needs no custom image.
 
-    rp dev examples/apps/gpu_inference.py
+    rp flash dev examples/apps/gpu_inference.py
 """
 
 import runpod

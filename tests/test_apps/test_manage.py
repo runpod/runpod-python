@@ -38,7 +38,7 @@ class TestQueries:
         assert [a["name"] for a in apps] == ["alpha", "zeta"]
 
     def test_get_app_not_found(self):
-        with pytest.raises(AppNotFound, match="rp deploy"):
+        with pytest.raises(AppNotFound, match="rp flash deploy"):
             asyncio.run(get_app("ghost", api=_api()))
 
     def test_get_environment_not_found(self):

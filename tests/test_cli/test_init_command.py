@@ -1,4 +1,4 @@
-"""rp init: project scaffolding."""
+"""rp flash init: project scaffolding."""
 
 from pathlib import Path
 
@@ -52,14 +52,14 @@ class TestInitCommand:
     def test_init_new_project(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(cli, ["init", "demo"])
+        result = runner.invoke(cli, ["flash", "init", "demo"])
         assert result.exit_code == 0, result.output
         assert (tmp_path / "demo" / "main.py").exists()
 
     def test_init_current_directory(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(cli, ["init", "."])
+        result = runner.invoke(cli, ["flash", "init", "."])
         assert result.exit_code == 0, result.output
         assert (tmp_path / "main.py").exists()
         assert tmp_path.name in (tmp_path / "main.py").read_text()
@@ -68,7 +68,7 @@ class TestInitCommand:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "main.py").write_text("keep me")
         runner = CliRunner()
-        result = runner.invoke(cli, ["init", "."])
+        result = runner.invoke(cli, ["flash", "init", "."])
         assert result.exit_code != 0
         assert "main.py" in result.output
         assert (tmp_path / "main.py").read_text() == "keep me"
@@ -77,6 +77,6 @@ class TestInitCommand:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "main.py").write_text("old")
         runner = CliRunner()
-        result = runner.invoke(cli, ["init", ".", "--force"])
+        result = runner.invoke(cli, ["flash", "init", ".", "--force"])
         assert result.exit_code == 0, result.output
         assert "App(" in (tmp_path / "main.py").read_text()

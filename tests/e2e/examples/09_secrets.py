@@ -3,7 +3,7 @@
 requires the secret to exist first:
 
     rp secret add ex-demo-secret --value "s3cret"
-    rp dev tests/e2e/examples/09_secrets.py --once
+    rp flash dev tests/e2e/examples/09_secrets.py --once
 """
 
 import runpod

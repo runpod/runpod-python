@@ -4,7 +4,7 @@
     async def main():
         result = transcribe.remote("https://...")
 
-the decorated function is registered so `rp dev <module>` can find and
+the decorated function is registered so `rp flash dev <module>` can find and
 run it (sync or async). importing the module never executes it.
 """
 

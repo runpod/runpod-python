@@ -8,7 +8,7 @@
     @app.queue(name="transcribe", gpu=GpuType.NVIDIA_GEFORCE_RTX_4090)
     async def transcribe(audio_url: str): ...
 
-`rp deploy` imports project modules, collects App instances from the
+`rp flash deploy` imports project modules, collects App instances from the
 module-level registry, and ships each app's resources. resolution of
 deployed resources is fully server-side (sentinel headers), so apps hold
 no persistent local state.

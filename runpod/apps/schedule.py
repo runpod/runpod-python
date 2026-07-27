@@ -1,6 +1,6 @@
 """the @schedule decorator: records a cron expression on a handle.
 
-schedules only take effect through `rp deploy` (the schedule must live
+schedules only take effect through `rp flash deploy` (the schedule must live
 server-side). recurring schedule execution is gated on backend support;
 deploying a scheduled resource raises ScheduleNotSupported until it lands.
 """

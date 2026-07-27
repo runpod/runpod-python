@@ -5,7 +5,7 @@
 it takes traffic. Workers keep state between requests — this counter
 lives in memory on the worker.
 
-    rp dev examples/apps/web_service.py
+    rp flash dev examples/apps/web_service.py
 
 Deployed services get a stable URL; in dev you call routes through the
 class itself, as shown in the entrypoint.

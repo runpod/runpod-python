@@ -6,7 +6,7 @@ the call to a cloud worker and blocks until the result comes back.
 
 Try it:
 
-    rp dev examples/apps/hello_world.py
+    rp flash dev examples/apps/hello_world.py
 
 Edit the greeting while the session is running, then press enter to
 re-run — the worker picks up your new code automatically.

@@ -8,8 +8,8 @@ three modes:
 
 | mode   | command              | what it exercises                             |
 | ------ | -------------------- | --------------------------------------------- |
-| dev    | `rp dev <file> --once` | ephemeral endpoints, entrypoint, teardown   |
-| deploy | `rp deploy <file>`     | persistent endpoints for the app            |
+| dev    | `rp flash dev <file> --once` | ephemeral endpoints, entrypoint, teardown   |
+| deploy | `rp flash deploy <file>`     | persistent endpoints for the app            |
 | invoke | `python3 <file>`       | `main()` against the deployed endpoints     |
 
 `run_all.sh` runs every example through all three (the deploy phase does

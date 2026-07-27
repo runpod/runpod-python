@@ -12,10 +12,34 @@ def _runner():
     return CliRunner()
 
 
+class TestCommandLayout:
+    def test_flash_owns_app_commands(self):
+        flash = cli.commands["flash"]
+        assert set(flash.commands) == {
+            "app",
+            "deploy",
+            "dev",
+            "env",
+            "init",
+            "undeploy",
+        }
+
+    def test_app_commands_are_not_root_commands(self):
+        assert not {
+            "app",
+            "deploy",
+            "dev",
+            "env",
+            "init",
+            "undeploy",
+        } & set(cli.commands)
+        assert {"registry", "secret"} <= set(cli.commands)
+
+
 class TestAppCommands:
     def test_list_empty(self):
         with patch("runpod.apps.manage.list_apps", AsyncMock(return_value=[])):
-            result = _runner().invoke(cli, ["app", "list"])
+            result = _runner().invoke(cli, ["flash", "app", "list"])
         assert result.exit_code == 0
         assert "no apps deployed" in result.output
 
@@ -30,7 +54,7 @@ class TestAppCommands:
         with patch(
             "runpod.apps.manage.list_apps", AsyncMock(return_value=apps)
         ):
-            result = _runner().invoke(cli, ["app", "list"])
+            result = _runner().invoke(cli, ["flash", "app", "list"])
         assert result.exit_code == 0
         assert "demo" in result.output
         assert "default, prod" in result.output
@@ -45,7 +69,7 @@ class TestAppCommands:
         with patch(
             "runpod.apps.manage.get_app", AsyncMock(return_value=entry)
         ):
-            result = _runner().invoke(cli, ["app", "get", "demo"])
+            result = _runner().invoke(cli, ["flash", "app", "get", "demo"])
         assert result.exit_code == 0
         assert "build1234567" in result.output
 
@@ -54,7 +78,7 @@ class TestAppCommands:
             "runpod.apps.manage.get_app",
             AsyncMock(side_effect=RuntimeError("no app named 'demo'")),
         ):
-            result = _runner().invoke(cli, ["app", "get", "demo"])
+            result = _runner().invoke(cli, ["flash", "app", "get", "demo"])
         assert result.exit_code == 1
         assert "no app named" in result.output
 
@@ -63,11 +87,11 @@ class TestAppCommands:
         with patch(
             "runpod.apps.manage.delete_app", AsyncMock(return_value=outcome)
         ):
-            result = _runner().invoke(cli, ["app", "delete", "demo", "--yes"])
+            result = _runner().invoke(cli, ["flash", "app", "delete", "demo", "--yes"])
         assert result.exit_code == 0
 
     def test_delete_aborts_without_confirmation(self):
-        result = _runner().invoke(cli, ["app", "delete", "demo"], input="n\n")
+        result = _runner().invoke(cli, ["flash", "app", "delete", "demo"], input="n\n")
         assert result.exit_code == 1
 
     def test_delete_failures_keep_app(self):
@@ -75,7 +99,7 @@ class TestAppCommands:
         with patch(
             "runpod.apps.manage.delete_app", AsyncMock(return_value=outcome)
         ):
-            result = _runner().invoke(cli, ["app", "delete", "demo", "--yes"])
+            result = _runner().invoke(cli, ["flash", "app", "delete", "demo", "--yes"])
         assert result.exit_code == 1
         assert "undeploy incomplete" in result.output
 
@@ -95,7 +119,7 @@ class TestEnvCommands:
             "runpod.apps.manage.get_app", AsyncMock(return_value=entry)
         ):
             result = _runner().invoke(
-                cli, ["env", "list", "--app", "demo"]
+                cli, ["flash", "env", "list", "--app", "demo"]
             )
         assert result.exit_code == 0
         assert "default" in result.output
@@ -105,7 +129,7 @@ class TestEnvCommands:
             "runpod.apps.manage.get_app",
             AsyncMock(return_value={"flashEnvironments": []}),
         ):
-            result = _runner().invoke(cli, ["env", "list", "--app", "demo"])
+            result = _runner().invoke(cli, ["flash", "env", "list", "--app", "demo"])
         assert result.exit_code == 0
         assert "no environments" in result.output
 
@@ -120,7 +144,7 @@ class TestEnvCommands:
             AsyncMock(return_value=entry),
         ):
             result = _runner().invoke(
-                cli, ["env", "get", "prod", "--app", "demo"]
+                cli, ["flash", "env", "get", "prod", "--app", "demo"]
             )
         assert result.exit_code == 0
         assert "demo/prod" in result.output
@@ -137,7 +161,7 @@ class TestEnvCommands:
             ),
         ):
             result = _runner().invoke(
-                cli, ["env", "add", "staging", "--app", "demo"]
+                cli, ["flash", "env", "add", "staging", "--app", "demo"]
             )
         assert result.exit_code == 0
         client.create_environment.assert_awaited_once_with("app1", "staging")
@@ -149,13 +173,13 @@ class TestEnvCommands:
             AsyncMock(return_value=outcome),
         ):
             result = _runner().invoke(
-                cli, ["env", "delete", "prod", "--app", "demo", "--yes"]
+                cli, ["flash", "env", "delete", "prod", "--app", "demo", "--yes"]
             )
         assert result.exit_code == 0
 
     def test_resolve_app_name_fails_without_unique_app(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        result = _runner().invoke(cli, ["env", "list"])
+        result = _runner().invoke(cli, ["flash", "env", "list"])
         assert result.exit_code == 1
         assert "--app" in result.output
 
@@ -168,7 +192,7 @@ class TestUndeploy:
             AsyncMock(return_value=outcome),
         ):
             result = _runner().invoke(
-                cli, ["undeploy", "--app", "demo", "--yes"]
+                cli, ["flash", "undeploy", "--app", "demo", "--yes"]
             )
         assert result.exit_code == 0
         assert "3 endpoints removed" in result.output
@@ -180,7 +204,7 @@ class TestUndeploy:
             AsyncMock(return_value=outcome),
         ):
             result = _runner().invoke(
-                cli, ["undeploy", "--app", "demo", "--yes"]
+                cli, ["flash", "undeploy", "--app", "demo", "--yes"]
             )
         assert result.exit_code == 1
 

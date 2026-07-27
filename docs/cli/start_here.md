@@ -18,4 +18,4 @@ Once a key is added, open a terminal on any pod with `rp ssh <pod_id>` (or the e
 
 ## Apps
 
-An app is a collection of Python functions that run on Runpod. Scaffold one with `rp init`, iterate on it live with `rp dev main.py`, and ship it with `rp deploy`. See the [README](../../README.md) for the full workflow.
+An app is a collection of Python functions that run on Runpod. Scaffold one with `rp flash init`, iterate on it live with `rp flash dev main.py`, and ship it with `rp flash deploy`. See the [README](../../README.md) for the full workflow.

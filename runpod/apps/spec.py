@@ -1,7 +1,7 @@
 """resource specifications produced by app decorators.
 
 a ResourceSpec is the declarative description of one deployable resource.
-it is what the manifest serializes, what `rp deploy` ships to the backend,
+it is what the manifest serializes, what `rp flash deploy` ships to the backend,
 and what dev-session provisioning consumes. it holds no live state.
 """
 

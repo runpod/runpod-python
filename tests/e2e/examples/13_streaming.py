@@ -1,6 +1,6 @@
 """streaming permutations: sync/async generators, every consumption style.
 
-    rp dev tests/e2e/examples/13_streaming.py --once
+    rp flash dev tests/e2e/examples/13_streaming.py --once
 """
 
 import asyncio

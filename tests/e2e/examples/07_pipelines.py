@@ -1,6 +1,6 @@
 """functions calling functions: workers invoke sibling resources remotely.
 
-    rp dev tests/e2e/examples/07_pipelines.py --once
+    rp flash dev tests/e2e/examples/07_pipelines.py --once
 """
 
 import runpod

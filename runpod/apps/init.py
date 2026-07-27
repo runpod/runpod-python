@@ -1,4 +1,4 @@
-"""project scaffolding for `rp init`.
+"""project scaffolding for `rp flash init`.
 
 writes a minimal app project: a main module with one queue function and
 a local entrypoint, a requirements file, and a .runpodignore. existing
@@ -12,11 +12,11 @@ MAIN_TEMPLATE = '''"""{name}: a Runpod app.
 
 Run it live:
 
-    rp dev main.py
+    rp flash dev main.py
 
 Deploy it:
 
-    rp deploy
+    rp flash deploy
 """
 
 import runpod
@@ -27,7 +27,7 @@ app = App("{name}")
 
 @app.queue(cpu="cpu3c-1-2")
 def hello(name: str):
-    # this print streams back to your terminal during rp dev
+    # this print streams back to your terminal during rp flash dev
     print(f"running in the cloud, greeting {{name}}")
     return f"hello {{name}}!"
 
@@ -39,7 +39,7 @@ def main():
 '''
 
 REQUIREMENTS_TEMPLATE = """# packages your functions need on the workers
-# (also installed locally for rp dev)
+# (also installed locally for rp flash dev)
 """
 
 RUNPODIGNORE_TEMPLATE = """# excluded from the deploy artifact

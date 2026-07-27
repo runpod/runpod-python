@@ -1,4 +1,4 @@
-"""tests for rp deploy and rp dev command wiring."""
+"""tests for rp flash deploy and rp flash dev command wiring."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -66,7 +66,7 @@ class TestDeploy:
         monkeypatch.chdir(tmp_path)
         deploy_app = AsyncMock(return_value=_result())
         with patch("runpod.apps.deploy.deploy_app", deploy_app):
-            result = _runner().invoke(cli, ["deploy"])
+            result = _runner().invoke(cli, ["flash", "deploy"])
         assert result.exit_code == 0, result.output
         assert "demo/default" in result.output
         assert "ep1" in result.output
@@ -77,7 +77,7 @@ class TestDeploy:
         monkeypatch.chdir(tmp_path)
         deploy_app = AsyncMock(return_value=_result())
         with patch("runpod.apps.deploy.deploy_app", deploy_app):
-            result = _runner().invoke(cli, ["deploy", "--env", "prod"])
+            result = _runner().invoke(cli, ["flash", "deploy", "--env", "prod"])
         assert result.exit_code == 0
         assert deploy_app.call_args[1]["env_name"] == "prod"
         assert "demo/prod" in result.output
@@ -89,21 +89,21 @@ class TestDeploy:
             side_effect=[_result("demo"), _result("other", {"embed": "ep2"})]
         )
         with patch("runpod.apps.deploy.deploy_app", deploy_app):
-            result = _runner().invoke(cli, ["deploy"])
+            result = _runner().invoke(cli, ["flash", "deploy"])
         assert result.exit_code == 0, result.output
         assert "2 apps" in result.output
         assert deploy_app.await_count == 2
 
     def test_missing_target(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        result = _runner().invoke(cli, ["deploy", "missing_dir"])
+        result = _runner().invoke(cli, ["flash", "deploy", "missing_dir"])
         assert result.exit_code == 1
         assert "does not exist" in result.output
 
     def test_no_apps_found(self, tmp_path, monkeypatch):
         (tmp_path / "main.py").write_text("x = 1\n")
         monkeypatch.chdir(tmp_path)
-        result = _runner().invoke(cli, ["deploy"])
+        result = _runner().invoke(cli, ["flash", "deploy"])
         assert result.exit_code == 1
         assert "no runpod.App found" in result.output
 
@@ -112,7 +112,7 @@ class TestDeploy:
         monkeypatch.chdir(tmp_path)
         deploy_app = AsyncMock(side_effect=RuntimeError("upload failed"))
         with patch("runpod.apps.deploy.deploy_app", deploy_app):
-            result = _runner().invoke(cli, ["deploy"])
+            result = _runner().invoke(cli, ["flash", "deploy"])
         assert result.exit_code == 1
         assert "upload failed" in result.output
         assert "Traceback" not in result.output
@@ -124,7 +124,7 @@ class TestDeploy:
         artifact.write_bytes(b"x" * 100)
         build = MagicMock(return_value=artifact)
         with patch("runpod.apps.deploy.build_artifact", build):
-            result = _runner().invoke(cli, ["deploy", "--build-only"])
+            result = _runner().invoke(cli, ["flash", "deploy", "--build-only"])
         assert result.exit_code == 0, result.output
         assert "demo-artifact.tar.gz" in result.output
         assert build.call_args[1]["output"] == artifact
@@ -135,7 +135,7 @@ class TestDeploy:
         deploy_app = AsyncMock(return_value=_result())
         with patch("runpod.apps.deploy.deploy_app", deploy_app):
             result = _runner().invoke(
-                cli, ["deploy", "--exclude", "torch,numpy"]
+                cli, ["flash", "deploy", "--exclude", "torch,numpy"]
             )
         assert result.exit_code == 0
         assert deploy_app.call_args[1]["exclude"] == ["torch", "numpy"]
@@ -151,7 +151,7 @@ class TestDeploy:
                 side_effect=RuntimeError("3.9 unsupported"),
             ),
         ):
-            result = _runner().invoke(cli, ["deploy"])
+            result = _runner().invoke(cli, ["flash", "deploy"])
         assert result.exit_code == 0
         assert "no runtime image" in result.output
 
@@ -173,7 +173,7 @@ class TestDev:
             return session
 
         with patch("runpod.apps.dev.DevSession", side_effect=make_session):
-            result = _runner().invoke(cli, ["dev", str(module), "--once"])
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
         assert result.exit_code == 0, result.output
         session.start.assert_awaited_once()
         session.stop.assert_awaited_once()
@@ -197,7 +197,7 @@ class TestDev:
             return session
 
         with patch("runpod.apps.dev.DevSession", side_effect=make_session):
-            result = _runner().invoke(cli, ["dev", str(module), "--once"])
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
         assert result.exit_code == 1
         session.stop.assert_awaited_once()
 
@@ -205,7 +205,7 @@ class TestDev:
         module = tmp_path / "main.py"
         module.write_text(APP_SOURCE)
         monkeypatch.chdir(tmp_path)
-        result = _runner().invoke(cli, ["dev", str(module), "--once"])
+        result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
         assert result.exit_code == 1
         assert "local_entrypoint" in result.output
 
@@ -213,11 +213,11 @@ class TestDev:
         module = tmp_path / "main.py"
         module.write_text("x = 1\n")
         monkeypatch.chdir(tmp_path)
-        result = _runner().invoke(cli, ["dev", str(module), "--once"])
+        result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
         assert result.exit_code == 1
         assert "no runpod.App" in result.output
 
     def test_missing_module(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        result = _runner().invoke(cli, ["dev", "missing.py", "--once"])
+        result = _runner().invoke(cli, ["flash", "dev", "missing.py", "--once"])
         assert result.exit_code == 2

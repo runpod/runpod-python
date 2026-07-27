@@ -13,7 +13,7 @@ class EndpointNotFound(AppError):
         self.resource_name = resource_name
         super().__init__(
             f"'{resource_name}' in app '{app_name}' is not deployed. "
-            f"run `rp deploy` first, or use .local() to run it here."
+            f"run `rp flash deploy` first, or use .local() to run it here."
         )
 
 

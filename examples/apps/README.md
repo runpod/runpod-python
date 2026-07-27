@@ -1,10 +1,10 @@
 # app examples
 
 each file is a self-contained app showing one way to use the sdk.
-run any of them live with `rp dev`:
+run any of them live with `rp flash dev`:
 
 ```bash
-rp dev examples/apps/hello_world.py
+rp flash dev examples/apps/hello_world.py
 ```
 
 | example | shows |

@@ -1,6 +1,6 @@
 """tasks: one ephemeral pod per call, terminated when done.
 
-    rp dev tests/e2e/examples/06_tasks.py --once
+    rp flash dev tests/e2e/examples/06_tasks.py --once
 """
 
 import runpod

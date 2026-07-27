@@ -1,10 +1,9 @@
 """the `rp` / `runpod` cli.
 
-a single plain-click command tree: app commands (deploy, dev, logs,
-login) and the pod/ssh/exec/config groups all hang off one root, so
-help, errors, and exit codes behave identically at every level. rich
-is used only for runtime output (progress, lifecycle lines), never for
-help rendering.
+flash app commands share one namespace while account, registry, secret,
+logs, pod, and ssh commands remain on the root. help, errors, and exit
+codes behave identically at every level. rich is used only for runtime
+output, never for help rendering.
 """
 
 import asyncio
@@ -17,14 +16,25 @@ import click
 
 # commands whose output would be polluted by (or that manage) the
 # update notice
-_UPDATE_CHECK_EXCLUDED = frozenset({"dev", "update"})
+_UPDATE_CHECK_EXCLUDED = frozenset({"flash", "update"})
+_FLASH_UPDATE_CHECK_EXCLUDED = frozenset({"dev"})
 
 
 @click.group()
 @click.pass_context
 def cli(ctx):
-    """Runpod CLI: deploy and manage apps, endpoints, and pods."""
+    """Runpod CLI: manage Flash apps, endpoints, and pods."""
     if ctx.invoked_subcommand not in _UPDATE_CHECK_EXCLUDED:
+        from runpod.rp_cli.update import start_background_check
+
+        start_background_check()
+
+
+@cli.group()
+@click.pass_context
+def flash(ctx):
+    """Build, develop, and manage Flash apps."""
+    if ctx.invoked_subcommand not in _FLASH_UPDATE_CHECK_EXCLUDED:
         from runpod.rp_cli.update import start_background_check
 
         start_background_check()
@@ -48,7 +58,7 @@ def _app_source(found, project_root: Path) -> str:
 # ------------------------------------------------------------------ init
 
 
-@cli.command()
+@flash.command()
 @click.argument("project_name", required=False)
 @click.option("--force", "-f", is_flag=True, help="Overwrite existing files.")
 def init(project_name, force):
@@ -80,7 +90,7 @@ def init(project_name, force):
     if project_dir != Path.cwd():
         ui.console.print(f"  [dim]cd {project_name}[/dim]")
     ui.console.print("  [dim]rp login[/dim]")
-    ui.console.print("  [dim]rp dev main.py[/dim]")
+    ui.console.print("  [dim]rp flash dev main.py[/dim]")
     ui.console.print()
 
 
@@ -134,7 +144,7 @@ def update(version_opt):
 # ---------------------------------------------------------------- deploy
 
 
-@cli.command()
+@flash.command()
 @click.argument("target", required=False, type=click.Path(path_type=Path))
 @click.option("--env", "-e", "env", default=None, help="Target environment name.")
 @click.option(
@@ -283,7 +293,7 @@ def deploy(target, env, python_version, exclude, build_only):
 # ------------------------------------------------------------------- dev
 
 
-@cli.command()
+@flash.command()
 @click.argument("module", type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--once",
@@ -567,7 +577,7 @@ def _fmt_ts(value) -> str:
     return text[:10] if len(text) >= 10 else text
 
 
-@cli.group()
+@flash.group()
 def app():
     """Manage deployed apps."""
 
@@ -584,7 +594,9 @@ def app_list():
         raise click.ClickException(str(exc)) from exc
 
     if not apps:
-        ui.console.print("\n  no apps deployed. run [white]rp deploy[/white]\n")
+        ui.console.print(
+            "\n  no apps deployed. run [white]rp flash deploy[/white]\n"
+        )
         return
 
     width = max(len(a["name"]) for a in apps)
@@ -820,7 +832,7 @@ def secret_delete(name, yes):
     ui.success(f"deleted secret [white]{name}[/white]")
 
 
-@cli.group()
+@flash.group()
 def env():
     """Manage app environments."""
 
@@ -856,7 +868,8 @@ def env_list(app_name):
     envs = entry.get("flashEnvironments") or []
     if not envs:
         ui.console.print(
-            f"\n  no environments in [white]{name}[/white]. run [white]rp deploy[/white]\n"
+            f"\n  no environments in [white]{name}[/white]. "
+            f"run [white]rp flash deploy[/white]\n"
         )
         return
     ui.console.print()
@@ -958,7 +971,7 @@ def env_delete(env_name, app_name, yes):
     )
 
 
-@cli.command()
+@flash.command()
 @click.option("--app", "-a", "app_name", default=None, help="App name.")
 @click.option("--env", "-e", "env_name", default="default", show_default=True)
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
