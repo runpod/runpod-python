@@ -446,62 +446,6 @@ class TestModuleSourceShipping:
         finally:
             sys.modules.pop("shipmod", None)
 
-    def test_execute_request_unwraps_handles(self):
-        # a shipped module defines decorated handles; the runner must
-        # call the wrapped function, not the handle
-        from runpod.runtimes.executor import execute_request
-
-        code = (
-            "import runpod\n"
-            "app = runpod.App('t')\n"
-            "@app.queue()\n"
-            "def double(x):\n"
-            "    return x * 2\n"
-        )
-        response = execute_request(
-            {
-                "function_name": "double",
-                "function_code": code,
-                "args": [],
-                "kwargs": {"x": "AAA"},
-                "serialization_format": "json",
-            }
-        )
-        assert response["success"], response.get("error")
-        assert response["json_result"] == "AAAAAA"
-
-    def test_nested_source_extraction_from_shipped_module(self):
-        # inside a live worker, a function calling sibling.remote()
-        # re-extracts that sibling's source via inspect; the shipped
-        # module must be inspectable after exec
-        from runpod.runtimes.executor import execute_request
-
-        code = (
-            "import runpod\n"
-            "app = runpod.App('t2')\n"
-            "@app.queue()\n"
-            "def sibling(x):\n"
-            "    return x\n"
-            "@app.queue()\n"
-            "def caller():\n"
-            "    from runpod.apps.serialization import get_function_source\n"
-            "    return get_function_source(sibling._fn)\n"
-        )
-        response = execute_request(
-            {
-                "function_name": "caller",
-                "function_code": code,
-                "args": [],
-                "kwargs": {},
-                "serialization_format": "json",
-            }
-        )
-        assert response["success"], response.get("error")
-        # the whole module re-ships (decorators intact), matching what
-        # the first hop sent
-        assert "def sibling" in response["json_result"]
-        assert "@app.queue()" in response["json_result"]
-
     def test_missing_module_on_deserialize_is_actionable(self):
         import base64
 

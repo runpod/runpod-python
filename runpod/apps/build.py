@@ -35,11 +35,9 @@ SIZE_PROHIBITIVE_PACKAGES = frozenset(
     }
 )
 
-# the worker runtime's actual dependency closure, a small subset of the
-# runpod package's full dependency list. the runpod package is vendored
-# without its dependencies (sdk/cli-only packages like boto3, paramiko,
-# and cryptography never load in a worker), so these must be vendored
-# explicitly to keep a dependency-free worker small.
+# the worker's runpod dependency closure, a small subset of the full sdk
+# dependency list. the package is vendored without sdk/cli-only packages
+# that never load in a worker.
 RUNTIME_REQUIREMENTS = (
     "aiohttp[speedups]",
     "aiohttp-retry",
@@ -145,8 +143,8 @@ def _is_pinnable_name(spec: str) -> bool:
     )
 
 
-def runtime_requirement(scratch_dir: Path) -> str:
-    """the runpod runtime spec to vendor into the artifact.
+def runpod_requirement(scratch_dir: Path) -> str:
+    """the runpod sdk spec to vendor into the artifact.
 
     RUNPOD_PACKAGE_SPEC overrides the published package (version pins,
     git refs, tarball urls, local checkouts). non-index specs are
@@ -167,11 +165,9 @@ def runtime_requirement(scratch_dir: Path) -> str:
 def sync_running_package(env_dir: Path) -> None:
     """overlay the running runpod package onto the vendored env.
 
-    the package is pure python (py3-none-any), so the client's
-    installed tree is valid on the worker platform. this pins the
-    vendored runtime to the exact client version: wire protocols,
-    manifest handling, and worker code can never drift, and prerelease
-    clients work before their version reaches pypi.
+    the package is pure python (py3-none-any), so the client's installed
+    tree is valid on the worker platform. this pins sdk contracts and
+    manifest handling to the client that produced the artifact.
     """
     import runpod as _runpod
 
@@ -306,16 +302,6 @@ def vendor(
         )
 
 
-def _verify_runtime(env_dir: Path) -> None:
-    """the vendored runpod must include the worker runtimes."""
-    if not (env_dir / "runpod" / "runtimes").is_dir():
-        raise BuildError(
-            "the vendored runpod package has no runtimes modules; the "
-            "resolved version predates them. set RUNPOD_PACKAGE_SPEC to a "
-            "version that includes runpod.runtimes"
-        )
-
-
 def build_environment(
     app,
     project_root: Path,
@@ -363,7 +349,7 @@ def build_environment(
     if package_spec:
         vendor(
             env_dir,
-            [runtime_requirement(scratch)],
+            [runpod_requirement(scratch)],
             python_version,
             no_deps=True,
             progress=progress,
@@ -381,7 +367,6 @@ def build_environment(
 
     if not package_spec:
         sync_running_package(env_dir)
-    _verify_runtime(env_dir)
 
     return BuildResult(
         env_dir=env_dir,

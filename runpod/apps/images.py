@@ -1,10 +1,9 @@
 """runtime image selection.
 
-one place maps (resource kind, gpu/cpu, python version) to the runtime
-image built by the runtimes workflow. cpu images are python:X.Y-slim
-based; gpu images additionally preinstall the torch family (matching
-the build-time exclusion set) so deployed artifacts never install it
-at cold start.
+one place maps (resource kind, gpu/cpu, python version) to images
+published from github.com/runpod-workers/sdk-runtime. cpu images are
+python:X.Y-slim based; gpu images additionally preinstall the torch
+family used by the build-time exclusion set.
 
 RUNPOD_RUNTIME_TAG selects the image channel (latest, dev, or a pinned
 version).

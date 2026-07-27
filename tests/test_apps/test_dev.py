@@ -111,6 +111,39 @@ class TestEndpointInput:
         assert payload["type"] == "LB"
         assert payload["scalerType"] == "REQUEST_COUNT"
 
+    def test_custom_image_starts_external_runtime(self, monkeypatch):
+        monkeypatch.setenv(
+            "RUNPOD_RUNTIME_PACKAGE_SPEC", "runpod-sdk-runtime==1.2.3"
+        )
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2", image="my/image:1")
+        def q():
+            pass
+
+        payload = _endpoint_input(app, q.spec)
+        template = payload["template"]
+        env = {entry["key"]: entry["value"] for entry in template["env"]}
+        assert template["imageName"] == "my/image:1"
+        assert "runpod_sdk_runtime.bootstrap" in template["dockerArgs"]
+        assert env["RUNPOD_RUNTIME_KIND"] == "queue"
+        assert env["RUNPOD_RUNTIME_PACKAGE_SPEC"] == (
+            "runpod-sdk-runtime==1.2.3"
+        )
+
+    def test_custom_api_uses_shared_bootstrap(self):
+        app = App("a")
+
+        @app.api(name="api", cpu="cpu3c-1-2", image="my/api:1")
+        class Api:
+            @runpod.post("/x")
+            def x(self, body: dict):
+                return body
+
+        payload = _endpoint_input(app, Api.spec)
+        assert payload["type"] == "LB"
+        assert "runpod_sdk_runtime.bootstrap" in payload["template"]["dockerArgs"]
+
     def test_datacenter_pins_locations(self):
         app = App("a")
 

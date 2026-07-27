@@ -31,10 +31,11 @@ rp login
 rp secret add ex-demo-secret --value anything   # for 09_secrets
 ```
 
-`12_custom_image` installs the runpod package at cold start; until the
-release with `runpod.runtimes` is on pypi, point the bootstrap at the
-branch tarball (plain https, not git+ — slim images have no git):
+`12_custom_image` installs the runtime and sdk packages at cold start.
+prerelease runs can point both installers at branch archives (plain
+https so slim images do not need git):
 
 ```bash
+export RUNPOD_RUNTIME_PACKAGE_SPEC=https://github.com/runpod-workers/sdk-runtime/archive/refs/heads/main.tar.gz
 export RUNPOD_PACKAGE_SPEC=https://github.com/runpod/runpod-python/archive/refs/heads/feat/apps-sdk.tar.gz
 ```

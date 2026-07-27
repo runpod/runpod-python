@@ -6,7 +6,6 @@ the local entrypoint, and delete every session endpoint on exit. the
 api is the only source of truth; nothing is persisted locally.
 """
 
-import base64
 import logging
 import os as _os
 from typing import Dict, List, Optional, Union
@@ -14,7 +13,7 @@ from typing import Dict, List, Optional, Union
 from .api import AppsApiClient
 from .app import App
 from .handles import ApiHandle, FunctionHandle
-from .shim import bootstrap_docker_args, bootstrap_source
+from .shim import runtime_launcher
 from .spec import ResourceKind, ResourceSpec
 from .targets import LiveTarget
 from .utils.events import emit
@@ -162,25 +161,14 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
         payload["flashBootType"] = "FLASHBOOT"
 
     if spec.image:
-        # custom image: inject the bootstrap so the worker runtime starts
-        # regardless of what the image contains
-        payload["template"]["env"].extend(
-            [
-                {
-                    "key": "RUNPOD_BOOTSTRAP_B64",
-                    "value": base64.b64encode(bootstrap_source().encode()).decode(),
-                },
-                {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
-            ]
+        # custom images install and start the independently released runtime
+        payload["template"]["env"].append(
+            {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value}
         )
-        # the bootstrap pip-installs the runpod package on bare images;
-        # forward a pinned spec (e.g. a git branch during prerelease)
-        package_spec = _os.environ.get("RUNPOD_PACKAGE_SPEC")
-        if package_spec:
-            payload["template"]["env"].append(
-                {"key": "RUNPOD_PACKAGE_SPEC", "value": package_spec}
-            )
-        payload["template"]["dockerArgs"] = bootstrap_docker_args()
+        for key in ("RUNPOD_RUNTIME_PACKAGE_SPEC", "RUNPOD_PACKAGE_SPEC"):
+            if value := _os.environ.get(key):
+                payload["template"]["env"].append({"key": key, "value": value})
+        payload["template"]["dockerArgs"] = runtime_launcher(spec.kind.value)
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"
     if spec.datacenter:

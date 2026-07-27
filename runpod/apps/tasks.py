@@ -1,10 +1,8 @@
 """ephemeral pod execution for @app.task.
 
 lifecycle per call:
-  1. deploy a pod on a task runtime image (runpod/task*, built from
-     runtimes/task in this repo). custom images get the runner source
-     delivered base64-encoded in the pod env and booted via dockerArgs,
-     so any image with a python3 binary works.
+  1. deploy a pod on a runpod/task runtime image. custom images install
+     the independently released runtime package via dockerArgs.
   2. wait for the runner's /ping via the pod http proxy
   3. POST the FunctionRequest to /execute (remote) or /submit (spawn)
   4. collect the response, terminate the pod
@@ -14,13 +12,11 @@ crashed client cannot leak a running pod indefinitely.
 """
 
 import asyncio
-import base64
 import logging
 import os as _os
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -41,24 +37,11 @@ READY_TIMEOUT = 600.0
 RESULT_POLL_INTERVAL = 2.0
 
 
-def _runner_source() -> str:
-    """single-file runner for bare-image bootstrap.
+def _runtime_command() -> str:
+    """shell command that installs and starts the task runtime."""
+    from .shim import runtime_launcher
 
-    the shared executor is concatenated ahead of the task server so the
-    shipped file has no runpod imports; the server's executor import
-    fails on the pod and falls through to the names already in scope.
-    """
-    runtimes = Path(__file__).parent.parent / "runtimes"
-    executor = (runtimes / "executor.py").read_text()
-    server = (runtimes / "task" / "runner.py").read_text()
-    return f"{executor}\n\n{server}"
-
-
-def _bootstrap_command() -> str:
-    """shell command that materializes and starts the runner."""
-    from .shim import shell_launcher
-
-    return shell_launcher("RUNPOD_TASK_RUNNER_B64", "/task_runner.py")
+    return runtime_launcher("task")
 
 
 def cuda_versions_at_least(minimum: str) -> List[str]:
@@ -102,8 +85,8 @@ def _proxy_url(pod_id: str) -> str:
 def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]:
     """build the pod deploy input for one task execution.
 
-    runtime images have the runner baked in (CMD starts it); custom
-    images bootstrap the runner from a base64 env payload via dockerArgs.
+    runtime images have the runner baked in; custom images install and
+    start the runtime package via dockerArgs.
     """
     terminate_after = (
         datetime.now(timezone.utc) + DEFAULT_MAX_LIFETIME
@@ -132,14 +115,10 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     }
 
     if spec.image:
-        # custom image: inject the runner source and boot it explicitly
-        env["RUNPOD_TASK_RUNNER_B64"] = base64.b64encode(
-            _runner_source().encode()
-        ).decode()
-        package_spec = _os.environ.get("RUNPOD_PACKAGE_SPEC")
-        if package_spec:
-            env["RUNPOD_PACKAGE_SPEC"] = package_spec
-        pod["dockerArgs"] = _bootstrap_command()
+        for key in ("RUNPOD_RUNTIME_PACKAGE_SPEC", "RUNPOD_PACKAGE_SPEC"):
+            if value := _os.environ.get(key):
+                env[key] = value
+        pod["dockerArgs"] = _runtime_command()
 
     pod["env"] = [{"key": k, "value": v} for k, v in env.items()]
     if spec.datacenter:

@@ -1,6 +1,5 @@
 """deploy pipeline: discovered apps -> manifest -> artifact -> activated build."""
 
-import base64
 import fnmatch
 import json
 import logging
@@ -24,7 +23,7 @@ from .build import (
 )
 from .errors import InvalidResourceError, ScheduleNotSupported
 from .schedule import SCHEDULES_ENABLED
-from .shim import bootstrap_docker_args, bootstrap_source
+from .shim import runtime_launcher
 from .spec import ResourceKind
 from .utils.events import emit
 
@@ -235,12 +234,14 @@ def _deployed_endpoint_input(
     if api_key and "RUNPOD_API_KEY" not in template_env:
         template_env["RUNPOD_API_KEY"] = api_key
 
-    # workers that spawn tasks must select runtime images from the same
-    # channel the deploy used (the vendored env supplies the code, so
-    # only the image channel needs to travel)
-    tag = os.environ.get("RUNPOD_RUNTIME_TAG")
-    if tag and "RUNPOD_RUNTIME_TAG" not in template_env:
-        template_env["RUNPOD_RUNTIME_TAG"] = tag
+    # nested tasks use the same runtime and sdk channels as the endpoint
+    for key in (
+        "RUNPOD_RUNTIME_TAG",
+        "RUNPOD_RUNTIME_PACKAGE_SPEC",
+        "RUNPOD_PACKAGE_SPEC",
+    ):
+        if value := os.environ.get(key):
+            template_env.setdefault(key, value)
 
     if spec.max_concurrency > 1:
         template_env["RUNPOD_MAX_CONCURRENCY"] = str(spec.max_concurrency)
@@ -267,18 +268,11 @@ def _deployed_endpoint_input(
         payload["flashBootType"] = "FLASHBOOT"
 
     if spec.image:
-        # custom image: inject the bootstrap; the vendored env in the
-        # artifact provides the runtime once the bootstrap unpacks it
-        payload["template"]["env"].extend(
-            [
-                {
-                    "key": "RUNPOD_BOOTSTRAP_B64",
-                    "value": base64.b64encode(bootstrap_source().encode()).decode(),
-                },
-                {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value},
-            ]
+        # custom images install the runtime before attaching the artifact
+        payload["template"]["env"].append(
+            {"key": "RUNPOD_RUNTIME_KIND", "value": spec.kind.value}
         )
-        payload["template"]["dockerArgs"] = bootstrap_docker_args()
+        payload["template"]["dockerArgs"] = runtime_launcher(spec.kind.value)
 
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"

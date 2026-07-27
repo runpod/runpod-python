@@ -11,9 +11,8 @@ from runpod.apps import App
 from runpod.apps.app import _clear_registry
 from runpod.apps.errors import RemoteExecutionError
 from runpod.apps.spec import ResourceKind, ResourceSpec
-from runpod.runtimes.executor import execute_request
-from runpod.apps.tasks import _pod_input, unwrap_task_response
 from runpod.apps.targets import PodTarget
+from runpod.apps.tasks import _pod_input, unwrap_task_response
 
 # the sync bridge finalizes coroutines on a background loop thread;
 # asyncmock coroutines observed there trip the unraisable checker
@@ -38,84 +37,6 @@ def _unb64(value):
     return cloudpickle.loads(base64.b64decode(value))
 
 
-class TestExecuteRequest:
-    def test_simple_function(self):
-        response = execute_request(
-            {
-                "function_name": "add",
-                "function_code": "def add(a, b):\n    return a + b",
-                "args": [_b64(2), _b64(3)],
-                "kwargs": {},
-            }
-        )
-        assert response["success"] is True
-        assert _unb64(response["result"]) == 5
-
-    def test_json_format(self):
-        response = execute_request(
-            {
-                "function_name": "add",
-                "function_code": "def add(a, b):\n    return a + b",
-                "args": [2, 3],
-                "kwargs": {},
-                "serialization_format": "json",
-            }
-        )
-        assert response["success"] is True
-        assert response["json_result"] == 5
-
-    def test_async_function(self):
-        response = execute_request(
-            {
-                "function_name": "hello",
-                "function_code": (
-                    "async def hello(name):\n    return f'hi {name}'"
-                ),
-                "args": [],
-                "kwargs": {"name": _b64("world")},
-            }
-        )
-        assert response["success"] is True
-        assert _unb64(response["result"]) == "hi world"
-
-    def test_stdout_captured(self):
-        response = execute_request(
-            {
-                "function_name": "loud",
-                "function_code": "def loud():\n    print('noise')\n    return 1",
-                "args": [],
-                "kwargs": {},
-                "serialization_format": "json",
-            }
-        )
-        assert response["success"] is True
-        assert "noise" in response["stdout"]
-
-    def test_exception_reported(self):
-        response = execute_request(
-            {
-                "function_name": "boom",
-                "function_code": "def boom():\n    raise ValueError('bad')",
-                "args": [],
-                "kwargs": {},
-            }
-        )
-        assert response["success"] is False
-        assert "ValueError" in response["error"]
-
-    def test_missing_function(self):
-        response = execute_request(
-            {
-                "function_name": "nope",
-                "function_code": "x = 1",
-                "args": [],
-                "kwargs": {},
-            }
-        )
-        assert response["success"] is False
-        assert "not found" in response["error"]
-
-
 class TestPodInput:
     def _spec(self, **kw):
         defaults = dict(kind=ResourceKind.TASK, name="t")
@@ -135,8 +56,7 @@ class TestPodInput:
         assert pod["terminateAfter"]
         env = {e["key"]: e["value"] for e in pod["env"]}
         assert env["RUNPOD_TASK_TOKEN"] == "tok"
-        # runtime images have the runner baked in; no env payload
-        assert "RUNPOD_TASK_RUNNER_B64" not in env
+        assert "RUNPOD_RUNTIME_PACKAGE_SPEC" not in env
         assert "dockerArgs" not in pod
 
     def test_gpu_pod_input(self):
@@ -153,22 +73,20 @@ class TestPodInput:
             == f"runpod/task-gpu:py{local_python_version()}-latest"
         )
 
-    def test_custom_image_bootstraps_runner(self):
+    def test_custom_image_starts_runtime_package(self, monkeypatch):
+        monkeypatch.setenv("RUNPOD_RUNTIME_PACKAGE_SPEC", "runpod-sdk-runtime==1.2.3")
+        monkeypatch.setenv("RUNPOD_PACKAGE_SPEC", "runpod==2.0.0")
         pod = _pod_input(
             self._spec(cpu=["cpu3c-1-2"], image="my/image:1", volume="vol-1"),
             "tok",
             "t",
         )
         assert pod["imageName"] == "my/image:1"
-        # volumes resolve at TaskExecution.start (placement solve),
-        # not in the static pod input
         assert "networkVolumeId" not in pod
-        # custom images get the env-injection fallback
         env = {e["key"]: e["value"] for e in pod["env"]}
-        assert "RUNPOD_TASK_RUNNER_B64" in env
-        decoded = base64.b64decode(env["RUNPOD_TASK_RUNNER_B64"]).decode()
-        assert "def execute_request" in decoded
-        assert "task_runner.py" in pod["dockerArgs"]
+        assert env["RUNPOD_RUNTIME_PACKAGE_SPEC"] == "runpod-sdk-runtime==1.2.3"
+        assert env["RUNPOD_PACKAGE_SPEC"] == "runpod==2.0.0"
+        assert "runpod_sdk_runtime.task.runner" in pod["dockerArgs"]
 
     def test_datacenter_forwarded(self):
         pod = _pod_input(

@@ -11,7 +11,7 @@ from runpod.apps.build import (
     BuildError,
     collect_requirements,
     requirement_name,
-    runtime_requirement,
+    runpod_requirement,
     split_exclusions,
     vendor,
 )
@@ -104,10 +104,10 @@ class TestSplitExclusions:
         }
 
 
-class TestRuntimeRequirement:
+class TestRunpodRequirement:
     def test_default_is_published_package(self, tmp_path, monkeypatch):
         monkeypatch.delenv("RUNPOD_PACKAGE_SPEC", raising=False)
-        assert runtime_requirement(tmp_path) == "runpod"
+        assert runpod_requirement(tmp_path) == "runpod"
 
     def test_running_package_overlays_env(self, tmp_path):
         from runpod.apps.build import sync_running_package
@@ -119,8 +119,7 @@ class TestRuntimeRequirement:
 
         sync_running_package(env_dir)
 
-        # the client's own tree (which has the runtimes) wins
-        assert (env_dir / "runpod" / "runtimes" / "bootstrap.py").is_file()
+        # the client's sdk tree wins
         assert (env_dir / "runpod" / "apps" / "build.py").is_file()
         assert not any(
             p.name == "__pycache__"
@@ -130,7 +129,7 @@ class TestRuntimeRequirement:
 
     def test_version_pin_passes_through(self, tmp_path, monkeypatch):
         monkeypatch.setenv("RUNPOD_PACKAGE_SPEC", "runpod==1.8.0")
-        assert runtime_requirement(tmp_path) == "runpod==1.8.0"
+        assert runpod_requirement(tmp_path) == "runpod==1.8.0"
 
     def test_url_spec_builds_wheel(self, tmp_path, monkeypatch):
         monkeypatch.setenv(
@@ -149,7 +148,7 @@ class TestRuntimeRequirement:
             return R()
 
         with patch("runpod.apps.build.subprocess.run", side_effect=fake_run):
-            assert runtime_requirement(tmp_path) == str(wheel)
+            assert runpod_requirement(tmp_path) == str(wheel)
 
 
 def _fake_popen(captured, *, returncode=0, stdout="", stderr=""):
