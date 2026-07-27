@@ -64,6 +64,7 @@ def test_supports_runtime_and_sdk_package_overrides():
     command = runtime_launcher("queue")
     assert "RUNPOD_RUNTIME_PACKAGE_SPEC" in command
     assert "RUNPOD_PACKAGE_SPEC" in command
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD" in command
     assert "runpod-sdk-runtime" in command
 
 

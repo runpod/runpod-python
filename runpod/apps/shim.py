@@ -48,6 +48,7 @@ def runtime_launcher(kind: str) -> str:
         f'echo "[shim] FATAL: no python interpreter found in this image. "'
         f'"custom images must include python3." >&2; '
         f"exit 1; fi; "
+        f'export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD="${{SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD:-0.0.0.dev0}}"; '
         f'RUNTIME_SPEC="${{RUNPOD_RUNTIME_PACKAGE_SPEC:-runpod-sdk-runtime}}"; '
         f'if [ -n "${{RUNPOD_RUNTIME_PACKAGE_SPEC:-}}" ] || '
         f'! "$PY" -c "import runpod_sdk_runtime" >/dev/null 2>&1; then '
