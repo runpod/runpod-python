@@ -407,7 +407,7 @@ User-registered checks via `@register_fitness_check` still run regardless of the
 
 - Fitness checks run **only once at worker startup**
 - They run **before the first job is processed**
-- They run **only on the actual RunPod serverless platform**
+- They run **only on the actual Runpod serverless platform**
 - Local development and testing modes skip fitness checks
 
 ### Execution Order
@@ -653,7 +653,7 @@ if __name__ == "__main__":
 
 ### Checks Aren't Running
 
-Fitness checks only run on the actual RunPod serverless platform, not locally. To debug locally:
+Fitness checks only run on the actual Runpod serverless platform, not locally. To debug locally:
 
 ```python
 # Manually test your fitness checks
