@@ -637,6 +637,52 @@ def test_hydrate_does_not_resurrect_deleted_small_file(tmp_path):
     assert not b.exists()
 
 
+def test_sync_omits_big_file_from_manifest_when_copy_fails(tmp_path, monkeypatch):
+    # The manifest is the "mirror is complete" marker. A big file whose copy to
+    # the volume fails (disk full / transient error) must NOT be recorded in the
+    # manifest; otherwise a later cold hydrate trusts the manifest and restores
+    # the stale volume bytes as if current (or silently skips a missing file).
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    good = cache / "good.bin"
+    bad = cache / "bad.bin"
+    big = b"x" * (vcmod._SMALL_FILE_THRESHOLD + 10)
+    good.write_bytes(big)
+    bad.write_bytes(b"stale-v1" + big)
+
+    # First sync mirrors both files to the volume successfully.
+    vc.sync(background=False)
+    assert sorted(e["path"] for e in vc._read_manifest()["big"]) == sorted(
+        [str(good), str(bad)]
+    )
+
+    # Grow bad so _needs_copy detects the change (size differs); on the next
+    # sync force only its copy to fail. good is unchanged and stays mirrored.
+    bad.write_bytes(b"new-v2" + big + b"-and-then-some-extra-bytes")
+    real_copy_file = vc._copy_file
+
+    def flaky_copy(src, dst):
+        if src == str(bad):
+            return False  # simulate a failed overwrite (leaves stale v1 on volume)
+        return real_copy_file(src, dst)
+
+    monkeypatch.setattr(vc, "_copy_file", flaky_copy)
+    vc._do_sync()
+
+    # bad's failed copy must be absent from the manifest; good stays.
+    big_paths = [e["path"] for e in vc._read_manifest()["big"]]
+    assert str(good) in big_paths
+    assert str(bad) not in big_paths
+
+    # Cold worker: both gone locally. Hydrate must restore good but never
+    # resurrect the stale v1 bytes for bad.
+    good.unlink()
+    bad.unlink()
+    fresh = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    fresh.hydrate()
+    assert good.read_bytes() == big
+    assert not bad.exists()
+
+
 def test_join_pending_syncs_bounded_by_timeout(monkeypatch):
     vcmod._reset_pending_for_test()
     monkeypatch.setattr(vcmod, "_JOIN_TIMEOUT_SECONDS", 0.05)
@@ -817,11 +863,14 @@ def test_copy_parallel_copies_needed_only(tmp_path):
     dst2 = tmp_path / "d2"
     # pre-satisfy dst1 so it is skipped
     shutil.copy2(str(src1), str(dst1))
-    n = vc._copy_parallel([(str(src1), str(dst1)), (str(src2), str(dst2))])
-    assert n == 1
+    copied, current = vc._copy_parallel(
+        [(str(src1), str(dst1)), (str(src2), str(dst2))]
+    )
+    assert copied == {str(src2)}  # only the missing dst was transferred
+    assert current == {str(src1)}  # already-current source reported as mirrored
     assert dst2.read_text() == "two"
 
 
 def test_copy_parallel_empty_is_zero(tmp_path):
     vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
-    assert vc._copy_parallel([]) == 0
+    assert vc._copy_parallel([]) == (set(), set())

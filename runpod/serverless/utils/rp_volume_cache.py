@@ -232,15 +232,30 @@ class VolumeCache:
             return False
 
     def _copy_parallel(self, pairs):
+        """Copy every (src, dst) that needs it, in parallel.
+
+        Returns ``(copied, current)`` sets of source paths:
+        - ``copied``  -- sources transferred successfully this call.
+        - ``current`` -- sources skipped because the destination was already
+          up to date.
+        Their union is the set of sources the destination now holds a current
+        copy of; a source in neither failed to copy. Callers that record a
+        "mirror complete" manifest MUST include only sources in that union, or
+        a failed copy would be marked present and later served stale. copy2 +
+        atomic os.replace means a source in ``copied`` matches its destination
+        at that instant, so no re-stat is needed to confirm it.
+        """
         todo = [(s, d) for s, d in pairs if self._needs_copy(s, d)]
+        current = {s for s, _ in pairs} - {s for s, _ in todo}
         if not todo:
-            return 0
+            return set(), current
         with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
-            # Stream the success count rather than materializing a results list,
-            # which would hold one entry per file for large (40k+) trees.
-            return sum(
-                1 for ok in pool.map(lambda sd: self._copy_file(sd[0], sd[1]), todo) if ok
-            )
+            # pool.map preserves input order, so zip pairs each result with its
+            # source. This holds one path per copied file (unavoidable: per-file
+            # identity is required to keep failed copies out of the manifest).
+            results = pool.map(lambda sd: self._copy_file(sd[0], sd[1]), todo)
+            copied = {s for (s, _), ok in zip(todo, results) if ok}
+        return copied, current
 
     @staticmethod
     def _within(base, path):
@@ -368,7 +383,8 @@ class VolumeCache:
             # big/ so a malicious entry can't read outside the mirror.
             if self._is_safe_dest(dst) and self._within(self._big_root, src):
                 big_pairs.append((src, dst))
-        restored += self._copy_parallel(big_pairs)
+        copied, _current = self._copy_parallel(big_pairs)
+        restored += len(copied)
         if restored:
             log.info(f"VolumeCache: hydrated {restored} file(s) from {self._mirror_root}")
         return restored
@@ -425,8 +441,16 @@ class VolumeCache:
             _silent_remove(self._small_archive_path)
 
         big_pairs = [(f, os.path.join(self._big_root, os.path.relpath(f, "/"))) for f in big_files]
-        big_copied = self._copy_parallel(big_pairs)
-        big_meta = [m for m in (self._file_meta(f) for f in big_files) if m]
+        copied, current = self._copy_parallel(big_pairs)
+        # Record only sources the volume actually holds a current copy of.
+        # A big file whose copy failed is in neither set, so it is omitted and
+        # the manifest never claims it present -- hydrate then skips it rather
+        # than restoring stale bytes left by the failed overwrite.
+        mirrored = copied | current
+        big_meta = [
+            m for m in (self._file_meta(f) for f in big_files) if m and m["path"] in mirrored
+        ]
+        big_copied = len(copied)
 
         self._write_manifest(small_meta, big_meta)
         total = big_copied + small_transferred
