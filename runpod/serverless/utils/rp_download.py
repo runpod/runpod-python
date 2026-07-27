@@ -37,6 +37,20 @@ def calculate_chunk_size(file_size: int) -> int:
     return 1024 * 1024 * 10  # 10 MB
 
 
+def parse_content_length(headers) -> int:
+    """
+    Reads Content-Length for chunk sizing, tolerating a missing or malformed value.
+
+    The header is remote-controlled, so a non-integer value must not abort an
+    otherwise valid download; 0 simply yields the smallest chunk size. The real
+    size limit is enforced while streaming by iter_content_capped().
+    """
+    try:
+        return int(headers.get("Content-Length", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def extract_disposition_params(content_disposition: str) -> Dict[str, str]:
     parts = (p.strip() for p in content_disposition.split(";"))
 
@@ -73,8 +87,7 @@ def download_files_from_urls(job_id: str, urls: Union[str, List[str]]) -> List[s
             if not file_extension:
                 file_extension = os.path.splitext(urlparse(url).path)[1]
 
-            file_size = int(response.headers.get("Content-Length", 0))
-            chunk_size = calculate_chunk_size(file_size)
+            chunk_size = calculate_chunk_size(parse_content_length(response.headers))
 
             # write the content in chunks to the file, aborting past the size cap
             with open(path_to_save + file_extension, "wb") as file_path:
@@ -141,8 +154,7 @@ def file(file_url: str) -> dict:
 
         # Stream to disk in chunks (aborting past the size cap) instead of
         # buffering the entire untrusted body in memory.
-        file_size = int(download_response.headers.get("Content-Length", 0))
-        chunk_size = calculate_chunk_size(file_size)
+        chunk_size = calculate_chunk_size(parse_content_length(download_response.headers))
         with open(output_file_path, "wb") as output_file:
             for chunk in iter_content_capped(download_response, chunk_size, max_download_bytes()):
                 output_file.write(chunk)

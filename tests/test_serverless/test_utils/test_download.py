@@ -116,6 +116,31 @@ class TestDownloadFilesFromUrls(unittest.TestCase):
         )
 
     @patch("os.makedirs", return_value=None)
+    @patch("runpod.serverless.utils.rp_download.safe_get")
+    @patch("builtins.open", new_callable=mock_open)
+    def test_download_files_with_malformed_content_length(
+        self, mock_open_file, mock_get, mock_makedirs
+    ):
+        """
+        Tests download_files_from_urls with an unparseable Content-Length; the
+        header is attacker-controlled, so it must not abort the download.
+        """
+        mock_get.return_value = MockResponse(
+            b"nothing",
+            200,
+            {
+                "Content-Disposition": 'attachment; filename="picture.jpg"',
+                "Content-Length": "not-a-number",
+            },
+        )
+
+        downloaded_files = download_files_from_urls(JOB_ID, ["https://example.com/picture.jpg"])
+
+        self.assertEqual(len(downloaded_files), 1)
+        self.assertIsNotNone(downloaded_files[0])
+        mock_open_file().write.assert_called_once_with(b"nothing")
+
+    @patch("os.makedirs", return_value=None)
     @patch("runpod.serverless.utils.rp_download.safe_get", side_effect=mock_safe_get)
     @patch("builtins.open", new_callable=mock_open)
     def test_download_files_from_urls_signed(self, mock_open_file, mock_get, mock_makedirs):
@@ -182,6 +207,24 @@ class FileDownloaderTestCase(unittest.TestCase):
         self.assertTrue(result["file_path"].endswith(".txt"))
         self.assertIsNone(result["extracted_path"])
 
+        mock_file().write.assert_called_once_with(b"file content")
+
+    @patch("runpod.serverless.utils.rp_download.safe_get")
+    @patch("builtins.open", new_callable=mock_open)
+    def test_download_file_with_malformed_content_length(self, mock_file, mock_get):
+        """
+        Tests file() with an unparseable Content-Length; the header is
+        attacker-controlled, so it must not abort the download.
+        """
+        mock_get.return_value = MockResponse(
+            b"file content",
+            200,
+            {"Content-Disposition": "filename=test_file.txt", "Content-Length": "not-a-number"},
+        )
+
+        result = file("http://test.com/test_file.txt")
+
+        self.assertEqual(result["type"], "txt")
         mock_file().write.assert_called_once_with(b"file content")
 
     @patch("runpod.serverless.utils.rp_download.safe_get")
