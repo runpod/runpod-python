@@ -139,6 +139,25 @@ def max_download_bytes() -> int:
     return value if value > 0 else _DEFAULT_MAX_BYTES
 
 
+def _host_header_for(url: str) -> str:
+    """
+    Build the Host header authority for `url`.
+
+    The pinned adapter dials an IP but must present the original authority, so
+    this reconstructs it from the URL rather than the socket. urlparse strips
+    the brackets from an IPv6 literal, and RFC 7230 requires them in Host, so
+    they are restored: without this an IPv6-literal URL yields a malformed
+    header such as "2606::1:443".
+    """
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if ":" in host:  # IPv6 literal
+        host = f"[{host}]"
+    if parsed.port is not None:
+        return f"{host}:{parsed.port}"
+    return host
+
+
 class PinnedIPAdapter(HTTPAdapter):
     """
     Requests adapter that dials a pre-validated IP instead of re-resolving the
@@ -155,11 +174,7 @@ class PinnedIPAdapter(HTTPAdapter):
         super().__init__(**kwargs)
 
     def send(self, request, **kwargs):
-        parsed = urlparse(request.url)
-        authority = parsed.hostname or ""
-        if parsed.port is not None:
-            authority = f"{authority}:{parsed.port}"
-        request.headers["Host"] = authority
+        request.headers["Host"] = _host_header_for(request.url)
         return super().send(request, **kwargs)
 
     def _pin(self, pool, url: str):

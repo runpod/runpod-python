@@ -13,6 +13,7 @@ from requests import RequestException
 from runpod.serverless.utils.rp_ssrf import (
     SSRFError,
     _build_pinned_session,
+    _host_header_for,
     is_safe_address,
     iter_content_capped,
     max_download_bytes,
@@ -322,6 +323,24 @@ class _RecordingHandler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, *args):  # silence test server logging
         pass
+
+
+class TestHostHeaderFor(unittest.TestCase):
+    """The Host header must reproduce the URL authority, brackets included."""
+
+    def test_builds_authority_for_each_host_form(self):
+        cases = [
+            ("http://example.com/path", "example.com"),
+            ("http://example.com:8080/path", "example.com:8080"),
+            ("https://93.184.216.34/x", "93.184.216.34"),
+            ("https://93.184.216.34:8443/x", "93.184.216.34:8443"),
+            # RFC 7230 requires an IPv6 literal to stay bracketed; urlparse
+            # strips the brackets, so they have to be restored.
+            ("https://[2606:2800:220:1::1]/x", "[2606:2800:220:1::1]"),
+            ("https://[2606:2800:220:1::1]:8443/x", "[2606:2800:220:1::1]:8443"),
+        ]
+        for url, expected in cases:
+            self.assertEqual(_host_header_for(url), expected, url)
 
 
 class TestPinnedIPAdapter(unittest.TestCase):
