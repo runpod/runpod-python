@@ -166,8 +166,16 @@ def update(version_opt):
     help="Build the artifact without deploying; writes "
     "<app>-artifact.tar.gz to the current directory.",
 )
-def deploy(target, env, python_version, exclude, build_only):
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Print a machine-readable JSON summary as the final line of "
+    "stdout; human-facing output moves to stderr.",
+)
+def deploy(target, env, python_version, exclude, build_only, json_output):
     """Package and deploy all apps found in TARGET (default: cwd)."""
+    import json as json_lib
     import logging
 
     from runpod.apps.deploy import build_artifact, deploy_app
@@ -175,6 +183,14 @@ def deploy(target, env, python_version, exclude, build_only):
     from runpod.rp_cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
+
+    if json_output:
+        ui.route_to_stderr()
+
+    def _abort(message: str) -> None:
+        if json_output:
+            click.echo(json_lib.dumps({"ok": False, "error": message}))
+        _fail(message)
 
     if python_version is None:
         from runpod.apps.images import (
@@ -196,23 +212,24 @@ def deploy(target, env, python_version, exclude, build_only):
 
     target = (target or Path.cwd()).resolve()
     if not target.exists():
-        _fail(f"{target} does not exist")
+        _abort(f"{target} does not exist")
 
     project_root = target if target.is_dir() else target.parent
 
     try:
         apps = discover_apps(target)
     except DiscoveryError as exc:
-        _fail(str(exc))
+        _abort(str(exc))
 
     if not apps:
-        _fail(
+        _abort(
             "no runpod.App found. define one with:\n\n"
             "    from runpod import App\n"
             '    app = App("my-app")'
         )
 
     if build_only:
+        artifacts = []
         for found in apps:
             ui.set_name_width(list(found.resources))
             events = ui.DeployEvents()
@@ -226,13 +243,28 @@ def deploy(target, env, python_version, exclude, build_only):
                     output=Path.cwd() / f"{found.name}-artifact.tar.gz",
                 )
             except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+                if json_output:
+                    click.echo(json_lib.dumps({"ok": False, "error": str(exc)}))
                 raise click.ClickException(str(exc)) from exc
             finally:
                 events.close()
-            size_mb = artifact.stat().st_size / (1024 * 1024)
+            size_bytes = artifact.stat().st_size
+            artifacts.append(
+                {
+                    "app": found.name,
+                    "path": str(artifact),
+                    "size_bytes": size_bytes,
+                }
+            )
             ui.success(
                 f"built [white]{found.name}[/white] "
-                f"[dim]{artifact.name} ({size_mb:.1f} MB)[/dim]"
+                f"[dim]{artifact.name} ({size_bytes / (1024 * 1024):.1f} MB)[/dim]"
+            )
+        if json_output:
+            click.echo(
+                json_lib.dumps(
+                    {"ok": True, "command": "build", "artifacts": artifacts}
+                )
             )
         return
 
@@ -248,6 +280,7 @@ def deploy(target, env, python_version, exclude, build_only):
             ]
         )
 
+    summaries = []
     for index, found in enumerate(apps):
         if index or len(apps) > 1:
             ui.console.print()
@@ -272,9 +305,22 @@ def deploy(target, env, python_version, exclude, build_only):
                     )
                 )
             except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
+                if json_output:
+                    click.echo(json_lib.dumps({"ok": False, "error": str(exc)}))
                 raise click.ClickException(str(exc)) from exc
             finally:
                 events.close()
+        summaries.append(
+            {
+                "app": result.app_name,
+                "env": env or found.env,
+                "elapsed_s": round(t.elapsed, 1),
+                "endpoints": {
+                    name: {"id": endpoint_id, "url": ui.endpoint_url(endpoint_id)}
+                    for name, endpoint_id in sorted(result.endpoints.items())
+                },
+            }
+        )
         ui.success(
             f"[bold white]{result.app_name}/{env or found.env}[/bold white] "
             f"is live [dim]{t.elapsed:.1f}s[/dim]"
@@ -288,6 +334,10 @@ def deploy(target, env, python_version, exclude, build_only):
                     f"{ui.endpoint_link(endpoint_id)}"
                 )
     ui.console.print()
+    if json_output:
+        click.echo(
+            json_lib.dumps({"ok": True, "command": "deploy", "apps": summaries})
+        )
 
 
 # ------------------------------------------------------------------- dev
@@ -300,7 +350,14 @@ def deploy(target, env, python_version, exclude, build_only):
     is_flag=True,
     help="Run the entrypoint once, tear down, and exit (for scripts/CI).",
 )
-def dev(module, once):
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Print a machine-readable JSON summary as the final line of "
+    "stdout; human-facing output moves to stderr. Requires --once.",
+)
+def dev(module, once, json_output):
     """Start an interactive dev session for MODULE.
 
     Provisions temporary live endpoints, runs the module's
@@ -308,6 +365,7 @@ def dev(module, once):
     refreshing endpoints so requests run fresh code), and deletes the
     endpoints on exit.
     """
+    import json as json_lib
     import logging
 
     from runpod.apps.dev import DevSession
@@ -317,6 +375,11 @@ def dev(module, once):
     from runpod.rp_cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
+
+    if json_output and not once:
+        _fail("--json requires --once")
+    if json_output:
+        ui.route_to_stderr()
 
     module = module.resolve()
     if not module.is_file():
@@ -436,6 +499,31 @@ def dev(module, once):
         threading.Thread(target=_runner, daemon=True).start()
         return await done
 
+    def _emit_json(session: "DevSession", error, elapsed: float) -> None:
+        payload = {
+            "ok": error is None,
+            "command": "dev",
+            "module": str(module),
+            "apps": [a.name for a in session.apps],
+            "resources": [
+                {
+                    "name": name,
+                    "kind": kind,
+                    "hardware": hardware,
+                    "endpoint_id": endpoint_id,
+                }
+                for name, kind, hardware, endpoint_id in _table_rows(session)
+            ],
+            "entrypoint": {
+                "name": getattr(entrypoint, "__name__", ""),
+                "ok": error is None,
+                "elapsed_s": round(elapsed, 2),
+            },
+        }
+        if error is not None:
+            payload["entrypoint"]["error"] = error
+        click.echo(json_lib.dumps(payload))
+
     async def _session() -> int:
         nonlocal apps, entrypoint
         ui.set_name_width(_all_resource_names(apps))
@@ -458,8 +546,12 @@ def dev(module, once):
                     except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
                         ui.entrypoint_failure(t.so_far, str(exc))
                         if once:
+                            if json_output:
+                                _emit_json(session, str(exc), t.so_far)
                             return 1
                 if once:
+                    if json_output:
+                        _emit_json(session, None, t.so_far)
                     return 0
                 reason = await _wait_for_rerun(watcher)
                 if reason == "changed":
