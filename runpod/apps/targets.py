@@ -196,6 +196,7 @@ class InvocationTarget(ABC):
 # than 429) are never retried; the request itself is wrong.
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504, 520, 522, 524})
 RETRY_ATTEMPTS = 4
+JOB_PROPAGATION_ATTEMPTS = 7
 RETRY_BASE_DELAY = 0.5
 
 
@@ -208,13 +209,15 @@ async def _request_json(
     payload: Any = None,
     app_name: str = "",
     resource_name: str = "",
+    retry_not_found: bool = False,
 ) -> Dict[str, Any]:
     """http json call with exponential backoff on transient failures."""
     import asyncio
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
     last_exc: Optional[Exception] = None
-    for attempt in range(RETRY_ATTEMPTS):
+    attempts = JOB_PROPAGATION_ATTEMPTS if retry_not_found else RETRY_ATTEMPTS
+    for attempt in range(attempts):
         if attempt:
             await asyncio.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
         try:
@@ -223,7 +226,10 @@ async def _request_json(
                     method, url, json=payload, headers=headers
                 ) as resp:
                     if resp.status == 404:
-                        raise EndpointNotFound(app_name, resource_name)
+                        last_exc = EndpointNotFound(app_name, resource_name)
+                        if retry_not_found and attempt < attempts - 1:
+                            continue
+                        raise last_exc
                     if resp.status in RETRYABLE_STATUSES:
                         last_exc = aiohttp.ClientResponseError(
                             resp.request_info,
@@ -266,9 +272,23 @@ async def _post_json(
 
 
 async def _get_json(
-    url: str, headers: Dict[str, str], timeout: float
+    url: str,
+    headers: Dict[str, str],
+    timeout: float,
+    *,
+    app_name: str = "",
+    resource_name: str = "",
+    retry_not_found: bool = False,
 ) -> Dict[str, Any]:
-    return await _request_json("GET", url, headers, timeout)
+    return await _request_json(
+        "GET",
+        url,
+        headers,
+        timeout,
+        app_name=app_name,
+        resource_name=resource_name,
+        retry_not_found=retry_not_found,
+    )
 
 
 async def _wait_terminal(
@@ -277,6 +297,9 @@ async def _wait_terminal(
     headers: Dict[str, str],
     timeout: float,
     on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
+    *,
+    app_name: str = "",
+    resource_name: str = "",
 ) -> Dict[str, Any]:
     """poll /status until the job reaches a terminal state.
 
@@ -305,7 +328,14 @@ async def _wait_terminal(
             )
         await asyncio.sleep(interval)
         interval = min(interval * 1.5, max_interval)
-        data = await _get_json(f"{base_url}/status/{job_id}", headers, 30.0)
+        data = await _get_json(
+            f"{base_url}/status/{job_id}",
+            headers,
+            30.0,
+            app_name=app_name,
+            resource_name=resource_name,
+            retry_not_found=True,
+        )
         if on_status is not None:
             on_status(data)
     return data
@@ -352,6 +382,9 @@ class QueueClient:
             payload=payload,
             app_name=self._app_name,
             resource_name=self._resource_name,
+            retry_not_found=path.startswith(
+                ("status/", "stream/", "cancel/", "retry/")
+            ),
         )
 
     async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -403,7 +436,13 @@ class QueueClient:
         on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         return await _wait_terminal(
-            self.base_url, data, self._headers(), timeout, on_status
+            self.base_url,
+            data,
+            self._headers(),
+            timeout,
+            on_status,
+            app_name=self._app_name,
+            resource_name=self._resource_name,
         )
 
     async def http(

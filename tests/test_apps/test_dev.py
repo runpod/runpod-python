@@ -110,6 +110,10 @@ class TestEndpointInput:
         payload = _endpoint_input(app, Api.spec)
         assert payload["type"] == "LB"
         assert payload["scalerType"] == "REQUEST_COUNT"
+        assert payload["template"]["ports"] == "80/http"
+        env = {entry["key"]: entry["value"] for entry in payload["template"]["env"]}
+        assert env["PORT"] == "80"
+        assert env["PORT_HEALTH"] == "80"
 
     def test_custom_image_starts_external_runtime(self, monkeypatch):
         monkeypatch.setenv(

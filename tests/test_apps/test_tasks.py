@@ -322,6 +322,47 @@ class TestTaskExecutionLifecycle:
         assert execution.pod_id == "pod-9"
         assert api.deploy_task_pod.call_args[1]["is_cpu"] is True
 
+    async def test_start_retries_datacenters_after_capacity_error(self):
+        from runpod.apps.tasks import TaskExecution
+        from runpod.error import QueryError
+
+        api = MagicMock()
+        capacity = "This machine does not have the resources to deploy your pod"
+        api.deploy_task_pod = AsyncMock(
+            side_effect=[
+                QueryError(capacity),
+                QueryError(capacity),
+                {"id": "pod-9"},
+            ]
+        )
+        execution = TaskExecution(
+            self._spec(
+                gpu=["NVIDIA GeForce RTX 4090"],
+                cpu=None,
+                datacenter=["US-IL-1", "EU-RO-1"],
+            ),
+            api=api,
+        )
+        await execution.start()
+
+        calls = api.deploy_task_pod.await_args_list
+        assert calls[0].args[0]["dataCenterIds"] == ["US-IL-1", "EU-RO-1"]
+        assert calls[1].args[0]["dataCenterIds"] == ["US-IL-1"]
+        assert calls[2].args[0]["dataCenterIds"] == ["EU-RO-1"]
+        assert execution.pod_id == "pod-9"
+
+    async def test_start_does_not_retry_non_capacity_error(self):
+        from runpod.apps.tasks import TaskExecution
+        from runpod.error import QueryError
+
+        api = MagicMock()
+        api.deploy_task_pod = AsyncMock(side_effect=QueryError("invalid image"))
+        execution = TaskExecution(self._spec(), api=api)
+
+        with pytest.raises(QueryError, match="invalid image"):
+            await execution.start()
+        api.deploy_task_pod.assert_awaited_once()
+
     async def test_start_resolves_registry_auth(self):
         from runpod.apps.tasks import TaskExecution
 

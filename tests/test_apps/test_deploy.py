@@ -13,6 +13,7 @@ from runpod.apps import App
 from runpod.apps.app import _clear_registry
 from runpod.apps.deploy import (
     DeployResult,
+    _deployed_endpoint_input,
     build_manifest,
     deploy_app,
     package_project,
@@ -114,6 +115,26 @@ class TestManifest:
 
         with pytest.raises(ScheduleNotSupported):
             build_manifest(app, tmp_path)
+
+
+class TestEndpointInput:
+    def test_custom_api_declares_runtime_port(self):
+        app = App("api-app")
+
+        @app.api(name="api", cpu="cpu3c-1-2", image="python:3.12-slim")
+        class Api:
+            @runpod.get("/value")
+            def value(self):
+                return {"value": 1}
+
+        payload = _deployed_endpoint_input(
+            app, Api.spec, "env-1", "build-1", "3.12"
+        )
+        assert payload["type"] == "LB"
+        assert payload["template"]["ports"] == "80/http"
+        env = {entry["key"]: entry["value"] for entry in payload["template"]["env"]}
+        assert env["PORT"] == "80"
+        assert env["PORT_HEALTH"] == "80"
 
 
 class TestPackaging:

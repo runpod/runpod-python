@@ -1,5 +1,6 @@
-"""drive the deployed e2e matrix. run AFTER `rp flash deploy tests/e2e/matrix`.
+"""drive the deployed e2e matrix after deploying it.
 
+    rp flash deploy tests/e2e/matrix --python-version 3.12
     RUNPOD_RUNTIME_TAG=dev python tests/e2e/matrix/run.py [--only q-basic,...]
 
 each check is independent; failures are collected, not fatal, so one
@@ -13,6 +14,7 @@ import time
 import traceback
 
 from main import (  # noqa: E402
+    CustomSvc,
     Svc,
     q_basic,
     q_caller,
@@ -84,6 +86,12 @@ async def check_api_streaming_response():
     r = await Svc.get.aio("/tokens")
     assert r == "alpha\nbeta\ngamma\n", repr(r)
     return {"body": r}
+
+
+async def check_custom_api():
+    r = await CustomSvc.get.aio("/runtime")
+    assert r["python"].startswith("3.12"), r
+    return r
 
 
 async def check_spawn():
@@ -158,6 +166,7 @@ CHECKS = {
     "t-mul": check_t_mul,
     "t-gpu": check_t_gpu,
     "api": check_api,
+    "api-custom": check_custom_api,
     "spawn": check_spawn,
     "job-ops": check_job_ops,
     "stream": check_stream,

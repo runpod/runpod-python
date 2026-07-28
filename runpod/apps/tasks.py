@@ -167,11 +167,49 @@ class TaskExecution:
             )
         if self.spec.volume:
             pod = await self._attach_volume(pod)
-        result = await self.api.deploy_task_pod(
-            pod, is_cpu=self.spec.is_cpu
-        )
+        result = await self._deploy_pod(pod)
         self.pod_id = result["id"]
         log.info("task pod %s deployed for %s", self.pod_id, self.spec.name)
+
+    async def _deploy_pod(self, pod: Dict[str, Any]) -> Dict[str, Any]:
+        from ..error import QueryError
+
+        try:
+            return await self.api.deploy_task_pod(
+                pod, is_cpu=self.spec.is_cpu
+            )
+        except QueryError as exc:
+            if not self._is_capacity_error(exc):
+                raise
+            capacity_error = exc
+
+        datacenters = pod.get("dataCenterIds") or []
+        if self.spec.volume or len(datacenters) < 2:
+            raise capacity_error
+
+        for datacenter in datacenters:
+            candidate = dict(pod, dataCenterIds=[datacenter])
+            try:
+                return await self.api.deploy_task_pod(
+                    candidate, is_cpu=self.spec.is_cpu
+                )
+            except QueryError as exc:
+                if not self._is_capacity_error(exc):
+                    raise
+        raise capacity_error
+
+    @staticmethod
+    def _is_capacity_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return any(
+            phrase in message
+            for phrase in (
+                "resources to deploy your pod",
+                "insufficient capacity",
+                "no available machine",
+                "out of stock",
+            )
+        )
 
     async def _attach_volume(self, pod: Dict[str, Any]) -> Dict[str, Any]:
         """resolve the task's volume and pin the pod to its datacenter."""

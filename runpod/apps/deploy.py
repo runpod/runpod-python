@@ -245,6 +245,9 @@ def _deployed_endpoint_input(
 
     if spec.max_concurrency > 1:
         template_env["RUNPOD_MAX_CONCURRENCY"] = str(spec.max_concurrency)
+    if spec.kind is ResourceKind.API:
+        template_env["PORT"] = "80"
+        template_env["PORT_HEALTH"] = "80"
 
     payload: Dict[str, Any] = {
         "name": spec.name,
@@ -276,6 +279,7 @@ def _deployed_endpoint_input(
 
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"
+        payload["template"]["ports"] = "80/http"
     if spec.datacenter:
         payload["locations"] = ",".join(spec.datacenter)
     if spec.is_cpu:

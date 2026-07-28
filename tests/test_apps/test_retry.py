@@ -10,9 +10,11 @@ import pytest
 
 from runpod.apps.errors import EndpointNotFound
 from runpod.apps.targets import (
+    JOB_PROPAGATION_ATTEMPTS,
     RETRY_ATTEMPTS,
     RETRYABLE_STATUSES,
     _post_json,
+    _request_json,
 )
 
 
@@ -80,6 +82,34 @@ async def test_404_not_retried_maps_to_endpoint_not_found(flaky_server):
             resource_name="r",
         )
     assert flaky_server.state["hits"] == 1
+
+
+async def test_job_404_retried_during_propagation(flaky_server):
+    flaky_server.state["script"] = [404, 404]
+    with patch("runpod.apps.targets.RETRY_BASE_DELAY", 0.01):
+        data = await _request_json(
+            "GET",
+            flaky_server.url,
+            {},
+            timeout=10,
+            retry_not_found=True,
+        )
+    assert data["ok"] is True
+    assert flaky_server.state["hits"] == 3
+
+
+async def test_persistent_job_404_exhausts_retries(flaky_server):
+    flaky_server.state["script"] = [404] * JOB_PROPAGATION_ATTEMPTS
+    with patch("runpod.apps.targets.RETRY_BASE_DELAY", 0.01):
+        with pytest.raises(EndpointNotFound):
+            await _request_json(
+                "GET",
+                flaky_server.url,
+                {},
+                timeout=10,
+                retry_not_found=True,
+            )
+    assert flaky_server.state["hits"] == JOB_PROPAGATION_ATTEMPTS
 
 
 async def test_client_4xx_not_retried(flaky_server):

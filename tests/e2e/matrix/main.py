@@ -1,7 +1,7 @@
 """e2e matrix app: every resource kind, cross-calls, deps, custom images.
 
-deployed by tests/e2e/matrix/run.py; each resource exercises a distinct
-permutation of the surface.
+deploy with `rp flash deploy tests/e2e/matrix --python-version 3.12`.
+each resource exercises a distinct permutation of the surface.
 """
 
 import runpod
@@ -130,3 +130,17 @@ class Svc:
                 yield word + "\n"
 
         return StreamingResponse(gen(), media_type="text/plain")
+
+
+@app.api(
+    name="a-custom",
+    cpu="cpu3c-1-2",
+    workers=(1, 1),
+    image="python:3.12-slim",
+)
+class CustomSvc:
+    @runpod.get("/runtime")
+    def runtime(self):
+        import platform
+
+        return {"python": platform.python_version()}

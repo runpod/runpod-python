@@ -118,6 +118,11 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
     the endpoint and cascades on deleteEndpoint.
     """
 
+    resource_env = _render_env(spec.env)
+    if spec.kind is ResourceKind.API:
+        resource_env["PORT"] = "80"
+        resource_env["PORT_HEALTH"] = "80"
+
     payload: Dict = {
         "name": dev_endpoint_name(app.name, spec.name),
         "workersMin": spec.workers[0],
@@ -152,7 +157,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
                     if spec.max_concurrency > 1
                     else []
                 ),
-                *({"key": k, "value": v} for k, v in _render_env(spec.env).items()),
+                *({"key": k, "value": v} for k, v in resource_env.items()),
             ],
         },
     }
@@ -171,6 +176,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
         payload["template"]["dockerArgs"] = runtime_launcher(spec.kind.value)
     if spec.kind is ResourceKind.API:
         payload["type"] = "LB"
+        payload["template"]["ports"] = "80/http"
     if spec.datacenter:
         payload["locations"] = ",".join(spec.datacenter)
     if spec.is_cpu:
