@@ -1,5 +1,6 @@
 """tests for rp flash deploy and rp flash dev command wiring."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,6 +17,28 @@ def clean_entrypoints():
     _clear_entrypoints()
     yield
     _clear_entrypoints()
+
+
+@pytest.fixture(autouse=True)
+def reset_console():
+    # --json reroutes the module console to stderr; restore stdout
+    # rendering so later tests can assert on result.output
+    yield
+    from runpod.rp_cli import console as ui
+
+    ui.console = ui._build_console()
+
+
+def _last_json(result):
+    # CliRunner mixes stderr into output, so scan from the end for
+    # the machine-readable line (stdout's final line in real usage)
+    for line in reversed(result.output.strip().splitlines()):
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            continue
+    raise AssertionError(f"no json line in output: {result.output!r}")
+
 
 APP_SOURCE = '''
 import runpod
@@ -221,3 +244,134 @@ class TestDev:
         monkeypatch.chdir(tmp_path)
         result = _runner().invoke(cli, ["flash", "dev", "missing.py", "--once"])
         assert result.exit_code == 2
+
+
+class TestDeployJson:
+    def test_summary(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(return_value=_result())
+        with patch("runpod.apps.deploy.deploy_app", deploy_app):
+            result = _runner().invoke(cli, ["flash", "deploy", "--json"])
+        assert result.exit_code == 0, result.output
+        payload = _last_json(result)
+        assert payload["ok"] is True
+        assert payload["command"] == "deploy"
+        [app] = payload["apps"]
+        assert app["app"] == "demo"
+        assert app["env"] == "default"
+        assert app["endpoints"]["chat"]["id"] == "ep1"
+        assert "url" in app["endpoints"]["chat"]
+
+    def test_multi_app_summary(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(TWO_APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(
+            side_effect=[_result("demo"), _result("other", {"embed": "ep2"})]
+        )
+        with patch("runpod.apps.deploy.deploy_app", deploy_app):
+            result = _runner().invoke(cli, ["flash", "deploy", "--json"])
+        assert result.exit_code == 0, result.output
+        payload = _last_json(result)
+        assert [a["app"] for a in payload["apps"]] == ["demo", "other"]
+
+    def test_engine_error(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(side_effect=RuntimeError("upload failed"))
+        with patch("runpod.apps.deploy.deploy_app", deploy_app):
+            result = _runner().invoke(cli, ["flash", "deploy", "--json"])
+        assert result.exit_code == 1
+        payload = _last_json(result)
+        assert payload == {"ok": False, "error": "upload failed"}
+
+    def test_no_apps_found(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text("x = 1\n")
+        monkeypatch.chdir(tmp_path)
+        result = _runner().invoke(cli, ["flash", "deploy", "--json"])
+        assert result.exit_code == 1
+        payload = _last_json(result)
+        assert payload["ok"] is False
+        assert "no runpod.App found" in payload["error"]
+
+    def test_build_only(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        artifact = tmp_path / "demo-artifact.tar.gz"
+        artifact.write_bytes(b"x" * 100)
+        build = MagicMock(return_value=artifact)
+        with patch("runpod.apps.deploy.build_artifact", build):
+            result = _runner().invoke(
+                cli, ["flash", "deploy", "--build-only", "--json"]
+            )
+        assert result.exit_code == 0, result.output
+        payload = _last_json(result)
+        assert payload["ok"] is True
+        assert payload["command"] == "build"
+        [built] = payload["artifacts"]
+        assert built["app"] == "demo"
+        assert built["size_bytes"] == 100
+        assert built["path"].endswith("demo-artifact.tar.gz")
+
+
+class TestDevJson:
+    def _session(self):
+        session = MagicMock()
+        session.start = AsyncMock()
+        session.stop = AsyncMock()
+        session.refresh = AsyncMock()
+        session._endpoints = {"dev-demo-chat": "ep1"}
+
+        def make_session(apps, events=None):
+            session.apps = apps
+            return session
+
+        return session, make_session
+
+    def test_requires_once(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        result = _runner().invoke(cli, ["flash", "dev", str(module), "--json"])
+        assert result.exit_code == 1
+        assert "--json requires --once" in result.output
+
+    def test_summary(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        session, make_session = self._session()
+        with patch("runpod.apps.dev.DevSession", side_effect=make_session):
+            result = _runner().invoke(
+                cli, ["flash", "dev", str(module), "--once", "--json"]
+            )
+        assert result.exit_code == 0, result.output
+        payload = _last_json(result)
+        assert payload["ok"] is True
+        assert payload["command"] == "dev"
+        assert payload["apps"] == ["demo"]
+        [resource] = payload["resources"]
+        assert resource["name"] == "chat"
+        assert resource["kind"] == "queue"
+        assert resource["endpoint_id"] == "ep1"
+        assert payload["entrypoint"]["ok"] is True
+        assert payload["entrypoint"]["name"] == "main"
+
+    def test_entrypoint_failure(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(
+            APP_SOURCE
+            + "\n@runpod.local_entrypoint\ndef main():\n"
+            + "    raise RuntimeError('assertion blew up')\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        session, make_session = self._session()
+        with patch("runpod.apps.dev.DevSession", side_effect=make_session):
+            result = _runner().invoke(
+                cli, ["flash", "dev", str(module), "--once", "--json"]
+            )
+        assert result.exit_code == 1
+        payload = _last_json(result)
+        assert payload["ok"] is False
+        assert payload["entrypoint"]["ok"] is False
+        assert "assertion blew up" in payload["entrypoint"]["error"]
