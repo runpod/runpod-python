@@ -134,6 +134,10 @@ def file(file_url: str) -> dict:
     os.makedirs("job_files", exist_ok=True)
 
     with safe_get(file_url, stream=True, timeout=30, headers=HEADERS) as download_response:
+        # Fail on an error response rather than saving the error page as the
+        # file; for a .zip that body would go straight to the extractor.
+        download_response.raise_for_status()
+
         content_disposition = download_response.headers.get("Content-Disposition")
 
         original_file_name = ""

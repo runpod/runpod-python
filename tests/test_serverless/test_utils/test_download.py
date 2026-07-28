@@ -237,6 +237,26 @@ class FileDownloaderTestCase(unittest.TestCase):
     @patch("runpod.serverless.utils.rp_download.safe_get")
     @patch("builtins.open", new_callable=mock_open)
     @patch("runpod.serverless.utils.rp_download.zipfile.ZipFile")
+    def test_download_file_raises_on_http_error(self, mock_zip, mock_file, mock_get):
+        """
+        An error response must not be saved as if it were the file: a 404 body
+        written to a .zip would then be handed to the extractor.
+        """
+        mock_get.return_value = MockResponse(
+            b"<html>404 Not Found</html>",
+            404,
+            {"Content-Disposition": "filename=test_file.zip"},
+        )
+
+        with self.assertRaises(RequestException):
+            file("http://test.com/test_file.zip")
+
+        mock_file().write.assert_not_called()
+        mock_zip.assert_not_called()  # and the error page never reaches the extractor
+
+    @patch("runpod.serverless.utils.rp_download.safe_get")
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("runpod.serverless.utils.rp_download.zipfile.ZipFile")
     def test_download_zip_file(self, mock_zip, mock_file, mock_get):
         """
         Tests file() with a zip file
