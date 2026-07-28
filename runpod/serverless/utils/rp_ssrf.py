@@ -8,6 +8,10 @@ a job can point the worker at cloud instance-metadata (169.254.169.254) or other
 non-public addresses (CWE-918). This module blocks any destination that is not a
 globally-routable IP, pins connections to a pre-validated address to defeat DNS
 rebinding, re-validates redirect hops, and caps download size.
+
+Pinning requires this process to open the socket, so a URL that the environment
+routes through a proxy is refused rather than fetched unprotected; see
+_refuse_if_proxied.
 """
 
 import ipaddress
@@ -19,6 +23,7 @@ from urllib.parse import urljoin, urlparse
 
 from requests import ConnectionError as RequestsConnectionError
 from requests.adapters import HTTPAdapter
+from requests.utils import get_environ_proxies, select_proxy
 
 from runpod.http_client import SyncClientSession
 
@@ -137,6 +142,31 @@ def max_download_bytes() -> int:
     except ValueError:
         return _DEFAULT_MAX_BYTES
     return value if value > 0 else _DEFAULT_MAX_BYTES
+
+
+def _refuse_if_proxied(url: str) -> None:
+    """
+    Reject `url` when the environment routes it through a proxy.
+
+    Pinning only holds if this process opens the socket: through a proxy the
+    request carries the hostname and the proxy resolves it, so the validated IP
+    is not what gets dialed and the rebind protection silently stops applying.
+    Failing here turns that into a loud, actionable error instead of a false
+    sense of protection.
+
+    NO_PROXY exclusions are honored (such a host is fetched directly, so pinning
+    still holds), and the escape hatch env var allows the proxied fetch for
+    deployments that accept the trade-off.
+    """
+    if not _ssrf_protection_enabled():
+        return
+
+    proxy = select_proxy(url, get_environ_proxies(url))
+    if proxy:
+        raise SSRFError(
+            f"refusing to fetch {url} through proxy {proxy}: IP pinning cannot be "
+            f"enforced via a proxy; set {_ALLOW_PRIVATE_ENV}=true to allow it"
+        )
 
 
 def _host_header_for(url: str) -> str:
@@ -342,6 +372,7 @@ def safe_get(
             raise SSRFError(f"blocked URL scheme {parsed.scheme!r}: {current}")
         if not parsed.hostname:
             raise SSRFError(f"URL has no host: {current}")
+        _refuse_if_proxied(current)
 
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         ips = resolve_and_validate(parsed.hostname, port)

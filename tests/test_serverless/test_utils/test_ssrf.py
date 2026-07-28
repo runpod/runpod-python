@@ -325,6 +325,56 @@ class _RecordingHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class TestProxyIsRefused(unittest.TestCase):
+    """
+    A proxy re-resolves the hostname itself, so pinning (and with it the
+    rebind protection) silently stops applying. Fail loudly instead.
+    """
+
+    @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
+    @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
+    @patch.dict(os.environ, {"HTTPS_PROXY": "http://proxy.internal:3128"}, clear=True)
+    def test_raises_when_a_proxy_is_configured(self, _mock_resolve, mock_session):
+        with self.assertRaises(SSRFError) as ctx:
+            safe_get("https://example.com/image.jpg")
+
+        self.assertIn("proxy", str(ctx.exception).lower())
+        mock_session.assert_not_called()  # refused before any connection
+
+    @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
+    @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
+    @patch.dict(
+        os.environ,
+        {"HTTPS_PROXY": "http://proxy.internal:3128", "NO_PROXY": "example.com"},
+        clear=True,
+    )
+    def test_allows_host_excluded_by_no_proxy(self, _mock_resolve, mock_session):
+        response = _FakeResponse(200, {"Content-Length": "5"})
+        session = MagicMock()
+        session.get.return_value = response
+        mock_session.return_value = session
+
+        self.assertIs(safe_get("https://example.com/image.jpg"), response)
+
+    @patch("runpod.serverless.utils.rp_ssrf._build_pinned_session")
+    @patch("runpod.serverless.utils.rp_ssrf.resolve_and_validate", return_value=["93.184.216.34"])
+    @patch.dict(
+        os.environ,
+        {
+            "HTTPS_PROXY": "http://proxy.internal:3128",
+            "RUNPOD_ALLOW_PRIVATE_DOWNLOAD_URLS": "true",
+        },
+        clear=True,
+    )
+    def test_escape_hatch_permits_proxied_fetch(self, _mock_resolve, mock_session):
+        response = _FakeResponse(200, {"Content-Length": "5"})
+        session = MagicMock()
+        session.get.return_value = response
+        mock_session.return_value = session
+
+        self.assertIs(safe_get("https://example.com/image.jpg"), response)
+
+
 class TestHostHeaderFor(unittest.TestCase):
     """The Host header must reproduce the URL authority, brackets included."""
 
