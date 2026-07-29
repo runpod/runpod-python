@@ -95,8 +95,17 @@ class VolumeCache:
             raise ValueError(
                 f"namespace must be a single safe path component, got {self._namespace!r}"
             )
-        self._volume_path = os.fspath(volume_path)
+        # Decode to text like _dirs above: a bytes volume_path would make
+        # _mirror_root's os.path.join mix bytes with the str ".cache" component
+        # and raise TypeError that best-effort mode swallows, silently disabling
+        # the cache.
+        self._volume_path = os.fsdecode(os.fspath(volume_path))
         self._best_effort = best_effort
+        # A non-positive max_workers is a caller bug: ThreadPoolExecutor would
+        # raise ValueError mid-sync, which best-effort mode swallows and silently
+        # disables syncing. Reject it up front like the namespace check above.
+        if max_workers is not None and max_workers < 1:
+            raise ValueError(f"max_workers must be a positive integer, got {max_workers!r}")
         self._max_workers = max_workers or min(32, (os.cpu_count() or 4) * 4)
 
     @property

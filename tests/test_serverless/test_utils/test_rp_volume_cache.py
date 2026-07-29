@@ -113,6 +113,30 @@ def test_bytes_dirs_are_normalized_to_text(tmp_path):
     assert all(isinstance(d, str) for d in vc_bytes._dirs)
 
 
+def test_bytes_volume_path_is_normalized_to_text(tmp_path):
+    # A bytes volume_path must be decoded to text, mirroring the dirs handling;
+    # otherwise _mirror_root's os.path.join mixes bytes and str and raises a
+    # TypeError that best-effort mode silently swallows, disabling the cache.
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol).encode())
+    assert isinstance(vc._volume_path, str)
+    assert vc._mirror_root == os.path.join(str(vol), ".cache", "ep1")
+
+
+@pytest.mark.parametrize("bad", [0, -1, -8])
+def test_max_workers_rejects_non_positive(tmp_path, bad):
+    # A non-positive max_workers is a caller bug: ThreadPoolExecutor would raise
+    # ValueError mid-sync, which best-effort mode swallows and silently disables
+    # syncing. Fail loud at construction instead (like the namespace check).
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    with pytest.raises(ValueError):
+        VolumeCache(
+            [str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), max_workers=bad
+        )
+
+
 # --------------------------------------------------------------------------- #
 # sync -> hydrate round trip
 # --------------------------------------------------------------------------- #
