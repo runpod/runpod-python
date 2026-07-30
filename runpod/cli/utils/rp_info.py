@@ -18,6 +18,8 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
 
     while time.time() - start_time < timeout and (pod_ip is None or pod_port is None):
         pod = get_pod(pod_id)
+        if not pod:
+            raise ValueError(f"pod '{pod_id}' not found")
         desired_status = pod.get("desiredStatus", None)
         runtime = pod.get("runtime", None)
 

@@ -8,12 +8,46 @@ from prettytable import PrettyTable
 from .functions import generate_ssh_key_pair, get_user_pub_keys
 
 
-@click.group("ssh", help="Manage and configure SSH keys for secure access to pods.")
+class SSHGroup(click.Group):
+    """dispatches unknown first arguments to connect.
+
+    `rp ssh <pod_id>` opens a terminal on the pod, exactly like plain
+    `ssh <host>`; named subcommands (add, list, connect) still resolve
+    normally.
+    """
+
+    def resolve_command(self, ctx, args):
+        try:
+            return super().resolve_command(ctx, args)
+        except click.UsageError:
+            return "connect", self.commands["connect"], args
+
+
+@click.group(
+    "ssh",
+    cls=SSHGroup,
+    help="SSH into a pod (rp ssh POD_ID) and manage the keys pods trust.",
+    invoke_without_command=False,
+)
 def ssh_cli():
-    """Manage and configure SSH keys."""
+    """SSH into pods and manage account SSH keys."""
 
 
-@ssh_cli.command("list-keys")
+@ssh_cli.command("connect", hidden=True)
+@click.argument("pod_id")
+def connect(pod_id):
+    """Open an interactive terminal on a pod."""
+    from runpod.cli.utils import ssh_cmd
+
+    click.echo(f"Connecting to pod {pod_id}...")
+    try:
+        ssh = ssh_cmd.SSHConnection(pod_id)
+    except (ValueError, TimeoutError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    ssh.launch_terminal()
+
+
+@ssh_cli.command("list")
 def list_keys():
     """
     Lists the SSH keys for the current user.
@@ -25,7 +59,7 @@ def list_keys():
     click.echo(table)
 
 
-@ssh_cli.command("add-key")
+@ssh_cli.command("add")
 @click.option("--key", default=None, help="The public key to add.")
 @click.option(
     "--key-file", default=None, help="The file containing the public key to add."

@@ -4,42 +4,49 @@ Note: This CLI is not the same as runpodctl and provides a different set of feat
 
 ```bash
 # Auth
-runpod config
+rp login
 
-runpod ssh list-keys
-runpod ssh add-key
+# Flash apps
+rp flash init my-app
+rp flash dev main.py
+rp flash deploy
+rp flash app list
+rp flash env list --app my-app
+rp flash undeploy --app my-app
 
-runpod pod list
-runpod pod create
-runpod pod connect
+# SSH
+rp ssh add          # add a key to your account
+rp ssh list         # list account keys
+rp ssh POD_ID       # open a terminal on a pod
 
-runpod exec python file.py
+# Pods
+rp pod list
+rp pod create
+rp pod connect POD_ID
 ```
 
 ## Overview
 
 ```bash
-runpod --help
+rp --help
 ```
 
-### Configure
+### Authenticate
 
 ```bash
-$ runpod config
-Profile [default]:
-Runpod API Key [None]: YOUR_RUNPOD_API_KEY
+rp login                        # browser approval
+rp login --api-key YOUR_KEY     # store a key directly
 ```
 
-### Launch Pod
+Credentials are stored in `~/.runpod/config.toml`.
+
+### Flash apps
 
 ```bash
-runpod launch --help
-runpod launch pod --template-file template.yaml
-```
-
-### Launch Endpoint
-
-```bash
-runpod launch endpoint --help
-runpod launch endpoint --template-file template.yaml
+rp flash init my-app              # scaffold a project
+rp flash dev main.py              # run a live development session
+rp flash deploy                   # deploy the current project
+rp flash app list                 # list deployed apps
+rp flash env list --app my-app    # list an app's environments
+rp flash undeploy --app my-app    # delete an environment's endpoints
 ```
