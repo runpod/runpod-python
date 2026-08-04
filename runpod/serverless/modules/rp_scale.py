@@ -360,14 +360,12 @@ class JobScaler:
             raise
 
         finally:
-            try:
-                # Inform Queue of a task completion
-                self.jobs_queue.task_done()
+            # Inform Queue of a task completion
+            self.jobs_queue.task_done()
 
-                # Job is no longer in progress
-                self.job_progress.remove(job)
-                self.jobs_tasks.pop(job["id"], None)
+            # Job is no longer in progress
+            self.job_progress.remove(job)
+            self.jobs_tasks.pop(job["id"], None)
 
-                log.debug("Finished Job", job["id"])
-            finally:
-                _reset_batch_id(batch_id_token)
+            log.debug("Finished Job", job["id"])
+            _reset_batch_id(batch_id_token)
