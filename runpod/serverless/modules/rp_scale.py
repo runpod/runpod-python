@@ -11,7 +11,7 @@ from typing import Any, Dict, Set
 
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
 from .rp_job import _job_stop_url, get_job, get_stop_signals, handle_job
-from .rp_logger import RunPodLogger
+from .rp_logger import RunPodLogger, _reset_batch_id, _set_batch_id
 from .worker_state import JobsProgress, IS_LOCAL_TEST
 
 log = RunPodLogger()
@@ -342,6 +342,7 @@ class JobScaler:
         """
         Process an individual job. This function is run concurrently for multiple jobs.
         """
+        batch_id_token = _set_batch_id(job.get("batchId"))
         try:
             log.debug("Handling Job", job["id"])
 
@@ -359,11 +360,14 @@ class JobScaler:
             raise
 
         finally:
-            # Inform Queue of a task completion
-            self.jobs_queue.task_done()
+            try:
+                # Inform Queue of a task completion
+                self.jobs_queue.task_done()
 
-            # Job is no longer in progress
-            self.job_progress.remove(job)
-            self.jobs_tasks.pop(job["id"], None)
+                # Job is no longer in progress
+                self.job_progress.remove(job)
+                self.jobs_tasks.pop(job["id"], None)
 
-            log.debug("Finished Job", job["id"])
+                log.debug("Finished Job", job["id"])
+            finally:
+                _reset_batch_id(batch_id_token)
