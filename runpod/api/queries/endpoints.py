@@ -30,6 +30,12 @@ query Query {
         id
         dataCenterId
       }
+      pods {
+        id
+        podType
+        ports
+        desiredStatus
+      }
     }
   }
 }
