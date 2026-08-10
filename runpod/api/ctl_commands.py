@@ -134,6 +134,7 @@ def create_pod(
     min_download = None,
     min_upload = None,
     instance_id: Optional[str] = None,
+    encrypt_volume: bool = False,
 ) -> dict:
     """
     Create a pod
@@ -155,6 +156,7 @@ def create_pod(
     :param min_download: minimum download speed in Mbps
     :param min_upload: minimum upload speed in Mbps
     :param instance_id: the id of a specific instance to deploy to (for CPU pods)
+    :param encrypt_volume: whether to encrypt the volume
     :example:
 
     >>> # Create GPU pod
@@ -209,6 +211,7 @@ def create_pod(
             min_download,
             min_upload,
             instance_id,
+            encrypt_volume,
         )
     )
 

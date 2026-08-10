@@ -31,6 +31,7 @@ def generate_pod_deployment_mutation(
     min_download: Optional[int] = None,
     min_upload: Optional[int] = None,
     instance_id: Optional[str] = None,
+    encrypt_volume: bool = False,
 ) -> str:
     """
     Generates a mutation to deploy a pod on demand.
@@ -59,6 +60,7 @@ def generate_pod_deployment_mutation(
         min_download: Minimum download speed in Mbps
         min_upload: Minimum upload speed in Mbps
         instance_id: Instance ID for CPU pods
+        encrypt_volume: Whether to encrypt the volume
 
     Returns:
         str: GraphQL mutation string
@@ -126,6 +128,8 @@ def generate_pod_deployment_mutation(
         input_fields.append(f'minDownload: {min_download}')
     if min_upload is not None:
         input_fields.append(f'minUpload: {min_upload}')
+    if encrypt_volume:
+        input_fields.append("encryptVolume: true")
 
     mutation_type = "podFindAndDeployOnDemand" if gpu_type_id else "deployCpuPod"
     input_string = ", ".join(input_fields)

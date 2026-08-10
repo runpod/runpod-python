@@ -49,7 +49,8 @@ def _launch_dev_pod():
         selected_gpu_types.append(config["project"]["gpu"])
 
     # Attempt to launch a pod with the given configuration
-    new_pod = attempt_pod_launch(config, environment_variables)
+    encrypt_volume = config["project"].get("encrypt_volume", False)
+    new_pod = attempt_pod_launch(config, environment_variables, encrypt_volume)
     if new_pod is None:
         print(
             "Selected GPU types unavailable, try again later or use a different type."
@@ -144,6 +145,7 @@ def create_new_project(
     project_table.add("volume_mount_path", "/runpod-volume")
     project_table.add("ports", "8080/http, 22/tcp")
     project_table.add("container_disk_size_gb", 10)
+    project_table.add("encrypt_volume", False)
     project_table.add("env_vars", ENV_VARS)
     toml_config.add("project", project_table)
 

@@ -75,8 +75,105 @@ class TestPodCommands(unittest.TestCase):
             gpu_count=1,
             support_public_ip=True,
             ports="22/tcp",
+            encrypt_volume=False,  # Accept the new default argument
         )
         mock_echo.assert_called_with("Pod sample_id has been created.")
+
+    @patch("runpod.cli.groups.pod.commands.click.prompt")
+    @patch("runpod.cli.groups.pod.commands.click.confirm")
+    @patch("runpod.cli.groups.pod.commands.click.echo")
+    @patch("runpod.cli.groups.pod.commands.create_pod")
+    def test_create_new_pod_with_encrypt_volume(
+        self, mock_create_pod, mock_echo, mock_confirm, mock_prompt
+    ):  # pylint: disable=too-many-arguments,line-too-long
+        """
+        Test create_new_pod with --encrypt-volume option
+        """
+        # Mock values
+        mock_confirm.return_value = True  # for the quick_launch option
+        mock_prompt.return_value = "RunPod-CLI-Pod-Encrypted"
+        mock_create_pod.return_value = {"id": "encrypted_pod_id"}
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "create", "--encrypt-volume"])
+
+        # Assertions
+        assert result.exit_code == 0, result.exception
+        mock_prompt.assert_called_once_with("Enter pod name", default="RunPod-CLI-Pod")
+        mock_echo.assert_called_with("Pod encrypted_pod_id has been created.")
+        mock_create_pod.assert_called_with(
+            "RunPod-CLI-Pod-Encrypted",
+            "runpod/base:0.0.0",
+            "NVIDIA GeForce RTX 3090",
+            gpu_count=1,
+            support_public_ip=True,
+            ports="22/tcp",
+            encrypt_volume=True,  # This is the key assertion
+        )
+
+    @patch("runpod.cli.groups.pod.commands.click.prompt")
+    @patch("runpod.cli.groups.pod.commands.click.confirm")
+    @patch("runpod.cli.groups.pod.commands.click.echo")
+    @patch("runpod.cli.groups.pod.commands.create_pod")
+    def test_create_new_pod_with_no_encrypt_volume(
+        self, mock_create_pod, mock_echo, mock_confirm, mock_prompt
+    ):  # pylint: disable=too-many-arguments,line-too-long
+        """
+        Test create_new_pod with --no-encrypt-volume option
+        """
+        # Mock values
+        mock_confirm.return_value = True  # for the quick_launch option
+        mock_prompt.return_value = "RunPod-CLI-Pod-No-Encryption"
+        mock_create_pod.return_value = {"id": "no_encryption_pod_id"}
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "create", "--no-encrypt-volume"])
+
+        # Assertions
+        assert result.exit_code == 0, result.exception
+        mock_prompt.assert_called_once_with("Enter pod name", default="RunPod-CLI-Pod")
+        mock_echo.assert_called_with("Pod no_encryption_pod_id has been created.")
+        mock_create_pod.assert_called_with(
+            "RunPod-CLI-Pod-No-Encryption",
+            "runpod/base:0.0.0",
+            "NVIDIA GeForce RTX 3090",
+            gpu_count=1,
+            support_public_ip=True,
+            ports="22/tcp",
+            encrypt_volume=False,  # This is the key assertion
+        )
+
+    @patch("runpod.cli.groups.pod.commands.click.prompt")
+    @patch("runpod.cli.groups.pod.commands.click.confirm")
+    @patch("runpod.cli.groups.pod.commands.click.echo")
+    @patch("runpod.cli.groups.pod.commands.create_pod")
+    def test_create_new_pod_default_encrypt_volume(
+        self, mock_create_pod, mock_echo, mock_confirm, mock_prompt
+    ):  # pylint: disable=too-many-arguments,line-too-long
+        """
+        Test create_new_pod with default encrypt_volume (should be False)
+        """
+        # Mock values
+        mock_confirm.return_value = True  # for the quick_launch option
+        mock_prompt.return_value = "RunPod-CLI-Pod-Default"
+        mock_create_pod.return_value = {"id": "default_pod_id"}
+
+        runner = CliRunner()
+        result = runner.invoke(runpod_cli, ["pod", "create"])
+
+        # Assertions
+        assert result.exit_code == 0, result.exception
+        mock_prompt.assert_called_once_with("Enter pod name", default="RunPod-CLI-Pod")
+        mock_echo.assert_called_with("Pod default_pod_id has been created.")
+        mock_create_pod.assert_called_with(
+            "RunPod-CLI-Pod-Default",
+            "runpod/base:0.0.0",
+            "NVIDIA GeForce RTX 3090",
+            gpu_count=1,
+            support_public_ip=True,
+            ports="22/tcp",
+            encrypt_volume=False,  # Default should be False
+        )
 
     @patch("runpod.cli.groups.pod.commands.click.echo")
     @patch("runpod.cli.groups.pod.commands.ssh_cmd.SSHConnection")
