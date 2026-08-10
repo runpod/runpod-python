@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
+
+
+### Features
+
+* **serverless:** network-volume warm cache (VolumeCache) with adaptive transport ([#538](https://github.com/runpod/runpod-python/issues/538)) ([7aee321](https://github.com/runpod/runpod-python/commit/7aee321583c479d45c1a88607d3f73a273dbbf1c))
+* SLS-389: add batch ID to log messages ([#562](https://github.com/runpod/runpod-python/issues/562)) ([799479f](https://github.com/runpod/runpod-python/commit/799479f6adb5e399ce0d9eb999f1faf8053f8654))
+
+
+### Bug Fixes
+
+* **serverless:** block SSRF in job-input downloads ([#533](https://github.com/runpod/runpod-python/issues/533)) ([b510d2a](https://github.com/runpod/runpod-python/commit/b510d2a989e6ce17c7316c333697754da6d99f5e))
+
 ## [1.11.0](https://github.com/runpod/runpod-python/compare/v1.10.1...v1.11.0) (2026-07-21)
 
 
