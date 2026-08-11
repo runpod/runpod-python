@@ -6,6 +6,7 @@ and GPU compute benchmarking with various system scenarios.
 """
 
 import asyncio
+import inspect
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
@@ -582,7 +583,7 @@ class TestIntegration:
 
         # Should complete without exceptions
         for check in _fitness_checks:
-            if asyncio.iscoroutinefunction(check):
+            if inspect.iscoroutinefunction(check):
                 await check()
             else:
                 check()
