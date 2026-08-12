@@ -279,9 +279,6 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
         else:
             run_result = {"output": job_output}
 
-        if run_result.get("output") == {}:
-            run_result.pop("output")
-
         check_return_size(run_result)  # Checks the size of the return body.
 
     except Exception as err:

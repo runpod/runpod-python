@@ -198,6 +198,17 @@ class TestFastAPI(unittest.TestCase):
                 "output": {"result": "success"},
             }
 
+            empty_handler = Mock(return_value={})
+            empty_worker_api = rp_fastapi.WorkerAPI({"handler": empty_handler})
+            empty_runsync_return = asyncio.run(
+                empty_worker_api._sim_runsync(default_input_object)
+            )
+            assert empty_runsync_return == {
+                "id": "test-123",
+                "status": "COMPLETED",
+                "output": {},
+            }
+
             # Test with generator handler
             def generator_handler(job):
                 del job
@@ -328,6 +339,16 @@ class TestFastAPI(unittest.TestCase):
                 "id": "test-123",
                 "status": "COMPLETED",
                 "output": {"result": "success"},
+            }
+
+            empty_handler = Mock(return_value={})
+            empty_worker_api = rp_fastapi.WorkerAPI({"handler": empty_handler})
+            asyncio.run(empty_worker_api._sim_run(default_input_object))
+            empty_status_return = asyncio.run(empty_worker_api._sim_status("test-123"))
+            assert empty_status_return == {
+                "id": "test-123",
+                "status": "COMPLETED",
+                "output": {},
             }
 
             # Test webhook caller sent
