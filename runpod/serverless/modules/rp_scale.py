@@ -4,12 +4,15 @@ Provides the functionality for scaling the runpod serverless worker.
 """
 
 import asyncio
+import json
 import signal
 import sys
 import traceback
 from typing import Any, Dict, Set
 
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
+from .rp_capture import capture
+from .rp_http import send_result
 from .rp_job import _job_stop_url, get_job, get_stop_signals, handle_job
 from .rp_logger import RunPodLogger, _reset_batch_id, _set_batch_id
 from .worker_state import JobsProgress, IS_LOCAL_TEST
@@ -44,6 +47,9 @@ class JobScaler:
 
     def __init__(self, config: Dict[str, Any]):
         self._shutdown_event = asyncio.Event()
+        self._init_ready = asyncio.Event()
+        self._init_error: dict[str, Any] | None = None
+        self._claimed_request = False
         self.current_concurrency = 1
         self.config = config
         self.job_progress = JobsProgress()  # Cache the singleton instance
@@ -60,6 +66,10 @@ class JobScaler:
         self.concurrency_modifier = _default_concurrency_modifier
         self.jobs_fetcher = get_job
         self.jobs_fetcher_timeout = 90
+        # Bound on the single claim made after a failed init. Short on purpose: a
+        # queued request comes back at once, and an empty queue must not hold a dying
+        # worker open for the full long-poll.
+        self.init_claim_timeout = 10
         self.jobs_handler = handle_job
 
         if concurrency_modifier := config.get("concurrency_modifier"):
@@ -139,14 +149,28 @@ class JobScaler:
         # Create an async session that will be closed when the worker is killed.
         async with AsyncClientSession() as session:
             # Create the worker's concurrent loops.
+            init_task = asyncio.create_task(self._run_init())
             jobtake_task = asyncio.create_task(self.get_jobs(session))
             jobrun_task = asyncio.create_task(self.run_jobs(session))
             jobstop_task = asyncio.create_task(self.monitor_stop_signals(session))
 
-            tasks = [jobtake_task, jobrun_task, jobstop_task]
+            # The initializer is not a loop: an initializer with no init_timeout can
+            # block forever, so only the request loops decide when the worker stops.
+            await asyncio.gather(jobtake_task, jobrun_task, jobstop_task)
 
-            # Run the worker's concurrent loops until shutdown.
-            await asyncio.gather(*tasks)
+            # Shutting down: abandon a still-running initializer. Its work sits on a
+            # daemon thread, so dropping it here lets the process exit.
+            init_task.cancel()
+            try:
+                await init_task
+            except asyncio.CancelledError:
+                # expected: we cancelled it on the line above
+                pass
+
+        if self._init_error is not None:
+            from .rp_fitness import _terminate_unhealthy
+
+            _terminate_unhealthy(1)
 
     def is_alive(self):
         """
@@ -170,6 +194,28 @@ class JobScaler:
         )
         return current_progress_count + current_queue_count
 
+    async def _claim_one_job_to_fail(self, session: ClientSession) -> None:
+        """Initialization failed before this worker ever held a request. Claim one
+        queued request and fail it with the reason.
+
+        Without this, an instant failure - bad config, a missing file, an async
+        initializer that raises before its first await - never reaches a caller: the
+        worker exits, the platform respawns it into the same failure, and the request
+        that triggered the scale-up waits out its queue TTL with no explanation.
+        """
+        try:
+            jobs = await asyncio.wait_for(
+                self.jobs_fetcher(session, 1), timeout=self.init_claim_timeout
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - reporting must not mask the failure
+            log.debug(f"JobScaler.get_jobs | No request claimed to fail: {error}")
+            return
+
+        for job in jobs or []:
+            await self._fail_job(session, job, self._init_error)
+
     async def get_jobs(self, session: ClientSession):
         """
         Retrieve multiple jobs from the server in batches using blocking requests.
@@ -179,6 +225,10 @@ class JobScaler:
         Adds jobs to the JobsQueue
         """
         while self.is_alive():
+            if self._init_error is not None:
+                # Initialization is terminal for this worker. Draining what we already
+                # hold is owned by run_jobs.
+                break
             await self.set_scale()
 
             jobs_needed = self.current_concurrency - self.current_occupancy()
@@ -199,6 +249,14 @@ class JobScaler:
                 if not acquired_jobs:
                     log.debug("JobScaler.get_jobs | No jobs acquired.")
                     continue
+
+                self._claimed_request = True
+
+                if self._init_error is not None:
+                    # If initialization fails, fail all in-flight requests.
+                    for job in acquired_jobs:
+                        await self._fail_job(session, job, self._init_error)
+                    return
 
                 for job in acquired_jobs:
                     await self.jobs_queue.put(job)
@@ -226,6 +284,12 @@ class JobScaler:
             finally:
                 # Yield control back to the event loop
                 await asyncio.sleep(0)
+
+        if self._init_error is not None and not self._claimed_request:
+            # An init failure sets shutdown, so this loop can end before it ever
+            # claimed a request. Claim one on the way out, or the failure dies with
+            # the worker and the request that spawned it waits out its queue TTL.
+            await self._claim_one_job_to_fail(session)
 
     async def run_jobs(self, session: ClientSession):
         """
@@ -346,6 +410,21 @@ class JobScaler:
         try:
             log.debug("Handling Job", job["id"])
 
+            # Hold the handler until initialization finishes.
+            if self.config.get("initializer") is not None:
+                if not await self._wait_for_init():
+                    log.warn(
+                        "Shutting down before initialization finished; leaving this "
+                        "request for another worker.",
+                        job["id"],
+                    )
+                    return
+
+                if self._init_error is not None:
+                    # If initialization fails, fail the current request and don't run the handler.
+                    await self._fail_job(session, job, self._init_error)
+                    return
+
             await self.jobs_handler(session, self.config, job)
 
             if self.config.get("refresh_worker", False):
@@ -369,3 +448,57 @@ class JobScaler:
 
             log.debug("Finished Job", job["id"])
             _reset_batch_id(batch_id_token)
+
+    async def _wait_for_init(self) -> bool:
+        """Wait for initialization to finish, or for the worker to start shutting down.
+        Returns whether initialization actually finished."""
+        ready = asyncio.create_task(self._init_ready.wait())
+        stopping = asyncio.create_task(self._shutdown_event.wait())
+        try:
+            await asyncio.wait({ready, stopping}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            ready.cancel()
+            stopping.cancel()
+        return self._init_ready.is_set()
+
+    async def _fail_job(
+        self, session: ClientSession, job: dict, payload: Dict[str, Any]
+    ):
+        """Fail a request with a structured error (reason + logs)."""
+        log.error(f"Failing job due to init failure. | {job['id']}")
+        await send_result(session, {"error": json.dumps(payload)}, job, is_stream=False)
+
+    async def _run_init(self):
+        """Run initializer concurrently with the loop. Upon completion, opens the gate to run
+        job handlers. On failure, records the reason, then drains and shuts the worker."""
+        initializer = self.config.get("initializer")
+        if initializer is None:
+            self._init_ready.set()
+            return
+
+        from .rp_initializer import (
+            InitializerError,
+            InitializerTimeout,
+            build_init_failed_payload,
+            run_initializer_async,
+        )
+
+        try:
+            with capture() as cap:
+                try:
+                    await run_initializer_async(
+                        initializer, self.config.get("init_timeout")
+                    )
+                except (InitializerError, InitializerTimeout) as exc:
+                    self._init_error = build_init_failed_payload(exc, cap.getvalue())
+            if self._init_error is not None:
+                log.error(f"init_failed | {json.dumps(self._init_error)}")
+        finally:
+            # Always release held handlers.
+            self._init_ready.set()
+
+        if self._init_error is not None:
+            # Stop long-running loops before waiting for acquired requests to drain.
+            self.kill_worker()
+            while self.current_occupancy() > 0:
+                await asyncio.sleep(0.1)

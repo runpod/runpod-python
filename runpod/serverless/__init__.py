@@ -145,6 +145,12 @@ def start(config: Dict[str, Any]):
     config["handler"] (Callable): The handler function to run.
 
     config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
+
+    config["initializer"] (Callable, optional): Startup work that runs alongside job intake.
+        The worker holds handler execution until the initializer finishes.
+
+    config["init_timeout"] (int, optional): Seconds to allow the initializer before
+        treating it as a failure. Omit for no timeout.
     """
     print(f"--- Starting Serverless Worker |  Version {runpod_version} ---")
 
