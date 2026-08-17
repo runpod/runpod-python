@@ -15,6 +15,7 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
 from ..utils import rp_debugger
+from .rp_capture import capture, clip
 from .rp_handler import is_generator
 from .rp_http import send_result, stream_result
 from .rp_tips import check_return_size
@@ -253,54 +254,55 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     log.info("Started.", job["id"])
     run_result = {}
 
-    try:
-        handler_return = handler(job)
-        job_output = (
-            await handler_return
-            if inspect.isawaitable(handler_return)
-            else handler_return
-        )
+    with capture() as cap:
+        try:
+            handler_return = handler(job)
+            job_output = (
+                await handler_return
+                if inspect.isawaitable(handler_return)
+                else handler_return
+            )
 
-        log.debug(f"Handler output: {job_output}", job["id"])
+            log.debug(f"Handler output: {job_output}", job["id"])
 
-        if isinstance(job_output, dict):
-            error_msg = job_output.pop("error", None)
-            refresh_worker = job_output.pop("refresh_worker", None)
-            run_result["output"] = job_output
+            if isinstance(job_output, dict):
+                error_msg = job_output.pop("error", None)
+                refresh_worker = job_output.pop("refresh_worker", None)
+                run_result["output"] = job_output
 
-            if error_msg:
-                run_result["error"] = error_msg
-            if refresh_worker:
-                run_result["stopPod"] = True
+                if error_msg:
+                    run_result["error"] = error_msg
+                if refresh_worker:
+                    run_result["stopPod"] = True
 
-        elif isinstance(job_output, bool):
-            run_result = {"output": job_output}
+            elif isinstance(job_output, bool):
+                run_result = {"output": job_output}
 
-        else:
-            run_result = {"output": job_output}
+            else:
+                run_result = {"output": job_output}
 
-        if run_result.get("output") == {}:
-            run_result.pop("output")
+            if run_result.get("output") == {}:
+                run_result.pop("output")
 
-        check_return_size(run_result)  # Checks the size of the return body.
+            check_return_size(run_result)  # Checks the size of the return body.
 
-    except Exception as err:
-        error_info = {
-            "error_type": str(type(err)),
-            "error_message": str(err),
-            "error_traceback": traceback.format_exc(),
-            "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
-            "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
-            "runpod_version": runpod_version,
-        }
+        except Exception as err:  # noqa: BLE001 - user handler may raise anything; surface it
+            captured_logs = cap.getvalue()
+            error_info = {
+                "error_type": str(type(err)),
+                "error_message": clip(str(err)),
+                "error_traceback": clip(traceback.format_exc()),
+                "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", "unknown"),
+                "worker_id": os.environ.get("RUNPOD_POD_ID", "unknown"),
+                "runpod_version": runpod_version,
+                "logs": captured_logs,
+            }
 
-        log.error("Captured Handler Exception", job["id"])
-        log.error(json.dumps(error_info, indent=4))
-        run_result = {"error": json.dumps(error_info)}
+            log.error("Captured Handler Exception", job["id"])
+            log.error(json.dumps(error_info, indent=4))
+            run_result = {"error": json.dumps(error_info)}
 
-    finally:
-        log.debug(f"run_job return: {run_result}", job["id"])
-
+    log.debug(f"run_job return: {run_result}", job["id"])
     return run_result
 
 
@@ -317,20 +319,25 @@ async def run_job_generator(
         job["id"],
     )
 
-    try:
-        job_output = handler(job)
+    with capture() as cap:
+        try:
+            job_output = handler(job)
 
-        if is_async_gen:
-            async for output_partial in job_output:
-                log.debug(f"Async Generator output: {output_partial}", job["id"])
-                yield {"output": output_partial}
-        else:
-            for output_partial in job_output:
-                log.debug(f"Generator output: {output_partial}", job["id"])
-                yield {"output": output_partial}
+            if is_async_gen:
+                async for output_partial in job_output:
+                    log.debug(f"Async Generator output: {output_partial}", job["id"])
+                    yield {"output": output_partial}
+            else:
+                for output_partial in job_output:
+                    log.debug(f"Generator output: {output_partial}", job["id"])
+                    yield {"output": output_partial}
 
-    except Exception as err:
-        log.error(err, job["id"])
-        yield {"error": f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"}
-    finally:
-        log.info("Finished running generator.", job["id"])
+        except Exception as err:  # noqa: BLE001 - user handler may raise anything; surface it
+            captured_logs = cap.getvalue()
+            log.error(err, job["id"])
+            error = f"handler: {str(err)} \ntraceback: {traceback.format_exc()}"
+            if captured_logs:
+                error += f"\nlogs:\n{captured_logs}"
+            yield {"error": clip(error)}
+        finally:
+            log.info("Finished running generator.", job["id"])
