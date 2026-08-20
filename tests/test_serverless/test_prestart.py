@@ -81,15 +81,20 @@ class TestPrestartRegistry(unittest.TestCase):
         assert payload["error_message"] == "CUDA OOM"
 
     def test_timeout_bounds_the_whole_phase_and_names_current_hook(self):
+        started = []
+
         async def first():
-            await asyncio.sleep(0.03)
+            started.append("first")
 
         async def second():
-            await asyncio.sleep(0.03)
+            started.append("second")
+            # Blocks forever, so the deadline lands here on any scheduler.
+            await asyncio.Event().wait()
 
         with self.assertRaises(PrestartTimeout) as ctx:
-            _run(run_prestart_hooks_async((first, second), timeout=0.04))
+            _run(run_prestart_hooks_async((first, second), timeout=0.05))
 
+        assert started == ["first", "second"]
         assert ctx.exception.hook == "second"
 
     def test_hook_raised_cancelled_error_is_a_prestart_failure(self):
