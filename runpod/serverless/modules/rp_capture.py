@@ -9,8 +9,9 @@ Captured output is attached to failure payloads, which are returned to whoever
 called the request, so capture is not on by default. `RUNPOD_LOG_CAPTURE`
 selects when it runs:
 
-    auto (default)  capture only when prestart hooks are registered, so a worker
-                    that has not adopted prestart behaves exactly as before
+    auto (default)  capture only when the caller reports registered prestart
+                    hooks, so a worker that has not adopted prestart behaves
+                    exactly as before
     all             always capture, including handler failures on workers with
                     no prestart hooks
     off             never capture
@@ -88,18 +89,18 @@ def capture_mode() -> str:
     return mode if mode in _CAPTURE_MODES else CAPTURE_AUTO
 
 
-def install() -> None:
-    """Install the tee proxy on stdout/stderr, if this worker wants capture. Idempotent."""
+def install(*, hooks_registered: bool = False) -> None:
+    """Install the tee proxy on stdout/stderr, if this worker wants capture.
+
+    Idempotent. `hooks_registered` is what `auto` mode keys off, and the caller
+    passes it in so this module stays independent of the prestart registry.
+    """
     mode = capture_mode()
     if mode == CAPTURE_OFF:
         return
 
-    if mode == CAPTURE_AUTO:
-        # Local import: rp_prestart imports this module.
-        from .rp_prestart import has_prestart_hooks
-
-        if not has_prestart_hooks():
-            return
+    if mode == CAPTURE_AUTO and not hooks_registered:
+        return
 
     if not isinstance(sys.stdout, _TeeProxy):
         sys.stdout = _TeeProxy(sys.stdout)

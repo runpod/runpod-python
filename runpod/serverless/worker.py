@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 from runpod.serverless.modules import rp_capture, rp_local, rp_logger, rp_ping, rp_scale
 from runpod.serverless.modules.rp_fitness import run_fitness_checks
+from runpod.serverless.modules.rp_prestart import has_prestart_hooks
 
 log = rp_logger.RunPodLogger()
 heartbeat = rp_ping.Heartbeat()
@@ -50,7 +51,7 @@ def run_worker(config: Dict[str, Any]) -> None:
     heartbeat.start_ping(mirror)
 
     # Capture stdout/stderr so handler and prestart failures report their logs.
-    rp_capture.install()
+    rp_capture.install(hooks_registered=has_prestart_hooks())
 
     # Create a JobScaler responsible for adjusting the concurrency
     job_scaler = rp_scale.JobScaler(config)
