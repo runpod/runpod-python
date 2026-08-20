@@ -74,7 +74,8 @@ to the failure it reports, as `logs`. Opt in using `RUNPOD_LOG_CAPTURE`:
 
 Capture replaces `sys.stdout`/`sys.stderr` at worker startup, so it sees `print`
 and direct stream writes made while a hook or handler runs. It does not see
-child processes and log handlers created before startup.
+child processes, log handlers created before startup, or threads your code
+starts directly (`asyncio.to_thread` is captured).
 
 ## Worker Refresh
 
