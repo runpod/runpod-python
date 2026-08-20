@@ -1,10 +1,12 @@
-""" Used to launch the FastAPI web server when worker is running in API mode. """
+"""Used to launch the FastAPI web server when worker is running in API mode."""
 
 import os
 import threading
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import requests
 import uvicorn
@@ -14,9 +16,12 @@ from fastapi.responses import RedirectResponse
 
 from ...http_client import SyncClientSession
 from ...version import __version__ as runpod_version
+from . import rp_capture
+from .rp_fitness import _terminate_unhealthy
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
 from .rp_ping import Heartbeat
+from .rp_prestart import get_prestart_hooks, run_prestart_phase
 from .worker_state import JobsProgress, PingJobMirror
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
@@ -106,7 +111,7 @@ class Job:
     """Represents a job."""
 
     id: str
-    input: Union[dict, list, str, int, float, bool]
+    input: dict[str, Any] | list[Any] | str | int | float | bool
 
 
 @dataclass
@@ -115,17 +120,17 @@ class TestJob:
     input can be any type of data.
     """
 
-    id: Optional[str] = None
-    input: Optional[Union[dict, list, str, int, float, bool]] = None
-    webhook: Optional[str] = None
+    id: str | None = None
+    input: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    webhook: str | None = None
 
 
 @dataclass
 class DefaultRequest:
     """Represents a test input."""
 
-    input: Dict[str, Any]
-    webhook: Optional[str] = None
+    input: dict[str, Any]
+    webhook: str | None = None
 
 
 # ------------------------------ Output Objects ------------------------------ #
@@ -135,8 +140,8 @@ class JobOutput:
 
     id: str
     status: str
-    output: Optional[Union[dict, list, str, int, float, bool]] = None
-    error: Optional[str] = None
+    output: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -145,18 +150,18 @@ class StreamOutput:
 
     id: str
     status: str = "IN_PROGRESS"
-    stream: Optional[Union[dict, list, str, int, float, bool]] = None
-    error: Optional[str] = None
+    stream: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    error: str | None = None
 
 
 # ------------------------------ Webhook Sender ------------------------------ #
-def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
+def _send_webhook(url: str, payload: dict[str, Any]) -> bool:
     """
     Sends a webhook to the provided URL.
 
     Args:
         url (str): The URL to send the webhook to.
-        payload (Dict[str, Any]): The JSON payload to send.
+        payload (dict[str, Any]): The JSON payload to send.
 
     Returns:
         bool: True if the request was successful, False otherwise.
@@ -177,7 +182,17 @@ def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
 class WorkerAPI:
     """Used to launch the FastAPI web server when the worker is running in API mode."""
 
-    def __init__(self, config: Dict[str, Any]):
+    @asynccontextmanager
+    async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
+        """Finish prestart before the development API accepts requests."""
+        if await run_prestart_phase(
+            get_prestart_hooks(), self.config.get("prestart_timeout")
+        ):
+            # Never serve on a broken startup. _terminate_unhealthy does not return.
+            _terminate_unhealthy(1)
+        yield
+
+    def __init__(self, config: dict[str, Any]):
         """
         Initializes the WorkerAPI class.
         1. Starts the heartbeat thread.
@@ -194,6 +209,7 @@ class WorkerAPI:
         heartbeat.start_ping(mirror)
 
         self.config = config
+        rp_capture.install()
 
         tags_metadata = [
             {
@@ -217,6 +233,7 @@ class WorkerAPI:
             version=runpod_version,
             docs_url="/",
             openapi_tags=tags_metadata,
+            lifespan=self._lifespan,
         )
 
         # Create an APIRouter and add the route for processing jobs.
