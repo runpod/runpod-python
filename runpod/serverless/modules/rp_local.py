@@ -13,7 +13,11 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from .rp_fitness import _terminate_unhealthy
 from .rp_job import run_job
-from .rp_prestart import get_prestart_hooks, run_prestart_phase
+from .rp_prestart import (
+    get_prestart_hooks,
+    has_prestart_hooks,
+    run_prestart_phase,
+)
 
 log = RunPodLogger()
 
@@ -42,7 +46,7 @@ async def run_local(config: dict[str, Any]) -> None:
     # Set the job ID
     local_job["id"] = local_job.get("id", "local_test")
     log.debug(f"Retrieved local job: {local_job}")
-    rp_capture.install()
+    rp_capture.install(hooks_registered=has_prestart_hooks())
     if await run_prestart_phase(get_prestart_hooks(), config.get("prestart_timeout")):
         _terminate_unhealthy(1)
 

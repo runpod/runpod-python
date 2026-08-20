@@ -21,7 +21,11 @@ from .rp_fitness import _terminate_unhealthy
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
 from .rp_ping import Heartbeat
-from .rp_prestart import get_prestart_hooks, run_prestart_phase
+from .rp_prestart import (
+    get_prestart_hooks,
+    has_prestart_hooks,
+    run_prestart_phase,
+)
 from .worker_state import JobsProgress, PingJobMirror
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
@@ -209,7 +213,7 @@ class WorkerAPI:
         heartbeat.start_ping(mirror)
 
         self.config = config
-        rp_capture.install()
+        rp_capture.install(hooks_registered=has_prestart_hooks())
 
         tags_metadata = [
             {

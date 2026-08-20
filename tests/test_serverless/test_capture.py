@@ -15,6 +15,7 @@ from runpod.serverless.modules import rp_capture
 from runpod.serverless.modules.rp_job import run_job, run_job_generator
 from runpod.serverless.modules.rp_prestart import (
     clear_prestart_hooks,
+    has_prestart_hooks,
     register_prestart_hook,
 )
 
@@ -59,11 +60,13 @@ class TestStdioCapture(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         with patch.object(sys, "stdout", stdout), patch.object(sys, "stderr", stderr):
-            rp_capture.install()
+            rp_capture.install(hooks_registered=True)
             installed_stdout = sys.stdout
             installed_stderr = sys.stderr
+            assert isinstance(installed_stdout, rp_capture._TeeProxy)
+            assert isinstance(installed_stderr, rp_capture._TeeProxy)
 
-            rp_capture.install()
+            rp_capture.install(hooks_registered=True)
 
             assert sys.stdout is installed_stdout
             assert sys.stderr is installed_stderr
@@ -85,7 +88,7 @@ class TestCaptureIsOptIn(unittest.TestCase):
             patch.object(sys, "stdout", real_stdout),
             patch.object(sys, "stderr", real_stderr),
         ):
-            rp_capture.install()
+            rp_capture.install(hooks_registered=has_prestart_hooks())
             return isinstance(sys.stdout, rp_capture._TeeProxy) and isinstance(
                 sys.stderr, rp_capture._TeeProxy
             )
