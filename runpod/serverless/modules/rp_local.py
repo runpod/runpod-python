@@ -6,16 +6,19 @@ Provides the local testing functionality for runpod serverless worker.
 import json
 import os
 import sys
-from typing import Any, Dict
+from typing import Any
 
+from runpod.serverless.modules import rp_capture
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
+from .rp_fitness import _terminate_unhealthy
 from .rp_job import run_job
+from .rp_prestart import get_prestart_hooks, run_prestart_phase
 
 log = RunPodLogger()
 
 
-async def run_local(config: Dict[str, Any]) -> None:
+async def run_local(config: dict[str, Any]) -> None:
     """
     Runs the worker locally.
     """
@@ -29,7 +32,7 @@ async def run_local(config: Dict[str, Any]) -> None:
             sys.exit(1)
 
         log.info("Using test_input.json as job input.")
-        with open("test_input.json", "r", encoding="UTF-8") as file:
+        with open("test_input.json", encoding="UTF-8") as file:
             local_job = json.loads(file.read())
 
     if local_job.get("input", None) is None:
@@ -39,6 +42,9 @@ async def run_local(config: Dict[str, Any]) -> None:
     # Set the job ID
     local_job["id"] = local_job.get("id", "local_test")
     log.debug(f"Retrieved local job: {local_job}")
+    rp_capture.install()
+    if await run_prestart_phase(get_prestart_hooks(), config.get("prestart_timeout")):
+        _terminate_unhealthy(1)
 
     job_result = await run_job(config["handler"], local_job)
 
