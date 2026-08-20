@@ -18,13 +18,63 @@ runpod.serverless.start({"handler": handler})
 
 The `config` parameter is a dictionary containing the following keys:
 
-| Key       | Type       | Description                                                  |
-|-----------|------------|--------------------------------------------------------------|
-| `handler` | `function` | The handler function that will be called with the job input. |
+| Key               | Type       | Description                                                        |
+|-------------------|------------|--------------------------------------------------------------------|
+| `handler`         | `function` | The handler function called with each job input.                   |
+| `prestart_timeout`| `number`   | Optional deadline in seconds for all registered prestart hooks.    |
 
 ### handler
 
 The handler function can either have a standard return or be a generator function. If the handler is a generator function, it will be called with the job input and the generator will be iterated over until it is exhausted.
+
+## Prestart hooks
+
+Queue-based workers can register startup work that must finish before the
+handler receives jobs. Hooks run once per worker process, sequentially in registration order.
+
+```python
+import runpod
+
+model = None
+
+@runpod.serverless.register_prestart_hook
+def load_model():
+    global model
+    model = load_weights()
+
+def handler(job):
+    return model(job["input"])
+
+runpod.serverless.start({
+    "handler": handler,
+    "prestart_timeout": 600,
+})
+```
+
+Support depends on the runtime mode:
+
+| Mode | Support | Behavior |
+|------|---------|----------|
+| Production queue | Full | Queue job intake runs concurrently with prestart. Handlers run after prestart finished. Prestart failure is attached to held requests. |
+| Local test input | Supported | Hooks run before the synthetic request. |
+| Hosted development API | Supported with `--rp_api_concurrency 1` | FastAPI lifespan runs hooks before serving. One Uvicorn worker keeps startup state and the handler in the same process. |
+| Realtime | Unsupported | Realtime has separate worker cardinality, readiness, and persistent-connection failure semantics that this hook contract does not define. |
+| Load-balanced endpoints | Not applicable | These images own their HTTP server lifecycle and do not start through this SDK worker entrypoint. |
+
+## Failure logs
+
+When a prestart hook or a handler fails, the SDK can attach `stdout`/`stderr`
+to the failure it reports, as `logs`. Opt in using `RUNPOD_LOG_CAPTURE`:
+
+| Value | Behavior |
+|-------|----------|
+| `auto` (default) | Capture only when prestart hooks are registered. |
+| `all` | Always captures. |
+| `off` | Never capture, even with prestart hooks registered. |
+
+Capture replaces `sys.stdout`/`sys.stderr` at worker startup, so it sees `print`
+and direct stream writes made while a hook or handler runs. It does not see
+child processes and log handlers created before startup.
 
 ## Worker Refresh
 
