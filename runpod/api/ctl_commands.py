@@ -282,6 +282,7 @@ def create_template(
     env: dict = None,
     is_serverless: bool = False,
     registry_auth_id: str = None,
+    readme: str = None,
 ):
     """
     Create a template
@@ -298,6 +299,7 @@ def create_template(
                 inject EXAMPLE_VAR and EXAMPLE_VAR2 into the pod with the mentioned values
     :param is_serverless: is the template serverless?
     :param registry_auth_id: the id of the registry auth
+    :param readme: the README content to associate with the template
 
     :example:
 
@@ -315,6 +317,7 @@ def create_template(
             env=env,
             is_serverless=is_serverless,
             registry_auth_id=registry_auth_id,
+            readme=readme,
         )
     )
 
