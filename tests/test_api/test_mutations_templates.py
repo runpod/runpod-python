@@ -19,6 +19,7 @@ class TestGeneratePodTemplate(unittest.TestCase):
         self.assertIn('ports: ""', result)  # Defaults
         self.assertIn("env: []", result)  # Defaults
         self.assertIn("isServerless: false", result)  # Defaults
+        self.assertIn('readme: ""', result)  # Defaults
 
     def test_optional_fields(self):
         """Test the optional fields are present in the generated template"""
@@ -43,3 +44,13 @@ class TestGeneratePodTemplate(unittest.TestCase):
         )
         self.assertIn("isServerless: true", result)
         self.assertIn('containerRegistryAuthId : "test_auth"', result)
+
+    def test_readme_is_escaped_and_included(self):
+        """Test that README content is included as a GraphQL string."""
+        result = generate_pod_template(
+            "test_name",
+            "test_image_name",
+            readme='line one "quoted"\nline two',
+        )
+
+        self.assertIn('readme: "line one \\"quoted\\"\\nline two"', result)

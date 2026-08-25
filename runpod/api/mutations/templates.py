@@ -14,6 +14,7 @@ def generate_pod_template(
     env: dict = None,
     is_serverless: bool = False,
     registry_auth_id: str = None,
+    readme: str = None,
 ):
     """Generate a string for a GraphQL mutation to create a new pod template."""
     input_fields = [f'name: "{name}"', f'imageName: "{image_name}"']
@@ -59,7 +60,18 @@ def generate_pod_template(
     else:
         input_fields.append('containerRegistryAuthId : ""')
 
-    input_fields.extend(("startSsh: true", "isPublic: false", 'readme: ""'))
+    if readme is not None:
+        readme = (
+            readme.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        )
+        input_fields.append(f'readme: "{readme}"')
+    else:
+        input_fields.append('readme: ""')
+
+    input_fields.extend(("startSsh: true", "isPublic: false"))
     # Format the input fields into a string
     input_fields_string = ", ".join(input_fields)
 
