@@ -263,7 +263,7 @@ class WorkerAPI:
         api_router.add_api_route(
             "/status/{job_id}",
             self._sim_status,
-            methods=["POST"],
+            methods=["GET", "POST"],
             response_model_exclude_none=True,
             summary="Mimics the behavior of the status endpoint.",
             description=STATUS_DESCRIPTION,
