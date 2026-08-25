@@ -40,9 +40,20 @@ jobs:
           UV_PYTHON: ${{ matrix.python-version }}
 
       - name: Run tests
-        run: make test
+        run: make test-coverage
         env:
           UV_PYTHON: ${{ matrix.python-version }}
+
+      # Consumed by the weekly coverage report, which reads the artifact from
+      # the newest successful run on main. Name is per-matrix-version because
+      # upload-artifact@v4 requires unique names within a run.
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: error
 
   e2e:
     if: github.event_name != 'schedule' && github.repository == 'runpod/runpod-python'
