@@ -613,7 +613,7 @@ log.error(message, job_id=None)
 - `clear_fitness_checks()`: Clear registry (testing only)
 
 **Execution Flow**:
-1. Called from `worker.py:40` before heartbeat starts: `asyncio.run(run_fitness_checks())`
+1. Runs twice per worker: built-in checks at `import runpod.serverless` via `run_startup_fitness_checks()`, then user-registered and `@defer_to_worker_start` checks from `worker.py:40` before heartbeat starts: `asyncio.run(run_fitness_checks())`; completed checks are not repeated, and `RUNPOD_DEFER_FITNESS_CHECKS=true` collapses both passes into the `worker.py` one
 2. Runs only in production mode (skipped for local testing)
 3. Auto-detects sync vs async using `inspect.iscoroutinefunction()`
 4. Executes checks in registration order (list preserves order)
