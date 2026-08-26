@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from runpod._binary_helpers import get_binary_path
-from .rp_fitness import register_fitness_check
+from .rp_fitness import _env_flag, register_fitness_check
 from .rp_logger import RunPodLogger
 
 log = RunPodLogger()
@@ -286,7 +286,7 @@ def auto_register_gpu_check() -> None:
     - RUNPOD_SKIP_GPU_CHECK: Set to "true" to skip auto-registration
     """
     # Allow skipping during tests
-    if os.environ.get("RUNPOD_SKIP_GPU_CHECK", "").lower() == "true":
+    if _env_flag("RUNPOD_SKIP_GPU_CHECK"):
         log.debug("GPU fitness check auto-registration disabled via environment")
         return
 

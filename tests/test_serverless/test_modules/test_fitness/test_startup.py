@@ -1,5 +1,9 @@
 """Tests for fitness checks running at import/startup time (DR-1409)."""
 
+import builtins
+import os
+import sys
+import types
 from unittest.mock import patch
 
 import pytest
@@ -65,6 +69,26 @@ class TestRunOnce:
 
         assert calls == ["first", "second"]
 
+    @pytest.mark.asyncio
+    async def test_equal_but_distinct_registration_still_runs(self):
+        # Bound-method objects are distinct but compare equal; an == check
+        # against _completed_checks would wrongly skip the re-registration.
+        calls = []
+
+        class Checker:
+            def check(self):
+                calls.append("bound")
+
+        obj = Checker()
+
+        register_fitness_check(obj.check)
+        await run_fitness_checks()
+
+        register_fitness_check(obj.check)
+        await run_fitness_checks()
+
+        assert calls == ["bound", "bound"]
+
 
 class TestStartupEntrypoint:
     def test_runs_checks_on_worker(self, worker_env):
@@ -111,7 +135,11 @@ class TestStartupEntrypoint:
         assert calls == []
 
     def test_unexpected_error_does_not_propagate(self, worker_env):
-        with patch.object(rp_fitness.asyncio, "run", side_effect=RuntimeError("boom")):
+        # Patch loop construction, not loop execution: patching asyncio.run
+        # would orphan the coroutine argument and trip unraisable warnings.
+        with patch.object(
+            rp_fitness.asyncio, "new_event_loop", side_effect=RuntimeError("boom")
+        ):
             run_startup_fitness_checks()
 
     @pytest.mark.asyncio
@@ -169,3 +197,113 @@ class TestDeferredChecks:
         assert rp_fitness._is_deferred(by_name["_cuda_init_check"])
         assert rp_fitness._is_deferred(by_name["_benchmark_check"])
         assert not rp_fitness._is_deferred(by_name["_memory_check"])
+
+
+class TestDoneMarker:
+    """Spawned children re-import this module and must not re-run the checks."""
+
+    def test_done_marker_skips_startup_pass(self, worker_env, monkeypatch):
+        monkeypatch.setenv(rp_fitness._CHECKS_DONE_ENV, "1")
+        calls = []
+
+        @register_fitness_check
+        def check():
+            called.append(True)
+
+        run_startup_fitness_checks()
+        assert calls == []
+
+    def test_startup_pass_sets_done_marker(self, worker_env):
+        run_startup_fitness_checks()
+        assert os.environ.get(rp_fitness._CHECKS_DONE_ENV) == "1"
+
+
+class TestDeferFullBehavior:
+    """RUNPOD_DEFER_FITNESS_CHECKS restores exact pre-PR start()-only timing."""
+
+    @pytest.mark.asyncio
+    async def test_deferred_to_start_runs_everything(self, worker_env, monkeypatch):
+        monkeypatch.setenv("RUNPOD_DEFER_FITNESS_CHECKS", "true")
+        calls = []
+
+        @register_fitness_check
+        def check():
+            calls.append(True)
+
+        @register_fitness_check
+        @rp_fitness.defer_to_worker_start
+        def deferred():
+            calls.append("deferred")
+
+        run_startup_fitness_checks()
+        assert calls == []
+
+        await run_fitness_checks()
+        assert calls == [True, "deferred"]
+
+
+class TestAutoRegistrationPath:
+    """Exercise the real _ensure_*_registered path during the startup pass."""
+
+    def test_startup_runs_auto_registered_checks_without_torch(
+        self, worker_env, monkeypatch
+    ):
+        calls = []
+
+        fake_gpu_module = types.SimpleNamespace(
+            auto_register_gpu_check=lambda: register_fitness_check(
+                lambda: calls.append("gpu")
+            )
+        )
+
+        def register_system_checks():
+            register_fitness_check(lambda: calls.append("system"))
+            register_fitness_check(
+                rp_fitness.defer_to_worker_start(lambda: calls.append("deferred"))
+            )
+
+        fake_system_module = types.SimpleNamespace(
+            auto_register_system_checks=register_system_checks
+        )
+
+        monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", raising=False)
+        monkeypatch.delenv("RUNPOD_SKIP_GPU_CHECK", raising=False)
+        monkeypatch.setitem(
+            sys.modules, "runpod.serverless.modules.rp_gpu_fitness", fake_gpu_module
+        )
+        monkeypatch.setitem(
+            sys.modules,
+            "runpod.serverless.modules.rp_system_fitness",
+            fake_system_module,
+        )
+
+        real_import = builtins.__import__
+
+        def guard_no_torch(name, *args, **kwargs):
+            if name.split(".")[0] == "torch":
+                raise AssertionError("torch imported during startup checks")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", guard_no_torch)
+
+        run_startup_fitness_checks()
+
+        assert calls == ["gpu", "system"]  # deferred check stays for run_worker
+
+
+class TestImportWiring:
+    """Deleting the wiring must fail a test, not just real workers."""
+
+    def test_serverless_import_calls_startup_checks(self, monkeypatch):
+        import importlib
+
+        import runpod.serverless
+
+        calls = []
+        monkeypatch.setattr(
+            rp_fitness, "run_startup_fitness_checks", lambda: calls.append(True)
+        )
+
+        importlib.reload(runpod.serverless)
+
+        assert calls == [True]

@@ -51,7 +51,12 @@ Your own `@register_fitness_check` functions are registered after that import, s
 
 Note that the memory check now measures a fresh container rather than one with your model loaded, so `RUNPOD_MIN_MEMORY_GB` validates the environment you were given, not the headroom left after loading.
 
-The import-time pass no-ops outside a real worker (no `RUNPOD_WEBHOOK_GET_JOB`), leaving local runs, tests, and the `runpod` CLI unaffected. Set `RUNPOD_DEFER_FITNESS_CHECKS=true` to run everything at `start()` instead.
+The import-time pass no-ops outside a real worker (no `RUNPOD_WEBHOOK_GET_JOB`), leaving local runs and tests unaffected — note that inside a worker container *any* `import runpod` triggers it. Set `RUNPOD_DEFER_FITNESS_CHECKS=true` to run everything at `start()` instead.
+
+Two details worth knowing:
+
+- Thresholds and skip flags (`RUNPOD_MIN_*`, `RUNPOD_SKIP_*`, `RUNPOD_GPU_*`) are read when the checks first run, so set them **before** `import runpod` — Dockerfile `ENV` recommended; setting them from Python in your handler is too late on the real platform.
+- Workers serving the realtime API (`--rp_serve_api`) never enter the worker loop, so only the import-time checks apply there; the two deferred CUDA checks do not run in that mode. Child processes created with multiprocessing's `spawn` start method re-import this module but inherit a marker and skip the checks.
 
 ## Async Fitness Checks
 
@@ -383,13 +388,15 @@ ENV RUNPOD_NETWORK_CHECK_TIMEOUT=10
 ENV RUNPOD_GPU_BENCHMARK_TIMEOUT=2
 ```
 
-Or in Python:
+Or in Python, before `import runpod` (on the real platform the checks run at import):
 
 ```python
 import os
 
 os.environ["RUNPOD_MIN_MEMORY_GB"] = "8.0"
 os.environ["RUNPOD_MIN_DISK_PERCENT"] = "15.0"
+
+import runpod
 ```
 
 ### Disabling Built-in Checks
@@ -411,7 +418,11 @@ os.environ["RUNPOD_SKIP_AUTO_SYSTEM_CHECKS"] = "true"
 
 # Disable the automatic GPU memory allocation test
 os.environ["RUNPOD_SKIP_GPU_CHECK"] = "true"
+
+import runpod
 ```
+
+As with the thresholds, set these before `import runpod` on the real platform.
 
 User-registered checks via `@register_fitness_check` still run regardless of `RUNPOD_SKIP_AUTO_SYSTEM_CHECKS` and `RUNPOD_SKIP_GPU_CHECK`. Only `RUNPOD_SKIP_FITNESS_CHECKS` disables those too.
 
@@ -419,7 +430,7 @@ User-registered checks via `@register_fitness_check` still run regardless of `RU
 
 ### Execution Timing
 
-- Fitness checks run **only once at worker startup**
+- Each check runs **once per worker**: built-ins at import, your registered checks and the deferred CUDA checks at `start()`; checks that passed are not repeated
 - They run **before the first job is processed**
 - They run **only on the actual Runpod serverless platform**
 - Local development and testing modes skip fitness checks
@@ -569,7 +580,7 @@ async def check_api_with_retry():
 
 ## Testing
 
-When developing locally, fitness checks don't run. To test them, you can manually invoke the runner:
+When developing locally, fitness checks don't run. To test them, you can manually invoke the runner. Note that each check runs once per process: a second `run_fitness_checks()` call skips checks that already passed, so call `clear_fitness_checks()` (as below) between runs:
 
 ```python
 import asyncio

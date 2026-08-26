@@ -61,6 +61,11 @@ SKIP_FITNESS_CHECKS_ENV = "RUNPOD_SKIP_FITNESS_CHECKS"
 # Keeps the checks but runs them only in run_worker, as before.
 DEFER_FITNESS_CHECKS_ENV = "RUNPOD_DEFER_FITNESS_CHECKS"
 
+# Set once this process has claimed the startup pass. Child processes spawned
+# with multiprocessing 'spawn' (vLLM, DeepSpeed) re-import this module and
+# inherit the environment; the marker tells them to skip the checks.
+_CHECKS_DONE_ENV = "RUNPOD_FITNESS_CHECKS_DONE"
+
 
 def _env_flag(name: str) -> bool:
     """True if the env var is set to a truthy value."""
@@ -199,14 +204,18 @@ def _ensure_gpu_check_registered() -> None:
     if _registration_state["gpu_check"]:
         return
 
-    _registration_state["gpu_check"] = True
-
+    # Latch only on success: a registration failure (e.g. a malformed
+    # RUNPOD_GPU_TEST_TIMEOUT) must re-raise in run_worker, not silently
+    # disable the checks in both passes.
     try:
         from .rp_gpu_fitness import auto_register_gpu_check
-
-        auto_register_gpu_check()
     except ImportError:
         log.debug("GPU fitness check module not found, skipping auto-registration")
+        _registration_state["gpu_check"] = True
+        return
+
+    auto_register_gpu_check()
+    _registration_state["gpu_check"] = True
 
 
 def _ensure_system_checks_registered() -> None:
@@ -216,27 +225,27 @@ def _ensure_system_checks_registered() -> None:
     Deferred until first run to avoid circular import issues during module
     initialization. Called from run_fitness_checks() on first invocation.
     """
-    import os
-
     if _registration_state["system_checks"]:
         return
 
     # Allow disabling system checks for testing
-    if os.environ.get("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "").lower() == "true":
+    if _env_flag("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS"):
         log.debug(
             "System fitness checks disabled via environment (RUNPOD_SKIP_AUTO_SYSTEM_CHECKS)"
         )
         _registration_state["system_checks"] = True
         return
 
-    _registration_state["system_checks"] = True
-
+    # Same latch-on-success rule as _ensure_gpu_check_registered.
     try:
         from .rp_system_fitness import auto_register_system_checks
-
-        auto_register_system_checks()
     except ImportError:
         log.debug("System fitness check module not found, skipping auto-registration")
+        _registration_state["system_checks"] = True
+        return
+
+    auto_register_system_checks()
+    _registration_state["system_checks"] = True
 
 
 async def run_fitness_checks(include_deferred: bool = True) -> None:
@@ -261,6 +270,10 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
     6. On successful completion of all checks:
        - Log completion message with total execution time
 
+    Each check runs once per process: completed checks are skipped on later
+    calls, and @defer_to_worker_start checks are skipped when include_deferred
+    is False (the import-time pass).
+
     Note:
         Checks run in registration order (list preserves order).
         Sequential execution (not parallel) ensures clear error reporting
@@ -282,7 +295,13 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
     # Defer system check auto-registration until fitness checks are about to run
     _ensure_system_checks_registered()
 
-    pending = [check for check in _fitness_checks if check not in _completed_checks]
+    # Identity, not equality: two distinct registrations may compare equal
+    # (e.g. fresh bound-method objects of one method), and `==` would skip one.
+    pending = [
+        check
+        for check in _fitness_checks
+        if not any(check is done for done in _completed_checks)
+    ]
 
     if not include_deferred:
         pending = [check for check in pending if not _is_deferred(check)]
@@ -358,9 +377,11 @@ def run_startup_fitness_checks() -> None:
     marked with @defer_to_worker_start are also left to run_worker.
 
     No-ops outside a real worker (no RUNPOD_WEBHOOK_GET_JOB), when the checks
-    are disabled or deferred, or inside a running event loop. Never raises: a
-    failure to run the checks must not stop a worker from booting. A failing
-    check still force-exits, which is the point.
+    are disabled or deferred, inside a running event loop, and in child
+    processes (multiprocessing 'spawn' re-imports this module; the worker marks
+    itself done via env so children skip). Ordinary exceptions from running the
+    checks are logged and swallowed: a failure to run the checks must not stop
+    a worker from booting. A failing check still force-exits, which is the point.
     """
     if _env_flag(SKIP_FITNESS_CHECKS_ENV) or _env_flag(DEFER_FITNESS_CHECKS_ENV):
         return
@@ -368,11 +389,22 @@ def run_startup_fitness_checks() -> None:
     if not os.environ.get("RUNPOD_WEBHOOK_GET_JOB"):
         return
 
+    if os.environ.get(_CHECKS_DONE_ENV):
+        return
+    os.environ[_CHECKS_DONE_ENV] = "1"
+
     if _event_loop_running():
         log.debug("Event loop already running, deferring fitness checks to run_worker.")
         return
 
     try:
-        asyncio.run(run_fitness_checks(include_deferred=False))
+        # Own loop rather than asyncio.run: run() resets the thread's loop
+        # policy state, after which asyncio.get_event_loop() in handler code
+        # raises RuntimeError on Python 3.10+.
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(run_fitness_checks(include_deferred=False))
+        finally:
+            loop.close()
     except Exception as exc:  # pragma: no cover - defensive
-        log.warn(f"Startup fitness checks could not run: {exc}")
+        log.error(f"Startup fitness checks could not run: {exc}")

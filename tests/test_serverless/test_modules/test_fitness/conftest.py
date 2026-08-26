@@ -23,6 +23,9 @@ def cleanup_fitness_checks(monkeypatch):
     """
     monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
     monkeypatch.setenv("RUNPOD_SKIP_GPU_CHECK", "true")
+    # run_startup_fitness_checks sets this directly on the real environment;
+    # clear it per-test so the marker cannot leak between tests.
+    monkeypatch.delenv(rp_fitness._CHECKS_DONE_ENV, raising=False)
 
     def _raise_system_exit(code=0):
         raise SystemExit(code)
