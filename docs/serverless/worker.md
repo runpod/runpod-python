@@ -61,19 +61,22 @@ Support depends on the runtime mode:
 | Realtime | Unsupported | Realtime has separate worker cardinality, readiness, and persistent-connection failure semantics that this hook contract does not define. |
 | Load-balanced endpoints | Not applicable | These images own their HTTP server lifecycle and do not start through this SDK worker entrypoint. |
 
+If shutdown begins while a claimed request waits for prestart, that request
+fails with `prestart_cancelled`.
+
 ## Failure logs
 
-When a prestart hook or a handler fails, the SDK can attach `stdout`/`stderr`
-to the failure it reports, as `logs`. Opt in using `RUNPOD_LOG_CAPTURE`:
+When a prestart hook fails, the SDK can attach its `stdout`/`stderr` to the
+reported failure as `logs`. Handler failure logs require explicit opt-in:
 
 | Value | Behavior |
 |-------|----------|
-| `auto` (default) | Capture only when prestart hooks are registered. |
-| `all` | Always captures. |
-| `off` | Never capture, even with prestart hooks registered. |
+| `auto` (default) | Capture prestart failures when hooks are registered. |
+| `all` | Capture prestart and handler failures. |
+| `off` | Never capture. |
 
-Capture replaces `sys.stdout`/`sys.stderr` at worker startup, so it sees `print`
-and direct stream writes made while a hook or handler runs. It does not see
+Capture replaces `sys.stdout`/`sys.stderr` at worker startup, so it sees direct
+stream writes made within an enabled hook or handler capture. It does not see
 child processes, log handlers created before startup, or threads your code
 starts directly (`asyncio.to_thread` is captured).
 

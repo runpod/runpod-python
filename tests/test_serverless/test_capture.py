@@ -130,9 +130,28 @@ class TestCaptureIsOptIn(unittest.TestCase):
         assert error["error_message"] == "kernel panic"
         assert "logs" not in error
 
+    def test_auto_does_not_attach_handler_logs(self):
+        def handler(_job):
+            print("HF_TOKEN=hf_secret")
+            raise RuntimeError("kernel panic")
+
+        real = io.StringIO()
+        with (
+            patch.dict(os.environ, {"RUNPOD_LOG_CAPTURE": "auto"}),
+            patch.object(sys, "stdout", rp_capture._TeeProxy(real)),
+        ):
+            result = _run(run_job(handler, {"id": "j4"}))
+
+        assert "logs" not in json.loads(result["error"])
+
 
 class TestRunJobCapturesLogs(unittest.TestCase):
     """A failing handler's stdout/stderr is attached to the job error output."""
+
+    def setUp(self):
+        self.capture_all = patch.dict(os.environ, {"RUNPOD_LOG_CAPTURE": "all"})
+        self.capture_all.start()
+        self.addCleanup(self.capture_all.stop)
 
     def test_handler_error_attaches_logs(self):
         def handler(_job):
@@ -210,6 +229,7 @@ class TestErrorFieldBounding(unittest.TestCase):
 
         real = io.StringIO()
         with (
+            patch.dict(os.environ, {"RUNPOD_LOG_CAPTURE": "all"}),
             patch.object(sys, "stdout", rp_capture._TeeProxy(real)),
             patch.object(sys, "stderr", rp_capture._TeeProxy(real)),
         ):
@@ -229,6 +249,7 @@ class TestErrorFieldBounding(unittest.TestCase):
 
         real = io.StringIO()
         with (
+            patch.dict(os.environ, {"RUNPOD_LOG_CAPTURE": "all"}),
             patch.object(sys, "stdout", rp_capture._TeeProxy(real)),
             patch.object(sys, "stderr", rp_capture._TeeProxy(real)),
         ):

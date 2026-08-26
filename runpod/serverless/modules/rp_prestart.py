@@ -31,6 +31,8 @@ from runpod.version import __version__ as runpod_version
 log = RunPodLogger()
 
 PRESTART_FAILED_EVENT = "prestart_failed"
+PRESTART_CANCELLED_EVENT = "prestart_cancelled"
+PRESTART_HOOK_CANCEL_GRACE_SECONDS = 1
 
 _prestart_hooks: list[Callable[[], Any]] = []
 
@@ -88,6 +90,14 @@ class PrestartError(Exception):
         super().__init__(str(original))
 
 
+class PrestartCancellationTimeout(Exception):
+    """Raised when a hook ignores cancellation."""
+
+    def __init__(self, hook: str):
+        self.hook = hook
+        super().__init__(f"prestart hook '{hook}' did not stop after cancellation")
+
+
 def build_prestart_failed_payload(exc: BaseException, logs: str = "") -> dict[str, Any]:
     """Build the structured `prestart_failed` reason sent through `/job-done`."""
     original = getattr(exc, "original", exc)
@@ -110,6 +120,17 @@ def build_prestart_failed_payload(exc: BaseException, logs: str = "") -> dict[st
     if logs:
         payload["logs"] = logs[-MAX_CAPTURED_CHARS:]
     return payload
+
+
+def build_prestart_cancelled_payload() -> dict[str, Any]:
+    """Build the reason for a request held during prestart shutdown."""
+    return {
+        "event": PRESTART_CANCELLED_EVENT,
+        "error_type": "PrestartCancelled",
+        "error_message": "worker shutdown began before prestart completed",
+        "worker_id": WORKER_ID,
+        "runpod_version": runpod_version,
+    }
 
 
 async def _run_sync_in_daemon(hook: Callable[[], Any]) -> Any:
@@ -169,9 +190,13 @@ async def _invoke_hook_preserving_external_cancellation(
         if hook_task.cancelled():
             raise PrestartError(exc, _hook_name(hook)) from exc
 
-        # The caller cancelled the prestart task.
-        # Now cancel and drain the child task before propagating shutdown.
+        # User hooks may suppress cancellation, so bound the drain.
         hook_task.cancel()
+        done, _ = await asyncio.wait(
+            {hook_task}, timeout=PRESTART_HOOK_CANCEL_GRACE_SECONDS
+        )
+        if not done:
+            raise PrestartCancellationTimeout(_hook_name(hook)) from exc
         with contextlib.suppress(BaseException):
             await hook_task
         raise
@@ -218,7 +243,7 @@ async def run_prestart_phase(
         try:
             await run_prestart_hooks_async(hooks, timeout)
             return None
-        except (PrestartError, PrestartTimeout) as exc:
+        except (PrestartCancellationTimeout, PrestartError, PrestartTimeout) as exc:
             payload = build_prestart_failed_payload(exc, captured.getvalue())
 
     log.error(f"prestart_failed | {json.dumps(payload)}")

@@ -9,11 +9,8 @@ Captured output is attached to failure payloads, which are returned to whoever
 called the request, so capture is not on by default. `RUNPOD_LOG_CAPTURE`
 selects when it runs:
 
-    auto (default)  capture only when the caller reports registered prestart
-                    hooks, so a worker that has not adopted prestart behaves
-                    exactly as before
-    all             always capture, including handler failures on workers with
-                    no prestart hooks
+    auto (default)  capture prestart failures when hooks are registered
+    all             capture prestart and handler failures
     off             never capture
 """
 
@@ -89,6 +86,11 @@ def capture_mode() -> str:
     return mode if mode in _CAPTURE_MODES else CAPTURE_AUTO
 
 
+def handler_capture_enabled() -> bool:
+    """Return whether handler failure logs were explicitly enabled."""
+    return capture_mode() == CAPTURE_ALL
+
+
 def install(*, hooks_registered: bool = False) -> None:
     """Install the tee proxy on stdout/stderr, if this worker wants capture.
 
@@ -109,10 +111,14 @@ def install(*, hooks_registered: bool = False) -> None:
 
 
 @contextlib.contextmanager
-def capture() -> Generator[_RingBuffer]:
+def capture(*, enabled: bool = True) -> Generator[_RingBuffer]:
     """Capture stdout/stderr written within this context (and within threads it spawns via
     `asyncio.to_thread`), while still passing everything through to the real streams."""
     buffer = _RingBuffer()
+    if not enabled:
+        yield buffer
+        return
+
     token = _current.set(buffer)
     try:
         yield buffer

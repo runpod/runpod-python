@@ -15,7 +15,7 @@ from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from ...version import __version__ as runpod_version
 from ..utils import rp_debugger
-from .rp_capture import capture
+from .rp_capture import capture, handler_capture_enabled
 from .rp_handler import is_generator
 from .rp_http import send_result, stream_result
 from .rp_tips import check_return_size
@@ -254,7 +254,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
     log.info("Started.", job["id"])
     run_result = {}
 
-    with capture() as cap:
+    with capture(enabled=handler_capture_enabled()) as cap:
         try:
             handler_return = handler(job)
             job_output = (
@@ -322,7 +322,7 @@ async def run_job_generator(
         job["id"],
     )
 
-    with capture() as cap:
+    with capture(enabled=handler_capture_enabled()) as cap:
         try:
             job_output = handler(job)
 

@@ -249,6 +249,7 @@ class TestRunPrestart(unittest.TestCase):
         _run(scaler._run_prestart())
         assert scaler._prestart_ready.is_set()
         assert scaler._prestart_error is None
+        assert scaler._prestart_succeeded
 
     def test_success_opens_gate_no_error(self):
         ran = []
@@ -257,7 +258,28 @@ class TestRunPrestart(unittest.TestCase):
         assert ran == [1]
         assert scaler._prestart_ready.is_set()
         assert scaler._prestart_error is None
+        assert scaler._prestart_succeeded
         assert not scaler._shutdown_event.is_set()
+
+    def test_cancellation_does_not_mark_prestart_succeeded(self):
+        started = asyncio.Event()
+
+        async def blocked_hook():
+            started.set()
+            await asyncio.Event().wait()
+
+        scaler = _scaler(hook=blocked_hook)
+
+        async def go():
+            task = asyncio.create_task(scaler._run_prestart())
+            await started.wait()
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        _run(go())
+        assert not scaler._prestart_succeeded
+        assert scaler._prestart_ready.is_set()
 
     def test_failure_records_hook_reason_with_logs_and_shuts_down(self):
         def failing_hook():
@@ -276,6 +298,7 @@ class TestRunPrestart(unittest.TestCase):
             scaler._prestart_ready.is_set()
         )  # held handlers are released to fail fast
         assert scaler._prestart_error is not None
+        assert not scaler._prestart_succeeded
         assert scaler._prestart_error["error_message"] == "CUDA OOM: model too big"
         assert scaler._prestart_error["hook"] == "failing_hook"
         assert "downloading model" in scaler._prestart_error["logs"]
@@ -286,19 +309,6 @@ class TestRunPrestart(unittest.TestCase):
         assert (
             scaler._shutdown_event.is_set()
         )  # broken worker shuts down (occupancy was 0)
-
-    def test_failure_starts_shutdown_before_drain(self):
-        scaler = _scaler(hook=lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-        shutdown_states = []
-
-        def occupancy():
-            shutdown_states.append(scaler._shutdown_event.is_set())
-            return 0
-
-        scaler.current_occupancy = occupancy
-        _run(scaler._run_prestart())
-
-        assert shutdown_states == [True]
 
 
 class TestHandleJobGate(unittest.TestCase):
@@ -313,6 +323,7 @@ class TestHandleJobGate(unittest.TestCase):
         scaler = _scaler(hook=lambda: None)
         scaler.jobs_handler = AsyncMock()
         scaler._prestart_ready.set()
+        scaler._prestart_succeeded = True
         job = {"id": "j1"}
 
         async def go():
@@ -395,7 +406,7 @@ class TestHandleJobGate(unittest.TestCase):
         job = {"id": "orphan-1"}
         scaler.jobs_fetcher = AsyncMock(return_value=[job])
 
-        _run(asyncio.wait_for(scaler.get_jobs(AsyncMock()), timeout=0.5))
+        _run(scaler._claim_one_job_to_fail(AsyncMock()))
 
         scaler.jobs_fetcher.assert_awaited_once()
         scaler._fail_job.assert_awaited_once()
@@ -413,7 +424,7 @@ class TestHandleJobGate(unittest.TestCase):
         scaler._fail_job = AsyncMock()
         scaler.jobs_fetcher = AsyncMock(return_value=[])
 
-        _run(asyncio.wait_for(scaler.get_jobs(AsyncMock()), timeout=0.5))
+        _run(scaler._claim_one_job_to_fail(AsyncMock()))
 
         scaler.jobs_fetcher.assert_awaited_once()
         scaler._fail_job.assert_not_awaited()
@@ -443,32 +454,39 @@ class TestHandleJobGate(unittest.TestCase):
 
         assert len(calls) == 1  # no extra claim after the queued request
 
-    def test_instant_async_failure_still_fails_the_queued_request(self):
-        """An async hook can fail before job-take fetches anything. The real
-        prestart failure path must still claim and fail the queued request."""
+    def test_run_owns_single_fallback_claim_after_prestart_failure(self):
+        first_take_started = asyncio.Event()
+        calls = []
+        job = {"id": "queued-1"}
 
         async def bad_hook():
+            await first_take_started.wait()
             raise RuntimeError("bad config")
 
         scaler = _scaler(hook=bad_hook)
         scaler._fail_job = AsyncMock()
-        job = {"id": "queued-1"}
-        scaler.jobs_fetcher = AsyncMock(return_value=[job])
-        scaler.jobs_handler = AsyncMock()
 
-        async def go():
-            await scaler._run_prestart()  # records the reason and sets shutdown
-            assert not scaler.is_alive()
-            await asyncio.wait_for(scaler.get_jobs(AsyncMock()), timeout=1)
+        async def fetcher(_session, _needed):
+            calls.append(1)
+            if len(calls) == 1:
+                first_take_started.set()
+                while scaler._prestart_error is None:
+                    await asyncio.sleep(0)
+                return []
+            return [job]
 
-        _run(go())
+        scaler.jobs_fetcher = fetcher
+        scaler.stop_signals_fetcher = AsyncMock(return_value=[])
 
+        with patch(
+            "runpod.serverless.modules.rp_fitness._terminate_unhealthy"
+        ) as terminate:
+            _run(asyncio.wait_for(scaler.run(), timeout=0.5))
+
+        assert len(calls) == 2
         scaler._fail_job.assert_awaited_once()
         assert scaler._fail_job.await_args[0][1] is job
-        reason = scaler._fail_job.await_args[0][2]
-        assert reason["event"] == "prestart_failed"
-        assert reason["error_message"] == "bad config"
-        scaler.jobs_handler.assert_not_awaited()  # handler never runs on a broken worker
+        terminate.assert_called_once_with(1)
 
     def test_claim_attempt_is_bounded(self):
         """A silent job-take must not hold a dying worker open. The claim gives up on
@@ -487,7 +505,7 @@ class TestHandleJobGate(unittest.TestCase):
 
         scaler.jobs_fetcher = never_returns
 
-        _run(asyncio.wait_for(scaler.get_jobs(AsyncMock()), timeout=1))
+        _run(asyncio.wait_for(scaler._claim_one_job_to_fail(AsyncMock()), timeout=1))
 
         scaler._fail_job.assert_not_awaited()
 
@@ -511,9 +529,7 @@ class TestHandleJobGate(unittest.TestCase):
         assert scaler.jobs_queue.qsize() == 0
         scaler.job_progress.add.assert_not_called()
 
-    def test_shutdown_before_prestart_ready_leaves_request_alone(self):
-        """SIGTERM during prestart releases a held request without running the
-        handler against an uninitialized worker."""
+    def test_shutdown_before_prestart_ready_fails_claimed_request(self):
         scaler = _scaler(hook=lambda: None)
         scaler.jobs_handler = AsyncMock()
         scaler.kill_worker()
@@ -523,7 +539,9 @@ class TestHandleJobGate(unittest.TestCase):
             self._prime(scaler, job)
             with patch.object(rp_scale, "send_result", new=AsyncMock()) as mock_sr:
                 await asyncio.wait_for(scaler.handle_job(None, job), timeout=0.5)
-                mock_sr.assert_not_awaited()  # the platform retries it elsewhere
+                mock_sr.assert_awaited_once()
+                payload = json.loads(mock_sr.await_args.args[1]["error"])
+                assert payload["event"] == "prestart_cancelled"
 
         _run(go())
         scaler.jobs_handler.assert_not_awaited()
@@ -563,6 +581,139 @@ class TestShutdownWithHangingPrestart(unittest.TestCase):
             _run(asyncio.wait_for(scaler.run(), timeout=0.5))
 
         scaler.jobs_handler.assert_not_awaited()
+
+    def test_prestart_failure_cancels_long_polls_before_hard_exit(self):
+        take_started = asyncio.Event()
+        stop_started = asyncio.Event()
+        take_stopped = asyncio.Event()
+        stop_stopped = asyncio.Event()
+
+        async def bad_hook():
+            await asyncio.gather(take_started.wait(), stop_started.wait())
+            raise RuntimeError("boom")
+
+        async def blocked_take(_session, _needed):
+            take_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                take_stopped.set()
+
+        async def blocked_stop(_session):
+            stop_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stop_stopped.set()
+
+        scaler = _scaler(hook=bad_hook)
+        scaler.jobs_fetcher = blocked_take
+        scaler.stop_signals_fetcher = blocked_stop
+        scaler._claim_one_job_to_fail = AsyncMock()
+
+        with patch(
+            "runpod.serverless.modules.rp_fitness._terminate_unhealthy"
+        ) as terminate:
+            _run(asyncio.wait_for(scaler.run(), timeout=0.5))
+
+        assert take_stopped.is_set()
+        assert stop_stopped.is_set()
+        scaler._claim_one_job_to_fail.assert_awaited_once()
+        terminate.assert_called_once_with(1)
+
+    def test_prestart_failure_drains_claimed_request_before_hard_exit(self):
+        claimed = asyncio.Event()
+        fail_started = asyncio.Event()
+        release_fail = asyncio.Event()
+        fail_cancelled = asyncio.Event()
+        job = {"id": "claimed-1"}
+
+        async def bad_hook():
+            await claimed.wait()
+            raise RuntimeError("boom")
+
+        scaler = _scaler(hook=bad_hook)
+
+        async def blocked_fail(_session, _job, _payload):
+            fail_started.set()
+            try:
+                await release_fail.wait()
+            except asyncio.CancelledError:
+                fail_cancelled.set()
+                raise
+
+        async def claimed_take(session):
+            scaler._took_a_request = True
+            claimed.set()
+            while scaler._prestart_error is None:
+                await asyncio.sleep(0)
+            scaler._failing_acquired_request = True
+            try:
+                await scaler._fail_job(session, job, scaler._prestart_error)
+            finally:
+                scaler._failing_acquired_request = False
+
+        scaler.get_jobs = claimed_take
+        scaler._fail_job = blocked_fail
+        scaler.stop_signals_fetcher = AsyncMock(return_value=[])
+        scaler._claim_one_job_to_fail = AsyncMock()
+
+        async def go():
+            with patch(
+                "runpod.serverless.modules.rp_fitness._terminate_unhealthy"
+            ) as terminate:
+                task = asyncio.create_task(scaler.run())
+                await fail_started.wait()
+                await asyncio.sleep(0)
+                assert not task.done()
+                assert not fail_cancelled.is_set()
+                release_fail.set()
+                await asyncio.wait_for(task, timeout=0.5)
+                terminate.assert_called_once_with(1)
+
+        _run(go())
+        scaler._claim_one_job_to_fail.assert_not_awaited()
+
+    def test_prestart_failure_does_not_stall_on_blocked_failure_send(self):
+        """Failure sends share a 600s HTTP ceiling; the drain timeout bounds
+        how long a dead network can hold the broken worker open."""
+        claimed = asyncio.Event()
+        send_cancelled = asyncio.Event()
+        job = {"id": "claimed-1"}
+
+        async def bad_hook():
+            await claimed.wait()
+            raise RuntimeError("boom")
+
+        async def stalled_fail(_session, _job, _payload):
+            try:
+                await asyncio.Event().wait()  # no server response ever
+            except asyncio.CancelledError:
+                send_cancelled.set()
+                raise
+
+        async def claimed_take(session):
+            scaler._took_a_request = True
+            claimed.set()
+            while scaler._prestart_error is None:
+                await asyncio.sleep(0)
+            await scaler._fail_job(session, job, scaler._prestart_error)
+
+        scaler = _scaler(hook=bad_hook)
+        scaler.get_jobs = claimed_take
+        scaler._fail_job = stalled_fail
+        scaler.stop_signals_fetcher = AsyncMock(return_value=[])
+        scaler._claim_one_job_to_fail = AsyncMock()
+        scaler.prestart_failure_report_timeout = 0.01
+
+        with patch(
+            "runpod.serverless.modules.rp_fitness._terminate_unhealthy"
+        ) as terminate:
+            _run(asyncio.wait_for(scaler.run(), timeout=0.5))
+
+        assert send_cancelled.is_set()
+        scaler._claim_one_job_to_fail.assert_not_awaited()
+        terminate.assert_called_once_with(1)
 
     def test_request_loop_failure_cancels_blocked_sibling_loops(self):
         """A failed request loop must not outlive its shared HTTP session."""
@@ -627,16 +778,29 @@ async def async_engine():
     threading.Thread(target=lambda: time.sleep(60)).start()
     raise RuntimeError("engine start failed")
 
+async def stubborn_engine():
+    while True:
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            pass
+
 
 async def no_jobs(*args, **kwargs):
     return []
 
 
-hook = {"sync": sync_engine, "async": async_engine}[HOOK_MODE]
+hook = {
+    "sync": sync_engine,
+    "async": async_engine,
+    "stubborn": stubborn_engine,
+}[HOOK_MODE]
 config = {
     "handler": lambda job: job,
     "rp_args": {"test_input": {"input": "test"}},
 }
+if HOOK_MODE == "stubborn":
+    config["prestart_timeout"] = 0.01
 
 if ADAPTER == "queue":
     scaler = JobScaler(config)
@@ -691,6 +855,9 @@ class TestPrestartFailureExitsProcess(unittest.TestCase):
 
     def test_queue_async_hook_leaving_a_non_daemon_thread(self):
         self.assert_hard_exit("queue")
+
+    def test_queue_hook_ignoring_cancellation_hard_exits(self):
+        self.assert_hard_exit("queue", "stubborn")
 
     def test_local_hook_leaving_a_non_daemon_thread(self):
         self.assert_hard_exit("local")
