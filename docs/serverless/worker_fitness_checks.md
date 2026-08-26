@@ -43,11 +43,11 @@ if __name__ == "__main__":
 
 ## When Checks Run
 
-The built-in GPU and system checks run at **import time** — as soon as your handler module runs `import runpod`, before it loads a model. A worker with a broken GPU or a full disk therefore dies in seconds rather than after a multi-minute model load.
+The built-in GPU and system checks run at **import time** — when your handler module runs `import runpod`, before it loads a model — so a broken GPU or full disk fails the worker in seconds instead of after a multi-minute load.
 
-Your own `@register_fitness_check` functions are registered after that import, so they run at `runpod.serverless.start()`. Checks that already passed at import are not repeated.
+Your own `@register_fitness_check` functions are registered after that import, so they run at `runpod.serverless.start()`. Checks that already passed are not repeated.
 
-The import-time pass is a no-op outside a real worker (no `RUNPOD_WEBHOOK_GET_JOB`), so local runs, tests, and the `runpod` CLI are unaffected. Set `RUNPOD_DEFER_FITNESS_CHECKS=true` to run everything at `start()` instead.
+The import-time pass no-ops outside a real worker (no `RUNPOD_WEBHOOK_GET_JOB`), leaving local runs, tests, and the `runpod` CLI unaffected. Set `RUNPOD_DEFER_FITNESS_CHECKS=true` to run everything at `start()` instead.
 
 ## Async Fitness Checks
 
