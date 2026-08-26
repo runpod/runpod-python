@@ -29,9 +29,8 @@ __all__ = [
 
 log = RunPodLogger()
 
-# Validate the worker environment now, at import, rather than waiting for
-# start() -- which a handler module only reaches after it has loaded its model.
-# No-op outside a real worker; see run_startup_fitness_checks.
+# Check the environment here rather than in start(), which a handler module
+# only reaches after loading its model. No-op outside a real worker.
 run_startup_fitness_checks()
 
 
