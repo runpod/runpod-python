@@ -16,7 +16,7 @@ from ..version import __version__ as runpod_version
 from . import worker
 from .modules.rp_logger import RunPodLogger
 from .modules.rp_progress import progress_update
-from .modules.rp_fitness import register_fitness_check
+from .modules.rp_fitness import register_fitness_check, run_startup_fitness_checks
 from .utils.rp_volume_cache import VolumeCache
 
 __all__ = [
@@ -28,6 +28,11 @@ __all__ = [
 ]
 
 log = RunPodLogger()
+
+# Validate the worker environment now, at import, rather than waiting for
+# start() -- which a handler module only reaches after it has loaded its model.
+# No-op outside a real worker; see run_startup_fitness_checks.
+run_startup_fitness_checks()
 
 
 # ---------------------------------------------------------------------------- #

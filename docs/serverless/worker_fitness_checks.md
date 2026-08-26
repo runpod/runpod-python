@@ -41,6 +41,14 @@ if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
 ```
 
+## When Checks Run
+
+The built-in GPU and system checks run at **import time** — as soon as your handler module runs `import runpod`, before it loads a model. A worker with a broken GPU or a full disk therefore dies in seconds rather than after a multi-minute model load.
+
+Your own `@register_fitness_check` functions are registered after that import, so they run at `runpod.serverless.start()`. Checks that already passed at import are not repeated.
+
+The import-time pass is a no-op outside a real worker (no `RUNPOD_WEBHOOK_GET_JOB`), so local runs, tests, and the `runpod` CLI are unaffected. Set `RUNPOD_DEFER_FITNESS_CHECKS=true` to run everything at `start()` instead.
+
 ## Async Fitness Checks
 
 Fitness checks support both synchronous and asynchronous functions:
@@ -388,6 +396,8 @@ For testing or specialized deployments, built-in checks can be disabled via envi
 |---|---|
 | `RUNPOD_SKIP_AUTO_SYSTEM_CHECKS=true` | Skips auto-registration of memory, disk, network, CUDA version, CUDA init, and GPU benchmark checks |
 | `RUNPOD_SKIP_GPU_CHECK=true` | Skips auto-registration of the native GPU memory allocation test (`gpu_test` binary) |
+| `RUNPOD_SKIP_FITNESS_CHECKS=true` | Skips every fitness check, built-in **and** user-registered |
+| `RUNPOD_DEFER_FITNESS_CHECKS=true` | Keeps the checks but runs them only at `runpod.serverless.start()`, not at import |
 
 ```python
 import os
@@ -399,7 +409,7 @@ os.environ["RUNPOD_SKIP_AUTO_SYSTEM_CHECKS"] = "true"
 os.environ["RUNPOD_SKIP_GPU_CHECK"] = "true"
 ```
 
-User-registered checks via `@register_fitness_check` still run regardless of these flags.
+User-registered checks via `@register_fitness_check` still run regardless of `RUNPOD_SKIP_AUTO_SYSTEM_CHECKS` and `RUNPOD_SKIP_GPU_CHECK`. Only `RUNPOD_SKIP_FITNESS_CHECKS` disables those too.
 
 ## Behavior
 
