@@ -10,6 +10,7 @@ Fitness checks do NOT run in local development mode or testing mode.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import inspect
 import os
@@ -49,6 +50,30 @@ def _terminate_unhealthy(code: int = 1) -> None:
 
 # Global registry for fitness check functions, preserves registration order
 _fitness_checks: list[Callable] = []
+
+# Checks that have already executed successfully. Fitness checks now run at
+# import time (see run_startup_fitness_checks) as well as in run_worker, so the
+# second pass must only execute checks registered after the first pass -- the
+# user's own @register_fitness_check functions, which are registered between
+# the two.
+_completed_checks: list[Callable] = []
+
+# Env var that disables every fitness check, built-in and user-registered.
+SKIP_FITNESS_CHECKS_ENV = "RUNPOD_SKIP_FITNESS_CHECKS"
+
+# Env var that restores the old behavior: checks run only when the worker
+# starts (after the handler module has loaded its model), not at import.
+DEFER_FITNESS_CHECKS_ENV = "RUNPOD_DEFER_FITNESS_CHECKS"
+
+
+def _env_flag(name: str) -> bool:
+    """True if the env var is set to a truthy value."""
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def fitness_checks_disabled() -> bool:
+    """True if the user has opted out of fitness checks entirely."""
+    return _env_flag(SKIP_FITNESS_CHECKS_ENV)
 
 
 def register_fitness_check(func: Callable) -> Callable:
@@ -92,6 +117,7 @@ def clear_fitness_checks() -> None:
     Not intended for production use.
     """
     _fitness_checks.clear()
+    _completed_checks.clear()
 
 
 _registration_state: dict[str, bool] = {
@@ -237,6 +263,12 @@ async def run_fitness_checks() -> None:
         A failing check terminates the process via os._exit(1); this function
         does not return in that case and does not raise SystemExit.
     """
+    if fitness_checks_disabled():
+        log.info(
+            f"Fitness checks disabled via {SKIP_FITNESS_CHECKS_ENV}, skipping."
+        )
+        return
+
     # Defer GPU check auto-registration until fitness checks are about to run
     # This avoids circular import issues during module initialization
     _ensure_gpu_check_registered()
@@ -244,15 +276,17 @@ async def run_fitness_checks() -> None:
     # Defer system check auto-registration until fitness checks are about to run
     _ensure_system_checks_registered()
 
-    if not _fitness_checks:
-        log.debug("No fitness checks registered, skipping.")
+    pending = [check for check in _fitness_checks if check not in _completed_checks]
+
+    if not pending:
+        log.debug("No pending fitness checks, skipping.")
         return
 
-    log.info(f"Running {len(_fitness_checks)} fitness check(s)...")
+    log.info(f"Running {len(pending)} fitness check(s)...")
 
     total_start_time = time.perf_counter()
 
-    for check_func in _fitness_checks:
+    for check_func in pending:
         check_name = check_func.__name__
 
         try:
@@ -266,6 +300,7 @@ async def run_fitness_checks() -> None:
                 check_func()
 
             check_elapsed_ms = (time.perf_counter() - check_start_time) * 1000
+            _completed_checks.append(check_func)
             log.debug(f"Fitness check passed: {check_name} ({check_elapsed_ms:.2f}ms)")
 
         except Exception as exc:
@@ -294,3 +329,50 @@ async def run_fitness_checks() -> None:
 
     total_elapsed_ms = (time.perf_counter() - total_start_time) * 1000
     log.info(f"All fitness checks passed. ({total_elapsed_ms:.2f}ms)")
+
+
+def run_startup_fitness_checks() -> None:
+    """
+    Run the built-in fitness checks as early as possible in the process.
+
+    Called when ``runpod.serverless`` is imported, which on a worker is the
+    first line of the handler module -- before it loads its model. Running
+    here means a broken GPU or a full disk kills the worker in seconds instead
+    of after a multi-minute model load, and long before the first job.
+
+    Only the built-in GPU/system checks can run this early; a user's
+    ``@register_fitness_check`` functions are registered after this import, so
+    they still run in ``run_worker``, which skips whatever already passed here.
+
+    No-ops when:
+      - fitness checks are disabled (``RUNPOD_SKIP_FITNESS_CHECKS``)
+      - the early run is deferred (``RUNPOD_DEFER_FITNESS_CHECKS``), restoring
+        the previous run_worker-only behavior
+      - the process is not a Runpod worker (no ``RUNPOD_WEBHOOK_GET_JOB``), so
+        local development, tests and the ``runpod`` CLI are untouched
+      - an event loop is already running, in which case the checks are left to
+        ``run_worker``
+
+    Never raises: an unexpected failure here must not stop a worker from
+    booting. An actual failing check still force-exits, which is the point.
+    """
+    if fitness_checks_disabled() or _env_flag(DEFER_FITNESS_CHECKS_ENV):
+        return
+
+    if not os.environ.get("RUNPOD_WEBHOOK_GET_JOB"):
+        return
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        log.debug("Event loop already running, deferring fitness checks to startup.")
+        return
+
+    try:
+        asyncio.run(run_fitness_checks())
+    except SystemExit:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        log.warn(f"Startup fitness checks could not run: {exc}")
