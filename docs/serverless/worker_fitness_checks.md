@@ -45,7 +45,11 @@ if __name__ == "__main__":
 
 The built-in GPU and system checks run at **import time** — when your handler module runs `import runpod`, before it loads a model — so a broken GPU or full disk fails the worker in seconds instead of after a multi-minute load.
 
-Your own `@register_fitness_check` functions are registered after that import, so they run at `runpod.serverless.start()`. Checks that already passed are not repeated.
+Two checks stay at `runpod.serverless.start()`: the CUDA initialization check and the GPU compute benchmark. Both import `torch` and allocate on the device, which would leave a CUDA context in a process your handler may later fork — unsupported by CUDA, and something vLLM and DeepSpeed trip over. The remaining built-ins (memory, disk, network, CUDA version via `nvidia-smi`, and the native `gpu_test` binary) run at import.
+
+Your own `@register_fitness_check` functions are registered after that import, so they also run at `start()`. Checks that already passed are not repeated.
+
+Note that the memory check now measures a fresh container rather than one with your model loaded, so `RUNPOD_MIN_MEMORY_GB` validates the environment you were given, not the headroom left after loading.
 
 The import-time pass no-ops outside a real worker (no `RUNPOD_WEBHOOK_GET_JOB`), leaving local runs, tests, and the `runpod` CLI unaffected. Set `RUNPOD_DEFER_FITNESS_CHECKS=true` to run everything at `start()` instead.
 
