@@ -67,6 +67,23 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def defer_to_worker_start(func: Callable) -> Callable:
+    """
+    Mark a check as unsafe to run at import.
+
+    The import-time pass skips these; they run in run_worker as before. Used
+    for checks that initialize CUDA in this process -- doing that before the
+    handler module runs would leave a CUDA context in a process the handler
+    may later fork (vLLM, DeepSpeed), which CUDA does not support.
+    """
+    func._runpod_defer_to_worker_start = True
+    return func
+
+
+def _is_deferred(func: Callable) -> bool:
+    return getattr(func, "_runpod_defer_to_worker_start", False)
+
+
 def register_fitness_check(func: Callable) -> Callable:
     """
     Decorator to register a fitness check function.
@@ -222,7 +239,7 @@ def _ensure_system_checks_registered() -> None:
         log.debug("System fitness check module not found, skipping auto-registration")
 
 
-async def run_fitness_checks() -> None:
+async def run_fitness_checks(include_deferred: bool = True) -> None:
     """
     Execute all registered fitness checks sequentially at startup.
 
@@ -266,6 +283,9 @@ async def run_fitness_checks() -> None:
     _ensure_system_checks_registered()
 
     pending = [check for check in _fitness_checks if check not in _completed_checks]
+
+    if not include_deferred:
+        pending = [check for check in pending if not _is_deferred(check)]
 
     if not pending:
         log.debug("No pending fitness checks, skipping.")
@@ -334,7 +354,8 @@ def run_startup_fitness_checks() -> None:
     Run the built-in fitness checks at import, before the handler loads a model.
 
     A user's @register_fitness_check functions are registered after this import,
-    so they still run in run_worker, which skips whatever passed here.
+    so they still run in run_worker, which skips whatever passed here. Checks
+    marked with @defer_to_worker_start are also left to run_worker.
 
     No-ops outside a real worker (no RUNPOD_WEBHOOK_GET_JOB), when the checks
     are disabled or deferred, or inside a running event loop. Never raises: a
@@ -352,6 +373,6 @@ def run_startup_fitness_checks() -> None:
         return
 
     try:
-        asyncio.run(run_fitness_checks())
+        asyncio.run(run_fitness_checks(include_deferred=False))
     except Exception as exc:  # pragma: no cover - defensive
         log.warn(f"Startup fitness checks could not run: {exc}")

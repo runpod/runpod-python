@@ -124,3 +124,48 @@ class TestStartupEntrypoint:
 
         run_startup_fitness_checks()
         assert calls == []
+
+
+class TestDeferredChecks:
+    """Checks that touch CUDA in-process must not run at import time."""
+
+    def test_deferred_check_skipped_at_import(self, worker_env):
+        calls = []
+
+        @register_fitness_check
+        def early():
+            calls.append("early")
+
+        @register_fitness_check
+        @rp_fitness.defer_to_worker_start
+        def late():
+            calls.append("late")
+
+        run_startup_fitness_checks()
+        assert calls == ["early"]
+
+    @pytest.mark.asyncio
+    async def test_deferred_check_runs_at_worker_start(self, worker_env):
+        calls = []
+
+        @register_fitness_check
+        @rp_fitness.defer_to_worker_start
+        def late():
+            calls.append("late")
+
+        run_startup_fitness_checks()
+        assert calls == []
+
+        await run_fitness_checks()
+        assert calls == ["late"]
+
+    def test_cuda_checks_are_marked_deferred(self):
+        from runpod.serverless.modules import rp_system_fitness
+
+        with patch.object(rp_system_fitness, "gpu_available", return_value=True):
+            rp_system_fitness.auto_register_system_checks()
+
+        by_name = {check.__name__: check for check in rp_fitness._fitness_checks}
+        assert rp_fitness._is_deferred(by_name["_cuda_init_check"])
+        assert rp_fitness._is_deferred(by_name["_benchmark_check"])
+        assert not rp_fitness._is_deferred(by_name["_memory_check"])

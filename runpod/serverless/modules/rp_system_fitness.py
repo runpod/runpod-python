@@ -19,7 +19,7 @@ import re
 import shutil
 import time
 
-from .rp_fitness import register_fitness_check
+from .rp_fitness import defer_to_worker_start, register_fitness_check
 from .rp_logger import RunPodLogger
 from ..utils.rp_cuda import is_available as gpu_available
 
@@ -470,6 +470,10 @@ def auto_register_system_checks() -> None:
 
     Registers memory, disk, and network checks for all workers.
     Registers CUDA version, initialization, and GPU benchmark checks only if GPU is detected.
+
+    The two checks that import torch and allocate on the device are marked
+    @defer_to_worker_start so the import-time pass cannot create a CUDA context
+    before the handler module runs.
     """
     log.debug("Registering system resource fitness checks")
 
@@ -499,11 +503,13 @@ def auto_register_system_checks() -> None:
             await _check_cuda_versions()
 
         @register_fitness_check
+        @defer_to_worker_start
         async def _cuda_init_check() -> None:
             """CUDA device initialization check."""
             await _check_cuda_initialization()
 
         @register_fitness_check
+        @defer_to_worker_start
         async def _benchmark_check() -> None:
             """GPU compute benchmark check."""
             await _check_gpu_compute_benchmark()
