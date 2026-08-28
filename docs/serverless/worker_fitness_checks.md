@@ -360,15 +360,15 @@ ERROR  | Fitness check failed: _cuda_init_check | RuntimeError: Failed to initia
 
 Quick matrix multiplication to verify GPU compute functionality and responsiveness. Skips silently on CPU-only workers.
 
-- **Default**: 100ms maximum execution time
-- **Configure**: `RUNPOD_GPU_BENCHMARK_TIMEOUT=2`
+- **Default**: 2 seconds maximum execution time
+- **Configure**: `RUNPOD_GPU_BENCHMARK_TIMEOUT=2` (seconds)
 
 What it tests:
 - GPU compute capability (matrix multiplication)
 - GPU response time
 - Memory bandwidth to GPU
 
-If the operation takes longer than 100ms, the worker exits as the GPU is too slow for reliable job processing.
+If the operation takes longer than the timeout, the worker exits as the GPU is too slow for reliable job processing.
 
 Example log output:
 ```
