@@ -278,12 +278,12 @@ def auto_register_gpu_check() -> None:
     """
     Auto-register GPU fitness check if GPUs are detected.
 
-    This function is called during rp_fitness module initialization.
+    Called lazily on the first fitness-check run.
     It detects GPU presence via nvidia-smi and registers the check if found.
     On CPU-only workers, the check is skipped silently.
 
     Environment variables:
-    - RUNPOD_SKIP_GPU_CHECK: Set to "true" to skip auto-registration
+    - RUNPOD_SKIP_GPU_CHECK: Set to a truthy value (1/true/yes/on) to skip auto-registration
     """
     # Allow skipping during tests
     if _env_flag("RUNPOD_SKIP_GPU_CHECK"):

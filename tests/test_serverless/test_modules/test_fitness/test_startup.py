@@ -208,7 +208,7 @@ class TestDoneMarker:
 
         @register_fitness_check
         def check():
-            called.append(True)
+            calls.append(True)
 
         run_startup_fitness_checks()
         assert calls == []
@@ -307,3 +307,22 @@ class TestImportWiring:
         importlib.reload(runpod.serverless)
 
         assert calls == [True]
+
+
+class TestRegistrationLatch:
+    """A malformed env value must fail loudly in run_worker, not fail open."""
+
+    @pytest.mark.asyncio
+    async def test_malformed_env_reraises_at_start(self, worker_env, monkeypatch):
+        monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", raising=False)
+        monkeypatch.setenv("RUNPOD_MIN_MEMORY_GB", "not-a-number")
+        # Drop the cached module so the env parse re-executes on import.
+        monkeypatch.delitem(
+            sys.modules, "runpod.serverless.modules.rp_system_fitness", raising=False
+        )
+
+        run_startup_fitness_checks()  # swallowed and logged — but not latched
+        assert rp_fitness._registration_state["system_checks"] is False
+
+        with pytest.raises(ValueError):
+            await run_fitness_checks()

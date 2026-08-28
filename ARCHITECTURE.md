@@ -604,7 +604,7 @@ log.error(message, job_id=None)
 **Responsibilities**:
 - Validate worker health at startup before handler initialization
 - Support both synchronous and asynchronous check functions
-- Exit immediately with sys.exit(1) on any check failure
+- Exit immediately with os._exit(1) on any check failure
 - Enable fail-fast deployment validation
 
 **Key Functions**:
@@ -617,7 +617,7 @@ log.error(message, job_id=None)
 2. Runs only in production mode (skipped for local testing)
 3. Auto-detects sync vs async using `inspect.iscoroutinefunction()`
 4. Executes checks in registration order (list preserves order)
-5. On failure: log detailed error, call `sys.exit(1)`
+5. On failure: log detailed error, best-effort unhealthy report, force-kill via `os._exit(1)`
 6. On success: log completion, proceed with worker startup
 
 **Performance**: ~0.5ms framework overhead per check, total depends on check logic
@@ -765,7 +765,7 @@ sequenceDiagram
             CHECK->>CHECK: Log success
         else Check fails
             CHECK->>SYS: Log error + traceback
-            CHECK->>SYS: sys.exit(1)
+            CHECK->>SYS: os._exit(1)
         end
     end
 
