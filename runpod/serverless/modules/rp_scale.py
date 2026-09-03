@@ -85,7 +85,23 @@ class JobScaler:
             self.stop_signals_fetcher_timeout = stop_signals_fetcher_timeout
 
     async def set_scale(self):
-        self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
+        try:
+            result = self.concurrency_modifier(self.current_concurrency)
+        except Exception as err:
+            log.warning(
+                "concurrency_modifier raised %s: %s — keeping concurrency at %d",
+                type(err).__name__, err, self.current_concurrency,
+            )
+            result = self.current_concurrency
+
+        if not isinstance(result, int) or result < 1:
+            log.warning(
+                "concurrency_modifier returned invalid value %r — defaulting to 1",
+                result,
+            )
+            result = 1
+
+        self.current_concurrency = result
 
         if self.jobs_queue and (self.current_concurrency == self.jobs_queue.maxsize):
             # no need to resize
