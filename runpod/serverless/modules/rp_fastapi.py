@@ -2,6 +2,7 @@
 
 import os
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
@@ -323,6 +324,8 @@ class WorkerAPI:
         assigned_job_id = f"test-{uuid.uuid4()}"
         job = TestJob(id=assigned_job_id, input=job_request.input)
 
+        job_start = time.time()
+
         if is_generator(self.config["handler"]):
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
@@ -331,18 +334,36 @@ class WorkerAPI:
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
 
-        if job_output.get("error", None):
-            return jsonable_encoder(
-                {"id": job.id, "status": "FAILED", "error": job_output["error"]}
-            )
+        execution_time = int((time.time() - job_start) * 1000)
+
+        is_error = job_output.get("error", None)
+        status = "FAILED" if is_error else "COMPLETED"
 
         if job_request.webhook:
+            webhook_payload = {
+                "id": job.id,
+                "status": status,
+                "input": job_request.input,
+                "webhook": job_request.webhook,
+                "delayTime": 0,
+                "executionTime": execution_time,
+            }
+            if is_error:
+                webhook_payload["error"] = job_output["error"]
+            else:
+                webhook_payload["output"] = job_output["output"]
+
             thread = threading.Thread(
                 target=_send_webhook,
-                args=(job_request.webhook, job_output),
+                args=(job_request.webhook, webhook_payload),
                 daemon=True,
             )
             thread.start()
+
+        if is_error:
+            return jsonable_encoder(
+                {"id": job.id, "status": "FAILED", "error": job_output["error"]}
+            )
 
         return jsonable_encoder(
             {"id": job.id, "status": "COMPLETED", "output": job_output["output"]}
@@ -359,6 +380,8 @@ class WorkerAPI:
 
         job = TestJob(id=job_id, input=stashed_job.input)
 
+        job_start = time.time()
+
         if is_generator(self.config["handler"]):
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             stream_accumulator = []
@@ -373,12 +396,22 @@ class WorkerAPI:
                 }
             )
 
+        execution_time = int((time.time() - job_start) * 1000)
         job_list.remove(job.id)
 
         if stashed_job.webhook:
+            webhook_payload = {
+                "id": job_id,
+                "status": "COMPLETED",
+                "output": stream_accumulator,
+                "input": stashed_job.input,
+                "webhook": stashed_job.webhook,
+                "delayTime": 0,
+                "executionTime": execution_time,
+            }
             thread = threading.Thread(
                 target=_send_webhook,
-                args=(stashed_job.webhook, stream_accumulator),
+                args=(stashed_job.webhook, webhook_payload),
                 daemon=True,
             )
             thread.start()
@@ -398,6 +431,8 @@ class WorkerAPI:
 
         job = TestJob(id=stashed_job.id, input=stashed_job.input)
 
+        job_start = time.time()
+
         if is_generator(self.config["handler"]):
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
@@ -406,20 +441,37 @@ class WorkerAPI:
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
 
+        execution_time = int((time.time() - job_start) * 1000)
         job_list.remove(job.id)
 
-        if job_output.get("error", None):
-            return jsonable_encoder(
-                {"id": job_id, "status": "FAILED", "error": job_output["error"]}
-            )
+        is_error = job_output.get("error", None)
+        status = "FAILED" if is_error else "COMPLETED"
 
         if stashed_job.webhook:
+            webhook_payload = {
+                "id": job_id,
+                "status": status,
+                "input": stashed_job.input,
+                "webhook": stashed_job.webhook,
+                "delayTime": 0,
+                "executionTime": execution_time,
+            }
+            if is_error:
+                webhook_payload["error"] = job_output["error"]
+            else:
+                webhook_payload["output"] = job_output["output"]
+
             thread = threading.Thread(
                 target=_send_webhook,
-                args=(stashed_job.webhook, job_output),
+                args=(stashed_job.webhook, webhook_payload),
                 daemon=True,
             )
             thread.start()
+
+        if is_error:
+            return jsonable_encoder(
+                {"id": job_id, "status": "FAILED", "error": job_output["error"]}
+            )
 
         return jsonable_encoder(
             {"id": job_id, "status": "COMPLETED", "output": job_output["output"]}
