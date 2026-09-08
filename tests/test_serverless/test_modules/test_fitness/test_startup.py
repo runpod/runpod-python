@@ -326,3 +326,37 @@ class TestRegistrationLatch:
 
         with pytest.raises(ValueError):
             await run_fitness_checks()
+
+
+class TestLateConfigWarning:
+    """Config set in the handler after the import pass must surface loudly."""
+
+    @staticmethod
+    def _run_pass():
+        # Sync context like run_worker: drive the async pass on a throwaway loop.
+        loop = rp_fitness.asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(run_fitness_checks())
+        finally:
+            loop.close()
+
+    def test_warns_when_config_changes_after_startup_pass(
+        self, worker_env, monkeypatch
+    ):
+        run_startup_fitness_checks()  # consumes + snapshots config at import
+
+        monkeypatch.setenv("RUNPOD_MIN_MEMORY_GB", "8")  # too late
+
+        with patch.object(rp_fitness.log, "warn") as mock_warn:
+            self._run_pass()
+
+        warned = " ".join(str(c.args[0]) for c in mock_warn.call_args_list)
+        assert "RUNPOD_MIN_MEMORY_GB" in warned
+
+    def test_no_warning_when_config_unchanged(self, worker_env):
+        run_startup_fitness_checks()
+
+        with patch.object(rp_fitness.log, "warn") as mock_warn:
+            self._run_pass()
+
+        mock_warn.assert_not_called()
