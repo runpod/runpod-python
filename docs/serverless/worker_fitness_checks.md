@@ -55,7 +55,7 @@ The import-time pass no-ops outside a real worker (no `RUNPOD_WEBHOOK_GET_JOB`),
 
 Two details worth knowing:
 
-- Thresholds and skip flags (`RUNPOD_MIN_*`, `RUNPOD_SKIP_*`, `RUNPOD_GPU_*`) are read when the checks first run, so set them **before** `import runpod` — Dockerfile `ENV` recommended; setting them from Python in your handler is too late on the real platform.
+- Thresholds and skip flags (`RUNPOD_MIN_*`, `RUNPOD_SKIP_*`, `RUNPOD_GPU_*`) are read when the checks first run, so set them **before** `import runpod` — Dockerfile `ENV` recommended; setting them from Python in your handler is too late on the real platform. If any of them changed since the import, `start()` logs a warning naming the ignored variables.
 - Workers serving the realtime API (`--rp_serve_api`) never enter the worker loop, so only the import-time checks apply there; the two deferred CUDA checks do not run in that mode. Child processes created with multiprocessing's `spawn` start method re-import this module but inherit a marker and skip the checks.
 
 ## Async Fitness Checks

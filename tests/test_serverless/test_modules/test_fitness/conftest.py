@@ -34,6 +34,8 @@ def cleanup_fitness_checks(monkeypatch):
 
     _reset_registration_state()
     clear_fitness_checks()
+    rp_fitness._config_snapshot.clear()
     yield
     _reset_registration_state()
     clear_fitness_checks()
+    rp_fitness._config_snapshot.clear()
