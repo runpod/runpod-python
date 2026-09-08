@@ -66,6 +66,23 @@ DEFER_FITNESS_CHECKS_ENV = "RUNPOD_DEFER_FITNESS_CHECKS"
 # inherit the environment; the marker tells them to skip the checks.
 _CHECKS_DONE_ENV = "RUNPOD_FITNESS_CHECKS_DONE"
 
+# Tuning vars consumed when the checks run. Snapshotted at the import-time
+# pass so a later pass can warn about post-import changes, which would
+# otherwise be silently ignored.
+_CONFIG_ENV_VARS = (
+    "RUNPOD_MIN_MEMORY_GB",
+    "RUNPOD_MIN_DISK_PERCENT",
+    "RUNPOD_MIN_CUDA_VERSION",
+    "RUNPOD_NETWORK_CHECK_TIMEOUT",
+    "RUNPOD_GPU_BENCHMARK_TIMEOUT",
+    "RUNPOD_GPU_TEST_TIMEOUT",
+    "RUNPOD_GPU_MAX_ERROR_MESSAGES",
+    "RUNPOD_SKIP_AUTO_SYSTEM_CHECKS",
+    "RUNPOD_SKIP_GPU_CHECK",
+)
+
+_config_snapshot: dict[str, str | None] = {}
+
 
 def _env_flag(name: str) -> bool:
     """True if the env var is set to a truthy value."""
@@ -248,6 +265,19 @@ def _ensure_system_checks_registered() -> None:
     _registration_state["system_checks"] = True
 
 
+def _warn_late_config() -> None:
+    """Warn if tuning vars changed since the import-time pass consumed them."""
+    changed = [
+        name for name, old in _config_snapshot.items() if os.environ.get(name) != old
+    ]
+    if changed:
+        log.warn(
+            f"Fitness check config changed after the startup checks ran and is "
+            f"ignored: {', '.join(changed)}. Set these before `import runpod`, or "
+            f"set {DEFER_FITNESS_CHECKS_ENV}=true to run checks at start() as before."
+        )
+
+
 async def run_fitness_checks(include_deferred: bool = True) -> None:
     """
     Execute all registered fitness checks sequentially at startup.
@@ -287,6 +317,9 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
     if _env_flag(SKIP_FITNESS_CHECKS_ENV):
         log.info(f"Fitness checks disabled via {SKIP_FITNESS_CHECKS_ENV}, skipping.")
         return
+
+    if _config_snapshot:
+        _warn_late_config()
 
     # Defer GPU check auto-registration until fitness checks are about to run
     # This avoids circular import issues during module initialization
@@ -396,6 +429,10 @@ def run_startup_fitness_checks() -> None:
     if _event_loop_running():
         log.debug("Event loop already running, deferring fitness checks to run_worker.")
         return
+
+    # Remember the tuning values as consumed, so a later pass can warn about
+    # post-import changes (set in the handler, too late to apply).
+    _config_snapshot.update({v: os.environ.get(v) for v in _CONFIG_ENV_VARS})
 
     try:
         # Own loop rather than asyncio.run: run() resets the thread's loop
