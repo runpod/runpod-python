@@ -303,6 +303,22 @@ runpod.resume_pod(pod["id"], 1)
 runpod.terminate_pod(pod["id"])
 ```
 
+### Template and placement options
+
+- With `create_pod(template_id=...)`, omitting `docker_args` inherits the template's
+  command. Pass `docker_args=""` to clear that inherited command.
+- Omitting `volume_mount_path` preserves an inherited GPU template volume's path.
+  Setting it explicitly changes the path while retaining the inherited volume size.
+  New persistent volumes and network volume mounts default to `/runpod-volume`.
+- For GPU pods, `min_memory_in_gb` and `min_vcpu_count` specify minimum host RAM
+  and vCPUs **per GPU**, not GPU VRAM or totals for the pod.
+- `create_template(volume_in_gb=0)` creates a template without a persistent volume.
+- `create_endpoint(locations="US-KS-2,EU-RO-1")` accepts comma-separated
+  datacenter IDs. Country codes such as `US` and `RO` are not supported.
+  Endpoint creation sends a single REST request without catalog lookups.
+- Endpoint `gpu_ids` accepts pool IDs and excluded GPU types, for example
+  `gpu_ids="ADA_48_PRO,-NVIDIA L40"` selects that pool without NVIDIA L40 GPUs.
+
 ## 📁 | Directory
 
 ```BASH

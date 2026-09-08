@@ -72,9 +72,7 @@ def get_gpus(api_key: Optional[str] = None) -> list[dict]:
     return response["gpus"]
 
 
-def get_gpu(
-    gpu_id: str, gpu_quantity: int = 1, api_key: Optional[str] = None
-) -> dict:
+def get_gpu(gpu_id: str, gpu_quantity: int = 1, api_key: Optional[str] = None) -> dict:
     """Get a GPU type and its pod availability."""
     try:
         return run_rest_request(
@@ -128,9 +126,9 @@ def create_pod(
     container_disk_in_gb: Optional[int] = None,
     min_vcpu_count: int = 1,
     min_memory_in_gb: int = 1,
-    docker_args: str = "",
+    docker_args: Optional[str] = None,
     ports: Optional[str] = None,
-    volume_mount_path: str = "/runpod-volume",
+    volume_mount_path: Optional[str] = None,
     env: Optional[dict] = None,
     template_id: Optional[str] = None,
     network_volume_id: Optional[str] = None,
@@ -150,9 +148,7 @@ def create_pod(
         unsupported.append("support_public_ip")
     if country_code is not None:
         unsupported.append("country_code")
-    if gpu_type_id and min_vcpu_count != 1:
-        unsupported.append("min_vcpu_count")
-    if min_memory_in_gb != 1:
+    if not gpu_type_id and min_memory_in_gb != 1:
         unsupported.append("min_memory_in_gb")
     if min_download is not None:
         unsupported.append("min_download")
@@ -164,9 +160,10 @@ def create_pod(
 
     body: dict[str, Any] = {
         "name": name,
-        "args": docker_args,
         "startSsh": start_ssh,
     }
+    if docker_args is not None:
+        body["args"] = docker_args
     if image_name:
         body["image"] = image_name
     if template_id:
@@ -184,19 +181,31 @@ def create_pod(
     if env is not None:
         body["env"] = _environment(env)
 
+    mount_path = (
+        volume_mount_path if volume_mount_path is not None else "/runpod-volume"
+    )
     if network_volume_id:
         body["mounts"] = {
-            "network": [
-                {"volumeId": network_volume_id, "path": volume_mount_path}
-            ]
+            "network": [{"volumeId": network_volume_id, "path": mount_path}]
         }
     elif volume_in_gb:
-        body["mounts"] = {
-            "persistent": {"size": volume_in_gb, "path": volume_mount_path}
-        }
+        body["mounts"] = {"persistent": {"size": volume_in_gb, "path": mount_path}}
+    elif template_id and gpu_type_id and volume_mount_path is not None:
+        template = run_rest_request(
+            "GET", f"/v2/templates/{_path_segment(template_id)}"
+        )
+        persistent = template["mounts"].get("persistent")
+        if persistent is not None:
+            body["mounts"] = {
+                "persistent": {"size": persistent["size"], "path": volume_mount_path}
+            }
 
     if gpu_type_id:
         gpu: dict[str, Any] = {"id": gpu_type_id, "count": gpu_count}
+        if min_memory_in_gb != 1:
+            gpu["minRamPerGpu"] = min_memory_in_gb
+        if min_vcpu_count != 1:
+            gpu["minVcpuCountPerGpu"] = min_vcpu_count
         if allowed_cuda_versions is not None:
             gpu["allowedCudaVersions"] = _split_values(allowed_cuda_versions)
         body["gpu"] = gpu
@@ -251,7 +260,7 @@ def create_template(
     }
     if docker_start_cmd is not None:
         body["args"] = docker_start_cmd
-    if volume_in_gb is not None:
+    if volume_in_gb:
         body["mounts"] = {
             "persistent": {
                 "size": volume_in_gb,
@@ -289,7 +298,7 @@ def create_endpoint(
     allowed_cuda_versions: str = None,
     gpu_count: int = 1,
 ) -> dict:
-    """Create a queue-based serverless endpoint."""
+    """Create a queue-based serverless endpoint; locations are datacenter IDs."""
     scaler_type = {
         "QUEUE_DELAY": "QUEUE_DELAY",
         "REQUEST_COUNT": "REQUEST_COUNT",
@@ -302,10 +311,22 @@ def create_endpoint(
     else:
         raise ValueError("scaler_type must be QUEUE_DELAY or REQUEST_COUNT")
 
+    pools = []
+    excluded_types = []
+    for gpu_id in _split_values(gpu_ids):
+        if gpu_id.startswith("-"):
+            excluded_type = gpu_id[1:].strip()
+            if excluded_type and excluded_type not in excluded_types:
+                excluded_types.append(excluded_type)
+        else:
+            pools.append(gpu_id)
+
     gpu: dict[str, Any] = {
-        "pools": _split_values(gpu_ids),
+        "pools": pools,
         "count": gpu_count,
     }
+    if excluded_types:
+        gpu["excludedTypes"] = excluded_types
     if allowed_cuda_versions is not None:
         gpu["allowedCudaVersions"] = _split_values(allowed_cuda_versions)
 
@@ -339,9 +360,7 @@ def update_endpoint_template(endpoint_id: str, template_id: str) -> dict:
     )
 
 
-def create_container_registry_auth(
-    name: str, username: str, password: str
-) -> dict:
+def create_container_registry_auth(name: str, username: str, password: str) -> dict:
     """Create a container registry credential."""
     return run_rest_request(
         "POST",
@@ -364,7 +383,5 @@ def update_container_registry_auth(
 
 def delete_container_registry_auth(registry_auth_id: str) -> bool:
     """Delete a container registry credential."""
-    run_rest_request(
-        "DELETE", f"/v2/registries/{_path_segment(registry_auth_id)}"
-    )
+    run_rest_request("DELETE", f"/v2/registries/{_path_segment(registry_auth_id)}")
     return True
