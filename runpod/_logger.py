@@ -109,12 +109,20 @@ class RunPodLogger:
         print(f"{message_level.ljust(7)}| {message}", flush=True)
         return
 
-    def secret(self, secret_name, secret):
-        """Log the secret's name without exposing its value or length."""
+    def secret(self, name=None, secret=None, **kwargs):
+        """Log a credential label without exposing its value or length.
+
+        `secret_name=` remains accepted for compatibility with older callers.
+        """
+        if "secret_name" in kwargs:
+            if name is not None:
+                raise TypeError("Pass either name or secret_name, not both")
+            name = kwargs.pop("secret_name")
+        if kwargs:
+            raise TypeError("Unexpected keyword argument to secret()")
         # Even a one-character value must be completely redacted. Do not call
         # str(secret): custom objects may reveal sensitive data or raise.
-        self.info(f"{secret_name}: [REDACTED]")
-
+        self.info(f"{name}: [REDACTED]")
 
     def debug(self, message, request_id: Optional[str] = None):
         """
