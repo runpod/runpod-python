@@ -599,7 +599,7 @@ log.error(message, job_id=None)
 
 ### Fitness Checks: `modules/rp_fitness.py`
 
-**Location**: `runpod/serverless/modules/rp_fitness.py`
+**Location**: `runpod/_health/fitness.py` (legacy `serverless.modules.rp_fitness` imports remain aliases)
 
 **Responsibilities**:
 - Validate worker health at startup before handler initialization
@@ -613,11 +613,11 @@ log.error(message, job_id=None)
 - `clear_fitness_checks()`: Clear registry (testing only)
 
 **Execution Flow**:
-1. Runs twice per worker: built-in checks at `import runpod.serverless` via `run_startup_fitness_checks()`, then user-registered and `@defer_to_worker_start` checks from `worker.py:40` before heartbeat starts: `asyncio.run(run_fitness_checks())`; completed checks are not repeated, and `RUNPOD_DEFER_FITNESS_CHECKS=true` collapses both passes into the `worker.py` one
+1. `runpod-worker` identifies the handler process and runs early hardware checks before executing it. Existing launchers may authorize the top-level import hook using `RUNPOD_FITNESS_WORKER_PID=<handler PID>`. The hook and check engine do not import `serverless`; ordinary imports with only the webhook environment are exempt. Legacy launches and `RUNPOD_DEFER_FITNESS_CHECKS=true` run checks only at worker start. Network readiness, CUDA initialization, compute and custom checks run in the final pass; production realtime uses the serving process's lifespan. Successful early checks are reused unless their configuration changes.
 2. Runs only in production mode (skipped for local testing)
 3. Auto-detects sync vs async using `inspect.iscoroutinefunction()`
 4. Executes checks in registration order (list preserves order)
-5. On failure: log detailed error, best-effort unhealthy report, force-kill via `os._exit(1)`
+5. On health failure: log, best-effort unhealthy report, force-kill via `os._exit(1)`. Registration is atomic; early setup errors defer, unresolved worker-start setup errors report `fitness_check_setup` and force-exit.
 6. On success: log completion, proceed with worker startup
 
 **Performance**: ~0.5ms framework overhead per check, total depends on check logic

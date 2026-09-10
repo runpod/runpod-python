@@ -43,20 +43,34 @@ if __name__ == "__main__":
 
 ## When Checks Run
 
-The built-in GPU and system checks run at **import time** — when your handler module runs `import runpod`, before it loads a model — so a broken GPU or full disk fails the worker in seconds instead of after a multi-minute load.
+Early checks are automatic when the handler is launched with `runpod-worker`:
 
-Two checks stay at `runpod.serverless.start()`: the CUDA initialization check and the GPU compute benchmark. Both import `torch` and allocate on the device, which would leave a CUDA context in a process your handler may later fork — unsupported by CUDA, and something vLLM and DeepSpeed trip over. The remaining built-ins (memory, disk, network, CUDA version via `nvidia-smi`, and the native `gpu_test` binary) run at import.
+```bash
+runpod-worker handler.py
+# Or a module:
+runpod-worker -m my_package.handler
+```
 
-Your own `@register_fitness_check` functions are registered after that import, so they also run at `start()`. Checks that already passed are not repeated.
+The launcher runs memory, disk, CUDA-version and native GPU checks **before executing the handler**, then runs the same handler with its original arguments. Customers do not need to add imports or check calls. Platform-managed launchers can adopt this entrypoint without changing handler code. Existing `python handler.py` launches continue checking at worker start, preserving compatibility.
 
-Note that the memory check now measures a fresh container rather than one with your model loaded, so `RUNPOD_MIN_MEMORY_GB` validates the environment you were given, not the headroom left after loading.
+Launchers that already manage Python directly may instead set `RUNPOD_FITNESS_WORKER_PID` to the PID of the Python handler process **before exec**. The top-level `runpod` import checks that exact PID. This hook is independent of `runpod.serverless`, including when that module is lazy-loaded. Do not set a fixed PID in a Dockerfile or template. `RUNPOD_WEBHOOK_GET_JOB` alone never authorizes import-time checks.
 
-The import-time pass no-ops outside a real worker (no `RUNPOD_WEBHOOK_GET_JOB`), leaving local runs and tests unaffected — note that inside a worker container *any* `import runpod` triggers it. Set `RUNPOD_DEFER_FITNESS_CHECKS=true` to run everything at `start()` instead.
+Network readiness, CUDA initialization, the GPU compute benchmark, and customer-registered checks run at worker start. Network checks use bounded retries against the worker API host; they cannot terminate a process during import. CUDA checks that initialize a context remain deferred so handler code can create child processes first.
 
-Two details worth knowing:
+Checks that passed early are not repeated unless their settings changed. Without launcher identification, all checks run at worker start. `RUNPOD_DEFER_FITNESS_CHECKS=true` restores worker-start-only timing even with the new launcher; `RUNPOD_SKIP_FITNESS_CHECKS=true` disables all checks.
 
-- Thresholds and skip flags (`RUNPOD_MIN_*`, `RUNPOD_SKIP_*`, `RUNPOD_GPU_*`) are read when the checks first run, so set them **before** `import runpod` — Dockerfile `ENV` recommended; setting them from Python in your handler is too late on the real platform. If any of them changed since the import, `start()` logs a warning naming the ignored variables.
-- Workers serving the realtime API (`--rp_serve_api`) never enter the worker loop, so only the import-time checks apply there; the two deferred CUDA checks do not run in that mode. Child processes created with multiprocessing's `spawn` start method re-import this module but inherit a marker and skip the checks.
+### Compatibility and failure handling
+
+- Imports in helper scripts and ordinary local tests are safe even when they inherit worker environment variables. `--test_input` (both argument forms) and local `--rp_serve_api` invocations skip early checks. The launcher removes its process authorization before executing the handler; children cannot inherit permission to run early checks.
+- Set thresholds before launch for early validation. Settings changed afterward are applied at worker start, with a warning; affected checks are rerun, while unrelated successful checks remain completed. Earlier failures cannot be undone by changing settings later. Use deferral when the handler must configure checks before they run.
+- With early checks enabled, the memory check measures available memory **before model loading**. With legacy/deferred startup it measures available memory at worker start.
+- Production realtime mode (`RUNPOD_REALTIME_PORT` plus worker environment) runs the final checks in the serving process's application lifespan before accepting requests. Local API simulation remains exempt.
+- A failed health check reports the failure and force-exits. An error preparing early checks is logged and retried at worker start. An unresolved setup/configuration error at worker start reports `fitness_check_setup` and force-exits, including when background threads are alive.
+- Early execution inside an already-running event loop defers to worker start; it does not replace the customer's event loop.
+
+### Platform rollout
+
+Ship the SDK first with legacy launch behavior preserved. Enable `runpod-worker` in a small set of managed worker launches, validate real GPU/fork behavior and startup failure rates, then expand. Deployments with custom entrypoints retain worker-start checks until their launcher integrates the process hook. Roll back early timing centrally with `RUNPOD_DEFER_FITNESS_CHECKS=true`; no handler edits are needed. This SDK change supplies the launcher and hook; it does not change deployed platform launch configuration.
 
 ## Async Fitness Checks
 
@@ -301,19 +315,17 @@ Disk space check passed: 50.00GB free (50.0% available)
 
 ### Network Connectivity
 
-Tests basic internet connectivity for API calls and job processing.
+Tests TCP reachability of the worker API host at worker start.
 
-- **Default**: 5 second timeout to 8.8.8.8:53
-- **Configure**: `RUNPOD_NETWORK_CHECK_TIMEOUT=10`
-
-What it checks:
-- Connection to Google DNS (8.8.8.8 port 53)
-- Response latency
-- Overall internet accessibility
+- **Default**: Up to three attempts within a 5-second total connection/cleanup budget.
+- **Configure**: `RUNPOD_NETWORK_CHECK_TIMEOUT=10` (positive seconds).
+- **Target**: Host and port from `RUNPOD_WEBHOOK_GET_JOB`; defaults to `api.runpod.ai:443` if absent. URL paths and credentials are not sent or logged by this probe.
+- Tests connection reachability, not API authentication or full application readiness.
+- Retries temporary connection failures; persistent failure exits through the worker failure path.
 
 Example log output:
 ```
-Network connectivity passed: Connected to 8.8.8.8 (45ms)
+Network connectivity passed: Connected to api.runpod.ai:443
 ```
 
 ### CUDA Version (GPU workers only)
@@ -388,7 +400,7 @@ ENV RUNPOD_NETWORK_CHECK_TIMEOUT=10
 ENV RUNPOD_GPU_BENCHMARK_TIMEOUT=2
 ```
 
-Or in Python, before `import runpod` (on the real platform the checks run at import):
+For legacy/deferred launches, settings can also be configured in Python before worker start:
 
 ```python
 import os
@@ -422,7 +434,7 @@ os.environ["RUNPOD_SKIP_GPU_CHECK"] = "true"
 import runpod
 ```
 
-As with the thresholds, set these before `import runpod` on the real platform.
+For early checks, set these before launching the handler. For legacy/deferred launches, set them before worker start.
 
 User-registered checks via `@register_fitness_check` still run regardless of `RUNPOD_SKIP_AUTO_SYSTEM_CHECKS` and `RUNPOD_SKIP_GPU_CHECK`. Only `RUNPOD_SKIP_FITNESS_CHECKS` disables those too.
 
@@ -430,7 +442,7 @@ User-registered checks via `@register_fitness_check` still run regardless of `RU
 
 ### Execution Timing
 
-- Each check runs **once per worker**: built-ins at import, your registered checks and the deferred CUDA checks at `start()`; checks that passed are not repeated
+- Early checks run only in launcher-identified worker processes; the final pass runs before job processing. Successful checks are reused unless their configuration changes.
 - They run **before the first job is processed**
 - They run **only on the actual Runpod serverless platform**
 - Local development and testing modes skip fitness checks
