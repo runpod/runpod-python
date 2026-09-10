@@ -20,6 +20,7 @@ from runpod.serverless.modules.rp_fitness import (
 def worker_env(monkeypatch):
     """Make the process look like a real Runpod worker."""
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://example.com/job")
+    monkeypatch.setenv("RUNPOD_FITNESS_WORKER_PID", str(os.getpid()))
     monkeypatch.delenv("RUNPOD_SKIP_FITNESS_CHECKS", raising=False)
     monkeypatch.delenv("RUNPOD_DEFER_FITNESS_CHECKS", raising=False)
 
@@ -269,11 +270,11 @@ class TestAutoRegistrationPath:
         monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", raising=False)
         monkeypatch.delenv("RUNPOD_SKIP_GPU_CHECK", raising=False)
         monkeypatch.setitem(
-            sys.modules, "runpod.serverless.modules.rp_gpu_fitness", fake_gpu_module
+            sys.modules, "runpod._health.gpu", fake_gpu_module
         )
         monkeypatch.setitem(
             sys.modules,
-            "runpod.serverless.modules.rp_system_fitness",
+            "runpod._health.system",
             fake_system_module,
         )
 
@@ -294,7 +295,7 @@ class TestAutoRegistrationPath:
 class TestImportWiring:
     """Deleting the wiring must fail a test, not just real workers."""
 
-    def test_serverless_import_calls_startup_checks(self, monkeypatch):
+    def test_top_level_import_calls_startup_checks(self, worker_env, monkeypatch):
         import importlib
 
         import runpod.serverless
@@ -304,7 +305,7 @@ class TestImportWiring:
             rp_fitness, "run_startup_fitness_checks", lambda: calls.append(True)
         )
 
-        importlib.reload(runpod.serverless)
+        importlib.reload(runpod)
 
         assert calls == [True]
 
@@ -316,16 +317,14 @@ class TestRegistrationLatch:
     async def test_malformed_env_reraises_at_start(self, worker_env, monkeypatch):
         monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", raising=False)
         monkeypatch.setenv("RUNPOD_MIN_MEMORY_GB", "not-a-number")
-        # Drop the cached module so the env parse re-executes on import.
-        monkeypatch.delitem(
-            sys.modules, "runpod.serverless.modules.rp_system_fitness", raising=False
-        )
+        # Configuration is parsed when preparing checks, even if already imported.
 
         run_startup_fitness_checks()  # swallowed and logged — but not latched
         assert rp_fitness._registration_state["system_checks"] is False
 
-        with pytest.raises(ValueError):
+        with pytest.raises(SystemExit) as exc:
             await run_fitness_checks()
+        assert exc.value.code == 1
 
 
 class TestLateConfigWarning:
