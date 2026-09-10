@@ -119,6 +119,17 @@ class TestLogger(unittest.TestCase):
                     self.logger.secret("credential", value)
                     mock_log.assert_called_once_with("credential: [REDACTED]", "INFO", None)
 
+    def test_secret_legacy_keyword_label(self):
+        with patch.object(self.logger, "log") as mock_log:
+            self.logger.secret(secret_name="credential", secret="sensitive")
+            mock_log.assert_called_once_with("credential: [REDACTED]", "INFO", None)
+
+    def test_secret_rejects_conflicting_or_unknown_labels(self):
+        with self.assertRaises(TypeError):
+            self.logger.secret("first", "sensitive", secret_name="second")
+        with self.assertRaises(TypeError):
+            self.logger.secret("credential", "sensitive", unexpected="value")
+
     def test_log_tip(self):
         """
         Tests that the tip method logs a tip.
