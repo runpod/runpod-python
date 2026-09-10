@@ -20,7 +20,7 @@ import traceback
 from collections.abc import Callable
 
 from runpod._logger import RunPodLogger
-from runpod._startup import is_worker_process
+from . import is_worker_process
 
 log = RunPodLogger()
 

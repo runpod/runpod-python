@@ -110,13 +110,11 @@ class RunPodLogger:
         return
 
     def secret(self, secret_name, secret):
-        """
-        Censors secrets for logging.
-        Replaces everything except the first and last characters with *
-        """
-        secret = str(secret)
-        redacted_secret = secret[0] + "*" * (len(secret) - 2) + secret[-1]
-        self.info(f"{secret_name}: {redacted_secret}")
+        """Log the secret's name without exposing its value or length."""
+        # Even a one-character value must be completely redacted. Do not call
+        # str(secret): custom objects may reveal sensitive data or raise.
+        self.info(f"{secret_name}: [REDACTED]")
+
 
     def debug(self, message, request_id: Optional[str] = None):
         """
