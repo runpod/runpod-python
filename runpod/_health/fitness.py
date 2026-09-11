@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import hashlib
+import json
 import os
 import sys
 import time
@@ -21,6 +23,7 @@ from collections.abc import Callable
 
 from runpod._logger import RunPodLogger
 from . import is_worker_process
+from .coordination import ContainerChecks, CoordinationUnavailable, CoordinationBusy
 
 log = RunPodLogger()
 
@@ -62,11 +65,6 @@ SKIP_FITNESS_CHECKS_ENV = "RUNPOD_SKIP_FITNESS_CHECKS"
 
 # Keeps the checks but runs them only in run_worker, as before.
 DEFER_FITNESS_CHECKS_ENV = "RUNPOD_DEFER_FITNESS_CHECKS"
-
-# Set once this process has claimed the startup pass. Child processes spawned
-# with multiprocessing 'spawn' (vLLM, DeepSpeed) re-import this module and
-# inherit the environment; the marker tells them to skip the checks.
-_CHECKS_DONE_ENV = "RUNPOD_FITNESS_CHECKS_DONE"
 
 # Tuning vars consumed when the checks run. Snapshotted at the import-time
 # pass so a later pass can warn about post-import changes, which would
@@ -352,6 +350,74 @@ def _fail_worker(check_name: str, exc: Exception) -> None:
         _terminate_unhealthy(1)
 
 
+async def _run_shared_checks(include_deferred: bool) -> None:
+    """Reuse container checks across imports, including independent helpers."""
+    try:
+        async with ContainerChecks() as shared:
+            if shared.state.get("failure"):
+                _fail_worker(
+                    "early_container_check", RuntimeError(shared.state["failure"])
+                )
+                return
+            for check in _fitness_checks:
+                if not getattr(check, "_runpod_builtin", False) or _is_deferred(check):
+                    continue
+                # Version and relevant settings prevent reusing incompatible results.
+                from runpod.version import __version__
+
+                dependencies = {
+                    "_memory_check": ("RUNPOD_MIN_MEMORY_GB",),
+                    "_disk_check": ("RUNPOD_MIN_DISK_PERCENT",),
+                    "_cuda_version_check": ("RUNPOD_MIN_CUDA_VERSION",),
+                    "_gpu_health_check": (
+                        "RUNPOD_GPU_TEST_TIMEOUT",
+                        "RUNPOD_GPU_MAX_ERROR_MESSAGES",
+                        "RUNPOD_BINARY_GPU_TEST_PATH",
+                    ),
+                }
+                settings = {
+                    k: os.environ.get(k) for k in dependencies.get(check.__name__, ())
+                }
+                key = hashlib.sha256(
+                    json.dumps(
+                        [__version__, check._runpod_builtin, check.__name__, settings],
+                        sort_keys=True,
+                    ).encode()
+                ).hexdigest()
+                if key not in shared.state["passed"]:
+                    try:
+                        if inspect.iscoroutinefunction(check):
+                            await check()
+                        else:
+                            check()
+                    except Exception as exc:
+                        shared.state["failure"] = (
+                            f"{check.__name__}: {type(exc).__name__}"
+                        )
+                        try:
+                            shared.save()
+                        finally:
+                            _fail_worker(check.__name__, exc)
+                        return
+                    shared.state["passed"].append(key)
+                    shared.save()
+                if not any(check is done for done in _completed_checks):
+                    _completed_checks.append(check)
+    except CoordinationUnavailable as exc:
+        log.warn(
+            f"Early check coordination unavailable; using worker-start checks: {exc}"
+        )
+    except CoordinationBusy as exc:
+        if include_deferred:
+            _fail_worker("fitness_check_coordination", exc)
+        else:
+            log.warn(
+                "Early checks still running in another process; deferring to worker start."
+            )
+    except OSError as exc:
+        log.warn(f"Cannot save shared checks; using worker-start checks: {exc}")
+
+
 async def run_fitness_checks(include_deferred: bool = True) -> None:
     """
     Execute all registered fitness checks sequentially at startup.
@@ -405,6 +471,13 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
         _fail_worker("fitness_check_setup", exc)
         return
 
+    if is_worker_process() and (
+        include_deferred or not _env_flag(DEFER_FITNESS_CHECKS_ENV)
+    ):
+        await _run_shared_checks(include_deferred)
+        if not include_deferred:
+            return
+
     # Identity, not equality: two distinct registrations may compare equal
     # (e.g. fresh bound-method objects of one method), and `==` would skip one.
     pending = [
@@ -414,7 +487,11 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
     ]
 
     if not include_deferred:
-        pending = [check for check in pending if not _is_deferred(check)]
+        pending = [
+            check
+            for check in pending
+            if getattr(check, "_runpod_builtin", False) and not _is_deferred(check)
+        ]
 
     if not pending:
         log.debug("No pending fitness checks, skipping.")
@@ -466,22 +543,14 @@ def run_startup_fitness_checks() -> None:
     so they still run in run_worker, which skips whatever passed here. Checks
     marked with @defer_to_worker_start are also left to run_worker.
 
-    No-ops without launcher process authorization, for local tests, when checks
-    are disabled or deferred, inside a running event loop, and in child
-    processes (the launcher PID must match and is consumed before the handler). Ordinary exceptions from running the
-    checks are logged and swallowed: a failure to run the checks must not stop
-    a worker from booting. A failing check still force-exits, which is the point.
+    Shared built-ins run once per container startup. Child processes reuse the
+    result; process-specific and customer checks wait for worker start.
     """
     if _env_flag(SKIP_FITNESS_CHECKS_ENV) or _env_flag(DEFER_FITNESS_CHECKS_ENV):
         return
 
     if not is_worker_process():
         return
-
-    if os.environ.get(_CHECKS_DONE_ENV):
-        return
-    os.environ[_CHECKS_DONE_ENV] = "1"
-    os.environ.pop("RUNPOD_FITNESS_WORKER_PID", None)
 
     if _event_loop_running():
         log.debug("Event loop already running, deferring fitness checks to run_worker.")

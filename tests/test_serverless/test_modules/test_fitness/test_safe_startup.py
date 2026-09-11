@@ -10,8 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from runpod._health import fitness, system
-from runpod._startup import WORKER_PID_ENV, run_import_checks
+from runpod._health import fitness, system, coordination
+
+coordination.container_start_id = lambda: "lazy-test-" + str(os.getpid())
+from runpod._startup import run_import_checks
 
 
 @pytest.mark.parametrize(
@@ -27,17 +29,9 @@ def test_import_does_not_run_for_unmarked_or_local_process(monkeypatch, args):
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://example.test/job")
     monkeypatch.setattr(sys, "argv", args)
     if len(args) > 1:
-        monkeypatch.setenv(WORKER_PID_ENV, str(os.getpid()))
+        monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
     else:
-        monkeypatch.delenv(WORKER_PID_ENV, raising=False)
-    with patch.object(fitness, "run_startup_fitness_checks") as run:
-        run_import_checks()
-    run.assert_not_called()
-
-
-def test_inherited_worker_pid_does_not_authorize_child(monkeypatch):
-    monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://example.test/job")
-    monkeypatch.setenv(WORKER_PID_ENV, str(os.getpid() + 1))
+        monkeypatch.delenv("RUNPOD_ENDPOINT_ID", raising=False)
     with patch.object(fitness, "run_startup_fitness_checks") as run:
         run_import_checks()
     run.assert_not_called()
@@ -45,11 +39,10 @@ def test_inherited_worker_pid_does_not_authorize_child(monkeypatch):
 
 def test_initial_pass_does_not_compare_config(monkeypatch):
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://example.test/job")
-    monkeypatch.setenv(WORKER_PID_ENV, str(os.getpid()))
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
     with patch.object(fitness, "_refresh_late_config") as refresh:
         run_import_checks()
     refresh.assert_not_called()
-    assert WORKER_PID_ENV not in os.environ
 
 
 @pytest.mark.asyncio
@@ -118,7 +111,7 @@ async def test_network_stuck_close_is_bounded(monkeypatch):
 def test_network_is_deferred_even_in_authorized_worker(monkeypatch):
     monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
-    monkeypatch.setenv(WORKER_PID_ENV, str(os.getpid()))
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
     with (
         patch.object(system, "gpu_available", return_value=False),
         patch.object(system, "_check_memory_availability"),
@@ -135,7 +128,7 @@ def test_network_is_deferred_even_in_authorized_worker(monkeypatch):
 def test_changed_threshold_is_applied_without_rerunning_unrelated_checks(monkeypatch):
     monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
-    monkeypatch.setenv(WORKER_PID_ENV, str(os.getpid()))
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
     with (
         patch.object(system, "gpu_available", return_value=False),
         patch.object(system, "_check_memory_availability") as memory,
@@ -190,29 +183,6 @@ print('IMPORT_SURVIVED')
     assert "IMPORT_SURVIVED" in result.stdout
 
 
-@pytest.mark.parametrize("module_mode", [False, True])
-def test_launcher_checks_before_handler_and_preserves_arguments(tmp_path, module_mode):
-    handler = tmp_path / "handler.py"
-    handler.write_text(
-        "import os, sys\nassert 'RUNPOD_FITNESS_WORKER_PID' not in os.environ\n"
-        "assert sys.argv[1:] == ['--customer-arg', 'value']\nprint('MODEL_LOAD')\n"
-    )
-    result = run_child(f"""
-import os, sys
-import runpod._worker_bootstrap as bootstrap
-from runpod._health import fitness
-os.environ['RUNPOD_WEBHOOK_GET_JOB'] = 'https://example.test/job'
-fitness.register_fitness_check(lambda: print('EARLY_CHECK'))
-os.chdir({str(tmp_path)!r})
-# Model console entrypoint sys.path: the current directory is not pre-added.
-sys.path = [p for p in sys.path if p]
-sys.argv = ['runpod-worker'] + {(["-m", "handler"] if module_mode else [str(handler)])!r} + ['--customer-arg', 'value']
-bootstrap.main()
-""")
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.index("EARLY_CHECK") < result.stdout.index("MODEL_LOAD")
-
-
 def test_setup_failure_exits_with_live_thread():
     result = run_child("""
 import asyncio, os, threading, time
@@ -240,10 +210,11 @@ class Guard(importlib.abc.MetaPathFinder):
             raise AssertionError('early check loaded ' + fullname)
 sys.meta_path.insert(0, Guard())
 from unittest.mock import patch, MagicMock
-from runpod._health import fitness, system
+from runpod._health import fitness, system, coordination
+coordination.container_start_id = lambda: 'lazy-test-' + str(os.getpid())
 from runpod._startup import run_import_checks
 os.environ['RUNPOD_WEBHOOK_GET_JOB'] = 'https://example.test/job'
-os.environ['RUNPOD_FITNESS_WORKER_PID'] = str(os.getpid())
+os.environ['RUNPOD_ENDPOINT_ID'] = 'endpoint'
 os.environ['RUNPOD_SKIP_AUTO_SYSTEM_CHECKS'] = 'false'
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -261,73 +232,3 @@ print('LAZY_PASS')
 """)
     assert result.returncode == 0, result.stderr
     assert "LAZY_PASS" in result.stdout
-
-
-@pytest.mark.parametrize("method", ["spawn", "fork"])
-def test_child_processes_do_not_repeat_early_checks(tmp_path, method):
-    import multiprocessing
-
-    if method not in multiprocessing.get_all_start_methods():
-        pytest.skip(f"{method} is not supported")
-    handler = tmp_path / "child_handler.py"
-    handler.write_text("""
-import multiprocessing, os
-from runpod._startup import is_worker_process
-
-def child():
-    assert not is_worker_process()
-    print('CHILD_SAFE', flush=True)
-
-if __name__ == '__main__':
-    child_process = multiprocessing.get_context(os.environ['TEST_START_METHOD']).Process(target=child)
-    child_process.start()
-    child_process.join(5)
-    assert child_process.exitcode == 0
-""")
-    result = run_child(f"""
-import os, sys
-from runpod._worker_bootstrap import main
-os.environ['TEST_START_METHOD'] = {method!r}
-os.environ['RUNPOD_WEBHOOK_GET_JOB'] = 'https://example.test/job'
-sys.argv = ['runpod-worker', {str(handler)!r}]
-main()
-""")
-    assert result.returncode == 0, result.stderr
-    assert "CHILD_SAFE" in result.stdout
-
-
-def test_launcher_failed_early_check_prevents_model_load(tmp_path):
-    handler = tmp_path / "handler.py"
-    handler.write_text("print('MODEL_LOAD')\n")
-    result = run_child(f"""
-import os, sys
-from runpod._worker_bootstrap import main
-from runpod._health import fitness
-os.environ['RUNPOD_WEBHOOK_GET_JOB'] = 'https://example.test/job'
-def fail():
-    raise RuntimeError('broken hardware')
-fitness.register_fitness_check(fail)
-sys.argv = ['runpod-worker', {str(handler)!r}]
-main()
-""")
-    assert result.returncode == 1
-    assert "broken hardware" in result.stdout
-    assert "MODEL_LOAD" not in result.stdout
-
-
-def test_launcher_local_test_does_not_run_early_checks(tmp_path):
-    handler = tmp_path / "handler.py"
-    handler.write_text("print('LOCAL_TEST')\n")
-    result = run_child(f"""
-import os, sys
-from runpod._worker_bootstrap import main
-from runpod._health import fitness
-os.environ['RUNPOD_WEBHOOK_GET_JOB'] = 'https://example.test/job'
-def fail():
-    raise RuntimeError('must not run')
-fitness.register_fitness_check(fail)
-sys.argv = ['runpod-worker', {str(handler)!r}, '--test_input={{}}']
-main()
-""")
-    assert result.returncode == 0, result.stderr
-    assert "LOCAL_TEST" in result.stdout

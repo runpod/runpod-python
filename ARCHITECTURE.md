@@ -613,7 +613,7 @@ log.error(message, job_id=None)
 - `clear_fitness_checks()`: Clear registry (testing only)
 
 **Execution Flow**:
-1. `runpod-worker` identifies the handler process and runs early hardware checks before executing it. Existing launchers may authorize the top-level import hook using `RUNPOD_FITNESS_WORKER_PID=<handler PID>`. The hook and check engine do not import `serverless`; ordinary imports with only the webhook environment are exempt. Legacy launches and `RUNPOD_DEFER_FITNESS_CHECKS=true` run checks only at worker start. Network readiness, CUDA initialization, compute and custom checks run in the final pass; production realtime uses the serving process's lifespan. Successful early checks are reused unless their configuration changes.
+1. The first top-level import with both `RUNPOD_ENDPOINT_ID` and `RUNPOD_WEBHOOK_GET_JOB` runs shared hardware checks, excluding test invocations and `RUNPOD_TEST`. A Linux file lock and container-start-scoped result prevent concurrent/repeated execution across processes; saved failures propagate to later workers. Identity includes host boot, PID namespace, and PID 1 start time. Network, Python CUDA initialization, compute, and custom checks remain at worker start (realtime uses serving lifespan). Unsupported/unwritable coordination defers to worker-start checks. Lock waiting is bounded at 35 seconds; a worker-start timeout fails closed. `RUNPOD_DEFER_FITNESS_CHECKS=true` postpones early checks. No custom launcher or PID environment variable is required.
 2. Runs only in production mode (skipped for local testing)
 3. Auto-detects sync vs async using `inspect.iscoroutinefunction()`
 4. Executes checks in registration order (list preserves order)

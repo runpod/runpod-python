@@ -143,7 +143,7 @@ runpod.serverless.start({"handler": handler})
 
 **Key Features:**
 - Supports both synchronous and asynchronous check functions
-- `runpod-worker handler.py` checks hardware before model loading; existing Python launches check at worker start
+- Shared hardware checks run once per container at the first Serverless import; network and process-specific checks run at worker start
 - Local tests/helper imports remain exempt; network readiness and custom checks run at worker start
 - Successful early checks are reused unless their configuration changes
 - Runs before handler initialization and job processing begins
