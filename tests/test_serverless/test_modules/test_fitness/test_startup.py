@@ -1,7 +1,6 @@
 """Tests for fitness checks running at import/startup time (DR-1409)."""
 
 import builtins
-import os
 import sys
 import types
 from unittest.mock import patch
