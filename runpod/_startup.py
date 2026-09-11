@@ -1,14 +1,14 @@
-"""Process-scoped startup gate; safe to import without loading serverless."""
+"""Container-scoped startup gate; safe to import without loading serverless."""
 
 import sys
 
-from ._health import WORKER_PID_ENV, is_worker_process
+from ._health import is_worker_process
 
-__all__ = ["WORKER_PID_ENV", "is_worker_process", "run_import_checks"]
+__all__ = ["is_worker_process", "run_import_checks"]
 
 
 def run_import_checks() -> None:
-    """Run early checks only in the handler process selected by the launcher."""
+    """Run shared early checks in eligible Serverless containers."""
     if not is_worker_process():
         return
     try:
