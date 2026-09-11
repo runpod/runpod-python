@@ -16,11 +16,17 @@ from runpod.serverless.modules.rp_fitness import (
 )
 
 
+def register_early_check(func):
+    """Synthetic built-in for exercising the early runner."""
+    func._runpod_builtin = "system_checks"
+    return register_fitness_check(func)
+
+
 @pytest.fixture()
 def worker_env(monkeypatch):
     """Make the process look like a real Runpod worker."""
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://example.com/job")
-    monkeypatch.setenv("RUNPOD_FITNESS_WORKER_PID", str(os.getpid()))
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
     monkeypatch.delenv("RUNPOD_SKIP_FITNESS_CHECKS", raising=False)
     monkeypatch.delenv("RUNPOD_DEFER_FITNESS_CHECKS", raising=False)
 
@@ -31,7 +37,7 @@ class TestSkipEnvVar:
         monkeypatch.setenv("RUNPOD_SKIP_FITNESS_CHECKS", "true")
         called = []
 
-        @register_fitness_check
+        @register_early_check
         def check():
             called.append(True)
 
@@ -43,7 +49,7 @@ class TestSkipEnvVar:
         monkeypatch.delenv("RUNPOD_SKIP_FITNESS_CHECKS", raising=False)
         called = []
 
-        @register_fitness_check
+        @register_early_check
         def check():
             called.append(True)
 
@@ -56,13 +62,13 @@ class TestRunOnce:
     async def test_passed_check_does_not_rerun(self):
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         def first():
             calls.append("first")
 
         await run_fitness_checks()
 
-        @register_fitness_check
+        @register_early_check
         def second():
             calls.append("second")
 
@@ -95,7 +101,7 @@ class TestStartupEntrypoint:
     def test_runs_checks_on_worker(self, worker_env):
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         def check():
             calls.append(True)
 
@@ -106,7 +112,7 @@ class TestStartupEntrypoint:
         monkeypatch.delenv("RUNPOD_WEBHOOK_GET_JOB", raising=False)
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         def check():
             calls.append(True)
 
@@ -117,7 +123,7 @@ class TestStartupEntrypoint:
         monkeypatch.setenv("RUNPOD_DEFER_FITNESS_CHECKS", "true")
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         def check():
             calls.append(True)
 
@@ -128,7 +134,7 @@ class TestStartupEntrypoint:
         monkeypatch.setenv("RUNPOD_SKIP_FITNESS_CHECKS", "1")
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         def check():
             calls.append(True)
 
@@ -147,7 +153,7 @@ class TestStartupEntrypoint:
     async def test_noop_inside_running_loop(self, worker_env):
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         def check():
             calls.append(True)
 
@@ -161,11 +167,11 @@ class TestDeferredChecks:
     def test_deferred_check_skipped_at_import(self, worker_env):
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         def early():
             calls.append("early")
 
-        @register_fitness_check
+        @register_early_check
         @rp_fitness.defer_to_worker_start
         def late():
             calls.append("late")
@@ -177,7 +183,7 @@ class TestDeferredChecks:
     async def test_deferred_check_runs_at_worker_start(self, worker_env):
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         @rp_fitness.defer_to_worker_start
         def late():
             calls.append("late")
@@ -200,25 +206,6 @@ class TestDeferredChecks:
         assert not rp_fitness._is_deferred(by_name["_memory_check"])
 
 
-class TestDoneMarker:
-    """Spawned children re-import this module and must not re-run the checks."""
-
-    def test_done_marker_skips_startup_pass(self, worker_env, monkeypatch):
-        monkeypatch.setenv(rp_fitness._CHECKS_DONE_ENV, "1")
-        calls = []
-
-        @register_fitness_check
-        def check():
-            calls.append(True)
-
-        run_startup_fitness_checks()
-        assert calls == []
-
-    def test_startup_pass_sets_done_marker(self, worker_env):
-        run_startup_fitness_checks()
-        assert os.environ.get(rp_fitness._CHECKS_DONE_ENV) == "1"
-
-
 class TestDeferFullBehavior:
     """RUNPOD_DEFER_FITNESS_CHECKS restores exact pre-PR start()-only timing."""
 
@@ -227,11 +214,11 @@ class TestDeferFullBehavior:
         monkeypatch.setenv("RUNPOD_DEFER_FITNESS_CHECKS", "true")
         calls = []
 
-        @register_fitness_check
+        @register_early_check
         def check():
             calls.append(True)
 
-        @register_fitness_check
+        @register_early_check
         @rp_fitness.defer_to_worker_start
         def deferred():
             calls.append("deferred")
@@ -269,9 +256,7 @@ class TestAutoRegistrationPath:
 
         monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", raising=False)
         monkeypatch.delenv("RUNPOD_SKIP_GPU_CHECK", raising=False)
-        monkeypatch.setitem(
-            sys.modules, "runpod._health.gpu", fake_gpu_module
-        )
+        monkeypatch.setitem(sys.modules, "runpod._health.gpu", fake_gpu_module)
         monkeypatch.setitem(
             sys.modules,
             "runpod._health.system",
