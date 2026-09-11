@@ -327,6 +327,9 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
             async for stream_output in generator_output:
+                if "error" in stream_output:
+                    job_output = stream_output
+                    break
                 job_output["output"].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
@@ -363,6 +366,15 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             stream_accumulator = []
             async for stream_output in generator_output:
+                if "error" in stream_output:
+                    job_list.remove(job.id)
+                    return jsonable_encoder(
+                        {
+                            "id": job_id,
+                            "status": "FAILED",
+                            "error": stream_output["error"],
+                        }
+                    )
                 stream_accumulator.append({"output": stream_output["output"]})
         else:
             return jsonable_encoder(
@@ -402,6 +414,9 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
             async for stream_output in generator_output:
+                if "error" in stream_output:
+                    job_output = stream_output
+                    break
                 job_output["output"].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
