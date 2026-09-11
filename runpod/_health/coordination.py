@@ -32,7 +32,7 @@ def container_start_id() -> str:
 class ContainerChecks:
     """Hold one flock while reading, executing, and recording early checks."""
 
-    def __init__(self, timeout=35):
+    def __init__(self, timeout: float = 35):
         self.timeout = timeout
         self.fd = None
         self.state = {"passed": [], "failure": None}
@@ -48,28 +48,9 @@ class ContainerChecks:
         except (OSError, ValueError, IndexError, ImportError) as exc:
             self.close()
             raise CoordinationUnavailable(str(exc)) from exc
-        deadline = time.monotonic() + self.timeout
         try:
-            while True:
-                try:
-                    fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() >= deadline:
-                        raise CoordinationBusy(
-                            "Timed out waiting for early health checks"
-                        )
-                    await asyncio.sleep(0.05)
-            raw = os.read(self.fd, 65536)
-            if raw:
-                self.state = json.loads(raw)
-                if (
-                    not isinstance(self.state, dict)
-                    or not isinstance(self.state.get("passed"), list)
-                    or not all(isinstance(key, str) for key in self.state["passed"])
-                    or not isinstance(self.state.get("failure"), (str, type(None)))
-                ):
-                    raise ValueError("Invalid health-check state")
+            await self._acquire_lock(fcntl)
+            self._load_state()
             return self
         except (OSError, ValueError) as exc:
             self.close()
@@ -78,7 +59,34 @@ class ContainerChecks:
             self.close()
             raise
 
-    def save(self):
+    async def _acquire_lock(self, fcntl) -> None:
+        deadline = time.monotonic() + self.timeout
+        while True:
+            try:
+                fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise CoordinationBusy("Timed out waiting for early health checks")
+                await asyncio.sleep(0.05)
+
+    def _load_state(self) -> None:
+        raw = os.read(self.fd, 65536)
+        if not raw:
+            return
+        state = json.loads(raw)
+        if not isinstance(state, dict):
+            raise ValueError("Health-check state must be an object")
+        passed = state.get("passed")
+        if not isinstance(passed, list) or not all(
+            isinstance(key, str) for key in passed
+        ):
+            raise ValueError("Passed health checks must be a list of cache keys")
+        if not isinstance(state.get("failure"), (str, type(None))):
+            raise ValueError("Health-check failure must be a string or null")
+        self.state = state
+
+    def save(self) -> None:
         """Persist before releasing the lock or terminating on failure."""
         data = json.dumps(self.state).encode()
         os.lseek(self.fd, 0, os.SEEK_SET)
@@ -91,7 +99,7 @@ class ContainerChecks:
         os.ftruncate(self.fd, len(data))
         os.fsync(self.fd)
 
-    def close(self):
+    def close(self) -> None:
         if self.fd is not None:
             os.close(self.fd)
             self.fd = None

@@ -2,14 +2,14 @@
 
 import sys
 
-from ._health import is_worker_process
+from ._health import is_early_check_eligible
 
-__all__ = ["is_worker_process", "run_import_checks"]
+__all__ = ["is_early_check_eligible", "run_import_checks"]
 
 
 def run_import_checks() -> None:
     """Run shared early checks in eligible Serverless containers."""
-    if not is_worker_process():
+    if not is_early_check_eligible():
         return
     try:
         from ._health.fitness import run_startup_fitness_checks
