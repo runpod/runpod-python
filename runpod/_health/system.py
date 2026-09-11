@@ -32,6 +32,7 @@ MIN_DISK_PERCENT = 10.0
 MIN_CUDA_VERSION = "11.8"
 NETWORK_CHECK_TIMEOUT = 5
 GPU_BENCHMARK_TIMEOUT = 2
+CUDA_VERSION_PROBE_TIMEOUT = 5
 
 
 def configure() -> None:
@@ -244,7 +245,9 @@ async def _get_cuda_version() -> str | None:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
+        stdout, _ = await asyncio.wait_for(
+            process.communicate(), timeout=CUDA_VERSION_PROBE_TIMEOUT
+        )
         if process.returncode == 0:
             output = stdout.decode("utf-8", errors="replace")
             for line in output.split("\n"):
@@ -264,7 +267,9 @@ async def _get_cuda_version() -> str | None:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
+        stdout, _ = await asyncio.wait_for(
+            process.communicate(), timeout=CUDA_VERSION_PROBE_TIMEOUT
+        )
         if process.returncode == 0:
             output = stdout.decode("utf-8", errors="replace")
             for line in output.split("\n"):

@@ -24,6 +24,7 @@ log = RunPodLogger()
 
 # Defaults are safe to import; parse user settings when registering checks.
 TIMEOUT_SECONDS = 30
+FALLBACK_TIMEOUT_SECONDS = 10
 MAX_ERROR_MESSAGES = 10
 
 
@@ -201,7 +202,7 @@ def _run_gpu_test_fallback() -> None:
             ["nvidia-smi", "--list-gpus"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=FALLBACK_TIMEOUT_SECONDS,
             check=False,
         )
 

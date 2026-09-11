@@ -197,6 +197,9 @@ async def test_corrupt_state_uses_fallback(tmp_path, contents):
 @pytest.mark.asyncio
 async def test_lock_timeout_defers_import_but_blocks_worker(monkeypatch):
     class Busy:
+        def __init__(self, **kwargs):
+            pass
+
         async def __aenter__(self):
             raise coordination.CoordinationBusy("still checking")
 
@@ -208,3 +211,40 @@ async def test_lock_timeout_defers_import_but_blocks_worker(monkeypatch):
     await fitness._run_shared_checks(include_deferred=False)
     with pytest.raises(SystemExit):
         await fitness._run_shared_checks(include_deferred=True)
+
+
+@pytest.mark.asyncio
+async def test_deferred_worker_wait_covers_long_gpu_check(monkeypatch):
+    from runpod._health import gpu, system
+
+    monkeypatch.delenv("RUNPOD_SKIP_GPU_CHECK")
+    monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
+    monkeypatch.setenv("RUNPOD_DEFER_FITNESS_CHECKS", "true")
+    monkeypatch.setenv("RUNPOD_GPU_TEST_TIMEOUT", "60")
+    monkeypatch.setattr(gpu, "TIMEOUT_SECONDS", gpu.TIMEOUT_SECONDS)
+    monkeypatch.setattr(gpu, "MAX_ERROR_MESSAGES", gpu.MAX_ERROR_MESSAGES)
+    gpu.configure()
+    waits = []
+
+    class ConcurrentCheck:
+        def __init__(self, timeout):
+            waits.append(timeout)
+            self.state = {"passed": [], "failure": None}
+
+        async def __aenter__(self):
+            # Model an owner finishing after 45 seconds without a slow test.
+            if waits[-1] < 45:
+                raise coordination.CoordinationBusy("healthy check still running")
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    monkeypatch.setattr(fitness, "ContainerChecks", ConcurrentCheck)
+    await fitness._run_shared_checks(include_deferred=True)
+    assert waits == [
+        60 + gpu.FALLBACK_TIMEOUT_SECONDS + 2 * system.CUDA_VERSION_PROBE_TIMEOUT + 5
+    ]
+    # Imports retain a short bounded wait and defer rather than terminating.
+    await fitness._run_shared_checks(include_deferred=False)
+    assert waits[-1] == 35

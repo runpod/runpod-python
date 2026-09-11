@@ -394,10 +394,26 @@ async def _run_and_save_shared_check(check: Callable, shared: ContainerChecks) -
     shared.save()
 
 
+def _coordination_wait_seconds() -> float:
+    """Cover sequential shared probes plus scheduling and result-write overhead."""
+    budget = 5.0
+    if not _env_flag("RUNPOD_SKIP_GPU_CHECK"):
+        from . import gpu
+
+        budget += gpu.TIMEOUT_SECONDS + gpu.FALLBACK_TIMEOUT_SECONDS
+    if not _env_flag("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS"):
+        from . import system
+
+        # CUDA version probes nvcc, then nvidia-smi if nvcc fails.
+        budget += 2 * system.CUDA_VERSION_PROBE_TIMEOUT
+    return max(35.0, budget)
+
+
 async def _run_shared_checks(include_deferred: bool) -> None:
     """Reuse container checks across imports, including independent helpers."""
     try:
-        async with ContainerChecks() as shared:
+        timeout = _coordination_wait_seconds() if include_deferred else 35.0
+        async with ContainerChecks(timeout=timeout) as shared:
             if shared.state.get("failure"):
                 _fail_worker(
                     "early_container_check", RuntimeError(shared.state["failure"])
