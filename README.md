@@ -310,14 +310,22 @@ runpod.terminate_pod(pod["id"])
 - Omitting `volume_mount_path` preserves an inherited GPU template volume's path.
   Setting it explicitly changes the path while retaining the inherited volume size.
   New persistent volumes and network volume mounts default to `/runpod-volume`.
+  CPU pods do not inherit template persistent volumes; a CPU `volume_mount_path`
+  requires `network_volume_id`.
 - For GPU pods, `min_memory_in_gb` and `min_vcpu_count` specify minimum host RAM
   and vCPUs **per GPU**, not GPU VRAM or totals for the pod.
+- REST v2 cannot require a public-IP-capable host. `support_public_ip=False` is
+  the default and does not disable public networking. `True` raises `ValueError`
+  rather than silently ignoring that requirement.
 - `create_template(volume_in_gb=0)` creates a template without a persistent volume.
 - `create_endpoint(locations="US-KS-2,EU-RO-1")` accepts comma-separated
   datacenter IDs. Country codes such as `US` and `RO` are not supported.
   Endpoint creation sends a single REST request without catalog lookups.
 - Endpoint `gpu_ids` accepts pool IDs and excluded GPU types, for example
   `gpu_ids="ADA_48_PRO,-NVIDIA L40"` selects that pool without NVIDIA L40 GPUs.
+- `create_endpoint` accepts only `QUEUE_DELAY` and `REQUEST_COUNT` scaling.
+  `idle_timeout` applies to `QUEUE_DELAY` (default: 5 seconds); explicitly setting
+  it with `REQUEST_COUNT` raises `ValueError`.
 
 ## 📁 | Directory
 

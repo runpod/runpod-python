@@ -9,7 +9,9 @@ from runpod import error
 from runpod.user_agent import USER_AGENT
 
 HTTP_STATUS_NO_CONTENT = 204
+HTTP_STATUS_BAD_REQUEST = 400
 HTTP_STATUS_UNAUTHORIZED = 401
+HTTP_STATUS_NOT_FOUND = 404
 
 
 def _resolve_api_key(api_key: Optional[str]) -> str:
@@ -51,7 +53,7 @@ def _raise_for_error(
             "Unauthorized request, please check your API key."
         )
 
-    if response.status_code < 400:
+    if response.status_code < HTTP_STATUS_BAD_REQUEST:
         return
 
     payload = _response_json(response)

@@ -187,6 +187,28 @@ def test_create_pod_template_mount_precedence(template_backend, kwargs, expected
     assert pod["mounts"] == {"persistent": {"size": 30, "path": expected_path}}
 
 
+def test_create_cpu_pod_rejects_unrepresentable_template_mount_path(template_backend):
+    with pytest.raises(ValueError, match="volume_mount_path"):
+        ctl_commands.create_pod(
+            "training",
+            template_id="template/id",
+            instance_id="cpu3c-4-8",
+            volume_mount_path="/custom",
+        )
+
+
+def test_create_pod_path_override_without_template_mounts(template_backend):
+    template = ctl_commands.create_template("disk-only", "image", volume_in_gb=0)
+    pod = ctl_commands.create_pod(
+        "training",
+        template_id=template["id"],
+        gpu_type_id="NVIDIA A100",
+        volume_mount_path="/custom",
+    )
+
+    assert pod["mounts"] == {}
+
+
 @pytest.mark.parametrize(
     ("kwargs", "expected_mounts"),
     [
@@ -277,13 +299,13 @@ def test_create_pod_validates_image_and_cloud():
 @pytest.mark.parametrize(
     ("kwargs", "field"),
     [
-        ({"support_public_ip": False}, "support_public_ip"),
+        ({"support_public_ip": True}, "support_public_ip"),
         ({"country_code": "US"}, "country_code"),
         ({"min_download": 100}, "min_download"),
         ({"min_upload": 100}, "min_upload"),
     ],
 )
-def test_create_gpu_pod_rejects_unsupported_constraints(kwargs, field):
+def test_create_gpu_pod_rejects_unsupported_constraints(template_backend, kwargs, field):
     with pytest.raises(ValueError, match=field):
         ctl_commands.create_pod("pod", "image", gpu_type_id="NVIDIA A100", **kwargs)
 
@@ -389,9 +411,23 @@ def test_create_endpoint_preserves_excluded_gpu_types(endpoint_backend):
     assert endpoint["eligibleGpuTypes"] == ["NVIDIA L40S", "NVIDIA RTX A4000"]
 
 
-def test_create_endpoint_rejects_invalid_scaler():
+@pytest.mark.parametrize("scaler_type", ["INVALID", "WORKER_COUNT"])
+def test_create_endpoint_rejects_invalid_scaler(endpoint_backend, scaler_type):
     with pytest.raises(ValueError, match="scaler_type"):
-        ctl_commands.create_endpoint("endpoint", "template", scaler_type="INVALID")
+        ctl_commands.create_endpoint("endpoint", "template", scaler_type=scaler_type)
+
+
+@pytest.mark.parametrize("idle_timeout", [5, 30])
+def test_create_endpoint_rejects_idle_timeout_for_request_count(
+    endpoint_backend, idle_timeout
+):
+    with pytest.raises(ValueError, match="idle_timeout"):
+        ctl_commands.create_endpoint(
+            "endpoint",
+            "template",
+            scaler_type="REQUEST_COUNT",
+            idle_timeout=idle_timeout,
+        )
 
 
 def test_update_endpoint_template_uses_patch():

@@ -10,7 +10,7 @@ from runpod import error
 from .graphql import run_graphql_query
 from .mutations import container_register_auth as container_register_auth_mutations
 from .queries import user as user_queries
-from .rest import run_rest_request
+from .rest import HTTP_STATUS_NOT_FOUND, run_rest_request
 
 
 def _path_segment(value: str) -> str:
@@ -86,7 +86,7 @@ def get_gpu(gpu_id: str, gpu_quantity: int = 1, api_key: Optional[str] = None) -
             },
         )
     except error.QueryError as exc:
-        if exc.status_code == 404:
+        if exc.status_code == HTTP_STATUS_NOT_FOUND:
             raise ValueError(
                 "No GPU found with the specified ID, "
                 "run runpod.get_gpus() to get a list of all GPUs"
@@ -107,7 +107,7 @@ def get_pod(pod_id: str, api_key: Optional[str] = None) -> Optional[dict]:
             "GET", f"/v2/pods/{_path_segment(pod_id)}", api_key=api_key
         )
     except error.QueryError as exc:
-        if exc.status_code == 404:
+        if exc.status_code == HTTP_STATUS_NOT_FOUND:
             return None
         raise
 
@@ -117,7 +117,7 @@ def create_pod(
     image_name: Optional[str] = "",
     gpu_type_id: Optional[str] = None,
     cloud_type: str = "ALL",
-    support_public_ip: bool = True,
+    support_public_ip: bool = False,
     start_ssh: bool = True,
     data_center_id: Optional[str] = None,
     country_code: Optional[str] = None,
@@ -144,12 +144,14 @@ def create_pod(
         raise ValueError("cloud_type must be one of ALL, COMMUNITY or SECURE")
 
     unsupported = []
-    if support_public_ip is not True:
+    if support_public_ip is not False:
         unsupported.append("support_public_ip")
     if country_code is not None:
         unsupported.append("country_code")
     if not gpu_type_id and min_memory_in_gb != 1:
         unsupported.append("min_memory_in_gb")
+    if not gpu_type_id and volume_mount_path is not None and not network_volume_id:
+        unsupported.append("volume_mount_path on CPU pods without network_volume_id")
     if min_download is not None:
         unsupported.append("min_download")
     if min_upload is not None:
@@ -194,7 +196,7 @@ def create_pod(
         template = run_rest_request(
             "GET", f"/v2/templates/{_path_segment(template_id)}"
         )
-        persistent = template["mounts"].get("persistent")
+        persistent = template.get("mounts", {}).get("persistent")
         if persistent is not None:
             body["mounts"] = {
                 "persistent": {"size": persistent["size"], "path": volume_mount_path}
@@ -289,7 +291,7 @@ def create_endpoint(
     gpu_ids: str = "AMPERE_16",
     network_volume_id: str = None,
     locations: str = None,
-    idle_timeout: int = 5,
+    idle_timeout: Optional[int] = None,
     scaler_type: str = "QUEUE_DELAY",
     scaler_value: int = 4,
     workers_min: int = 0,
@@ -299,14 +301,11 @@ def create_endpoint(
     gpu_count: int = 1,
 ) -> dict:
     """Create a queue-based serverless endpoint; locations are datacenter IDs."""
-    scaler_type = {
-        "QUEUE_DELAY": "QUEUE_DELAY",
-        "REQUEST_COUNT": "REQUEST_COUNT",
-        "WORKER_COUNT": "REQUEST_COUNT",
-    }.get(scaler_type, scaler_type)
     if scaler_type == "QUEUE_DELAY":
         scaling = {"type": scaler_type, "queueDelay": scaler_value}
     elif scaler_type == "REQUEST_COUNT":
+        if idle_timeout is not None:
+            raise ValueError("idle_timeout is only supported with QUEUE_DELAY scaling")
         scaling = {"type": scaler_type, "requestCount": scaler_value}
     else:
         raise ValueError("scaler_type must be QUEUE_DELAY or REQUEST_COUNT")
@@ -332,7 +331,7 @@ def create_endpoint(
 
     workers = {"min": workers_min, "max": workers_max}
     if scaler_type == "QUEUE_DELAY":
-        workers["idleTimeout"] = idle_timeout
+        workers["idleTimeout"] = 5 if idle_timeout is None else idle_timeout
 
     body: dict[str, Any] = {
         "name": name,

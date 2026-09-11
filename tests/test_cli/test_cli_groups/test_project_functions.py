@@ -174,11 +174,11 @@ class TestStartProject(unittest.TestCase):
             "runtime": None,
         }
 
-        mock_get_pod.return_value = {
-            "id": "new_pod_id",
-            "status": "RUNNING",
-            "runtime": "ONLINE",
-        }
+        mock_get_pod.side_effect = [
+            None,
+            {"id": "new_pod_id", "status": "RUNNING", "runtime": None},
+            {"id": "new_pod_id", "status": "RUNNING", "runtime": "ONLINE"},
+        ]
 
         mock_ssh_instance = mock_ssh_connection.return_value
         mock_ssh_instance.__enter__.return_value = mock_ssh_instance
