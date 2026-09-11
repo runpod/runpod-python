@@ -22,7 +22,7 @@ import traceback
 from collections.abc import Callable
 
 from runpod._logger import RunPodLogger
-from . import is_worker_process
+from . import is_early_check_eligible
 from .coordination import ContainerChecks, CoordinationUnavailable, CoordinationBusy
 
 log = RunPodLogger()
@@ -77,9 +77,23 @@ _CONFIG_ENV_VARS = (
     "RUNPOD_GPU_BENCHMARK_TIMEOUT",
     "RUNPOD_GPU_TEST_TIMEOUT",
     "RUNPOD_GPU_MAX_ERROR_MESSAGES",
+    "RUNPOD_BINARY_GPU_TEST_PATH",
     "RUNPOD_SKIP_AUTO_SYSTEM_CHECKS",
     "RUNPOD_SKIP_GPU_CHECK",
 )
+
+_CHECK_CONFIG_DEPENDENCIES = {
+    "_memory_check": {"RUNPOD_MIN_MEMORY_GB"},
+    "_disk_check": {"RUNPOD_MIN_DISK_PERCENT"},
+    "_cuda_version_check": {"RUNPOD_MIN_CUDA_VERSION"},
+    "_network_check": {"RUNPOD_NETWORK_CHECK_TIMEOUT"},
+    "_benchmark_check": {"RUNPOD_GPU_BENCHMARK_TIMEOUT"},
+    "_gpu_health_check": {
+        "RUNPOD_GPU_TEST_TIMEOUT",
+        "RUNPOD_GPU_MAX_ERROR_MESSAGES",
+        "RUNPOD_BINARY_GPU_TEST_PATH",
+    },
+}
 
 _config_snapshot: dict[str, str | None] = {}
 
@@ -296,42 +310,31 @@ def _refresh_late_config() -> None:
         from . import system
 
         system.configure()
-    dependencies = {
-        "_memory_check": {"RUNPOD_MIN_MEMORY_GB"},
-        "_disk_check": {"RUNPOD_MIN_DISK_PERCENT"},
-        "_cuda_version_check": {"RUNPOD_MIN_CUDA_VERSION"},
-        "_network_check": {"RUNPOD_NETWORK_CHECK_TIMEOUT"},
-        "_benchmark_check": {"RUNPOD_GPU_BENCHMARK_TIMEOUT"},
-        "_gpu_health_check": {
-            "RUNPOD_GPU_TEST_TIMEOUT",
-            "RUNPOD_GPU_MAX_ERROR_MESSAGES",
-        },
-    }
     _completed_checks[:] = [
         check
         for check in _completed_checks
         if not (
             getattr(check, "_runpod_builtin", False)
-            and dependencies.get(check.__name__, set()) & changed
+            and _CHECK_CONFIG_DEPENDENCIES.get(check.__name__, set()) & changed
         )
     ]
     for flag, group in (
         ("RUNPOD_SKIP_GPU_CHECK", "gpu_check"),
         ("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "system_checks"),
     ):
-        if flag in changed:
-            removed = [
-                c
-                for c in _fitness_checks
-                if getattr(c, "_runpod_builtin", None) == group
-            ]
-            _fitness_checks[:] = [
-                c for c in _fitness_checks if not any(c is old for old in removed)
-            ]
-            _completed_checks[:] = [
-                c for c in _completed_checks if not any(c is old for old in removed)
-            ]
-            _registration_state[group] = False
+        if flag not in changed:
+            continue
+        _fitness_checks[:] = [
+            check
+            for check in _fitness_checks
+            if getattr(check, "_runpod_builtin", None) != group
+        ]
+        _completed_checks[:] = [
+            check
+            for check in _completed_checks
+            if getattr(check, "_runpod_builtin", None) != group
+        ]
+        _registration_state[group] = False
     _config_snapshot.update({v: os.environ.get(v) for v in _CONFIG_ENV_VARS})
 
 
@@ -350,6 +353,47 @@ def _fail_worker(check_name: str, exc: Exception) -> None:
         _terminate_unhealthy(1)
 
 
+def _is_shared_check(check: Callable) -> bool:
+    return bool(getattr(check, "_runpod_builtin", False)) and not _is_deferred(check)
+
+
+def _shared_check_key(check: Callable) -> str:
+    """Identify a built-in result by SDK version and relevant configuration."""
+    from runpod.version import __version__
+
+    settings = {
+        name: os.environ.get(name)
+        for name in _CHECK_CONFIG_DEPENDENCIES.get(check.__name__, ())
+    }
+    identity = [__version__, check._runpod_builtin, check.__name__, settings]
+    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+
+
+async def _invoke_check(check: Callable) -> None:
+    if inspect.iscoroutinefunction(check):
+        await check()
+    else:
+        check()
+
+
+async def _run_and_save_shared_check(check: Callable, shared: ContainerChecks) -> None:
+    """Save failures before exiting; save successes only after execution."""
+    key = _shared_check_key(check)
+    if key in shared.state["passed"]:
+        return
+    try:
+        await _invoke_check(check)
+    except Exception as exc:
+        shared.state["failure"] = f"{check.__name__}: {type(exc).__name__}"
+        try:
+            shared.save()
+        finally:
+            _fail_worker(check.__name__, exc)
+        return
+    shared.state["passed"].append(key)
+    shared.save()
+
+
 async def _run_shared_checks(include_deferred: bool) -> None:
     """Reuse container checks across imports, including independent helpers."""
     try:
@@ -359,48 +403,8 @@ async def _run_shared_checks(include_deferred: bool) -> None:
                     "early_container_check", RuntimeError(shared.state["failure"])
                 )
                 return
-            for check in _fitness_checks:
-                if not getattr(check, "_runpod_builtin", False) or _is_deferred(check):
-                    continue
-                # Version and relevant settings prevent reusing incompatible results.
-                from runpod.version import __version__
-
-                dependencies = {
-                    "_memory_check": ("RUNPOD_MIN_MEMORY_GB",),
-                    "_disk_check": ("RUNPOD_MIN_DISK_PERCENT",),
-                    "_cuda_version_check": ("RUNPOD_MIN_CUDA_VERSION",),
-                    "_gpu_health_check": (
-                        "RUNPOD_GPU_TEST_TIMEOUT",
-                        "RUNPOD_GPU_MAX_ERROR_MESSAGES",
-                        "RUNPOD_BINARY_GPU_TEST_PATH",
-                    ),
-                }
-                settings = {
-                    k: os.environ.get(k) for k in dependencies.get(check.__name__, ())
-                }
-                key = hashlib.sha256(
-                    json.dumps(
-                        [__version__, check._runpod_builtin, check.__name__, settings],
-                        sort_keys=True,
-                    ).encode()
-                ).hexdigest()
-                if key not in shared.state["passed"]:
-                    try:
-                        if inspect.iscoroutinefunction(check):
-                            await check()
-                        else:
-                            check()
-                    except Exception as exc:
-                        shared.state["failure"] = (
-                            f"{check.__name__}: {type(exc).__name__}"
-                        )
-                        try:
-                            shared.save()
-                        finally:
-                            _fail_worker(check.__name__, exc)
-                        return
-                    shared.state["passed"].append(key)
-                    shared.save()
+            for check in filter(_is_shared_check, _fitness_checks):
+                await _run_and_save_shared_check(check, shared)
                 if not any(check is done for done in _completed_checks):
                     _completed_checks.append(check)
     except CoordinationUnavailable as exc:
@@ -410,49 +414,23 @@ async def _run_shared_checks(include_deferred: bool) -> None:
     except CoordinationBusy as exc:
         if include_deferred:
             _fail_worker("fitness_check_coordination", exc)
-        else:
-            log.warn(
-                "Early checks still running in another process; deferring to worker start."
-            )
+            return
+        log.warn(
+            "Early checks still running in another process; deferring to worker start."
+        )
     except OSError as exc:
         log.warn(f"Cannot save shared checks; using worker-start checks: {exc}")
 
 
 async def run_fitness_checks(include_deferred: bool = True) -> None:
-    """
-    Execute all registered fitness checks sequentially at startup.
+    """Validate startup health before accepting jobs.
 
-    Execution flow:
-    1. Auto-register GPU check on first run (deferred to avoid circular imports)
-    2. Check if registry is empty (early return if no checks)
-    3. Log start of fitness check phase
-    4. For each registered check:
-       - Auto-detect sync vs async using inspect.iscoroutinefunction()
-       - Execute check with timing instrumentation (await if async, call if sync)
-       - Log success or failure with check name and execution time
-    5. On any exception:
-       - Log detailed error with check name, exception type, and message
-       - Log traceback at DEBUG level
-       - Force-kill the worker via os._exit(1) immediately (fail-fast). This is
-         a hard exit, not a cooperative sys.exit/SystemExit: it does not unwind
-         the stack or run cleanup, so callers cannot catch it and it cannot be
-         blocked by live non-daemon threads.
-    6. On successful completion of all checks:
-       - Log completion message with total execution time
+    Shared built-ins reuse container results; process-specific and customer
+    checks run only in the final pass. Successful registrations are tracked by
+    identity so repeated calls skip them unless their configuration changes.
 
-    Each check runs once per process: completed checks are skipped on later
-    calls, and @defer_to_worker_start checks are skipped when include_deferred
-    is False (the import-time pass).
-
-    Note:
-        Checks run in registration order (list preserves order).
-        Sequential execution (not parallel) ensures clear error reporting
-        and handles checks with dependencies correctly.
-        Timing uses high-precision perf_counter for accurate measurements.
-
-    Note:
-        A failing check terminates the process via os._exit(1); this function
-        does not return in that case and does not raise SystemExit.
+    Failed checks report unhealthy and force-exit, even with live threads.
+    Setup/coordination unavailability during import defers to worker start.
     """
     if _env_flag(SKIP_FITNESS_CHECKS_ENV):
         log.info(f"Fitness checks disabled via {SKIP_FITNESS_CHECKS_ENV}, skipping.")
@@ -471,7 +449,7 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
         _fail_worker("fitness_check_setup", exc)
         return
 
-    if is_worker_process() and (
+    if is_early_check_eligible() and (
         include_deferred or not _env_flag(DEFER_FITNESS_CHECKS_ENV)
     ):
         await _run_shared_checks(include_deferred)
@@ -487,11 +465,7 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
     ]
 
     if not include_deferred:
-        pending = [
-            check
-            for check in pending
-            if getattr(check, "_runpod_builtin", False) and not _is_deferred(check)
-        ]
+        pending = [check for check in pending if _is_shared_check(check)]
 
     if not pending:
         log.debug("No pending fitness checks, skipping.")
@@ -508,11 +482,7 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
             log.debug(f"Executing fitness check: {check_name}")
             check_start_time = time.perf_counter()
 
-            # Auto-detect async vs sync using inspect
-            if inspect.iscoroutinefunction(check_func):
-                await check_func()
-            else:
-                check_func()
+            await _invoke_check(check_func)
 
             check_elapsed_ms = (time.perf_counter() - check_start_time) * 1000
             _completed_checks.append(check_func)
@@ -549,7 +519,7 @@ def run_startup_fitness_checks() -> None:
     if _env_flag(SKIP_FITNESS_CHECKS_ENV) or _env_flag(DEFER_FITNESS_CHECKS_ENV):
         return
 
-    if not is_worker_process():
+    if not is_early_check_eligible():
         return
 
     if _event_loop_running():
