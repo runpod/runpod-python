@@ -204,9 +204,18 @@ async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dic
 
             if isinstance(stream_output.get("output"), dict):
                 if stream_output["output"].get("error"):
-                    stream_output = {"error": str(stream_output["output"]["error"])}
+                    error_fields = {
+                        k: v
+                        for k, v in stream_output["output"].items()
+                        if k != "error"
+                    }
+                    stream_output = {
+                        "error": str(stream_output["output"]["error"]),
+                        **error_fields,
+                    }
 
             if stream_output.get("error"):
+                await stream_result(session, stream_output, job)
                 job_result = stream_output
                 break
 
