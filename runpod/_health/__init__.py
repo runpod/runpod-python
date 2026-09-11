@@ -14,7 +14,7 @@ def is_serverless_environment() -> bool:
     )
 
 
-def is_worker_process() -> bool:
+def is_early_check_eligible() -> bool:
     """Eligibility for shared early checks, not an assertion of process identity."""
     return is_serverless_environment() and not any(
         arg.split("=", 1)[0] in ("--test_input", "--rp_serve_api")

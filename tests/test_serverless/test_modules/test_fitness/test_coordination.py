@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from runpod._health import coordination, fitness, is_worker_process
+from runpod._health import coordination, fitness, is_early_check_eligible
 from runpod._health.coordination import container_start_id as real_container_start_id
 
 
@@ -27,7 +27,7 @@ def test_environment_gate(monkeypatch, endpoint, webhook, test, expected):
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", webhook)
     monkeypatch.setenv("RUNPOD_TEST", test)
     monkeypatch.setattr(sys, "argv", ["handler.py"])
-    assert is_worker_process() is expected
+    assert is_early_check_eligible() is expected
 
 
 def process_code(tmp_path, fail=False):
