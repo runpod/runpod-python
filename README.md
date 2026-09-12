@@ -297,7 +297,7 @@ pod = runpod.create_pod("test", "runpod/stack", instance_id="cpu3c-2-4")
 runpod.stop_pod(pod["id"])
 
 # resume the pod
-runpod.resume_pod(pod["id"], 1)
+runpod.resume_pod(pod["id"])
 
 # terminate the pod
 runpod.terminate_pod(pod["id"])
@@ -314,6 +314,8 @@ runpod.terminate_pod(pod["id"])
   requires `network_volume_id`.
 - For GPU pods, `min_memory_in_gb` and `min_vcpu_count` specify minimum host RAM
   and vCPUs **per GPU**, not GPU VRAM or totals for the pod.
+- CPU `instance_id` must use `<cpu-flavor>-<vcpu-count>-<memory>`, with positive
+  integer vCPU and memory values, for example `cpu3c-4-8`.
 - REST v2 cannot require a public-IP-capable host. `support_public_ip=False` is
   the default and does not disable public networking. `True` raises `ValueError`
   rather than silently ignoring that requirement.
@@ -326,6 +328,8 @@ runpod.terminate_pod(pod["id"])
 - `create_endpoint` accepts only `QUEUE_DELAY` and `REQUEST_COUNT` scaling.
   `idle_timeout` applies to `QUEUE_DELAY` (default: 5 seconds); explicitly setting
   it with `REQUEST_COUNT` raises `ValueError`.
+- `resume_pod(pod_id)` keeps the existing GPU allocation. REST v2 does not support
+  resizing on resume, so providing `gpu_count` raises `ValueError`.
 
 ## 📁 | Directory
 

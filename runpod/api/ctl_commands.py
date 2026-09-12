@@ -2,6 +2,7 @@
 
 # pylint: disable=too-many-arguments,too-many-locals
 
+import re
 from typing import Any, Iterable, Optional
 from urllib.parse import quote
 
@@ -31,21 +32,17 @@ def _environment(env: Optional[dict]) -> dict[str, str]:
     return {str(key): str(value) for key, value in (env or {}).items()}
 
 
-def _cpu_config(instance_id: Optional[str], min_vcpu_count: int) -> dict[str, Any]:
+def _cpu_config(instance_id: Optional[str]) -> dict[str, Any]:
     if not instance_id:
         raise ValueError("instance_id must be provided for CPU pods")
 
-    parts = instance_id.split("-")
-    vcpu_count = max(2, min_vcpu_count)
-    if len(parts) > 1:
-        try:
-            vcpu_count = int(parts[1])
-        except ValueError as exc:
-            raise ValueError(
-                "instance_id must use the format <cpu-flavor>-<vcpu-count>-<memory>"
-            ) from exc
+    match = re.fullmatch(r"([^-\s]+)-([1-9][0-9]*)-([1-9][0-9]*)", instance_id)
+    if match is None:
+        raise ValueError(
+            "instance_id must use the format <cpu-flavor>-<vcpu-count>-<memory>"
+        )
 
-    return {"id": parts[0], "vcpuCount": vcpu_count}
+    return {"id": match[1], "vcpuCount": int(match[2])}
 
 
 def get_user(api_key: Optional[str] = None) -> dict:
@@ -212,7 +209,7 @@ def create_pod(
             gpu["allowedCudaVersions"] = _split_values(allowed_cuda_versions)
         body["gpu"] = gpu
     else:
-        body["cpu"] = _cpu_config(instance_id, min_vcpu_count)
+        body["cpu"] = _cpu_config(instance_id)
 
     return run_rest_request("POST", "/v2/pods", json=body)
 
@@ -226,9 +223,10 @@ def stop_pod(pod_id: str) -> dict:
     )
 
 
-def resume_pod(pod_id: str, gpu_count: int) -> dict:
-    """Start a stopped pod."""
-    _ = gpu_count
+def resume_pod(pod_id: str, gpu_count: Optional[int] = None) -> dict:
+    """Start a stopped pod without changing its GPU allocation."""
+    if gpu_count is not None:
+        raise ValueError("REST API v2 does not support gpu_count when resuming a pod")
     return run_rest_request(
         "POST",
         f"/v2/pods/{_path_segment(pod_id)}/action",

@@ -14,7 +14,7 @@ for gpu in gpus:
 ### get_gpus output
 
 ```python
-{
+[{
     "id": "NVIDIA GeForce RTX 4090",
     "name": "RTX 4090",
     "pool": "ADA_24",
@@ -24,7 +24,7 @@ for gpu in gpus:
     "community": True,
     "price": {"secure": 0.44, "community": 0.31, "serverless": 1.1},
     "maxCount": {"secure": 8, "community": 4},
-}
+}]
 ```
 
 ## get_gpu

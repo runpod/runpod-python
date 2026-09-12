@@ -28,7 +28,7 @@ print(pod)
 print("Waiting for pod to be stopped...")
 time.sleep(10)
 
-pod = runpod.resume_pod(pod["id"], 1)
+pod = runpod.resume_pod(pod["id"])
 print(pod)
 
 print("Waiting for pod to be resumed...")

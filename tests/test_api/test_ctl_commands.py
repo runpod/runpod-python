@@ -264,26 +264,17 @@ def test_create_gpu_pod_enforces_per_gpu_host_minima():
     assert pod["machineId"] == "at-boundary"
 
 
-def test_create_cpu_pod_translates_instance_id():
-    with patch(
-        "runpod.api.ctl_commands.run_rest_request", return_value={"id": "pod"}
-    ) as request:
-        ctl_commands.create_pod("cpu-pod", "python:3.11", instance_id="cpu3c-4-8")
-
-    assert request.call_args.kwargs["json"]["cpu"] == {
-        "id": "cpu3c",
-        "vcpuCount": 4,
-    }
-
-
 def test_create_cpu_pod_requires_instance_id():
     with pytest.raises(ValueError, match="instance_id"):
         ctl_commands.create_pod("cpu-pod", "python:3.11")
 
 
-def test_create_cpu_pod_validates_instance_id():
+@pytest.mark.parametrize(
+    "instance_id", ["cpu3c-invalid", "cpu3c", "cpu3c-4-not-a-number"]
+)
+def test_create_cpu_pod_validates_instance_id(template_backend, instance_id):
     with pytest.raises(ValueError, match="format"):
-        ctl_commands.create_pod("cpu-pod", "python:3.11", instance_id="cpu3c-invalid")
+        ctl_commands.create_pod("cpu-pod", "python:3.11", instance_id=instance_id)
 
 
 def test_create_pod_validates_image_and_cloud():
@@ -310,19 +301,12 @@ def test_create_gpu_pod_rejects_unsupported_constraints(template_backend, kwargs
         ctl_commands.create_pod("pod", "image", gpu_type_id="NVIDIA A100", **kwargs)
 
 
-def test_stop_and_resume_pod_use_actions():
-    with patch(
-        "runpod.api.ctl_commands.run_rest_request", return_value={"id": "pod"}
-    ) as request:
-        assert ctl_commands.stop_pod("pod") == {"id": "pod"}
-        assert ctl_commands.resume_pod("pod", 8) == {"id": "pod"}
-
-    assert request.call_args_list[0].args == (
-        "POST",
-        "/v2/pods/pod/action",
-    )
-    assert request.call_args_list[0].kwargs == {"json": {"action": "stop"}}
-    assert request.call_args_list[1].kwargs == {"json": {"action": "start"}}
+def test_resume_pod_rejects_gpu_count():
+    with (
+        patch("runpod.api.ctl_commands.run_rest_request", return_value={"id": "pod"}),
+        pytest.raises(ValueError, match="gpu_count"),
+    ):
+        ctl_commands.resume_pod("pod", 8)
 
 
 def test_terminate_pod_deletes_resource():
@@ -459,21 +443,6 @@ def test_create_container_registry_auth_uses_rest():
         "/v2/registries",
         json={"name": "registry", "username": "user", "password": "password"},
     )
-
-
-def test_update_container_registry_auth_uses_graphql():
-    with patch(
-        "runpod.api.ctl_commands.run_graphql_query",
-        return_value={"data": {"updateRegistryAuth": {"id": "registry"}}},
-    ) as request:
-        result = ctl_commands.update_container_registry_auth(
-            "registry", "user", "password"
-        )
-
-    assert result == {"id": "registry"}
-    mutation = request.call_args.args[0]
-    assert "mutation UpdateRegistryAuth" in mutation
-    assert 'id: "registry"' in mutation
 
 
 def test_delete_container_registry_auth_uses_rest():

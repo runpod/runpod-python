@@ -1,5 +1,7 @@
 """GraphQL operations for container registry credentials."""
 
+import json
+
 
 def update_container_registry_auth(
     registry_auth_id: str, username: str, password: str
@@ -11,7 +13,7 @@ def update_container_registry_auth(
         "password": password,
     }
     input_str = ", ".join(
-        f'{key}: "{value}"' for key, value in input_dict.items()
+        f"{key}: {json.dumps(value)}" for key, value in input_dict.items()
     )
 
     return f"""
