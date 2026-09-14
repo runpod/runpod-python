@@ -89,7 +89,8 @@ class AsyncioSandbox:
     ) -> None:
         if (image_name is None) == (template_id is None):
             raise ValueError("Supply exactly one of image_name or template_id")
-        options = {
+        self._initialize(api_key, base_url, request_timeout, startup_timeout)
+        self._create_body = {
             "imageName": image_name,
             "templateId": template_id,
             "name": name,
@@ -101,10 +102,6 @@ class AsyncioSandbox:
             "idleTimeoutSeconds": idle_timeout_seconds,
             "maxLifetimeSeconds": max_lifetime_seconds,
             "labels": dict(labels) if labels is not None else None,
-        }
-        self._initialize(api_key, base_url, request_timeout, startup_timeout)
-        self._create_body = {
-            key: value for key, value in options.items() if value is not None
         }
 
     def _initialize(
@@ -128,43 +125,9 @@ class AsyncioSandbox:
         self._streams: set[AsyncSandboxLogStream] = set()
 
     @classmethod
-    async def create(
-        cls,
-        *,
-        image_name: Optional[str] = None,
-        template_id: Optional[str] = None,
-        name: Optional[str] = None,
-        cpu_flavor_id: Optional[str] = None,
-        vcpu_count: Optional[int] = None,
-        memory_in_gb: Optional[int] = None,
-        data_center_id: Optional[str] = None,
-        env: Optional[Mapping[str, str]] = None,
-        idle_timeout_seconds: Optional[int] = None,
-        max_lifetime_seconds: Optional[int] = None,
-        labels: Optional[Mapping[str, str]] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        request_timeout: float = 30,
-        startup_timeout: float = 60,
-    ) -> "AsyncioSandbox":
+    async def create(cls, **options: Any) -> "AsyncioSandbox":
         """Create and return an owned handle, without claiming container readiness."""
-        sandbox = cls(
-            image_name=image_name,
-            template_id=template_id,
-            name=name,
-            cpu_flavor_id=cpu_flavor_id,
-            vcpu_count=vcpu_count,
-            memory_in_gb=memory_in_gb,
-            data_center_id=data_center_id,
-            env=env,
-            idle_timeout_seconds=idle_timeout_seconds,
-            max_lifetime_seconds=max_lifetime_seconds,
-            labels=labels,
-            api_key=api_key,
-            base_url=base_url,
-            request_timeout=request_timeout,
-            startup_timeout=startup_timeout,
-        )
+        sandbox = cls(**options)
         await sandbox._create()
         return sandbox
 
@@ -208,7 +171,6 @@ class AsyncioSandbox:
             snapshots = [SandboxInfo.from_dict(row) for row in rows]
         except BaseException as error:
             await _cleanup(api.close(), request_timeout, error)
-            raise
         else:
             await _cleanup(api.close(), request_timeout)
         handles = []
@@ -534,7 +496,6 @@ class AsyncSandboxLogStream:
             raise
         except BaseException as error:
             await _cleanup(self.aclose(), self._sandbox._request_timeout, error)
-            raise
 
     async def aclose(self) -> None:
         """Release the response and detach from the sandbox; idempotent."""

@@ -1,16 +1,14 @@
 """Sandbox lifecycle and streaming regressions over an actual HTTP connection."""
 
 import asyncio
-import json
 import subprocess
 import sys
 import threading
 from collections import deque
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
+from aiohttp import web
 
 from runpod import AsyncioSandbox, Sandbox
 from runpod.error import QueryError
@@ -82,158 +80,118 @@ class SandboxService:
 @contextmanager
 def sandbox_peer():
     service = SandboxService()
+    ready, stopped = threading.Event(), asyncio.Event()
 
-    class Handler(BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"
+    def failure(status, detail):
+        return web.json_response(
+            {"detail": detail}, status=status, content_type="application/problem+json"
+        )
 
-        def log_message(self, *_args):
-            pass
-
-        def reply(self, status, data=None):
-            payload = json.dumps(data).encode() if data is not None else b""
-            self.send_response(status)
-            self.send_header(
-                "Content-Type",
-                "application/problem+json" if status >= 400 else "application/json",
-            )
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            try:
-                self.wfile.write(payload)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-
-        def handle_request(self):
-            parsed = urlsplit(self.path)
-            segments = [unquote(part) for part in parsed.path.split("/") if part]
-            content_length = int(self.headers.get("Content-Length", "0"))
-            body = (
-                json.loads(self.rfile.read(content_length)) if content_length else None
-            )
-            service.requests.append(
-                (self.command, parsed.path, body, dict(self.headers))
-            )
-            if self.headers.get("Authorization") != "Bearer sandbox-test-key":
-                self.reply(401, {"detail": "invalid key"})
-                return
-            if segments == ["v2", "sandboxes"]:
-                if self.command == "POST":
-                    record = service.create_record(body)
-                    service.create_started.set()
-                    service.allow_create.wait(5)
-                    self.reply(201, record)
-                else:
-                    query = parse_qs(parsed.query)
-                    state = query.get("state", [None])[0]
-                    records = [
-                        record
-                        for record in service.records.values()
-                        if (
-                            record["state"] == state
-                            if state
-                            else record["state"] != "TERMINATED"
-                        )
-                    ]
-                    for label in query.get("labels", []):
-                        key, value = label.split("=", 1)
-                        records = [
-                            record
-                            for record in records
-                            if record["labels"].get(key) == value
-                        ]
-                    self.reply(200, {"sandboxes": records})
-                return
-            if (
-                len(segments) < 3
-                or segments[:2] != ["v2", "sandboxes"]
-                or segments[2] not in service.records
-            ):
-                self.reply(404, {"detail": "missing sandbox"})
-                return
-            record = service.records[segments[2]]
-            if len(segments) == 3:
-                if self.command == "DELETE":
-                    if service.delete_status == 204:
-                        record.update(
-                            state="TERMINATED",
-                            terminatedAt="2026-09-14T12:01:00Z",
-                            terminationReason="USER",
-                            compute=None,
-                        )
-                        self.reply(204)
-                    else:
-                        self.reply(
-                            service.delete_status, {"detail": "cleanup unavailable"}
-                        )
-                else:
-                    self.reply(200, record)
-            elif segments[3] == "exec":
-                status = (
-                    service.exec_statuses.popleft() if service.exec_statuses else 200
+    async def handle(request):
+        body = await request.json() if request.can_read_body else None
+        service.requests.append(
+            (request.method, request.path, body, dict(request.headers))
+        )
+        if request.headers.get("Authorization") != "Bearer sandbox-test-key":
+            return failure(401, "invalid key")
+        sandbox_id = request.match_info.get("id")
+        if sandbox_id is None:
+            if request.method == "POST":
+                record = service.create_record(body)
+                service.create_started.set()
+                await asyncio.to_thread(service.allow_create.wait, 5)
+                return web.json_response(record, status=201)
+            state = request.query.get("state")
+            labels = [term.split("=", 1) for term in request.query.getall("labels", [])]
+            records = [
+                record
+                for record in service.records.values()
+                if (
+                    record["state"] == state
+                    if state
+                    else record["state"] != "TERMINATED"
                 )
-                if record["state"] in ("FAILED", "TERMINATED"):
-                    status = 409
-                if status == 409:
-                    self.reply(409, {"detail": "container not started"})
-                    return
-                service.executed.append(body["command"])
-                if status >= 400:
-                    self.reply(
-                        status, {"detail": "response lost after command execution"}
-                    )
-                    return
-                if body["command"] == ["fail"]:
-                    self.reply(
-                        200, {"output": "partial output", "error": "command failed"}
-                    )
-                else:
-                    self.reply(200, {"output": "completed", "error": None})
-            elif segments[3] == "logs":
-                service.log_started.set()
-                service.allow_logs.wait(5)
-                status = service.log_statuses.popleft() if service.log_statuses else 200
-                if status != 200:
-                    self.reply(status, {"detail": "logs not ready"})
-                    return
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Connection", "close")
-                self.end_headers()
-                self.close_connection = True
-                try:
-                    # Byte-at-a-time writes ensure parser state is exercised,
-                    # regardless of how the client batches socket reads.
-                    for byte in service.log_bytes:
-                        self.wfile.write(bytes([byte]))
-                        self.wfile.flush()
-                    while service.hold_logs and not service.stopping.wait(0.01):
-                        self.wfile.write(b": heartbeat\n\n")
-                        self.wfile.flush()
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
-                finally:
-                    service.log_disconnected.set()
+                and all(record["labels"].get(key) == value for key, value in labels)
+            ]
+            return web.json_response({"sandboxes": records})
+        if sandbox_id not in service.records:
+            return failure(404, "missing sandbox")
+        record = service.records[sandbox_id]
+        operation = request.match_info.get("operation")
+        if request.method == "DELETE":
+            if service.delete_status != 204:
+                return failure(service.delete_status, "cleanup unavailable")
+            record.update(state="TERMINATED", compute=None)
+            return web.Response(status=204)
+        if operation == "exec":
+            status = service.exec_statuses.popleft() if service.exec_statuses else 200
+            if status == 409 or record["state"] in ("FAILED", "TERMINATED"):
+                return failure(409, "container not started")
+            service.executed.append(body["command"])
+            if status >= 400:
+                return failure(status, "response lost after command execution")
+            result = (
+                {"output": "partial output", "error": "command failed"}
+                if body["command"] == ["fail"]
+                else {"output": "completed", "error": None}
+            )
+            return web.json_response(result)
+        if operation == "logs":
+            service.log_started.set()
+            await asyncio.to_thread(service.allow_logs.wait, 5)
+            status = service.log_statuses.popleft() if service.log_statuses else 200
+            if status != 200:
+                return failure(status, "logs not ready")
+            response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            try:
+                await response.prepare(request)
+                for byte in service.log_bytes:
+                    await response.write(bytes([byte]))
+                    await asyncio.sleep(0)
+                while service.hold_logs and not service.stopping.is_set():
+                    await response.write(b": heartbeat\n\n")
+                    await asyncio.sleep(0.01)
+            except ConnectionResetError:
+                pass
+            finally:
+                service.log_disconnected.set()
+            return response
+        return web.json_response(record)
 
-        do_GET = handle_request
-        do_POST = handle_request
-        do_DELETE = handle_request
+    async def serve():
+        service.loop = asyncio.get_running_loop()
+        app = web.Application()
+        for path in (
+            "/v2/sandboxes",
+            "/v2/sandboxes/{id}",
+            "/v2/sandboxes/{id}/{operation}",
+        ):
+            app.router.add_route("*", path, handle)
+        runner = web.AppRunner(app, access_log=None, shutdown_timeout=1)
+        await runner.setup()
+        try:
+            await web.TCPSite(runner, "127.0.0.1", 0).start()
+            service.options = {
+                "api_key": "sandbox-test-key",
+                "base_url": f"http://127.0.0.1:{runner.addresses[0][1]}",
+                "request_timeout": 2,
+                "startup_timeout": 2,
+            }
+            ready.set()
+            await stopped.wait()
+        finally:
+            await runner.cleanup()
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=lambda: asyncio.run(serve()), daemon=True)
     thread.start()
-    service.options = {
-        "api_key": "sandbox-test-key",
-        "base_url": f"http://127.0.0.1:{server.server_port}",
-        "request_timeout": 2,
-        "startup_timeout": 2,
-    }
+    assert ready.wait(5), "local sandbox peer did not start"
     try:
         yield service
     finally:
         service.allow_create.set()
+        service.allow_logs.set()
         service.stopping.set()
-        server.shutdown()
-        server.server_close()
+        service.loop.call_soon_threadsafe(stopped.set)
         thread.join()
 
 

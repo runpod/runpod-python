@@ -245,51 +245,15 @@ class Sandbox:
         return instance
 
     @classmethod
-    def create(
-        cls,
-        *,
-        image_name: Optional[str] = None,
-        template_id: Optional[str] = None,
-        name: Optional[str] = None,
-        cpu_flavor_id: Optional[str] = None,
-        vcpu_count: Optional[int] = None,
-        memory_in_gb: Optional[int] = None,
-        data_center_id: Optional[str] = None,
-        env: Optional[Mapping[str, str]] = None,
-        idle_timeout_seconds: Optional[int] = None,
-        max_lifetime_seconds: Optional[int] = None,
-        labels: Optional[Mapping[str, str]] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        request_timeout: float = 30,
-        startup_timeout: float = 60,
-    ) -> "Sandbox":
+    def create(cls, **options: Any) -> "Sandbox":
         """Create immediately; the returned snapshot may still be CREATING."""
-        runner = _LoopRunner()
+        sandbox = cls(**options)
         try:
-            sandbox = runner.run(
-                AsyncioSandbox.create(
-                    image_name=image_name,
-                    template_id=template_id,
-                    name=name,
-                    cpu_flavor_id=cpu_flavor_id,
-                    vcpu_count=vcpu_count,
-                    memory_in_gb=memory_in_gb,
-                    data_center_id=data_center_id,
-                    env=env,
-                    idle_timeout_seconds=idle_timeout_seconds,
-                    max_lifetime_seconds=max_lifetime_seconds,
-                    labels=labels,
-                    api_key=api_key,
-                    base_url=base_url,
-                    request_timeout=request_timeout,
-                    startup_timeout=startup_timeout,
-                )
-            )
+            sandbox._runner.run(sandbox._sandbox._create())
         except BaseException:
-            runner.stop()
+            sandbox.close()
             raise
-        return cls._from_async(sandbox, runner)
+        return sandbox
 
     @classmethod
     def get(
