@@ -23,6 +23,7 @@ Welcome to the official Python library for Runpod API &amp; SDK.
   - [Quick Start](#quick-start)
   - [Local Test Worker](#local-test-worker)
 - [📚 | REST API v2 Wrapper](#--rest-api-v2-wrapper)
+  - [Sandboxes](#sandboxes)
   - [Endpoints](#endpoints)
   - [GPU Cloud (Pods)](#gpu-cloud-pods)
 - [📁 | Directory](#--directory)
@@ -171,6 +172,41 @@ import runpod
 
 runpod.api_key = "your_runpod_api_key_found_under_settings"
 ```
+
+### Sandboxes
+
+`Sandbox` and `AsyncioSandbox` manage isolated CPU sandboxes through REST API v2. Set `RUNPOD_API_KEY`, assign `runpod.api_key`, or pass `api_key` to a handle. Supply exactly one of `image_name` or `template_id`.
+
+```python
+from runpod import Sandbox
+
+with Sandbox(image_name="python:3.12-slim") as sandbox:
+    result = sandbox.exec(["python", "-c", "print('hello from a sandbox')"], check=True)
+    print(result.output)
+```
+
+Use `AsyncioSandbox` in asynchronous applications:
+
+```python
+import asyncio
+from runpod import AsyncioSandbox
+
+async def main():
+    async with AsyncioSandbox(image_name="python:3.12-slim") as sandbox:
+        result = await sandbox.exec(
+            ["python", "-c", "print('hello from a sandbox')"],
+            check=True,
+        )
+        print(result.output)
+
+asyncio.run(main())
+```
+
+These contexts create a sandbox on entry and terminate it on exit, including when the body raises. `Sandbox.create(...)` and `await AsyncioSandbox.create(...)` return owned handles for explicit lifetime management. Call `terminate()` to release remote compute; `close()` releases local connections only. Handles returned by `get(sandbox_id)` or `list(state=..., labels=...)` are borrowed, so their contexts only close local resources. Async factories and lifecycle methods are awaited.
+
+Handle properties such as `state`, `compute`, and `expires_at` read cached metadata; `refresh()` fetches a current snapshot. Command execution accepts an argument sequence. `check=True` raises `SandboxExecutionError` with the partial output available in `error.result`. Explicit startup rejections are retried within `startup_timeout`; ambiguous transport failures are not replayed.
+
+`sandbox.logs(source="container", tail=10)` streams typed log events from the container's main process; `source="system"` selects lifecycle logs. Command output is returned by `exec`, not this stream. Use `with` and regular iteration for synchronous log streams, or `async with` and `async for` for asynchronous streams, to close the connection when stopping early. Preserve an event's `id` and pass it as `last_event_id` to resume a stream, or filter by `since`.
 
 ### Endpoints
 
