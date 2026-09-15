@@ -3,6 +3,10 @@
 import logging
 import os
 
+from ._startup import run_import_checks
+
+run_import_checks()
+
 from . import serverless
 from .api.ctl_commands import (
     create_container_registry_auth,

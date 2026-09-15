@@ -10,7 +10,7 @@ from runpod.serverless.modules.rp_fitness import (
 
 
 @pytest.fixture(autouse=True)
-def cleanup_fitness_checks(monkeypatch):
+def cleanup_fitness_checks(monkeypatch, tmp_path):
     """Automatically clean up fitness checks before and after each test.
 
     Disables auto-registration of system checks to avoid interference
@@ -21,6 +21,15 @@ def cleanup_fitness_checks(monkeypatch):
     to raise SystemExit(1) so tests can assert exit behavior in-process.
     Tests that need the real os._exit patch it themselves.
     """
+    from runpod._health import coordination
+
+    monkeypatch.setattr(
+        coordination,
+        "container_start_id",
+        lambda: tmp_path.parent.name + "-" + tmp_path.name,
+    )
+    monkeypatch.delenv("RUNPOD_ENDPOINT_ID", raising=False)
+    monkeypatch.delenv("RUNPOD_TEST", raising=False)
     monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
     monkeypatch.setenv("RUNPOD_SKIP_GPU_CHECK", "true")
 
@@ -31,6 +40,8 @@ def cleanup_fitness_checks(monkeypatch):
 
     _reset_registration_state()
     clear_fitness_checks()
+    rp_fitness._config_snapshot.clear()
     yield
     _reset_registration_state()
     clear_fitness_checks()
+    rp_fitness._config_snapshot.clear()

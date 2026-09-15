@@ -599,12 +599,12 @@ log.error(message, job_id=None)
 
 ### Fitness Checks: `modules/rp_fitness.py`
 
-**Location**: `runpod/serverless/modules/rp_fitness.py`
+**Location**: `runpod/_health/fitness.py` (legacy `serverless.modules.rp_fitness` imports remain aliases)
 
 **Responsibilities**:
 - Validate worker health at startup before handler initialization
 - Support both synchronous and asynchronous check functions
-- Exit immediately with sys.exit(1) on any check failure
+- Exit immediately with os._exit(1) on any check failure
 - Enable fail-fast deployment validation
 
 **Key Functions**:
@@ -613,11 +613,11 @@ log.error(message, job_id=None)
 - `clear_fitness_checks()`: Clear registry (testing only)
 
 **Execution Flow**:
-1. Called from `worker.py:40` before heartbeat starts: `asyncio.run(run_fitness_checks())`
+1. The first top-level import with both `RUNPOD_ENDPOINT_ID` and `RUNPOD_WEBHOOK_GET_JOB` runs shared hardware checks, excluding test invocations and `RUNPOD_TEST`. A Linux file lock and container-start-scoped result prevent concurrent/repeated execution across processes; saved failures propagate to later workers. Identity includes host boot, PID namespace, and PID 1 start time. Network, Python CUDA initialization, compute, and custom checks remain at worker start (realtime uses serving lifespan). Unsupported/unwritable coordination defers to worker-start checks. Import lock waiting is bounded at 35 seconds; worker-start waiting covers the configured GPU timeout, GPU fallback, both CUDA-version probes, and a five-second overhead allowance (minimum 35 seconds). A worker-start timeout fails closed. `RUNPOD_DEFER_FITNESS_CHECKS=true` postpones early checks. No custom launcher or PID environment variable is required.
 2. Runs only in production mode (skipped for local testing)
 3. Auto-detects sync vs async using `inspect.iscoroutinefunction()`
 4. Executes checks in registration order (list preserves order)
-5. On failure: log detailed error, call `sys.exit(1)`
+5. On health failure: log, best-effort unhealthy report, force-kill via `os._exit(1)`. Registration is atomic; early setup errors defer, unresolved worker-start setup errors report `fitness_check_setup` and force-exit.
 6. On success: log completion, proceed with worker startup
 
 **Performance**: ~0.5ms framework overhead per check, total depends on check logic
@@ -765,7 +765,7 @@ sequenceDiagram
             CHECK->>CHECK: Log success
         else Check fails
             CHECK->>SYS: Log error + traceback
-            CHECK->>SYS: sys.exit(1)
+            CHECK->>SYS: os._exit(1)
         end
     end
 
