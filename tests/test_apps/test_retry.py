@@ -134,7 +134,7 @@ async def test_connection_error_retried(unused_tcp_port):
             await _request_json("GET", url, {}, timeout=5)
 
 
-@pytest.mark.parametrize("operation", ["run", "runsync", "retry"])
+@pytest.mark.parametrize("operation", ["run", "retry"])
 @pytest.mark.parametrize("failure", [503, "disconnect"])
 async def test_submission_is_not_repeated_after_ambiguous_failure(
     flaky_server, monkeypatch, operation, failure
@@ -148,9 +148,7 @@ async def test_submission_is_not_repeated_after_ambiguous_failure(
         flaky_server.state["script"] = [failure]
     client = QueueClient("endpoint", lambda: {})
     with pytest.raises(aiohttp.ClientError):
-        if operation == "runsync":
-            await client.runsync({"input": {}}, timeout=10)
-        elif operation == "retry":
+        if operation == "retry":
             await client.retry("job")
         else:
             await client.run({"input": {}})

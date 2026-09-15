@@ -23,7 +23,6 @@ from runpod.apps.targets import (
 )
 
 
-
 class TestApiKey:
     def test_env_var(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_API_KEY", "sk-env")
@@ -49,9 +48,7 @@ class TestUrlHelpers:
     def test_lb_domain(self, monkeypatch):
         import runpod
 
-        monkeypatch.setattr(
-            runpod, "endpoint_url_base", "https://api.runpod.ai/v2"
-        )
+        monkeypatch.setattr(runpod, "endpoint_url_base", "https://api.runpod.ai/v2")
         assert _lb_domain() == "api.runpod.ai"
 
     def test_headers(self, monkeypatch):
@@ -97,9 +94,9 @@ class TestArgsToInput:
 
 class TestUnwrapJobOutput:
     def test_completed(self):
-        assert unwrap_job_output(
-            {"status": "COMPLETED", "output": {"x": 1}}
-        ) == {"x": 1}
+        assert unwrap_job_output({"status": "COMPLETED", "output": {"x": 1}}) == {
+            "x": 1
+        }
 
     def test_failed_status(self):
         with pytest.raises(RemoteExecutionError, match="boom"):
@@ -107,9 +104,7 @@ class TestUnwrapJobOutput:
 
     def test_error_in_output(self):
         with pytest.raises(RemoteExecutionError, match="oops"):
-            unwrap_job_output(
-                {"status": "COMPLETED", "output": {"error": "oops"}}
-            )
+            unwrap_job_output({"status": "COMPLETED", "output": {"error": "oops"}})
 
     def test_failed_generator_preserves_error(self):
         with pytest.raises(RemoteExecutionError, match="generator broke"):
@@ -164,9 +159,7 @@ class TestWaitTerminal:
 
     async def test_no_job_id_raises(self):
         with pytest.raises(RemoteExecutionError, match="missing a job id"):
-            await _wait_terminal(
-                "http://x", {"status": "IN_QUEUE"}, {}, timeout=5
-            )
+            await _wait_terminal("http://x", {"status": "IN_QUEUE"}, {}, timeout=5)
 
     async def test_timeout(self):
         with (
@@ -189,7 +182,7 @@ class TestWaitTerminal:
 @pytest.fixture
 def local_endpoint(monkeypatch):
     """local http server standing in for the serverless data plane."""
-    state = {"requests": [], "responses": {}}
+    state = {"requests": [], "responses": {}, "status_codes": {}, "headers": {}}
 
     class Handler(BaseHTTPRequestHandler):
         def _respond(self):
@@ -207,7 +200,13 @@ def local_endpoint(monkeypatch):
                 self.path, {"status": "COMPLETED", "output": {"ok": True}}
             )
             payload = json.dumps(reply).encode()
-            self.send_response(200)
+            status = state["status_codes"].get(self.path, 200)
+            if any(
+                self.headers.get(key) != value
+                for key, value in state["headers"].items()
+            ):
+                status = 404
+            self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
@@ -239,17 +238,38 @@ def local_endpoint(monkeypatch):
         thread.join()
 
 
-class TestSentinelTarget:
-    async def test_invoke_routes_through_sentinel(self, local_endpoint):
-        target = SentinelTarget("demo", "default", "chat")
-        result = await target.invoke({"input": {"prompt": "hi"}}, timeout=10)
-        assert result == {"ok": True}
+@pytest.mark.parametrize("kind", ["sentinel", "live"])
+async def test_invocations_keep_queued_jobs_addressable(
+    local_endpoint, monkeypatch, kind
+):
+    if kind == "sentinel":
+        target = SentinelTarget("demo", "production", "chat")
+        endpoint = SENTINEL_ID
+        local_endpoint.state["headers"] = {
+            "X-Flash-App": "demo",
+            "X-Flash-Environment": "production",
+            "X-Flash-Endpoint": "chat",
+        }
+    else:
+        target = LiveTarget("ep123", "chat")
+        endpoint = "ep123"
+    responses = local_endpoint.state["responses"]
+    responses[f"/{endpoint}/run"] = {"id": "durable", "status": "IN_QUEUE"}
+    responses[f"/{endpoint}/runsync"] = {"id": "ephemeral", "status": "IN_QUEUE"}
+    responses[f"/{endpoint}/status/durable"] = {
+        "id": "durable",
+        "status": "COMPLETED",
+        "output": {"answer": 42},
+    }
+    local_endpoint.state["status_codes"][f"/{endpoint}/status/ephemeral"] = 404
+    monkeypatch.setattr("runpod.apps.targets.JOB_PROPAGATION_ATTEMPTS", 1)
 
-        request = local_endpoint.state["requests"][0]
-        assert request["path"] == f"/{SENTINEL_ID}/runsync"
-        assert request["headers"]["X-Flash-App"] == "demo"
-        assert request["headers"]["X-Flash-Environment"] == "default"
-        assert request["headers"]["X-Flash-Endpoint"] == "chat"
+    result = await target.invoke({"input": {"prompt": "hello"}}, timeout=10)
+
+    assert result == {"answer": 42}
+
+
+class TestSentinelTarget:
 
     async def test_submit_and_wait(self, local_endpoint):
         local_endpoint.state["responses"][f"/{SENTINEL_ID}/run"] = {
@@ -423,9 +443,7 @@ class TestLiveTarget:
     def test_unwrap_success_response(self):
         target = LiveTarget("ep123", "chat")
         output = {"success": True, "result": None, "json_result": {"x": 1}}
-        assert target.unwrap(
-            {"status": "COMPLETED", "output": output}
-        ) == {"x": 1}
+        assert target.unwrap({"status": "COMPLETED", "output": output}) == {"x": 1}
 
     def test_unwrap_failure_raises(self):
         target = LiveTarget("ep123", "chat")
@@ -435,17 +453,15 @@ class TestLiveTarget:
 
     def test_unwrap_passthrough(self):
         target = LiveTarget("ep123", "chat")
-        assert target.unwrap(
-            {"status": "COMPLETED", "output": {"plain": 1}}
-        ) == {"plain": 1}
+        assert target.unwrap({"status": "COMPLETED", "output": {"plain": 1}}) == {
+            "plain": 1
+        }
 
     def test_unwrap_aggregated_plain_function(self):
         # live handlers aggregate; a plain function is one unmarked envelope
         target = LiveTarget("ep123", "chat")
         output = [{"success": True, "json_result": {"x": 1}}]
-        assert target.unwrap(
-            {"status": "COMPLETED", "output": output}
-        ) == {"x": 1}
+        assert target.unwrap({"status": "COMPLETED", "output": output}) == {"x": 1}
 
     def test_unwrap_aggregated_generator(self):
         target = LiveTarget("ep123", "chat")
@@ -453,9 +469,7 @@ class TestLiveTarget:
             {"success": True, "__stream__": True, "json_result": "a"},
             {"success": True, "__stream__": True, "json_result": "b"},
         ]
-        assert target.unwrap(
-            {"status": "COMPLETED", "output": output}
-        ) == ["a", "b"]
+        assert target.unwrap({"status": "COMPLETED", "output": output}) == ["a", "b"]
 
     async def test_stream_job_unwraps_chunks(self, local_endpoint):
         local_endpoint.state["responses"]["/ep123/stream/j1"] = {
@@ -469,13 +483,6 @@ class TestLiveTarget:
 
         chunks = [c async for c in target.stream_job("j1", timeout=10)]
         assert chunks == ["a", "b"]
-
-    async def test_invoke(self, local_endpoint):
-        target = LiveTarget("ep123", "chat")
-        data = await target.invoke({"input": {"x": 1}}, timeout=10)
-        assert data == {"ok": True}
-        request = local_endpoint.state["requests"][0]
-        assert request["path"] == "/ep123/runsync"
 
     async def test_job_operations(self, local_endpoint):
         local_endpoint.state["responses"]["/ep123/status/j1"] = {
@@ -496,7 +503,9 @@ class TestLiveTarget:
         assert (await target.cancel_job("j1"))["status"] == "CANCELLED"
         assert (await target.retry_job("j1"))["status"] == "IN_QUEUE"
 
-    async def test_concurrent_requests_share_completed_source_sync(self, live_api_server):
+    async def test_concurrent_requests_share_completed_source_sync(
+        self, live_api_server
+    ):
         state, entered, release = live_api_server
         target = LiveTarget("ep123", "calculate")
         target.attach_source(self._spec, "calculate", self._spec())
@@ -509,7 +518,9 @@ class TestLiveTarget:
         assert await asyncio.gather(first, second) == [{"result": 6}, {"result": 10}]
         assert state["uploads"] == 1
 
-    async def test_failed_source_sync_prevents_execution_and_can_retry(self, live_api_server):
+    async def test_failed_source_sync_prevents_execution_and_can_retry(
+        self, live_api_server
+    ):
         import aiohttp
 
         state, _, release = live_api_server
@@ -520,6 +531,8 @@ class TestLiveTarget:
         with pytest.raises(aiohttp.ClientResponseError):
             await target.request("POST", "/calculate", {"value": 7})
         assert state["calls"] == 0
-        assert await target.request("POST", "/calculate", {"value": 7}) == {"result": 14}
+        assert await target.request("POST", "/calculate", {"value": 7}) == {
+            "result": 14
+        }
         assert state["uploads"] == 2
         assert state["calls"] == 1

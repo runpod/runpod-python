@@ -82,7 +82,7 @@ def build_job_options(
 ) -> Dict[str, Any]:
     """shape per-job queue options into the wire payload.
 
-    these ride alongside `input` on the run/runsync request, matching
+    these ride alongside `input` on a queue job request, matching
     the raw data-plane api's job payload.
     """
     options: Dict[str, Any] = {}
@@ -102,9 +102,7 @@ def build_job_options(
     return options
 
 
-def merge_job_options(
-    base: Dict[str, Any], new: Dict[str, Any]
-) -> Dict[str, Any]:
+def merge_job_options(base: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
     """combine two option sets; policy fields accumulate rather than
     overwrite so chained with_options calls compose."""
     merged = dict(base)
@@ -117,7 +115,7 @@ def merge_job_options(
 
 
 def unwrap_job_output(data: Dict[str, Any]) -> Any:
-    """extract output from a runsync-style response, raising on failure."""
+    """extract output from a queue response, raising on failure."""
     output = data.get("output", data)
     if data.get("status") == "FAILED" or data.get("error"):
         err = data.get("error")
@@ -165,9 +163,7 @@ class InvocationTarget(ABC):
 
     async def job_status(self, job_id: str) -> Dict[str, Any]:
         """fetch the current state of a submitted job."""
-        raise NotImplementedError(
-            f"{type(self).__name__} does not support job status"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not support job status")
 
     async def cancel_job(self, job_id: str) -> Dict[str, Any]:
         """cancel a submitted job."""
@@ -177,13 +173,9 @@ class InvocationTarget(ABC):
 
     async def retry_job(self, job_id: str) -> Dict[str, Any]:
         """retry a failed or timed-out job."""
-        raise NotImplementedError(
-            f"{type(self).__name__} does not support job retries"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not support job retries")
 
-    def stream_job(
-        self, job_id: str, *, timeout: float
-    ) -> AsyncIterator[Any]:
+    def stream_job(self, job_id: str, *, timeout: float) -> AsyncIterator[Any]:
         """yield partial outputs of a generator job as they arrive."""
         raise NotImplementedError(
             f"{type(self).__name__} does not support job streaming"
@@ -197,9 +189,7 @@ class InvocationTarget(ABC):
         on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Any:
         """wait for a submitted job to finish and return its output."""
-        raise NotImplementedError(
-            f"{type(self).__name__} does not support job polling"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not support job polling")
 
     async def request(
         self, method: str, path: str, body: Any = None, *, timeout: float
@@ -324,9 +314,8 @@ async def _wait_terminal(
 ) -> Dict[str, Any]:
     """poll /status until the job reaches a terminal state.
 
-    runsync returns early (e.g. IN_QUEUE) when the job outlives the sync
-    window, typically on cold starts; polling covers the rest. on_status,
-    when given, sees every payload (observability hooks read workerId).
+    on_status receives every payload, including admission and completion,
+    so observers can attach to the assigned worker.
     """
     import time
 
@@ -367,7 +356,7 @@ async def _wait_terminal(
 class QueueClient:
     """queue data-plane client for a single endpoint id.
 
-    owns the run/runsync/status/cancel/retry routes and the lb subdomain
+    owns the run/status/cancel/retry routes and the lb subdomain
     for http resources. targets compose it with their own routing
     headers: the sentinel client carries flash headers, a live client
     carries plain auth headers.
@@ -410,13 +399,10 @@ class QueueClient:
             ),
         )
 
-    async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return await self._call("POST", "run", payload)
-
-    async def runsync(
-        self, payload: Dict[str, Any], *, timeout: float
+    async def run(
+        self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Dict[str, Any]:
-        return await self._call("POST", "runsync", payload, timeout)
+        return await self._call("POST", "run", payload, timeout)
 
     async def status(self, job_id: str) -> Dict[str, Any]:
         return await self._call("GET", f"status/{job_id}")
@@ -427,9 +413,7 @@ class QueueClient:
     async def retry(self, job_id: str) -> Dict[str, Any]:
         return await self._call("POST", f"retry/{job_id}")
 
-    async def stream(
-        self, job_id: str, *, timeout: float
-    ) -> AsyncIterator[Any]:
+    async def stream(self, job_id: str, *, timeout: float) -> AsyncIterator[Any]:
         """yield partial outputs from /stream until the job is terminal.
 
         the route long-polls (wait=) and drains buffered chunks, so each
@@ -524,7 +508,7 @@ class SentinelTarget(InvocationTarget):
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Any:
-        data = await self._client.runsync(payload, timeout=timeout)
+        data = await self._client.run(payload, timeout=timeout)
         data = await self._client.wait(data, timeout=timeout)
         return self.unwrap(data)
 
@@ -552,9 +536,7 @@ class SentinelTarget(InvocationTarget):
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Any:
-        data = await self._client.wait(
-            job_data, timeout=timeout, on_status=on_status
-        )
+        data = await self._client.wait(job_data, timeout=timeout, on_status=on_status)
         return self.unwrap(data)
 
     async def request(
@@ -631,9 +613,7 @@ class LiveTarget(InvocationTarget):
             }
             if self._source_spec is not None:
                 payload["dependencies"] = self._source_spec.dependencies
-                payload["system_dependencies"] = (
-                    self._source_spec.system_dependencies
-                )
+                payload["system_dependencies"] = self._source_spec.system_dependencies
             await _post_json(url, payload, _headers(), timeout)
             self._synced_hash = digest
 
@@ -710,13 +690,7 @@ class LiveTarget(InvocationTarget):
         if monitor is not None:
             await monitor.start()
         try:
-            if monitor is not None:
-                # async submit + status polling: runsync would hold the
-                # connection, hiding the workerId until completion and
-                # starving the live worker feed
-                data = await self._client.run(payload)
-            else:
-                data = await self._client.runsync(payload, timeout=timeout)
+            data = await self._client.run(payload, timeout=timeout)
             data = await self._client.wait(
                 data,
                 timeout=timeout,
@@ -769,9 +743,7 @@ class LiveTarget(InvocationTarget):
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Any:
-        data = await self._client.wait(
-            job_data, timeout=timeout, on_status=on_status
-        )
+        data = await self._client.wait(job_data, timeout=timeout, on_status=on_status)
         return self.unwrap(data)
 
     async def request(
