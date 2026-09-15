@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/runpod/runpod-python/compare/v1.12.0...v1.13.0) (2026-09-15)
+
+
+### Features
+
+* migrate api wrapper to rest v2 ([#584](https://github.com/runpod/runpod-python/issues/584)) ([e80c2f2](https://github.com/runpod/runpod-python/commit/e80c2f237d4b6eb41c50cee7a029a08f2694bc4c))
+
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
 
