@@ -11,7 +11,7 @@ import pytest
 from aiohttp import web
 
 from runpod import AsyncioSandbox, Sandbox
-from runpod.error import QueryError
+from runpod.error import AuthenticationError, QueryError
 from runpod.sandbox import (
     SandboxExecutionError,
     SandboxStartupTimeout,
@@ -152,6 +152,7 @@ def sandbox_peer():
                     await response.write(b": heartbeat\n\n")
                     await asyncio.sleep(0.01)
             except ConnectionResetError:
+                # clients may stop reading before the fixture finishes streaming.
                 pass
             finally:
                 service.log_disconnected.set()
@@ -285,16 +286,19 @@ def test_sync_body_exception_remains_primary_during_cleanup(
 ):
     peer.delete_status = delete_status
     failure = failure_type("application failed")
-    with pytest.raises(failure_type) as raised:
+    try:
         with Sandbox(image_name="python:3.12-slim", **peer.options):
             raise failure
-    assert raised.value is failure
-    if delete_status == 204:
-        assert peer.records["sandbox-1"]["state"] == "TERMINATED"
+    except failure_type as caught:
+        assert caught is failure
+        if delete_status == 204:
+            assert peer.records["sandbox-1"]["state"] == "TERMINATED"
+        else:
+            assert isinstance(caught.__cause__, QueryError)
+            assert caught.__cause__.status_code == 503
+            assert peer.records["sandbox-1"]["state"] == "RUNNING"
     else:
-        assert isinstance(raised.value.__cause__, QueryError)
-        assert raised.value.__cause__.status_code == 503
-        assert peer.records["sandbox-1"]["state"] == "RUNNING"
+        pytest.fail("sandbox context suppressed the application failure")
 
 
 @pytest.mark.asyncio
@@ -302,15 +306,18 @@ def test_sync_body_exception_remains_primary_during_cleanup(
 async def test_async_body_exception_remains_primary_during_cleanup(peer, delete_status):
     peer.delete_status = delete_status
     failure = ValueError("application failed")
-    with pytest.raises(ValueError) as raised:
+    try:
         async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options):
             raise failure
-    assert raised.value is failure
-    if delete_status == 204:
-        assert peer.records["sandbox-1"]["state"] == "TERMINATED"
+    except ValueError as caught:
+        assert caught is failure
+        if delete_status == 204:
+            assert peer.records["sandbox-1"]["state"] == "TERMINATED"
+        else:
+            assert isinstance(caught.__cause__, QueryError)
+            assert caught.__cause__.status_code == 503
     else:
-        assert isinstance(raised.value.__cause__, QueryError)
-        assert raised.value.__cause__.status_code == 503
+        pytest.fail("sandbox context suppressed the application failure")
 
 
 @pytest.mark.asyncio
@@ -386,8 +393,8 @@ async def test_closing_sandbox_cancels_pending_log_handshake(peer):
     try:
         assert await asyncio.to_thread(peer.log_started.wait, 2)
         await asyncio.wait_for(sandbox.close(), 3)
-        with pytest.raises(asyncio.CancelledError):
-            await opening
+        await asyncio.gather(opening, return_exceptions=True)
+        assert opening.cancelled()
         assert peer.records[sandbox.id]["state"] == "RUNNING"
     finally:
         peer.allow_logs.set()
@@ -414,3 +421,10 @@ async def test_list_filters_and_independent_handles_do_not_delete_resources(peer
         assert (await borrowed.exec(["work"])).output == "completed"
         assert borrowed.id == second["id"]
     assert all(record["state"] == "RUNNING" for record in peer.records.values())
+
+
+@pytest.mark.asyncio
+async def test_list_authentication_failure_propagates_after_cleanup(peer):
+    options = {**peer.options, "api_key": "invalid-key"}
+    with pytest.raises(AuthenticationError):
+        await AsyncioSandbox.list(**options)

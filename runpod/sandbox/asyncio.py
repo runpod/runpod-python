@@ -38,7 +38,7 @@ async def _cleanup(
     timeout: float,
     original: Optional[BaseException] = None,
 ) -> None:
-    """Finish bounded cleanup despite cancellation, keeping the original primary."""
+    """finish bounded cleanup; callers propagate an existing error on success."""
     task = asyncio.create_task(asyncio.wait_for(operation, timeout))
     interrupted = original
     while not task.done():
@@ -48,6 +48,7 @@ async def _cleanup(
             if interrupted is None:
                 interrupted = error
         except BaseException:
+            # task.result() below propagates the failure with its cleanup context.
             break
     try:
         task.result()
@@ -55,7 +56,7 @@ async def _cleanup(
         if interrupted is not None:
             raise interrupted from error
         raise
-    if interrupted is not None:
+    if interrupted is not None and original is None:
         raise interrupted
 
 
@@ -149,6 +150,7 @@ class AsyncioSandbox:
             await sandbox.refresh()
         except BaseException as error:
             await _cleanup(sandbox.close(), request_timeout, error)
+            raise
         return sandbox
 
     @classmethod
@@ -171,6 +173,7 @@ class AsyncioSandbox:
             snapshots = [SandboxInfo.from_dict(row) for row in rows]
         except BaseException as error:
             await _cleanup(api.close(), request_timeout, error)
+            raise
         else:
             await _cleanup(api.close(), request_timeout)
         handles = []
@@ -240,6 +243,7 @@ class AsyncioSandbox:
                     else:
                         task.result()
                 except BaseException as error:
+                    # finish releasing the resource before propagating recovery errors.
                     if error is not original:
                         recovery_error = error
                 try:
@@ -255,6 +259,7 @@ class AsyncioSandbox:
                     raise recovery_error
 
             await _cleanup(recover_and_release(), 2 * self._request_timeout, original)
+            raise
         finally:
             self._creating = False
 
@@ -407,6 +412,7 @@ class AsyncioSandbox:
                 self._info = replace(self._info, state="TERMINATED", compute=None)
         except BaseException as error:
             await _cleanup(self.close(), self._request_timeout, error)
+            raise
         else:
             await _cleanup(self.close(), self._request_timeout)
 
@@ -417,6 +423,7 @@ class AsyncioSandbox:
             try:
                 await stream.aclose()
             except BaseException as stream_error:
+                # close every stream before propagating cancellation or another failure.
                 if error is None:
                     error = stream_error
         try:
@@ -461,6 +468,7 @@ class AsyncSandboxLogStream:
         except BaseException as error:
             self._stream = None
             await _cleanup(stream.aclose(), self._sandbox._request_timeout, error)
+            raise
 
     async def open(self) -> "AsyncSandboxLogStream":
         """Complete the HTTP handshake without waiting for the first log event."""
@@ -480,6 +488,7 @@ class AsyncSandboxLogStream:
                 self._opened = True
             except BaseException as error:
                 await _cleanup(self.aclose(), self._sandbox._request_timeout, error)
+                raise
         return self
 
     def __aiter__(self) -> "AsyncSandboxLogStream":
@@ -496,6 +505,7 @@ class AsyncSandboxLogStream:
             raise
         except BaseException as error:
             await _cleanup(self.aclose(), self._sandbox._request_timeout, error)
+            raise
 
     async def aclose(self) -> None:
         """Release the response and detach from the sandbox; idempotent."""
@@ -503,16 +513,14 @@ class AsyncSandboxLogStream:
             return
         self._closed = True
         self._sandbox._streams.discard(self)
-        if self._opening is not None and not self._opening.done():
-            self._opening.cancel()
-            try:
-                await self._opening
-            except BaseException:
-                # The open caller receives its failure; close only owns disposal.
-                pass
-        stream, self._stream = self._stream, None
-        if stream is not None:
-            await stream.aclose()
+        try:
+            if self._opening is not None and not self._opening.done():
+                self._opening.cancel()
+                await asyncio.gather(self._opening, return_exceptions=True)
+        finally:
+            stream, self._stream = self._stream, None
+            if stream is not None:
+                await stream.aclose()
 
     async def __aenter__(self) -> "AsyncSandboxLogStream":
         return await self.open()

@@ -6,7 +6,7 @@ from concurrent.futures import Future
 from datetime import datetime
 from typing import Any, Coroutine, Iterator, Mapping, Optional, Sequence, TypeVar
 
-from .asyncio import AsyncioSandbox
+from runpod.sandbox.asyncio import AsyncioSandbox
 from .models import (
     ExecResult,
     LogEvent,
@@ -73,8 +73,7 @@ class _LoopRunner:
             try:
                 return await coroutine, None
             except BaseException as error:
-                # KeyboardInterrupt/SystemExit must reach the calling thread,
-                # not escape Task execution and stop the background loop.
+                # interrupts belong to the calling thread, not the background loop.
                 return None, error
 
         def complete(done: asyncio.Task) -> None:
@@ -85,6 +84,7 @@ class _LoopRunner:
                 else:
                     future.set_result(result)
             except BaseException as error:
+                # the waiting caller receives the task's cancellation or failure.
                 future.set_exception(error)
             finally:
                 if not invoked:
