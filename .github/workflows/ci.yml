@@ -40,9 +40,20 @@ jobs:
           UV_PYTHON: ${{ matrix.python-version }}
 
       - name: Run tests
-        run: make test
+        run: make test-coverage
         env:
           UV_PYTHON: ${{ matrix.python-version }}
+
+      # Consumed by the weekly coverage report, which reads the artifact from
+      # the newest successful run on main. Name is per-matrix-version because
+      # upload-artifact@v4 requires unique names within a run.
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: error
 
   e2e:
     if: github.event_name != 'schedule' && github.repository == 'runpod/runpod-python'
@@ -85,16 +96,16 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@v4.37.9
         with:
           languages: python
           queries: security-extended,security-and-quality
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+        uses: github/codeql-action/autobuild@v4.37.9
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@v4.37.9
         with:
           category: "/language:python"
 

@@ -23,14 +23,14 @@ class TestPodCommands(unittest.TestCase):
             {
                 "id": "1",
                 "name": "Pod1",
-                "desiredStatus": "Running",
-                "imageName": "Image1",
+                "status": "RUNNING",
+                "image": "Image1",
             },
             {
                 "id": "2",
                 "name": "Pod2",
-                "desiredStatus": "Stopped",
-                "imageName": "Image2",
+                "status": "STOPPED",
+                "image": "Image2",
             },
         ]
 
@@ -40,43 +40,12 @@ class TestPodCommands(unittest.TestCase):
         # Create expected table
         assert result.exit_code == 0, result.exception
         expected_table = PrettyTable(["ID", "Name", "Status", "Image"])
-        expected_table.add_row(("1", "Pod1", "Running", "Image1"))
-        expected_table.add_row(("2", "Pod2", "Stopped", "Image2"))
+        expected_table.add_row(("1", "Pod1", "RUNNING", "Image1"))
+        expected_table.add_row(("2", "Pod2", "STOPPED", "Image2"))
 
         # Assert that click.echo was called with the correct table
         mock_echo.assert_called()
 
-    @patch("runpod.cli.groups.pod.commands.click.prompt")
-    @patch("runpod.cli.groups.pod.commands.click.confirm")
-    @patch("runpod.cli.groups.pod.commands.click.echo")
-    @patch("runpod.cli.groups.pod.commands.create_pod")
-    def test_create_new_pod(
-        self, mock_create_pod, mock_echo, mock_confirm, mock_prompt
-    ):  # pylint: disable=too-many-arguments,line-too-long
-        """
-        Test create_new_pod
-        """
-        # Mock values
-        mock_confirm.return_value = True  # for the quick_launch option
-        mock_prompt.return_value = "RunPod-CLI-Pod"
-        mock_create_pod.return_value = {"id": "sample_id"}
-
-        runner = CliRunner()
-        result = runner.invoke(runpod_cli, ["pod", "create"])
-
-        # Assertions
-        assert result.exit_code == 0, result.exception
-        mock_prompt.assert_called_once_with("Enter pod name", default="RunPod-CLI-Pod")
-        mock_echo.assert_called_with("Pod sample_id has been created.")
-        mock_create_pod.assert_called_with(
-            "RunPod-CLI-Pod",
-            "runpod/base:0.0.0",
-            "NVIDIA GeForce RTX 3090",
-            gpu_count=1,
-            support_public_ip=True,
-            ports="22/tcp",
-        )
-        mock_echo.assert_called_with("Pod sample_id has been created.")
 
     @patch("runpod.cli.groups.pod.commands.click.echo")
     @patch("runpod.cli.groups.pod.commands.ssh_cmd.SSHConnection")

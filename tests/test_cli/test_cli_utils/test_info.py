@@ -14,12 +14,8 @@ class TestGetPodSSHIpPort:
         """Test get_pod_ssh_ip_port normal"""
         with patch("runpod.cli.utils.rp_info.get_pod") as mock_get_pod:
             mock_get_pod.return_value = {
-                "desiredStatus": "RUNNING",
-                "runtime": {
-                    "ports": [
-                        {"privatePort": 22, "ip": "127.0.0.1", "publicPort": 2222}
-                    ]
-                },
+                "status": "RUNNING",
+                "ssh": {"direct": {"host": "127.0.0.1", "port": 2222}},
             }
 
             ip, port = get_pod_ssh_ip_port("pod_id")
@@ -29,12 +25,12 @@ class TestGetPodSSHIpPort:
     def test_get_pod_ssh_ip_port_timeout(self):
         """Test get_pod_ssh_ip_port timeout"""
         with patch("runpod.cli.utils.rp_info.get_pod") as mock_get_pod:
-            mock_get_pod.return_value = {"desiredStatus": "RUNNING", "runtime": None}
+            mock_get_pod.return_value = {"status": "RUNNING", "runtime": None}
 
             with pytest.raises(TimeoutError):
                 get_pod_ssh_ip_port("pod_id", timeout=0.1)
 
-            mock_get_pod.return_value = {"desiredStatus": "NOT_RUNNING"}
+            mock_get_pod.return_value = {"status": "PROVISIONING"}
 
             with pytest.raises(TimeoutError):
                 get_pod_ssh_ip_port("pod_id", timeout=0.1)

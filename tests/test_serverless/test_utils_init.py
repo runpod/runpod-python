@@ -23,7 +23,8 @@ class TestServerlessUtilsInit:
         expected_symbols = {
             'download_files_from_urls',
             'upload_file_to_bucket',
-            'upload_in_memory_object'
+            'upload_in_memory_object',
+            'VolumeCache'
         }
         actual_symbols = set(runpod.serverless.utils.__all__)
         assert expected_symbols == actual_symbols, f"Expected {expected_symbols}, got {actual_symbols}"
@@ -69,23 +70,24 @@ class TestServerlessUtilsInit:
     def test_all_covers_public_api_only(self):
         """Test that __all__ contains only the intended public API."""
         # Get all non-private attributes from the module
-        module_attrs = {name for name in dir(runpod.serverless.utils) 
+        module_attrs = {name for name in dir(runpod.serverless.utils)
                        if not name.startswith('_')}
-        
+
         # Filter out any imported modules that shouldn't be public
         expected_private_attrs = set()  # No private imports in this module
-        
+
         public_attrs = module_attrs - expected_private_attrs
         all_symbols = set(runpod.serverless.utils.__all__)
-        
+
         # All symbols in __all__ should be actual public API
         assert all_symbols.issubset(public_attrs), f"__all__ contains non-public symbols: {all_symbols - public_attrs}"
-        
+
         # Expected public API should be exactly what's in __all__
         expected_public_api = {
-            'download_files_from_urls', 
-            'upload_file_to_bucket', 
-            'upload_in_memory_object'
+            'download_files_from_urls',
+            'upload_file_to_bucket',
+            'upload_in_memory_object',
+            'VolumeCache'
         }
         assert all_symbols == expected_public_api, f"Expected {expected_public_api}, got {all_symbols}"
 

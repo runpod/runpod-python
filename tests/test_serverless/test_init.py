@@ -24,7 +24,8 @@ class TestServerlessInit:
             'start',
             'progress_update',
             'register_fitness_check',
-            'runpod_version'
+            'runpod_version',
+            'VolumeCache'
         }
         actual_symbols = set(runpod.serverless.__all__)
         assert expected_symbols == actual_symbols, f"Expected {expected_symbols}, got {actual_symbols}"
@@ -79,24 +80,24 @@ class TestServerlessInit:
     def test_all_covers_public_api_only(self):
         """Test that __all__ contains only the intended public API."""
         # Get all non-private attributes from the module
-        module_attrs = {name for name in dir(runpod.serverless) 
+        module_attrs = {name for name in dir(runpod.serverless)
                        if not name.startswith('_')}
-        
+
         # Filter out imported modules and types that shouldn't be public
         expected_private_attrs = {
-            'argparse', 'json', 'os', 'signal', 'sys', 'time', 
+            'argparse', 'json', 'os', 'signal', 'sys', 'time',
             'worker', 'rp_fastapi', 'log', 'parser',
             'Any', 'Dict',  # Type hints
             'modules', 'utils',  # Sub-modules
             'RunPodLogger'  # Internal logger class
         }
-        
+
         public_attrs = module_attrs - expected_private_attrs
         all_symbols = set(runpod.serverless.__all__)
-        
+
         # All symbols in __all__ should be actual public API
         assert all_symbols.issubset(public_attrs), f"__all__ contains non-public symbols: {all_symbols - public_attrs}"
-        
+
         # Expected public API should be exactly what's in __all__
-        expected_public_api = {'start', 'progress_update', 'register_fitness_check', 'runpod_version'}
+        expected_public_api = {'start', 'progress_update', 'register_fitness_check', 'runpod_version', 'VolumeCache'}
         assert all_symbols == expected_public_api, f"Expected {expected_public_api}, got {all_symbols}"
