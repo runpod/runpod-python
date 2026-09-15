@@ -151,7 +151,7 @@ class VolumeResolver:
                 specs,
                 self._stock,
                 volume_name=volume.name,
-                existing_dc=record["dataCenterId"],
+                existing_dc=record["dataCenter"],
             )
             resolved = {"id": record["id"], "dataCenterId": dc}
             self._resolved[volume.name] = resolved

@@ -208,6 +208,11 @@ class FunctionHandle:
     def _is_current_worker(self) -> bool:
         import os
 
+        if dev_app := os.getenv("RUNPOD_DEV_APP"):
+            return (
+                dev_app == self._app.name
+                and os.getenv("RUNPOD_DEV_RESOURCE") == self.spec.name
+            )
         current = os.getenv("FLASH_RESOURCE_NAME") or os.getenv("RUNPOD_RESOURCE_NAME")
         return current is not None and current == self.spec.name
 

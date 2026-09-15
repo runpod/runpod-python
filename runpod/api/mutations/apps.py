@@ -1,5 +1,6 @@
-"""graphql mutations for the apps control-plane client."""
+"""GraphQL mutations for capabilities absent from the resource REST API."""
 
+# endpoint saves retain flash bindings, cached models, and schedules atomically.
 MUTATION_SAVE_ENDPOINT = """
 mutation saveEndpoint($input: EndpointInput!) {
     saveEndpoint(input: $input) {
@@ -16,12 +17,7 @@ mutation saveEndpoint($input: EndpointInput!) {
 }
 """
 
-MUTATION_DELETE_ENDPOINT = """
-mutation deleteEndpoint($id: String!) {
-    deleteEndpoint(id: $id)
-}
-"""
-
+# task provisioning requires terminateAfter and supportPublicIp.
 MUTATION_DEPLOY_CPU_POD = """
 mutation deployCpuPod($input: deployCpuPodInput!) {
     deployCpuPod(input: $input) { id desiredStatus }
@@ -34,12 +30,6 @@ mutation deployPod($input: PodFindAndDeployOnDemandInput) {
 }
 """
 
-MUTATION_TERMINATE_POD = """
-mutation terminatePod($input: PodTerminateInput!) {
-    podTerminate(input: $input)
-}
-"""
-
 MUTATION_CREATE_FLASH_APP = """
 mutation createFlashApp($input: CreateFlashAppInput!) {
     createFlashApp(input: $input) { id name }
@@ -49,29 +39,6 @@ mutation createFlashApp($input: CreateFlashAppInput!) {
 MUTATION_CREATE_FLASH_ENVIRONMENT = """
 mutation createFlashEnvironment($input: CreateFlashEnvironmentInput!) {
     createFlashEnvironment(input: $input) { id name }
-}
-"""
-
-MUTATION_CREATE_NETWORK_VOLUME = """
-mutation createNetworkVolume($input: CreateNetworkVolumeInput!) {
-    createNetworkVolume(input: $input) {
-        id
-        name
-        size
-        dataCenterId
-    }
-}
-"""
-
-MUTATION_SAVE_REGISTRY_AUTH = """
-mutation SaveRegistryAuth($input: SaveRegistryAuthInput!) {
-    saveRegistryAuth(input: $input) { id name }
-}
-"""
-
-MUTATION_DELETE_REGISTRY_AUTH = """
-mutation DeleteRegistryAuth($registryAuthId: String!) {
-    deleteRegistryAuth(registryAuthId: $registryAuthId)
 }
 """
 

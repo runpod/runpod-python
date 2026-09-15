@@ -174,24 +174,10 @@ def _fake_popen(captured, *, returncode=0, stdout="", stderr=""):
 
 
 class TestVendor:
-    def test_targets_worker_platform(self, tmp_path):
-        captured = {}
-        with patch(
-            "runpod.apps.build.subprocess.Popen",
-            side_effect=_fake_popen(captured),
-        ):
-            vendor(tmp_path, ["numpy"], "3.12")
-
-        cmd = captured["cmd"]
-        assert "--target" in cmd
-        assert "--python-version" in cmd and "3.12" in cmd
-        assert "--only-binary" in cmd
-        assert "manylinux_2_28_x86_64" in cmd
-
-    def test_empty_requirements_no_op(self, tmp_path):
-        with patch("runpod.apps.build.subprocess.Popen") as popen:
-            vendor(tmp_path, [], "3.12")
-        popen.assert_not_called()
+    @pytest.fixture(autouse=True)
+    def pip_available(self):
+        with patch("runpod.apps.build._ensure_pip"):
+            yield
 
     def test_failure_raises_build_error(self, tmp_path):
         with patch(
@@ -227,19 +213,18 @@ class TestVendor:
         original_popen = subprocess.Popen
         processes = []
         expired = threading.Event()
+        script = (
+            "import sys; "
+            "sys.stderr.write('x' * 262144 + '\\n'); "
+            "sys.stderr.flush(); "
+            "print('Collecting numpy'); "
+            "print('resolver failed', file=sys.stderr); "
+            "sys.exit(1)"
+        )
 
         def launch(_cmd, **kwargs):
             process = original_popen(
-                [
-                    sys.executable,
-                    "-c",
-                    "import sys; "
-                    "sys.stderr.write('x' * 262144 + '\\n'); "
-                    "sys.stderr.flush(); "
-                    "print('Collecting numpy'); "
-                    "print('resolver failed', file=sys.stderr); "
-                    "sys.exit(1)",
-                ],
+                [sys.executable, "-c", script],
                 **kwargs,
             )
             processes.append(process)

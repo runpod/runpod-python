@@ -1,8 +1,7 @@
 """control-plane calls for app provisioning.
 
-a thin wrapper over runpod.api.graphql's shared async transport,
-scoped to what the apps surface needs: endpoint save/delete for dev
-sessions, and the app / build / environment lifecycle for deploys.
+rest handles equivalent resource operations; graphql handles flash lifecycle,
+auth, secrets, task provisioning, and endpoint capabilities absent from rest.
 management verbs for the wider sdk stay in runpod.api.ctl_commands.
 """
 
@@ -10,13 +9,140 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
+from ..api.ctl_commands import _cpu_config, _path_segment, _split_values
 from ..api.graphql import run_graphql_query_async
 from ..api.mutations import apps as app_mutations
 from ..api.queries import apps as app_queries
+from ..api.rest import run_rest_request_async
 from ..error import QueryError
 
-
 _TRANSPORT_RETRIES = 4
+
+
+def _rest_endpoint_input(endpoint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """translate only saves whose capabilities rest can preserve atomically."""
+    fields = {
+        "id",
+        "name",
+        "type",
+        "template",
+        "templateId",
+        "workersMin",
+        "workersMax",
+        "idleTimeout",
+        "scalerType",
+        "scalerValue",
+        "executionTimeoutMs",
+        "flashBootType",
+        "locations",
+        "instanceIds",
+        "gpuIds",
+        "gpuCount",
+        "minCudaVersion",
+        "allowedCudaVersions",
+        "networkVolumeIds",
+    }
+    template_fields = {
+        "imageName": "image",
+        "containerDiskInGb": "disk",
+        "dockerArgs": "args",
+        "containerRegistryAuthId": "registry",
+    }
+    template = endpoint.get("template") or {}
+    # flash bindings, cached models, schedules, and template metadata need gql.
+    if endpoint.keys() - fields or template.keys() - (
+        template_fields.keys() | {"env", "ports"}
+    ):
+        return None
+    if endpoint.get("type", "QB") not in {"QB", "LB"}:
+        return None
+    scaler = endpoint.get("scalerType")
+    if scaler not in {None, "QUEUE_DELAY", "REQUEST_COUNT"}:
+        return None
+    if ("scalerType" in endpoint) != ("scalerValue" in endpoint):
+        return None
+    if not endpoint.get("id") and (
+        scaler is None or not (template.get("imageName") or endpoint.get("templateId"))
+    ):
+        return None
+
+    body = {
+        rest: template[gql] for gql, rest in template_fields.items() if gql in template
+    }
+    if "env" in template:
+        body["env"] = {item["key"]: item["value"] for item in template["env"]}
+    if "ports" in template:
+        body["ports"] = _split_values(template["ports"])
+    for gql, rest in (
+        ("name", "name"),
+        ("templateId", "templateId"),
+        ("executionTimeoutMs", "timeout"),
+        ("flashBootType", "flashboot"),
+    ):
+        if gql in endpoint:
+            body[rest] = endpoint[gql]
+    if "networkVolumeIds" in endpoint:
+        volumes = endpoint["networkVolumeIds"]
+        if any(set(volume) != {"networkVolumeId"} for volume in volumes):
+            return None
+        body["networkVolumes"] = [volume["networkVolumeId"] for volume in volumes]
+    if not endpoint.get("id"):
+        body["type"] = "LOAD_BALANCER" if endpoint.get("type") == "LB" else "QUEUE"
+    if "locations" in endpoint:
+        body["dataCenterIds"] = _split_values(endpoint["locations"])
+    if "instanceIds" in endpoint:
+        body["cpu"] = [_cpu_config(instance) for instance in endpoint["instanceIds"]]
+        # one-vcpu endpoints require graphql.
+        if any(cpu["vcpuCount"] < 2 for cpu in body["cpu"]):
+            return None
+    gpu = {}
+    if "gpuIds" in endpoint:
+        tokens = _split_values(endpoint["gpuIds"])
+        gpu["pools"] = [token for token in tokens if not token.startswith("-")]
+        gpu["excludedTypes"] = [token[1:] for token in tokens if token.startswith("-")]
+    for key in ("gpuCount", "minCudaVersion", "allowedCudaVersions"):
+        if key in endpoint:
+            gpu["count" if key == "gpuCount" else key] = (
+                _split_values(endpoint[key])
+                if key == "allowedCudaVersions"
+                else endpoint[key]
+            )
+    if gpu:
+        body["gpu"] = gpu
+    workers = {
+        rest: endpoint[gql]
+        for gql, rest in (
+            ("workersMin", "min"),
+            ("workersMax", "max"),
+            ("idleTimeout", "idleTimeout"),
+        )
+        if gql in endpoint
+    }
+    # queue request-count scaling ignores idle timeout upstream and rest rejects it.
+    if (
+        not endpoint.get("id")
+        and endpoint.get("type", "QB") == "QB"
+        and scaler == "REQUEST_COUNT"
+    ):
+        workers.pop("idleTimeout", None)
+    if workers:
+        body["workers"] = workers
+    if scaler is not None:
+        key = "queueDelay" if scaler == "QUEUE_DELAY" else "requestCount"
+        body["scaling"] = {"type": scaler, key: endpoint["scalerValue"]}
+    return body
+
+
+def _stock_in_datacenter(data: Dict[str, Any], data_center_id: str) -> str:
+    """catalog omits datacenters where the requested configuration is unavailable."""
+    return next(
+        (
+            dc["availability"]
+            for dc in data.get("dataCenters", [])
+            if dc["id"] == data_center_id
+        ),
+        "NONE",
+    )
 
 
 def is_capacity_error(exc: Exception) -> bool:
@@ -49,7 +175,7 @@ class AppsApiClient:
         import asyncio
 
         attempts = _TRANSPORT_RETRIES if retry else 1
-        for attempt in range(attempts):
+        for attempt in range(attempts - 1):
             try:
                 response = await run_graphql_query_async(
                     query,
@@ -59,32 +185,92 @@ class AppsApiClient:
                 )
                 return response["data"]
             except (aiohttp.ClientError, OSError, asyncio.TimeoutError):
-                if attempt == attempts - 1:
-                    raise
                 await asyncio.sleep(2**attempt)
+        response = await run_graphql_query_async(
+            query,
+            api_key=self._api_key,
+            variables=variables,
+            anonymous=anonymous,
+        )
+        return response["data"]
 
     async def save_endpoint(self, endpoint_input: Dict[str, Any]) -> Dict[str, Any]:
-        """create or update a serverless endpoint. include id to update."""
+        """save via rest unless the input requires an unsupported capability."""
+        body = _rest_endpoint_input(endpoint_input)
+        endpoint_id = endpoint_input.get("id")
+        if body is not None and endpoint_id:
+            current = await run_rest_request_async(
+                "GET",
+                f"/v2/serverless/{_path_segment(endpoint_id)}",
+                api_key=self._api_key,
+            )
+            requested_type = endpoint_input.get("type")
+            expected = (
+                ("LOAD_BALANCER" if requested_type == "LB" else "QUEUE")
+                if requested_type is not None
+                else current.get("type")
+            )
+            # rest updates cannot change routing type or compute family.
+            if (
+                current.get("type") != expected
+                or ("cpu" in body and not current.get("cpu"))
+                or ("gpu" in body and current.get("cpu"))
+            ):
+                body = None
+            elif (
+                current.get("type") == "QUEUE"
+                and body.get("scaling", current.get("scaling", {})).get("type")
+                == "REQUEST_COUNT"
+            ):
+                body.get("workers", {}).pop("idleTimeout", None)
+        if body is not None:
+            path = "/v2/serverless"
+            if endpoint_id:
+                path += f"/{_path_segment(endpoint_id)}"
+            return await run_rest_request_async(
+                "PATCH" if endpoint_id else "POST",
+                path,
+                api_key=self._api_key,
+                json=body,
+            )
+        template = endpoint_input.get("template")
+        if template is not None and "name" not in template and "name" in endpoint_input:
+            # graphql requires a template name; rest names the bound template itself.
+            endpoint_input = {
+                **endpoint_input,
+                "template": {"name": endpoint_input["name"], **template},
+            }
         mutation = app_mutations.MUTATION_SAVE_ENDPOINT
         data = await self._execute(mutation, {"input": endpoint_input})
         return data["saveEndpoint"]
 
     async def delete_endpoint(self, endpoint_id: str) -> bool:
-        mutation = app_mutations.MUTATION_DELETE_ENDPOINT
-        data = await self._execute(mutation, {"id": endpoint_id})
-        if not data.get("deleteEndpoint"):
-            raise QueryError(f"endpoint {endpoint_id!r} was not deleted", mutation)
+        await run_rest_request_async(
+            "DELETE",
+            f"/v2/serverless/{_path_segment(endpoint_id)}",
+            api_key=self._api_key,
+        )
         return True
 
     async def list_my_endpoints(self) -> List[Dict[str, Any]]:
-        query = app_queries.QUERY_MY_ENDPOINTS
-        data = await self._execute(query, retry=True)
-        return data["myself"]["endpoints"]
+        data = await run_rest_request_async(
+            "GET", "/v2/serverless", api_key=self._api_key
+        )
+        return data["endpoints"]
+
+    async def endpoint_workers(self, endpoint_id: str) -> Dict[str, Any]:
+        """worker state uses the user key."""
+        return await run_rest_request_async(
+            "GET",
+            f"/v2/serverless/{_path_segment(endpoint_id)}/workers",
+            api_key=self._api_key,
+            timeout=10,
+        )
 
     async def deploy_task_pod(
         self, pod_input: Dict[str, Any], *, is_cpu: bool
     ) -> Dict[str, Any]:
-        """deploy an on-demand pod for a task run."""
+        """provision with a termination deadline and public-ip requirement."""
         pod_input = dict(pod_input)
         if is_cpu:
             instance_ids = pod_input.pop("instanceIds", None) or [
@@ -105,8 +291,9 @@ class AppsApiClient:
         return data["podFindAndDeployOnDemand"]
 
     async def terminate_pod(self, pod_id: str) -> None:
-        mutation = app_mutations.MUTATION_TERMINATE_POD
-        await self._execute(mutation, {"input": {"podId": pod_id}})
+        await run_rest_request_async(
+            "DELETE", f"/v2/pods/{_path_segment(pod_id)}", api_key=self._api_key
+        )
 
     async def get_app_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         query = app_queries.QUERY_FLASH_APP_BY_NAME
@@ -137,98 +324,94 @@ class AppsApiClient:
         gpu_count: int = 1,
         pods: bool = False,
     ) -> Optional[str]:
-        """stock signal for a gpu device in one datacenter.
-
-        the serverless plane (includeAiApi) and the pod plane have
-        different availability; pods=True queries pod stock (tasks).
-        """
-        query = app_queries.QUERY_GPU_STOCK
-        data = await self._execute(
-            query,
-            {
-                "gpuTypesInput": {"ids": [gpu_id]},
-                "lowestPriceInput": {
-                    "dataCenterId": data_center_id,
-                    "gpuCount": gpu_count,
-                    "secureCloud": True,
-                    "includeAiApi": not pods,
-                },
+        """secure-cloud stock scoped to GPU count and pod/serverless product."""
+        data = await run_rest_request_async(
+            "GET",
+            f"/v2/catalog/gpus/{_path_segment(gpu_id)}",
+            api_key=self._api_key,
+            params={
+                "include": "AVAILABILITY",
+                "product": "POD" if pods else "SERVERLESS",
+                "count": gpu_count,
+                "cloud": "SECURE",
             },
-            retry=True,
         )
-        gpu_types = data.get("gpuTypes") or []
-        first = gpu_types[0] if gpu_types else {}
-        price = first.get("lowestPrice") if isinstance(first, dict) else None
-        return (price or {}).get("stockStatus")
+        return _stock_in_datacenter(data, data_center_id)
 
     async def cpu_stock_status(
-        self, instance_id: str, data_center_id: str
+        self, instance_id: str, data_center_id: str, *, pods: bool = False
     ) -> Optional[str]:
-        """stock signal for a cpu flavor in one datacenter."""
-        flavor = instance_id.split("-", 1)[0]
-        query = app_queries.QUERY_CPU_STOCK
-        data = await self._execute(
-            query,
-            {
-                "cpuFlavorInput": {"id": flavor},
-                "specificsInput": {
-                    "dataCenterId": data_center_id,
-                    "instanceId": instance_id,
+        """stock scoped to CPU flavor, vCPU count, and pod/serverless product."""
+        cpu = _cpu_config(instance_id)
+        # rest stock filters require a power-of-two count of at least two.
+        count = cpu["vcpuCount"]
+        if count < 2 or count & (count - 1):
+            data = await self._execute(
+                app_queries.QUERY_CPU_STOCK,
+                {
+                    "cpuFlavorInput": {"id": cpu["id"], "isSls": not pods},
+                    "specificsInput": {
+                        "dataCenterId": data_center_id,
+                        "instanceId": instance_id,
+                        "isSls": not pods,
+                    },
                 },
+                retry=True,
+            )
+            flavors = data.get("cpuFlavors") or []
+            specifics = (flavors[0].get("specifics") or {}) if flavors else {}
+            return specifics.get("stockStatus")
+        data = await run_rest_request_async(
+            "GET",
+            f"/v2/catalog/cpus/{_path_segment(cpu['id'])}",
+            api_key=self._api_key,
+            params={
+                "include": "AVAILABILITY",
+                "product": "POD" if pods else "SERVERLESS",
+                "vcpuCount": cpu["vcpuCount"],
             },
-            retry=True,
         )
-        flavors = data.get("cpuFlavors") or []
-        first = flavors[0] if flavors else {}
-        specifics = first.get("specifics") if isinstance(first, dict) else None
-        return (specifics or {}).get("stockStatus")
+        return _stock_in_datacenter(data, data_center_id)
 
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
-        query = app_queries.QUERY_NETWORK_VOLUMES
-        data = await self._execute(query, retry=True)
-        return data["myself"].get("networkVolumes") or []
+        data = await run_rest_request_async(
+            "GET", "/v2/network-volumes", api_key=self._api_key
+        )
+        return data["networkVolumes"]
 
     async def create_network_volume(
         self, name: str, size: int, data_center_id: str
     ) -> Dict[str, Any]:
-        mutation = app_mutations.MUTATION_CREATE_NETWORK_VOLUME
-        data = await self._execute(
-            mutation,
-            {
-                "input": {
-                    "name": name,
-                    "size": size,
-                    "dataCenterId": data_center_id,
-                }
-            },
+        return await run_rest_request_async(
+            "POST",
+            "/v2/network-volumes",
+            api_key=self._api_key,
+            json={"name": name, "size": size, "dataCenter": data_center_id},
         )
-        return data["createNetworkVolume"]
 
     async def list_registry_auths(self) -> List[Dict[str, Any]]:
-        query = app_queries.QUERY_REGISTRY_AUTHS
-        data = await self._execute(query, retry=True)
-        return data["myself"].get("containerRegistryCreds") or []
+        data = await run_rest_request_async(
+            "GET", "/v2/registries", api_key=self._api_key
+        )
+        return data["registries"]
 
     async def create_registry_auth(
         self, name: str, username: str, password: str
     ) -> Dict[str, Any]:
-        mutation = app_mutations.MUTATION_SAVE_REGISTRY_AUTH
-        data = await self._execute(
-            mutation,
-            {
-                "input": {
-                    "name": name,
-                    "username": username,
-                    "password": password,
-                }
-            },
+        return await run_rest_request_async(
+            "POST",
+            "/v2/registries",
+            api_key=self._api_key,
+            json={"name": name, "username": username, "password": password},
         )
-        return data["saveRegistryAuth"]
 
     async def delete_registry_auth(self, auth_id: str) -> bool:
-        mutation = app_mutations.MUTATION_DELETE_REGISTRY_AUTH
-        data = await self._execute(mutation, {"registryAuthId": auth_id})
-        return bool(data.get("deleteRegistryAuth"))
+        await run_rest_request_async(
+            "DELETE",
+            f"/v2/registries/{_path_segment(auth_id)}",
+            api_key=self._api_key,
+        )
+        return True
 
     async def list_secrets(self) -> List[Dict[str, Any]]:
         query = app_queries.QUERY_SECRETS

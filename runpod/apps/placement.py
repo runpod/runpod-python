@@ -44,7 +44,8 @@ def _hardware_keys(spec) -> List[StockKey]:
     from .spec import ResourceKind
 
     if spec.is_cpu:
-        return [("cpu", c, 0) for c in spec.cpu or []]
+        cpu_kind = "cpu-pod" if spec.kind is ResourceKind.TASK else "cpu"
+        return [(cpu_kind, c, 0) for c in spec.cpu or []]
     gpu_kind = "gpu-pod" if spec.kind is ResourceKind.TASK else "gpu"
     gpu = spec.gpu
     if not gpu or any(str(g).lower() == "any" for g in gpu):
@@ -66,10 +67,10 @@ class StockMap:
         self._api = api
         self._gpu: Dict[Tuple[str, int, str], int] = {}
         self._gpu_pod: Dict[Tuple[str, int, str], int] = {}
-        self._cpu: Dict[Tuple[str, str], int] = {}
+        self._cpu: Dict[Tuple[str, str, bool], int] = {}
         self._fetched_gpu: Set[Tuple[str, int]] = set()
         self._fetched_gpu_pod: Set[Tuple[str, int]] = set()
-        self._fetched_cpu: Set[str] = set()
+        self._fetched_cpu: Set[Tuple[str, bool]] = set()
 
     async def _client(self):
         self._api = default_client(self._api)
@@ -93,7 +94,10 @@ class StockMap:
             and (k[1], k[2]) not in self._fetched_gpu_pod
         }
         cpu_ids = {
-            k[1] for k in keys if k[0] == "cpu" and k[1] not in self._fetched_cpu
+            (k[1], k[0] == "cpu-pod")
+            for k in keys
+            if k[0] in ("cpu", "cpu-pod")
+            and (k[1], k[0] == "cpu-pod") not in self._fetched_cpu
         }
         client = await self._client()
         jobs = []
@@ -105,10 +109,10 @@ class StockMap:
             self._fetched_gpu_pod.add((gpu_id, count))
             for dc in DataCenter.all():
                 jobs.append(self._fetch_gpu(client, gpu_id, count, dc.value, True))
-        for cpu_id in cpu_ids:
-            self._fetched_cpu.add(cpu_id)
+        for cpu_id, pods in cpu_ids:
+            self._fetched_cpu.add((cpu_id, pods))
             for dc in DataCenter.all():
-                jobs.append(self._fetch_cpu(client, cpu_id, dc.value))
+                jobs.append(self._fetch_cpu(client, cpu_id, dc.value, pods))
         if jobs:
             await asyncio.gather(*jobs)
 
@@ -125,13 +129,13 @@ class StockMap:
         target = self._gpu_pod if pods else self._gpu
         target[(gpu_id, gpu_count, dc)] = _score(status)
 
-    async def _fetch_cpu(self, client, instance_id: str, dc: str) -> None:
+    async def _fetch_cpu(self, client, instance_id: str, dc: str, pods: bool) -> None:
         try:
-            status = await client.cpu_stock_status(instance_id, dc)
+            status = await client.cpu_stock_status(instance_id, dc, pods=pods)
         except Exception:  # noqa: BLE001 - stock is advisory
             log.debug("cpu stock query failed for %s@%s", instance_id, dc, exc_info=True)
             status = None
-        self._cpu[(instance_id, dc)] = _score(status)
+        self._cpu[(instance_id, dc, pods)] = _score(status)
 
     def score(self, key: StockKey, dc: str) -> int:
         kind, hw, count = key
@@ -146,7 +150,7 @@ class StockMap:
                 ]
                 return max(scores, default=1)
             return table.get((hw, count, dc), 0)
-        return self._cpu.get((hw, dc), 0)
+        return self._cpu.get((hw, dc, kind == "cpu-pod"), 0)
 
 
 def candidates(spec, stock: StockMap) -> Set[str]:

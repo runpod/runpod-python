@@ -1,9 +1,9 @@
 """request-time worker observability for dev sessions.
 
 while a dev call is in flight, a WorkerMonitor watches the endpoint's
-worker metrics for state transitions (initializing, throttled, ready)
+rest worker summary for state transitions (initializing, throttled, ready)
 and, once the job is assigned a worker, follows that worker's container
-logs over the hapi sse stream. everything surfaces through a duck-typed
+logs over the rest sse stream. everything surfaces through a duck-typed
 event sink; missing handlers are silently skipped.
 """
 
@@ -69,10 +69,18 @@ class PodLogStream:
     lines dedup across reconnects and sdk runtime frames are filtered.
     """
 
-    def __init__(self, pod_id: str, resource_name: str, events: object):
+    def __init__(
+        self,
+        pod_id: str,
+        resource_name: str,
+        events: object,
+        *,
+        endpoint_id: Optional[str] = None,
+    ):
         self.pod_id = pod_id
         self.name = resource_name
         self.events = events
+        self.endpoint_id = endpoint_id
         self._task: Optional[asyncio.Task] = None
         self._since = datetime.now(timezone.utc).isoformat()
         self._lines_emitted = 0
@@ -131,6 +139,7 @@ class PodLogStream:
                 # from the backfill instead of dropped
                 async for event in stream_pod_logs(
                     self.pod_id,
+                    endpoint_id=self.endpoint_id,
                     log_type="container",
                     tail=1000,
                     since=self._since,
@@ -179,28 +188,32 @@ class WorkerMonitor:
         endpoint_id: str,
         resource_name: str,
         events: object,
-        metrics_key: Optional[str] = None,
+        api=None,
     ):
         self.endpoint_id = endpoint_id
         self.name = resource_name
         self.events = events
-        # /metrics is served on the data plane behind the endpoint's own
-        # ai key; the user api key is rejected there
-        self.metrics_key = metrics_key
+        from .utils.client import default_client
+
+        self.api = default_client(api)
         self._tasks: List[asyncio.Task] = []
         self._streams: Dict[str, PodLogStream] = {}
         self._last_counts: Optional[Dict[str, int]] = None
 
     async def start(self) -> None:
-        if self.metrics_key:
-            self._tasks.append(asyncio.ensure_future(self._poll_metrics()))
+        self._tasks.append(asyncio.ensure_future(self._poll_metrics()))
 
     def on_status(self, data: Dict[str, Any]) -> None:
         """inspect a job-status payload for the assigned worker."""
         worker_id = data.get("workerId")
         if worker_id and worker_id not in self._streams:
             emit(self.events, "worker_ready", self.name, str(worker_id))
-            stream = PodLogStream(str(worker_id), self.name, self.events)
+            stream = PodLogStream(
+                str(worker_id),
+                self.name,
+                self.events,
+                endpoint_id=self.endpoint_id,
+            )
             stream.attach()
             self._streams[str(worker_id)] = stream
 
@@ -214,13 +227,9 @@ class WorkerMonitor:
             await stream.stop()
 
     async def _poll_metrics(self) -> None:
-        from .utils.network import endpoint_url_base, get_json
-
-        url = f"{endpoint_url_base()}/{self.endpoint_id}/metrics"
-        headers = {"Authorization": f"Bearer {self.metrics_key}"}
         while True:
             try:
-                data = await get_json(url, headers, 10.0)
+                data = await self.api.endpoint_workers(self.endpoint_id)
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - observability is best-effort
@@ -233,11 +242,12 @@ class WorkerMonitor:
         # once a worker picked the job up, pool churn is noise
         if self._streams:
             return
-        workers = data.get("workers")
+        workers = data.get("summary")
         if not isinstance(workers, dict):
             return
         counts = {
-            state: workers.get(state, 0) or 0 for state in _TRACKED_STATES
+            state: workers.get("idle" if state == "ready" else state, 0) or 0
+            for state in _TRACKED_STATES
         }
         if counts == self._last_counts:
             return
@@ -270,9 +280,5 @@ def _line_before(raw: str, since_iso: str) -> bool:
 
 def format_worker_counts(counts: Dict[str, int]) -> str:
     """human summary like '1 initializing, 2 ready'."""
-    parts = [
-        f"{count} {state}"
-        for state, count in counts.items()
-        if count
-    ]
+    parts = [f"{count} {state}" for state, count in counts.items() if count]
     return ", ".join(parts) if parts else "no workers"

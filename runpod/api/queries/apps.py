@@ -1,16 +1,10 @@
-"""graphql queries for the apps control-plane client."""
+"""GraphQL queries for capabilities absent from the resource REST API."""
 
-QUERY_MY_ENDPOINTS = """
-query myEndpoints {
-    myself {
-        endpoints {
-            id
-            name
-            templateId
-            workersMin
-            workersMax
-            template { env { key value } }
-        }
+# rest stock filters require a power-of-two count of at least two.
+QUERY_CPU_STOCK = """
+query CpuStock($cpuFlavorInput: CpuFlavorInput, $specificsInput: SpecificsInput) {
+    cpuFlavors(input: $cpuFlavorInput) {
+        specifics(input: $specificsInput) { stockStatus }
     }
 }
 """
@@ -27,38 +21,6 @@ query getFlashAppByName($flashAppName: String!) {
             activeBuildId
             endpoints { id name }
         }
-    }
-}
-"""
-
-QUERY_GPU_STOCK = """
-query GpuStock($gpuTypesInput: GpuTypeFilter, $lowestPriceInput: GpuLowestPriceInput) {
-    gpuTypes(input: $gpuTypesInput) {
-        lowestPrice(input: $lowestPriceInput) { stockStatus }
-    }
-}
-"""
-
-QUERY_CPU_STOCK = """
-query CpuStock($cpuFlavorInput: CpuFlavorInput, $specificsInput: SpecificsInput) {
-    cpuFlavors(input: $cpuFlavorInput) {
-        specifics(input: $specificsInput) { stockStatus }
-    }
-}
-"""
-
-QUERY_NETWORK_VOLUMES = """
-query myVolumes {
-    myself {
-        networkVolumes { id name size dataCenterId }
-    }
-}
-"""
-
-QUERY_REGISTRY_AUTHS = """
-query myRegistryCreds {
-    myself {
-        containerRegistryCreds { id name }
     }
 }
 """

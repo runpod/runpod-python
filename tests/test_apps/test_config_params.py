@@ -2,7 +2,6 @@
 
 import pytest
 
-import runpod
 from runpod.apps import App
 from runpod.apps.app import _clear_registry
 from runpod.apps.dev import _endpoint_input

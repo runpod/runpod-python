@@ -258,8 +258,8 @@ async def test_endpoint_volume_collections_reach_attachment(collection):
 
     api = AsyncMock()
     api.list_network_volumes.return_value = [
-        {"id": "nv-models", "name": "models", "dataCenterId": "EU-RO-1"},
-        {"id": "nv-data", "name": "data", "dataCenterId": "EU-RO-1"},
+        {"id": "nv-models", "name": "models", "dataCenter": "EU-RO-1"},
+        {"id": "nv-data", "name": "data", "dataCenter": "EU-RO-1"},
     ]
     api.cpu_stock_status.return_value = "HIGH"
     payload = {}

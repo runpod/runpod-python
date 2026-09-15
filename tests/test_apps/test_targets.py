@@ -22,11 +22,6 @@ from runpod.apps.targets import (
     unwrap_job_output,
 )
 
-# http.server's per-request sockets are collected lazily; the unraisable
-# checker flags them as ResourceWarnings non-deterministically
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::pytest.PytestUnraisableExceptionWarning"
-)
 
 
 class TestApiKey:
@@ -236,8 +231,12 @@ def local_endpoint(monkeypatch):
         f"http://127.0.0.1:{server.server_address[1]}",
     )
     server.state = state
-    yield server
-    server.shutdown()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 class TestSentinelTarget:
@@ -336,7 +335,7 @@ async def live_api_server(monkeypatch):
     from aiohttp import web
     from yarl import URL
 
-    state = {"uploads": 0, "calls": 0, "reject_sync": False, "handler": None}
+    state = {"uploads": 0, "calls": 0, "reject_sync": False, "ready": False}
     entered = asyncio.Event()
     release = asyncio.Event()
 
@@ -347,18 +346,16 @@ async def live_api_server(monkeypatch):
         if state["reject_sync"]:
             state["reject_sync"] = False
             raise web.HTTPServiceUnavailable()
-        payload = await request.json()
-        namespace = {}
-        exec(payload["source"], namespace)
-        state["handler"] = namespace["calculate"]
+        await request.read()
+        state["ready"] = True
         return web.json_response({"status": "synced"})
 
     async def calculate(request):
         state["calls"] += 1
-        if state["handler"] is None:
+        if not state["ready"]:
             raise web.HTTPConflict()
         body = await request.json()
-        return web.json_response({"result": state["handler"](body["value"])})
+        return web.json_response({"result": body["value"] * 2})
 
     app = web.Application()
     app.router.add_post("/_runpod/sync", sync)

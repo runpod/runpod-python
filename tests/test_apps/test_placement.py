@@ -31,7 +31,11 @@ def _stock(gpu=None, cpu=None):
     # fixtures stay hardware-shaped rather than plane-shaped
     stock._gpu = {(gpu_id, 1, dc): score for (gpu_id, dc), score in (gpu or {}).items()}
     stock._gpu_pod = dict(stock._gpu)
-    stock._cpu = cpu or {}
+    stock._cpu = {
+        (cpu_id, dc, pods): score
+        for (cpu_id, dc), score in (cpu or {}).items()
+        for pods in (False, True)
+    }
     return stock
 
 
@@ -210,3 +214,21 @@ class TestSolvePlacement:
             solve_placement(
                 [pair], stock, volume_name="fixed", existing_dc="EU-RO-1"
             )
+
+    async def test_cpu_task_and_endpoint_require_shared_product_stock(self):
+        async def cpu_stock(instance_id, dc, *, pods=False):
+            if dc == "EU-RO-1":
+                return "HIGH" if not pods else "NONE"
+            return "MEDIUM" if dc == "US-KS-2" else "NONE"
+
+        api = AsyncMock()
+        api.cpu_stock_status.side_effect = cpu_stock
+        stock = StockMap(api)
+        endpoint = ResourceSpec(kind=ResourceKind.QUEUE, name="serve", cpu="cpu5c-2-4")
+        task = ResourceSpec(kind=ResourceKind.TASK, name="task", cpu="cpu5c-2-4")
+        await stock.fetch(_hardware_keys(endpoint))
+        await stock.fetch(_hardware_keys(task))
+        assert solve_placement([endpoint], stock, volume_name="one") == "EU-RO-1"
+        assert solve_placement([endpoint, task], stock, volume_name="shared") == "US-KS-2"
+        with pytest.raises(PlacementError):
+            solve_placement([task], stock, volume_name="fixed", existing_dc="EU-RO-1")

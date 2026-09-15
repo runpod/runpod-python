@@ -228,8 +228,6 @@ class TestPollResult:
         return httpd, hits
 
     def _poll(self, url):
-        import asyncio
-
         from runpod.apps.tasks import TaskExecution
 
         spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
@@ -395,7 +393,7 @@ class TestTaskExecutionLifecycle:
         api = AsyncMock()
         api.list_network_volumes.return_value = []
         api.cpu_stock_status.side_effect = (
-            lambda instance, dc: "High" if dc == "US-IL-1" else "Low"
+            lambda instance, dc, *, pods=False: "High" if dc == "US-IL-1" else "Low"
         )
         api.create_network_volume.return_value = {"id": "volume-1"}
         api.deploy_task_pod.return_value = {"id": "pod-9"}

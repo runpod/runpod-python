@@ -81,29 +81,29 @@ class TestReportCounts:
     def test_first_steady_snapshot_suppressed(self):
         sink = Sink()
         monitor = WorkerMonitor("ep1", "calc", sink)
-        monitor._report_counts({"workers": {"ready": 2, "running": 1}})
+        monitor._report_counts({"summary": {"idle": 2, "running": 1}})
         assert sink.events == []
 
     def test_first_snapshot_with_initializing_reported(self):
         sink = Sink()
         monitor = WorkerMonitor("ep1", "calc", sink)
-        monitor._report_counts({"workers": {"initializing": 1}})
+        monitor._report_counts({"summary": {"initializing": 1}})
         assert len(sink.events) == 1
         assert sink.events[0][2]["initializing"] == 1
 
     def test_transition_reported_once(self):
         sink = Sink()
         monitor = WorkerMonitor("ep1", "calc", sink)
-        monitor._report_counts({"workers": {"initializing": 1}})
-        monitor._report_counts({"workers": {"initializing": 1}})
-        monitor._report_counts({"workers": {"ready": 1}})
+        monitor._report_counts({"summary": {"initializing": 1}})
+        monitor._report_counts({"summary": {"initializing": 1}})
+        monitor._report_counts({"summary": {"idle": 1}})
         assert len(sink.events) == 2
         assert sink.events[1][2]["ready"] == 1
 
     def test_malformed_payload_ignored(self):
         sink = Sink()
         monitor = WorkerMonitor("ep1", "calc", sink)
-        monitor._report_counts({"workers": None})
+        monitor._report_counts({"summary": None})
         monitor._report_counts({})
         assert sink.events == []
 
@@ -243,27 +243,23 @@ class TestPodLogStream:
 
 
 class TestMonitorLifecycle:
-    async def test_start_without_metrics_key_is_noop(self):
-        monitor = WorkerMonitor("ep1", "calc", Sink())
-        await monitor.start()
-        assert monitor._tasks == []
-        await monitor.stop()
-
     async def test_metrics_polling_reports_counts(self):
         sink = Sink()
-        monitor = WorkerMonitor("ep1", "calc", sink, metrics_key="mk")
-        payload = {"workers": {"initializing": 1, "ready": 0}}
+        api = AsyncMock()
+        polled = asyncio.Event()
 
-        async def fake_get(url, headers, timeout):
-            assert headers["Authorization"] == "Bearer mk"
-            return payload
+        async def workers(endpoint_id):
+            polled.set()
+            return {"summary": {"initializing": 1, "idle": 2}}
 
-        with patch("runpod.apps.utils.network.get_json", fake_get):
-            await monitor.start()
-            await asyncio.sleep(0.05)
-            await monitor.stop()
+        api.endpoint_workers.side_effect = workers
+        monitor = WorkerMonitor("ep1", "calc", sink, api=api)
+        await monitor.start()
+        await asyncio.wait_for(polled.wait(), timeout=1)
+        await monitor.stop()
 
-        statuses = [e for e in sink.events if e[0] == "worker_status"]
-        assert statuses
-        assert statuses[0][2]["initializing"] == 1
+        assert sink.events == [("worker_status", "calc", {
+            "initializing": 1, "ready": 2, "running": 0,
+            "throttled": 0, "unhealthy": 0,
+        })]
 

@@ -328,7 +328,6 @@ async def _wait_terminal(
     window, typically on cold starts; polling covers the rest. on_status,
     when given, sees every payload (observability hooks read workerId).
     """
-    import asyncio
     import time
 
     if on_status is not None:
@@ -584,12 +583,12 @@ class LiveTarget(InvocationTarget):
         endpoint_id: str,
         resource_name: str = "",
         events: Optional[object] = None,
-        metrics_key: Optional[str] = None,
+        api=None,
     ):
         self.endpoint_id = endpoint_id
         self.resource_name = resource_name
         self.events = events
-        self.metrics_key = metrics_key
+        self.api = api
         self._client = QueueClient(endpoint_id, _headers)
         self._source_target: Optional[Any] = None
         self._source_resource: str = ""
@@ -697,7 +696,7 @@ class LiveTarget(InvocationTarget):
             self.endpoint_id,
             self.resource_name,
             self.events,
-            metrics_key=self.metrics_key,
+            api=self.api,
         )
 
     async def invoke(

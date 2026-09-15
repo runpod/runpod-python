@@ -72,6 +72,9 @@ class TestEndpointInput:
         assert env["RUNPOD_DEV_GENERATION"] == "1"
         # nested .remote() support: dev-session marker always present
         assert env["RUNPOD_DEV_APP"] == app.name
+        assert env["RUNPOD_DEV_RESOURCE"] == q.spec.name
+        assert "FLASH_RESOURCE_NAME" not in env
+        assert "RUNPOD_RESOURCE_NAME" not in env
 
     def test_api_key_forwarded_when_configured(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_API_KEY", "rpa_test123")

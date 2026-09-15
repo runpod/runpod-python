@@ -28,7 +28,7 @@ def _api(volumes=None, created=None):
         "id": "nv-new",
         "name": "models",
         "size": 50,
-        "dataCenterId": "EU-RO-1",
+        "dataCenter": "EU-RO-1",
     }
     # stock queries: everything available everywhere
     api.gpu_stock_status.return_value = "High"
@@ -62,7 +62,7 @@ class TestVolumeResolver:
     def test_existing_by_name(self):
         api = _api(
             volumes=[
-                {"id": "nv-1", "name": "models", "size": 50, "dataCenterId": "EU-RO-1"}
+                {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"}
             ]
         )
         resolver = VolumeResolver(api)
@@ -75,7 +75,7 @@ class TestVolumeResolver:
     def test_existing_by_id(self):
         api = _api(
             volumes=[
-                {"id": "nv-1", "name": "models", "size": 50, "dataCenterId": "EU-RO-1"}
+                {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"}
             ]
         )
         resolver = VolumeResolver(api)
@@ -106,8 +106,8 @@ class TestVolumeResolver:
     def test_duplicate_names_raise(self):
         api = _api(
             volumes=[
-                {"id": "nv-1", "name": "models", "size": 50, "dataCenterId": "EU-RO-1"},
-                {"id": "nv-2", "name": "models", "size": 50, "dataCenterId": "US-KS-2"},
+                {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"},
+                {"id": "nv-2", "name": "models", "size": 50, "dataCenter": "US-KS-2"},
             ]
         )
         resolver = VolumeResolver(api)
@@ -119,7 +119,7 @@ class TestVolumeResolver:
     def test_resolution_cached_per_name(self):
         api = _api(
             volumes=[
-                {"id": "nv-1", "name": "models", "size": 50, "dataCenterId": "EU-RO-1"}
+                {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"}
             ]
         )
         resolver = VolumeResolver(api)
@@ -162,7 +162,7 @@ class TestTaskVolume:
 
         api = _api(
             volumes=[
-                {"id": "nv-1", "name": "models", "size": 50, "dataCenterId": "EU-RO-1"}
+                {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"}
             ]
         )
         spec = ResourceSpec(

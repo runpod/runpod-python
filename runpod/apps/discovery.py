@@ -133,12 +133,17 @@ def discover_apps(target: Path) -> List[App]:
             registered = get_registered_apps()
             seen = {id(a) for a in registered}
             modules_before = set(sys.modules)
+            imported = False
             try:
-                _import_module(path)
-            except BaseException as exc:
-                _restore_registry(registered)
-                _rollback_modules(modules_before, root)
-                if strict or not isinstance(exc, DiscoveryError):
+                try:
+                    _import_module(path)
+                    imported = True
+                finally:
+                    if not imported:
+                        _restore_registry(registered)
+                        _rollback_modules(modules_before, root)
+            except DiscoveryError as exc:
+                if strict:
                     raise
                 failures.append(str(exc))
                 log.warning("%s", exc)

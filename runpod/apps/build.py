@@ -256,6 +256,7 @@ def vendor(
     """
     if not requirements:
         return
+    _ensure_pip()
     cmd = [
         sys.executable,
         "-m",

@@ -108,16 +108,11 @@ GENERATION_ENV = "RUNPOD_DEV_GENERATION"
 
 
 def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
-    """build the saveEndpoint payload for a live dev endpoint.
-
-    the template is nested in the saveEndpoint input so it is bound to
-    the endpoint and cascades on deleteEndpoint.
-    """
+    """build a live endpoint payload with an atomically bound container config."""
 
     spec.validate()
     resource_env = _render_env(spec.env)
-    resource_env["FLASH_RESOURCE_NAME"] = spec.name
-    resource_env["RUNPOD_RESOURCE_NAME"] = spec.name
+    resource_env["RUNPOD_DEV_RESOURCE"] = spec.name
     if spec.kind is ResourceKind.API:
         resource_env["PORT"] = "80"
         resource_env["PORT_HEALTH"] = "80"
@@ -131,7 +126,6 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
         "scalerValue": spec.scaler_value,
         "executionTimeoutMs": spec.execution_timeout_ms,
         "template": {
-            "name": f"{dev_endpoint_name(app.name, spec.name)}-template",
             "imageName": _image_for(spec),
             "containerDiskInGb": spec.container_disk_gb or (10 if spec.is_cpu else 30),
             "dockerArgs": "",
@@ -308,7 +302,7 @@ class DevSession:
                     endpoint_id,
                     spec.name,
                     events=self.events,
-                    metrics_key=result.get("aiKey"),
+                    api=self.api,
                 )
 
         self._emit("session_started")
@@ -379,7 +373,7 @@ class DevSession:
                 endpoint_id,
                 handle.spec.name,
                 events=self.events,
-                metrics_key=result.get("aiKey"),
+                api=self.api,
             )
 
             spec = handle.spec

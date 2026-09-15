@@ -1,12 +1,7 @@
-"""pod log access via the host api (hapi).
+"""pod logs with rest streams and host-api snapshots.
 
-hosts expose per-pod container and system logs; this is the fastest
-way to see why a worker is stuck (image pull progress, region errors,
-crash output) without ssh. snapshot and sse streaming supported.
-
-    GET https://hapi.runpod.net/v1/pod/{podId}/logs
-        ?type=all|container|system
-    GET .../logs?stream=true&type=...&tail=N&since=RFC3339
+single-source streams use rest pod or serverless-worker routes. combined
+streams and finite snapshots use the host api, which supports both.
 """
 
 import json
@@ -14,6 +9,9 @@ import os
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import aiohttp
+
+from ..api.ctl_commands import _path_segment
+from ..api.rest import _build_url
 
 HAPI_BASE = os.environ.get("RUNPOD_HAPI_URL", "https://hapi.runpod.net")
 
@@ -47,6 +45,7 @@ async def pod_logs(
 async def stream_pod_logs(
     pod_id: str,
     *,
+    endpoint_id: Optional[str] = None,
     log_type: str = "all",
     tail: int = 100,
     since: Optional[str] = None,
@@ -54,15 +53,23 @@ async def stream_pod_logs(
     """follow a pod's logs as they arrive.
 
     yields {"source": "container"|"system", "line": str, "ts": str}
-    parsed from the host's sse stream. ends when the host closes the
-    stream (1h server-side cap) or the caller breaks out.
+    parsed from the sse stream. pass endpoint_id for serverless workers.
+    ends when the server closes the stream or the caller breaks out.
     """
-    url = f"{HAPI_BASE}/v1/pod/{pod_id}/logs"
-    params: Dict[str, Any] = {
-        "stream": "true",
-        "type": log_type,
-        "tail": str(tail),
-    }
+    params: Dict[str, Any] = {"tail": str(tail)}
+    if log_type == "all":
+        url = f"{HAPI_BASE}/v1/pod/{_path_segment(pod_id)}/logs"
+        params.update(stream="true", type=log_type)
+    else:
+        if endpoint_id is None:
+            path = f"/v2/pods/{_path_segment(pod_id)}/logs"
+        else:
+            path = (
+                f"/v2/serverless/{_path_segment(endpoint_id)}"
+                f"/workers/{_path_segment(pod_id)}/logs"
+            )
+        url = _build_url(path)
+        params["source"] = log_type
     if since:
         params["since"] = since
 
