@@ -286,19 +286,19 @@ def test_sync_body_exception_remains_primary_during_cleanup(
 ):
     peer.delete_status = delete_status
     failure = failure_type("application failed")
+    caught = None
     try:
         with Sandbox(image_name="python:3.12-slim", **peer.options):
             raise failure
-    except failure_type as caught:
-        assert caught is failure
-        if delete_status == 204:
-            assert peer.records["sandbox-1"]["state"] == "TERMINATED"
-        else:
-            assert isinstance(caught.__cause__, QueryError)
-            assert caught.__cause__.status_code == 503
-            assert peer.records["sandbox-1"]["state"] == "RUNNING"
+    except failure_type as error:
+        caught = error
+    assert caught is failure
+    if delete_status == 204:
+        assert peer.records["sandbox-1"]["state"] == "TERMINATED"
     else:
-        pytest.fail("sandbox context suppressed the application failure")
+        assert isinstance(caught.__cause__, QueryError)
+        assert caught.__cause__.status_code == 503
+        assert peer.records["sandbox-1"]["state"] == "RUNNING"
 
 
 @pytest.mark.asyncio
@@ -306,18 +306,18 @@ def test_sync_body_exception_remains_primary_during_cleanup(
 async def test_async_body_exception_remains_primary_during_cleanup(peer, delete_status):
     peer.delete_status = delete_status
     failure = ValueError("application failed")
+    caught = None
     try:
         async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options):
             raise failure
-    except ValueError as caught:
-        assert caught is failure
-        if delete_status == 204:
-            assert peer.records["sandbox-1"]["state"] == "TERMINATED"
-        else:
-            assert isinstance(caught.__cause__, QueryError)
-            assert caught.__cause__.status_code == 503
+    except ValueError as error:
+        caught = error
+    assert caught is failure
+    if delete_status == 204:
+        assert peer.records["sandbox-1"]["state"] == "TERMINATED"
     else:
-        pytest.fail("sandbox context suppressed the application failure")
+        assert isinstance(caught.__cause__, QueryError)
+        assert caught.__cause__.status_code == 503
 
 
 @pytest.mark.asyncio
