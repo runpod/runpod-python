@@ -60,13 +60,14 @@ def _launch_dev_pod():
     sys.stdout.flush()
 
     # Wait for the pod to come online
+    project_pod_id = new_pod["id"]
     while (
-        new_pod.get("desiredStatus", None) != "RUNNING"
+        new_pod is None
+        or new_pod.get("status") != "RUNNING"
         or new_pod.get("runtime") is None
     ):
-        new_pod = get_pod(new_pod["id"])
+        new_pod = get_pod(project_pod_id)
 
-    project_pod_id = new_pod["id"]
 
     print(
         f"Project {config['project']['name']} pod ({project_pod_id}) created.",

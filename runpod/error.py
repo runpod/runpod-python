@@ -30,9 +30,17 @@ class AuthenticationError(RunPodError):
 
 class QueryError(RunPodError):
     """
-    Raised when a GraphQL query fails
+    Raised when an API request fails
     """
 
-    def __init__(self, message: Optional[str] = None, query: Optional[str] = None):
+    def __init__(
+        self,
+        message: Optional[str] = None,
+        query: Optional[str] = None,
+        status_code: Optional[int] = None,
+        errors: Optional[list[str]] = None,
+    ):
         super().__init__(message)
         self.query = query
+        self.status_code = status_code
+        self.errors = errors or []
