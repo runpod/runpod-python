@@ -19,6 +19,19 @@ from ..error import QueryError
 _TRANSPORT_RETRIES = 4
 
 
+def is_capacity_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        phrase in message
+        for phrase in (
+            "resources to deploy your pod",
+            "insufficient capacity",
+            "no available machine",
+            "out of stock",
+        )
+    )
+
+
 class AppsApiClient:
     """async control-plane client scoped to apps provisioning."""
 
@@ -31,13 +44,12 @@ class AppsApiClient:
         variables: Optional[Dict[str, Any]] = None,
         *,
         anonymous: bool = False,
+        retry: bool = False,
     ) -> Dict[str, Any]:
         import asyncio
 
-        last_exc: Optional[Exception] = None
-        for attempt in range(_TRANSPORT_RETRIES):
-            if attempt:
-                await asyncio.sleep(2 ** (attempt - 1))
+        attempts = _TRANSPORT_RETRIES if retry else 1
+        for attempt in range(attempts):
             try:
                 response = await run_graphql_query_async(
                     query,
@@ -46,13 +58,10 @@ class AppsApiClient:
                     anonymous=anonymous,
                 )
                 return response["data"]
-            except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as exc:
-                # transport-level failures (ssl hiccups, resets, dns)
-                # are transient; graphql/auth errors propagate untouched
-                last_exc = exc
-        if last_exc is None:  # pragma: no cover - loop always runs once
-            raise RuntimeError("graphql transport retry loop exited cleanly")
-        raise last_exc
+            except (aiohttp.ClientError, OSError, asyncio.TimeoutError):
+                if attempt == attempts - 1:
+                    raise
+                await asyncio.sleep(2**attempt)
 
     async def save_endpoint(self, endpoint_input: Dict[str, Any]) -> Dict[str, Any]:
         """create or update a serverless endpoint. include id to update."""
@@ -63,11 +72,13 @@ class AppsApiClient:
     async def delete_endpoint(self, endpoint_id: str) -> bool:
         mutation = app_mutations.MUTATION_DELETE_ENDPOINT
         data = await self._execute(mutation, {"id": endpoint_id})
-        return bool(data.get("deleteEndpoint"))
+        if not data.get("deleteEndpoint"):
+            raise QueryError(f"endpoint {endpoint_id!r} was not deleted", mutation)
+        return True
 
     async def list_my_endpoints(self) -> List[Dict[str, Any]]:
         query = app_queries.QUERY_MY_ENDPOINTS
-        data = await self._execute(query)
+        data = await self._execute(query, retry=True)
         return data["myself"]["endpoints"]
 
     async def deploy_task_pod(
@@ -76,13 +87,18 @@ class AppsApiClient:
         """deploy an on-demand pod for a task run."""
         pod_input = dict(pod_input)
         if is_cpu:
-            # deployCpuPod takes a single instanceId
-            instance_ids = pod_input.pop("instanceIds", None)
-            if instance_ids:
-                pod_input["instanceId"] = instance_ids[0]
+            instance_ids = pod_input.pop("instanceIds", None) or [
+                pod_input.get("instanceId")
+            ]
             mutation = app_mutations.MUTATION_DEPLOY_CPU_POD
-            data = await self._execute(mutation, {"input": pod_input})
-            return data["deployCpuPod"]
+            for index, instance_id in enumerate(instance_ids):
+                candidate = dict(pod_input, instanceId=instance_id)
+                try:
+                    data = await self._execute(mutation, {"input": candidate})
+                    return data["deployCpuPod"]
+                except QueryError as exc:
+                    if not is_capacity_error(exc) or index == len(instance_ids) - 1:
+                        raise
 
         mutation = app_mutations.MUTATION_DEPLOY_POD
         data = await self._execute(mutation, {"input": pod_input})
@@ -95,7 +111,7 @@ class AppsApiClient:
     async def get_app_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         query = app_queries.QUERY_FLASH_APP_BY_NAME
         try:
-            data = await self._execute(query, {"flashAppName": name})
+            data = await self._execute(query, {"flashAppName": name}, retry=True)
         except QueryError as exc:
             if "not found" in str(exc).lower():
                 return None
@@ -138,6 +154,7 @@ class AppsApiClient:
                     "includeAiApi": not pods,
                 },
             },
+            retry=True,
         )
         gpu_types = data.get("gpuTypes") or []
         first = gpu_types[0] if gpu_types else {}
@@ -159,6 +176,7 @@ class AppsApiClient:
                     "instanceId": instance_id,
                 },
             },
+            retry=True,
         )
         flavors = data.get("cpuFlavors") or []
         first = flavors[0] if flavors else {}
@@ -167,7 +185,7 @@ class AppsApiClient:
 
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
         query = app_queries.QUERY_NETWORK_VOLUMES
-        data = await self._execute(query)
+        data = await self._execute(query, retry=True)
         return data["myself"].get("networkVolumes") or []
 
     async def create_network_volume(
@@ -188,7 +206,7 @@ class AppsApiClient:
 
     async def list_registry_auths(self) -> List[Dict[str, Any]]:
         query = app_queries.QUERY_REGISTRY_AUTHS
-        data = await self._execute(query)
+        data = await self._execute(query, retry=True)
         return data["myself"].get("containerRegistryCreds") or []
 
     async def create_registry_auth(
@@ -214,7 +232,7 @@ class AppsApiClient:
 
     async def list_secrets(self) -> List[Dict[str, Any]]:
         query = app_queries.QUERY_SECRETS
-        data = await self._execute(query)
+        data = await self._execute(query, retry=True)
         return data["myself"].get("secrets") or []
 
     async def create_secret(
@@ -241,7 +259,7 @@ class AppsApiClient:
     async def list_apps(self) -> List[Dict[str, Any]]:
         """all flash apps with their environments and builds."""
         query = app_queries.QUERY_FLASH_APPS
-        data = await self._execute(query)
+        data = await self._execute(query, retry=True)
         return data["myself"].get("flashApps") or []
 
     async def get_environment_by_name(
@@ -256,6 +274,7 @@ class AppsApiClient:
             data = await self._execute(
                 query,
                 {"input": {"flashAppId": app["id"], "name": env_name}},
+                retry=True,
             )
         except QueryError as exc:
             if "not found" in str(exc).lower():
@@ -285,6 +304,7 @@ class AppsApiClient:
             query,
             {"flashAuthRequestId": request_id},
             anonymous=True,
+            retry=True,
         )
         return data.get("flashAuthRequestStatus") or {}
 

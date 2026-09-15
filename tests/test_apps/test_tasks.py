@@ -1,5 +1,6 @@
 """tests for the task runner and pod task transport."""
 
+import asyncio
 import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -93,6 +94,12 @@ class TestPodInput:
             self._spec(cpu=["cpu3c-1-2"], datacenter=["EU-RO-1"]), "tok", "t"
         )
         assert pod["dataCenterIds"] == ["EU-RO-1"]
+
+    def test_cpu5_uses_supported_datacenters(self):
+        from runpod.apps.datacenter import CPU5_DATACENTERS
+
+        pod = _pod_input(self._spec(cpu=["cpu5c-1-2"]), "tok", "t")
+        assert pod["dataCenterIds"] == [dc.value for dc in CPU5_DATACENTERS]
 
 
 class TestUnwrapTaskResponse:
@@ -363,6 +370,41 @@ class TestTaskExecutionLifecycle:
             await execution.start()
         api.deploy_task_pod.assert_awaited_once()
 
+    async def test_shared_volume_placement_accounts_for_siblings(self):
+        from runpod.apps.tasks import TaskExecution
+        from runpod.apps.volume import Volume
+
+        volume = Volume("shared")
+        spec = self._spec(
+            volume=volume, datacenter=["US-IL-1", "EU-RO-1"]
+        )
+        sibling = ResourceSpec(
+            kind=ResourceKind.QUEUE,
+            name="sibling",
+            cpu=["cpu3c-1-2"],
+            volume=volume,
+            datacenter=["EU-RO-1"],
+        )
+        unrelated = ResourceSpec(
+            kind=ResourceKind.QUEUE,
+            name="unrelated",
+            cpu=["cpu3c-1-2"],
+            volume=Volume("other"),
+            datacenter=["US-IL-1"],
+        )
+        api = AsyncMock()
+        api.list_network_volumes.return_value = []
+        api.cpu_stock_status.side_effect = (
+            lambda instance, dc: "High" if dc == "US-IL-1" else "Low"
+        )
+        api.create_network_volume.return_value = {"id": "volume-1"}
+        api.deploy_task_pod.return_value = {"id": "pod-9"}
+        execution = TaskExecution(spec, api=api, specs=[spec, sibling, unrelated])
+        await execution.start()
+        assert api.create_network_volume.call_args.kwargs["data_center_id"] == "EU-RO-1"
+        assert api.deploy_task_pod.call_args.args[0]["dataCenterIds"] == ["EU-RO-1"]
+
+
     async def test_start_resolves_registry_auth(self):
         from runpod.apps.tasks import TaskExecution
 
@@ -379,14 +421,17 @@ class TestTaskExecutionLifecycle:
         pod = api.deploy_task_pod.call_args[0][0]
         assert pod["containerRegistryAuthId"] == "auth-1"
 
-    async def test_terminate_swallows_api_errors(self):
+    async def test_failed_termination_retains_id_for_retry(self):
         from runpod.apps.tasks import TaskExecution
 
         api = MagicMock()
-        api.terminate_pod = AsyncMock(side_effect=RuntimeError("api down"))
+        api.terminate_pod = AsyncMock(side_effect=[RuntimeError("api down"), None])
         execution = TaskExecution(self._spec(), api=api)
         execution.pod_id = "pod-9"
-        await execution.terminate()  # must not raise
+        with pytest.raises(RuntimeError, match="api down"):
+            await execution.terminate()
+        assert execution.pod_id == "pod-9"
+        await execution.terminate()
         assert execution.pod_id is None
 
     async def test_terminate_noop_without_pod(self):
@@ -447,7 +492,7 @@ class TestTaskJob:
         assert result == 9
         execution.terminate.assert_awaited_once()
 
-    async def test_wait_timeout_keeps_pod(self):
+    async def test_wait_timeout_terminates_pod(self):
         job, execution = self._job()
         execution.poll_result = AsyncMock(return_value=None)
         with (
@@ -458,7 +503,27 @@ class TestTaskJob:
         ):
             with pytest.raises(TimeoutError):
                 await job.wait(timeout=10)
-        execution.terminate.assert_not_awaited()
+        execution.terminate.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "failure",
+        [RuntimeError("poll failed"), asyncio.CancelledError()],
+    )
+    async def test_poll_failure_terminates_pod(self, failure):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(side_effect=failure)
+        with pytest.raises(type(failure)):
+            await job.wait()
+        execution.terminate.assert_awaited_once()
+
+    async def test_failed_result_terminates_pod(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(
+            return_value={"success": False, "error": "task failed"}
+        )
+        with pytest.raises(RemoteExecutionError, match="task failed"):
+            await job.wait()
+        execution.terminate.assert_awaited_once()
 
     async def test_wait_after_done_returns_cached(self):
         job, execution = self._job()
@@ -474,3 +539,38 @@ class TestTaskJob:
         await job.cancel()
         execution.terminate.assert_awaited_once()
         assert job._done
+
+
+class TestSpawnCleanup:
+    @pytest.mark.parametrize("stage", ["start", "wait_ready", "submit"])
+    @pytest.mark.parametrize("cancelled", [False, True])
+    async def test_setup_failure_terminates_pod(self, stage, cancelled):
+        from runpod.apps.tasks import TaskExecution
+
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(spec, api=MagicMock())
+        pods = set()
+        failure = asyncio.CancelledError() if cancelled else RuntimeError("setup failed")
+
+        async def start():
+            execution.pod_id = "pod-9"
+            pods.add("pod-9")
+            if stage == "start":
+                raise failure
+
+        async def terminate(pod_id):
+            pods.remove(pod_id)
+
+        execution.start = start
+        execution.api.terminate_pod = terminate
+        execution.wait_ready = AsyncMock(
+            side_effect=failure if stage == "wait_ready" else None
+        )
+        execution.submit = AsyncMock(
+            side_effect=failure if stage == "submit" else None
+        )
+        with patch("runpod.apps.tasks.TaskExecution", return_value=execution):
+            with pytest.raises(type(failure)):
+                await PodTarget(spec, lambda: None).submit({})
+        assert not pods
+        assert execution.pod_id is None

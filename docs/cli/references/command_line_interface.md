@@ -36,9 +36,11 @@ rp --help
 ```bash
 rp login                        # browser approval
 rp login --api-key YOUR_KEY     # store a key directly
+rp login --profile staging      # save browser credentials in a named profile
 ```
 
 Credentials are stored in `~/.runpod/config.toml`.
+Use `--profile NAME` with either login method to update only that profile; the default is `default`.
 
 ### Flash apps
 
@@ -50,3 +52,10 @@ rp flash app list                 # list deployed apps
 rp flash env list --app my-app    # list an app's environments
 rp flash undeploy --app my-app    # delete an environment's endpoints
 ```
+
+App discovery imports modules synchronously. Keep blocking work inside an
+entrypoint or a resource function; interrupt discovery if an import blocks.
+
+On Ctrl-C, a dev session waits for its running local entrypoint to finish before
+deleting endpoints. Blocking entrypoint code can delay shutdown. Cleanup failures
+exit with an error and report the endpoint IDs that still need deletion.

@@ -119,6 +119,7 @@ class FunctionHandle:
 
     async def _remote_async(self, *args: Any, **kwargs: Any) -> Any:
         self._guard_discovery()
+        self.spec.validate()
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
@@ -141,6 +142,7 @@ class FunctionHandle:
         """invoke a generator function remotely, yielding partial outputs
         as the worker produces them."""
         self._guard_discovery()
+        self.spec.validate()
         self._guard_generator()
         ctx = current_context()
 

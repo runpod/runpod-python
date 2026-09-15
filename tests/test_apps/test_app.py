@@ -232,6 +232,46 @@ async def test_handle_local_async_follows_signature():
     assert await q.local(1) == 2
 
 
+async def test_remote_rejects_mutated_invalid_spec():
+    app = App("a")
+
+    @app.queue(name="q")
+    def q():
+        raise AssertionError("invalid specs must not execute")
+
+    q.spec.workers = (9, 1)
+    with pytest.raises(InvalidResourceError):
+        await q.remote.aio()
+
+
+@pytest.mark.parametrize("collection", [list, tuple])
+async def test_endpoint_volume_collections_reach_attachment(collection):
+    from unittest.mock import AsyncMock
+
+    from runpod.apps.volume import Volume, VolumeResolver, attach_endpoint_volumes
+
+    app = App("a")
+
+    @app.api(name="web", cpu="cpu5c-2-4", volume=collection([Volume("models"), "data"]))
+    def web():
+        return None
+
+    api = AsyncMock()
+    api.list_network_volumes.return_value = [
+        {"id": "nv-models", "name": "models", "dataCenterId": "EU-RO-1"},
+        {"id": "nv-data", "name": "data", "dataCenterId": "EU-RO-1"},
+    ]
+    api.cpu_stock_status.return_value = "HIGH"
+    payload = {}
+    await attach_endpoint_volumes(payload, web.spec, VolumeResolver(api), app)
+    assert payload["networkVolumeIds"] == [
+        {"networkVolumeId": "nv-models"},
+        {"networkVolumeId": "nv-data"},
+    ]
+    assert payload["locations"] == "EU-RO-1"
+    assert web.spec.to_manifest()["networkVolumes"] == ["models", "data"]
+
+
 def test_manifest_serialization():
     app = App("a")
     volume = "my-volume"

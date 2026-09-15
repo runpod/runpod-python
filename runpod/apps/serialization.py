@@ -36,7 +36,7 @@ def deserialize_result(result_b64: str) -> Any:
         raise RemoteExecutionError(
             f"the remote result contains an object from the "
             f"'{exc.name}' package, which is not installed locally. "
-            f"return plain python types (e.g. str(...) it) or install "
+            f"return plain python types (e.g. str(...)) or install "
             f"'{exc.name}' on this machine."
         ) from exc
 

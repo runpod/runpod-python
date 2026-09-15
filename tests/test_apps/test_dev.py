@@ -8,6 +8,7 @@ import runpod
 from runpod.apps import App
 from runpod.apps.app import _clear_registry
 from runpod.apps.dev import DevSession, _endpoint_input, dev_endpoint_name
+from runpod.apps.errors import AppError
 from runpod.apps.targets import LiveTarget
 
 
@@ -180,6 +181,23 @@ class TestEndpointInput:
             "template"
         ]["env"]
 
+    async def test_worker_self_call_stays_local(self, monkeypatch):
+        app = App("self-call")
+
+        @app.queue(name="q-basic", cpu="cpu3c-1-2")
+        def q(value):
+            return value + 1
+
+        payload = _endpoint_input(app, q.spec)
+        for entry in payload["template"]["env"]:
+            monkeypatch.setenv(entry["key"], entry["value"])
+        monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-self")
+        monkeypatch.setattr(
+            app, "_resolve", AsyncMock(side_effect=AssertionError("remote self-call"))
+        )
+
+        assert await q.remote.aio(4) == 5
+
 
 class TestDevSession:
     async def test_start_provisions_and_registers_targets(self):
@@ -245,6 +263,62 @@ class TestDevSession:
         await session.start()
 
         api.save_endpoint.assert_not_awaited()
+
+    async def test_stop_retains_failed_ids_and_retries_only_failures(self):
+        app = App("cleanup")
+        for name in ("first-failed", "deleted", "second-failed"):
+            app.queue(name=name, cpu="cpu3c-1-2")(lambda: None)
+        api = _mock_api()
+        api.save_endpoint.side_effect = [
+            {"id": "ep-first"}, {"id": "ep-deleted"}, {"id": "ep-second"}
+        ]
+        session = DevSession([app], api=api)
+        await session.start()
+        api.delete_endpoint.side_effect = [
+            RuntimeError("unauthorized"), True, RuntimeError("unavailable")
+        ]
+
+        with pytest.raises(AppError) as error:
+            await session.stop()
+        assert "ep-first" in str(error.value)
+        assert "ep-second" in str(error.value)
+        assert set(session._endpoint_ids) == {"ep-first", "ep-second"}
+
+        api.delete_endpoint.reset_mock(side_effect=True)
+        await session.stop()
+        assert {call.args[0] for call in api.delete_endpoint.await_args_list} == {
+            "ep-first", "ep-second"
+        }
+        assert session._endpoint_ids == []
+
+    async def test_context_entry_failure_cleans_already_created_endpoints(self):
+        app = App("partial")
+        for name in ("created", "fails"):
+            app.queue(name=name, cpu="cpu3c-1-2")(lambda: None)
+        api = _mock_api()
+        api.save_endpoint.side_effect = [
+            {"id": "ep-created"}, RuntimeError("capacity")
+        ]
+
+        with pytest.raises(RuntimeError, match="capacity"):
+            async with DevSession([app], api=api):
+                pytest.fail("startup must fail")
+        api.delete_endpoint.assert_awaited_once_with("ep-created")
+
+    async def test_failed_adoption_remains_tracked_for_cleanup(self):
+        app = App("adopt")
+        app.queue(name="q-basic", cpu="cpu3c-1-2")(lambda: None)
+        api = _mock_api()
+        api.list_my_endpoints.return_value = [
+            {"id": "ep-adopted", "name": dev_endpoint_name("adopt", "q-basic")}
+        ]
+        api.save_endpoint.side_effect = RuntimeError("update failed")
+        session = DevSession([app], api=api)
+
+        with pytest.raises(RuntimeError, match="update failed"):
+            async with session:
+                pytest.fail("startup must fail")
+        api.delete_endpoint.assert_awaited_once_with("ep-adopted")
 
 
 class TestDevRefresh:
@@ -330,6 +404,25 @@ class TestDevRefresh:
 
         api.delete_endpoint.assert_awaited_once_with("ep-gone")
 
+    async def test_failed_removals_remain_tracked_for_stop(self):
+        app = App("remove")
+        for name in ("q-basic", "q-other"):
+            app.queue(name=name, cpu="cpu3c-1-2")(lambda: None)
+        api = _mock_api()
+        api.save_endpoint.side_effect = [{"id": "ep-basic"}, {"id": "ep-other"}]
+        session = DevSession([app], api=api)
+        await session.start()
+        api.delete_endpoint.side_effect = [RuntimeError("failed"), True]
+
+        with pytest.raises(AppError, match="ep-basic"):
+            await session.refresh([])
+        assert session._endpoint_ids == ["ep-basic"]
+
+        api.delete_endpoint.reset_mock(side_effect=True)
+        await session.stop()
+        api.delete_endpoint.assert_awaited_once_with("ep-basic")
+        assert session._endpoint_ids == []
+
 
 class TestDevEvents:
     async def test_lifecycle_events_emitted(self):
@@ -359,7 +452,7 @@ class TestDevEvents:
 
         app = App("ev-app")
 
-        @app.queue(name="q", cpu="cpu3c-1-2")
+        @app.queue(name="q-basic", cpu="cpu3c-1-2")
         def q():
             pass
 
@@ -380,9 +473,9 @@ class TestDevEvents:
         # unchanged resource refreshes silently: no diff events
         assert "resource_changed" not in kinds
         assert "resource_added" not in kinds
-        assert ("provisioning", "q", "queue", "cpu3c-1-2") in events
+        assert ("provisioning", "q-basic", "queue", "cpu3c-1-2") in events
         # deleted reports the resource name, not the endpoint name
-        assert ("deleted", "q") in events
+        assert ("deleted", "q-basic") in events
 
     async def test_refresh_diff_events(self):
         events = []
@@ -403,7 +496,7 @@ class TestDevEvents:
         def stays():
             pass
 
-        @app.queue(name="goes", cpu="cpu3c-1-2")
+        @app.queue(name="goes-away", cpu="cpu3c-1-2")
         def goes():
             pass
 
@@ -428,7 +521,7 @@ class TestDevEvents:
 
         await session.refresh([app2])
 
-        assert ("removed", "goes") in events
+        assert ("removed", "goes-away") in events
         added = [e for e in events if e[0] == "added"]
         assert ("added", "fresh", "queue", "cpu5c-2-4") in added
         changed = [e for e in events if e[0] == "changed"]

@@ -313,6 +313,7 @@ def dev(module, once):
     from runpod.apps.dev import DevSession
     from runpod.apps.discovery import DiscoveryError, discover_apps
     from runpod.apps.entrypoint import get_entrypoint, run_entrypoint
+    from runpod.apps.utils.names import dev_endpoint_name
     from runpod.apps.watch import FileWatcher
     from runpod.rp_cli import console as ui
 
@@ -361,7 +362,7 @@ def dev(module, once):
                 spec = handle.spec
                 hardware = ",".join(spec.cpu or spec.gpu or ["any"])
                 endpoint_id = session._endpoints.get(
-                    f"dev-{a.name}-{spec.name}", ""
+                    dev_endpoint_name(a.name, spec.name), ""
                 ) or ("per-call" if spec.kind.value == "task" else "")
                 rows.append((spec.name, spec.kind.value, hardware, endpoint_id))
         return rows
@@ -402,13 +403,10 @@ def dev(module, once):
             await asyncio.sleep(0.5)
 
     async def _run_entrypoint_cancellable(fn) -> None:
-        """drive the entrypoint on a daemon thread.
+        """run user code without blocking the event loop.
 
-        the entrypoint is user code full of blocking .remote() calls;
-        running it inline would pin the main loop and make ctrl-c
-        undeliverable (asyncio's sigint handler cancels the main task,
-        which needs an await point). a daemon thread keeps the loop
-        free, and cancellation simply abandons the in-flight call.
+        cancellation waits for the entrypoint to finish so its remote
+        calls cannot race with session teardown.
         """
         loop = asyncio.get_running_loop()
         done: asyncio.Future[None] = loop.create_future()
@@ -433,8 +431,12 @@ def dev(module, once):
             else:
                 loop.call_soon_threadsafe(_finish, None)
 
-        threading.Thread(target=_runner, daemon=True).start()
-        return await done
+        threading.Thread(target=_runner).start()
+        try:
+            return await asyncio.shield(done)
+        except asyncio.CancelledError:
+            await done
+            raise
 
     async def _session() -> int:
         nonlocal apps, entrypoint
@@ -443,10 +445,9 @@ def dev(module, once):
         watcher = FileWatcher([module.parent])
 
         ui.dev_banner([a.name for a in apps], str(module.name))
-        await session.start()
-        ui.resources_table(_table_rows(session))
-
         try:
+            await session.start()
+            ui.resources_table(_table_rows(session))
             while True:
                 ui.entrypoint_header(getattr(entrypoint, "__name__", ""))
                 with ui.Timer() as t:
@@ -469,8 +470,10 @@ def dev(module, once):
                     await session.refresh(apps)
         finally:
             events = ui.CleanupEvents()
-            await session.stop(events=events)
-            events.close()
+            try:
+                await session.stop(events=events)
+            finally:
+                events.close()
 
     try:
         sys.exit(asyncio.run(_session()))
@@ -532,7 +535,8 @@ def logs(pod_id, follow, log_type, tail):
     default=None,
     help="Store this API key directly (skips the browser flow).",
 )
-def login(no_open, api_key_opt):
+@click.option("--profile", default="default", show_default=True, help="Credential profile.")
+def login(no_open, api_key_opt, profile):
     """Authenticate with Runpod and store the API key.
 
     Opens the Runpod console for browser approval by default; pass
@@ -544,7 +548,7 @@ def login(no_open, api_key_opt):
 
     if api_key_opt:
         try:
-            set_credentials(api_key_opt, overwrite=True)
+            set_credentials(api_key_opt, profile=profile, overwrite=True)
         except ValueError as exc:
             _fail(str(exc))
         ui.success("credentials saved to [dim]~/.runpod/config.toml[/dim]")
@@ -561,7 +565,7 @@ def login(no_open, api_key_opt):
     try:
         with ui.console.status("[dim]waiting for approval ...[/dim]"):
             api_key = asyncio.run(browser_login(on_url=_show_url))
-        set_credentials(api_key, overwrite=True)
+        set_credentials(api_key, profile=profile, overwrite=True)
     except (LoginError, ValueError) as exc:
         _fail(str(exc))
     ui.success("logged in, credentials saved to [dim]~/.runpod/config.toml[/dim]")

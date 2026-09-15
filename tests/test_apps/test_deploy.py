@@ -11,6 +11,7 @@ import pytest
 import runpod
 from runpod.apps import App
 from runpod.apps.app import _clear_registry
+from runpod.apps.context import Context
 from runpod.apps.deploy import (
     DeployResult,
     _deployed_endpoint_input,
@@ -19,7 +20,7 @@ from runpod.apps.deploy import (
     package_project,
 )
 from runpod.apps.discovery import DiscoveryError, discover_apps
-from runpod.apps.errors import ScheduleNotSupported
+from runpod.apps.errors import InvalidResourceError, ScheduleNotSupported
 
 
 @pytest.fixture(autouse=True)
@@ -239,6 +240,44 @@ class TestDeployPipeline:
 
         api.create_app.assert_not_awaited()
         api.create_environment.assert_not_awaited()
+
+    async def test_deploy_environment_is_used_for_nested_calls(self, tmp_path, monkeypatch):
+        _write_project(tmp_path)
+        (app,) = discover_apps(tmp_path)
+        handle = next(iter(app.resources.values()))
+        handle.spec.env = {"FLASH_ENVIRONMENT": "stale"}
+        api = AsyncMock()
+        api.get_app_by_name.return_value = {
+            "id": "app-1",
+            "flashEnvironments": [{"id": "env-prod", "name": "prod"}],
+        }
+        api.prepare_artifact_upload.return_value = {
+            "uploadUrl": "https://upload", "objectKey": "key-1",
+        }
+        api.finalize_artifact_upload.return_value = {"id": "build-1"}
+        api.save_endpoint.return_value = {"id": "ep-1"}
+        with _stub_build(tmp_path):
+            await deploy_app(app, tmp_path, env_name="prod", api=api)
+        payload = api.save_endpoint.await_args.args[0]
+        worker_env = {
+            entry["key"]: entry["value"] for entry in payload["template"]["env"]
+        }
+        monkeypatch.setenv("FLASH_ENVIRONMENT", worker_env["FLASH_ENVIRONMENT"])
+        monkeypatch.setattr(runpod, "api_key", "test-key")
+        monkeypatch.delenv("RUNPOD_DEV_APP", raising=False)
+        with patch("runpod.apps.app.current_context", return_value=Context.WORKER):
+            target = await app._resolve(handle.spec)
+        assert target._sentinel_headers()["X-Flash-Environment"] == "prod"
+
+    async def test_invalid_mutated_spec_fails_before_remote_deployment(self, tmp_path):
+        _write_project(tmp_path)
+        (app,) = discover_apps(tmp_path)
+        next(iter(app.resources.values())).spec.workers = (5, 1)
+        api = AsyncMock()
+        with pytest.raises(InvalidResourceError):
+            await deploy_app(app, tmp_path, api=api)
+        api.create_app.assert_not_awaited()
+        api.save_endpoint.assert_not_awaited()
 
 
 class TestTolerantDiscovery:

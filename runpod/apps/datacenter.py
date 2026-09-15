@@ -34,7 +34,7 @@ class DataCenter(str, Enum):
             valid = ", ".join(dc.value for dc in cls)
             raise ValueError(
                 f"unknown datacenter '{value}'. valid datacenters: {valid}"
-            )
+            ) from None
 
     @classmethod
     def all(cls) -> List["DataCenter"]:

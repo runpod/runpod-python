@@ -22,19 +22,23 @@ INIT_ATTR = "__runpod_init__"
 _VALID_METHODS = frozenset({"GET", "POST", "PUT", "DELETE", "PATCH"})
 
 # paths used by the worker runtime; user routes must not collide
-RESERVED_PATHS = frozenset({"/execute", "/ping"})
+RESERVED_PATHS = frozenset({"/execute", "/ping", "/_runpod/sync"})
 
 
-def _route_marker(method: str, path: str) -> Callable[[Callable], Callable]:
-    if method not in _VALID_METHODS:
+def validate_route(method: str, path: str) -> None:
+    if not isinstance(method, str) or method not in _VALID_METHODS:
         raise ValueError(f"method must be one of {sorted(_VALID_METHODS)}")
-    if not path.startswith("/"):
+    if not isinstance(path, str) or not path.startswith("/"):
         raise ValueError(f"path must start with '/', got: {path!r}")
     if path in RESERVED_PATHS:
         raise ValueError(
             f"path {path!r} is reserved by the worker runtime "
             f"(reserved: {', '.join(sorted(RESERVED_PATHS))})"
         )
+
+
+def _route_marker(method: str, path: str) -> Callable[[Callable], Callable]:
+    validate_route(method, path)
 
     def marker(fn: Callable) -> Callable:
         setattr(fn, ROUTE_ATTR, (method, path))

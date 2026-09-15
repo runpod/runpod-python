@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Union
 
 from .api import AppsApiClient
 from .app import App
+from .errors import AppError
 from .handles import ApiHandle, FunctionHandle
 from .shim import runtime_launcher
 from .spec import ResourceKind, ResourceSpec
@@ -20,11 +21,6 @@ from .utils.events import emit
 from .utils.names import dev_endpoint_name
 
 log = logging.getLogger(__name__)
-
-
-def _resource_of(endpoint_name: str) -> str:
-    """resource name from a dev endpoint name (display only)."""
-    return endpoint_name.rsplit("-", 2)[-2]
 
 
 def _comparable(payload: Dict) -> Dict:
@@ -118,7 +114,10 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
     the endpoint and cascades on deleteEndpoint.
     """
 
+    spec.validate()
     resource_env = _render_env(spec.env)
+    resource_env["FLASH_RESOURCE_NAME"] = spec.name
+    resource_env["RUNPOD_RESOURCE_NAME"] = spec.name
     if spec.kind is ResourceKind.API:
         resource_env["PORT"] = "80"
         resource_env["PORT_HEALTH"] = "80"
@@ -217,6 +216,7 @@ class DevSession:
         self.events = events
         # endpoint name -> id for everything this session owns
         self._endpoints: Dict[str, str] = {}
+        self._resource_names: Dict[str, str] = {}
         # endpoint name -> comparable payload, for refresh diffing
         self._payloads: Dict[str, Dict] = {}
         # volumes resolve once per session (placement is stable)
@@ -278,11 +278,14 @@ class DevSession:
             for handle in self._provisionable(app):
                 spec = handle.spec
                 name = dev_endpoint_name(app.name, spec.name)
+                found = existing.get(name)
+                if found:
+                    self._endpoints[name] = found["id"]
+                    self._resource_names[name] = spec.name
                 payload = _endpoint_input(app, spec, self.generation)
                 await self._attach_volumes(payload, spec, app)
 
                 hardware = ",".join(spec.cpu or spec.gpu or ["any"])
-                found = existing.get(name)
                 if found:
                     # adopt: reconcile the leftover endpoint to the
                     # current spec instead of creating a duplicate
@@ -297,8 +300,9 @@ class DevSession:
                     endpoint_id = result["id"]
                     log.info("provisioned dev endpoint %s (%s)", name, endpoint_id)
 
-                self._emit("ready", spec.name, endpoint_id)
                 self._endpoints[name] = endpoint_id
+                self._resource_names[name] = spec.name
+                self._emit("ready", spec.name, endpoint_id)
                 self._payloads[name] = _comparable(payload)
                 app._dev_targets[spec.name] = LiveTarget(
                     endpoint_id,
@@ -332,16 +336,26 @@ class DevSession:
                 desired[name] = (app, handle)
 
         # delete endpoints whose resources disappeared
+        failures = []
         for name in list(self._endpoints):
             if name not in desired:
-                endpoint_id = self._endpoints.pop(name)
-                self._payloads.pop(name, None)
+                endpoint_id = self._endpoints[name]
+                resource = self._resource_names[name]
                 try:
                     await self.api.delete_endpoint(endpoint_id)
-                    self._emit("resource_removed", _resource_of(name))
-                    log.info("deleted removed dev endpoint %s", name)
                 except Exception as exc:
-                    log.warning("failed to delete %s: %s", name, exc)
+                    failures.append(f"{resource} ({endpoint_id}): {exc}")
+                    self._emit("delete_failed", resource)
+                    log.warning("failed to delete %s (%s): %s", name, endpoint_id, exc)
+                else:
+                    del self._endpoints[name]
+                    del self._resource_names[name]
+                    self._payloads.pop(name, None)
+                    self._emit("resource_removed", resource)
+                    log.info("deleted removed dev endpoint %s", name)
+
+        if failures:
+            raise AppError("dev cleanup incomplete: " + "; ".join(failures))
 
         # update survivors (config + generation bump) and create additions
         for name, (app, handle) in desired.items():
@@ -359,6 +373,7 @@ class DevSession:
             endpoint_id = result["id"]
 
             self._endpoints[name] = endpoint_id
+            self._resource_names[name] = handle.spec.name
             self._payloads[name] = comparable
             app._dev_targets[handle.spec.name] = LiveTarget(
                 endpoint_id,
@@ -396,24 +411,35 @@ class DevSession:
         sink = events if events is not None else self.events
 
         pending = list(self._endpoints.items())
+        failures = []
         emit(sink, "cleanup_started", len(pending))
         for name, endpoint_id in pending:
-            resource = _resource_of(name)
+            resource = self._resource_names[name]
             emit(sink, "deleting", resource)
             try:
                 await self.api.delete_endpoint(endpoint_id)
-                emit(sink, "deleted", resource)
-                log.info("deleted dev endpoint %s (%s)", name, endpoint_id)
             except Exception as exc:
+                failures.append(f"{resource} ({endpoint_id}): {exc}")
                 emit(sink, "delete_failed", resource)
                 log.warning("failed to delete dev endpoint %s: %s", endpoint_id, exc)
-        self._endpoints.clear()
+            else:
+                del self._endpoints[name]
+                del self._resource_names[name]
+                self._payloads.pop(name, None)
+                emit(sink, "deleted", resource)
+                log.info("deleted dev endpoint %s (%s)", name, endpoint_id)
         for app in self.apps:
             app._dev_targets.clear()
             app._dev_events = None
+        if failures:
+            raise AppError("dev cleanup incomplete: " + "; ".join(failures))
 
     async def __aenter__(self) -> "DevSession":
-        await self.start()
+        try:
+            await self.start()
+        except BaseException:
+            await self.stop()
+            raise
         return self
 
     async def __aexit__(self, *exc_info) -> None:

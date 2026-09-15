@@ -10,7 +10,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .errors import InvalidResourceError
-from .gpu import GpuGroup, GpuType
+from .datacenter import DataCenter
+from .gpu import GpuGroup, GpuLike, GpuType
 
 DEFAULT_WORKERS: Tuple[int, int] = (0, 3)
 
@@ -145,22 +146,58 @@ def normalize_cuda_version(version: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def normalize_datacenter(
+    datacenter: Optional[Union[str, List[str]]],
+) -> Optional[List[str]]:
+    """normalize enum values and string variants to api datacenter ids."""
+    if datacenter is None:
+        return None
+    values = [datacenter] if isinstance(datacenter, str) else datacenter
+    try:
+        return [DataCenter.from_string(value).value for value in values]
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise InvalidResourceError(f"invalid datacenter: {datacenter!r}") from exc
+
+
+def normalize_volume(volume: Any) -> Any:
+    """preserve volume configuration while normalizing reference collections."""
+    from .volume import Volume
+
+    if volume is None or isinstance(volume, (str, Volume)):
+        return volume
+    if isinstance(volume, (list, tuple)):
+        refs = []
+        for item in volume:
+            if item is None:
+                raise InvalidResourceError("volume collections must contain references")
+            normalized = normalize_volume(item)
+            if isinstance(normalized, list):
+                refs.extend(normalized)
+            else:
+                refs.append(normalized)
+        return refs
+    raise InvalidResourceError(
+        f"volume must be a runpod.Volume, a name/id string, or a list/tuple "
+        f"of references, got {type(volume).__name__}"
+    )
+
+
 @dataclass
 class ResourceSpec:
     """declarative config for one app resource."""
 
     kind: ResourceKind
     name: str
-    gpu: Optional[List[str]] = None
-    cpu: Optional[List[str]] = None
+    gpu: Optional[Union[GpuLike, List[GpuLike]]] = None
+    cpu: Optional[Union[str, List[str]]] = None
     gpu_count: int = 1
-    workers: Tuple[int, int] = DEFAULT_WORKERS
+    workers: Union[int, Tuple[int, int], None] = DEFAULT_WORKERS
     idle_timeout: int = 60
     dependencies: Optional[List[str]] = None
     system_dependencies: Optional[List[str]] = None
     volume: Optional[Any] = None
     env: Optional[Dict[str, Any]] = None
-    datacenter: Optional[List[str]] = None
+    datacenter: Optional[Union[str, List[str]]] = None
     image: Optional[str] = None
     registry_auth: Optional[str] = None
     model: Optional[Any] = None
@@ -177,12 +214,31 @@ class ResourceSpec:
     asgi_factory: Optional[str] = None
 
     def __post_init__(self) -> None:
+        self.validate()
+
+    def validate(self) -> None:
+        """normalize and validate mutable configuration before it is consumed."""
+        try:
+            self.kind = ResourceKind(self.kind)
+        except ValueError as exc:
+            raise InvalidResourceError(f"invalid resource kind: {self.kind!r}") from exc
+        self.gpu = normalize_gpu(self.gpu)
+        self.cpu = normalize_cpu(self.cpu)
+        self.workers = normalize_workers(self.workers)
+        self.scaler_type = normalize_scaler_type(self.scaler_type)
+        self.min_cuda_version = normalize_cuda_version(self.min_cuda_version)
+        self.datacenter = normalize_datacenter(self.datacenter)
+        self.volume = normalize_volume(self.volume)
         if self.gpu is not None and self.cpu is not None:
             raise InvalidResourceError(
                 f"resource '{self.name}': gpu and cpu are mutually exclusive"
             )
-        if not self.name:
-            raise InvalidResourceError("resource name must not be empty")
+        if not isinstance(self.name, str) or not self.name:
+            raise InvalidResourceError("resource name must be a non-empty string")
+        if self.gpu_count < 1:
+            raise InvalidResourceError(
+                f"resource '{self.name}': gpu_count must be >= 1"
+            )
         if self.max_concurrency < 1:
             raise InvalidResourceError(
                 f"resource '{self.name}': max_concurrency must be >= 1, "
@@ -211,6 +267,31 @@ class ResourceSpec:
                 f"available on queue and api resources; tasks download "
                 f"weights themselves"
             )
+        if self.kind is ResourceKind.TASK and isinstance(self.volume, list):
+            if len(self.volume) > 1:
+                raise InvalidResourceError(
+                    f"task '{self.name}': pods mount exactly one volume"
+                )
+        if self.schedule is not None and (
+            not isinstance(self.schedule, str) or not self.schedule
+        ):
+            raise InvalidResourceError("cron must be a non-empty string")
+        from .markers import validate_route
+
+        seen = set()
+        for route in self.routes:
+            if not isinstance(route, RouteSpec):
+                raise InvalidResourceError("routes must contain RouteSpec values")
+            try:
+                validate_route(route.method, route.path)
+            except ValueError as exc:
+                raise InvalidResourceError(str(exc)) from exc
+            key = (route.method, route.path)
+            if key in seen:
+                raise InvalidResourceError(
+                    f"duplicate route {route.method} {route.path} on {self.name}"
+                )
+            seen.add(key)
 
     @property
     def is_cpu(self) -> bool:
@@ -227,6 +308,7 @@ class ResourceSpec:
 
     def to_manifest(self) -> Dict[str, Any]:
         """serialize for the deploy manifest."""
+        self.validate()
         data: Dict[str, Any] = {
             "kind": self.kind.value,
             "name": self.name,
@@ -244,9 +326,15 @@ class ResourceSpec:
         if self.system_dependencies:
             data["systemDependencies"] = self.system_dependencies
         if self.volume:
-            data["networkVolume"] = getattr(
-                self.volume, "name", None
-            ) or str(self.volume)
+            if isinstance(self.volume, list):
+                data["networkVolumes"] = [
+                    getattr(volume, "name", None) or str(volume)
+                    for volume in self.volume
+                ]
+            else:
+                data["networkVolume"] = getattr(
+                    self.volume, "name", None
+                ) or str(self.volume)
         if self.env:
             from .secret import render_env
 

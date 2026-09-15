@@ -207,6 +207,8 @@ def _deployed_endpoint_input(
     environment_id: str,
     build_id: str,
     python_version: str,
+    *,
+    env_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """saveEndpoint payload for one deployed queue/api resource.
 
@@ -220,11 +222,13 @@ def _deployed_endpoint_input(
 
     from .secret import render_env
 
+    spec.validate()
     template_env = {
         "FLASH_RESOURCE_NAME": spec.name,
         # version-triggering: a new build recreates all workers
         "RUNPOD_BUILD_ID": build_id,
         **render_env(spec.env),
+        "FLASH_ENVIRONMENT": env_name or app.env,
     }
 
     # cross-resource calls from inside a worker go through the sentinel,
@@ -317,6 +321,8 @@ async def reconcile_endpoints(
     endpoints (matched by name) are updated in place; endpoints whose
     resources disappeared are deleted.
     """
+    for handle in app.resources.values():
+        handle.spec.validate()
     existing = {e["name"]: e["id"] for e in environment.get("endpoints") or []}
     provisionable = {
         h.spec.name: h
@@ -331,7 +337,12 @@ async def reconcile_endpoints(
     endpoints: Dict[str, str] = {}
     for name, handle in sorted(provisionable.items()):
         payload = _deployed_endpoint_input(
-            app, handle.spec, environment["id"], build_id, python_version
+            app,
+            handle.spec,
+            environment["id"],
+            build_id,
+            python_version,
+            env_name=environment["name"],
         )
         await attach_endpoint_volumes(payload, handle.spec, resolver, app)
         auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
@@ -416,6 +427,8 @@ async def deploy_app(
     """run the full deploy pipeline for one app."""
     client = api or AppsApiClient()
     env_name = env_name or app.env
+    for handle in app.resources.values():
+        handle.spec.validate()
 
     # fail fast on unresolvable secret references (workers would boot
     # with the literal template string otherwise)

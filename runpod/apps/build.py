@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
+from collections import deque
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -280,11 +281,13 @@ def vendor(
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
     )
     count = 0
+    output = deque(maxlen=30)
     for line in proc.stdout:
+        output.append(line)
         line = line.strip()
         # pip emits one "Collecting <dist>" per resolved distribution
         if line.startswith("Collecting "):
@@ -292,11 +295,10 @@ def vendor(
             if progress is not None:
                 name = re.split(r"[><=!~\[ (]", line[11:], maxsplit=1)[0]
                 progress(count, name)
-    stderr = proc.stderr.read()
     proc.wait()
     if proc.returncode != 0:
         raise BuildError(
-            f"dependency vendoring failed: {stderr[-3000:]}\n"
+            f"dependency vendoring failed: {''.join(output)[-3000:]}\n"
             f"packages without linux wheels cannot be vendored; "
             f"exclude them (they must then come from the image)"
         )

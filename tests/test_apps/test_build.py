@@ -1,5 +1,8 @@
 """tests for deploy-time environment vendoring."""
 
+import subprocess
+import sys
+import threading
 from unittest.mock import patch
 
 import pytest
@@ -159,8 +162,7 @@ def _fake_popen(captured, *, returncode=0, stdout="", stderr=""):
 
         class P:
             def __init__(self):
-                self.stdout = io.StringIO(stdout)
-                self.stderr = io.StringIO(stderr)
+                self.stdout = io.StringIO(stdout + stderr)
                 self.returncode = returncode
 
             def wait(self):
@@ -220,3 +222,49 @@ class TestVendor:
                 progress=lambda c, n: seen.append((c, n)),
             )
         assert seen == [(1, "numpy"), (2, "requests")]
+
+    def test_large_stderr_does_not_block_progress_or_error(self, tmp_path):
+        original_popen = subprocess.Popen
+        processes = []
+        expired = threading.Event()
+
+        def launch(_cmd, **kwargs):
+            process = original_popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; "
+                    "sys.stderr.write('x' * 262144 + '\\n'); "
+                    "sys.stderr.flush(); "
+                    "print('Collecting numpy'); "
+                    "print('resolver failed', file=sys.stderr); "
+                    "sys.exit(1)",
+                ],
+                **kwargs,
+            )
+            processes.append(process)
+            return process
+
+        def stop_blocked_process():
+            expired.set()
+            for process in processes:
+                process.kill()
+
+        timer = threading.Timer(10, stop_blocked_process)
+        seen = []
+        timer.start()
+        try:
+            with patch("runpod.apps.build.subprocess.Popen", side_effect=launch):
+                with pytest.raises(BuildError, match="resolver failed"):
+                    vendor(
+                        tmp_path,
+                        ["numpy"],
+                        "3.12",
+                        progress=lambda count, name: seen.append((count, name)),
+                    )
+        finally:
+            timer.cancel()
+            for process in processes:
+                process.wait()
+        assert not expired.is_set()
+        assert seen == [(1, "numpy")]

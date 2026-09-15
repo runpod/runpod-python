@@ -7,6 +7,7 @@ from click.testing import CliRunner
 
 from runpod.apps.deploy import DeployResult
 from runpod.rp_cli.main import cli
+from runpod.apps.utils.names import dev_endpoint_name
 
 
 @pytest.fixture(autouse=True)
@@ -166,7 +167,7 @@ class TestDev:
         session.start = AsyncMock()
         session.stop = AsyncMock()
         session.refresh = AsyncMock()
-        session._endpoints = {"dev-demo-chat": "ep1"}
+        session._endpoints = {dev_endpoint_name("demo", "chat"): "ep1"}
 
         def make_session(apps, events=None):
             session.apps = apps
@@ -177,6 +178,7 @@ class TestDev:
         assert result.exit_code == 0, result.output
         session.start.assert_awaited_once()
         session.stop.assert_awaited_once()
+        assert "ep1" in result.output
 
     def test_once_entrypoint_failure_exits_nonzero(self, tmp_path, monkeypatch):
         module = tmp_path / "main.py"
@@ -200,6 +202,93 @@ class TestDev:
             result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
         assert result.exit_code == 1
         session.stop.assert_awaited_once()
+
+    def test_partial_start_failure_deletes_created_endpoints(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(
+            ENTRYPOINT_SOURCE
+            + '\n@app.queue(name="later", cpu="cpu3c-1-2")\n'
+            + "def later():\n    return 1\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.side_effect = [
+            {"id": "ep-created"}, RuntimeError("no capacity")
+        ]
+        api.delete_endpoint.return_value = True
+
+        with patch("runpod.apps.dev.AppsApiClient", return_value=api):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+
+        assert result.exit_code == 1, result.output
+        assert "no capacity" in result.output
+        api.delete_endpoint.assert_awaited_once_with("ep-created")
+
+    def test_cleanup_failure_reports_billable_endpoint(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-billed"}
+        api.delete_endpoint.side_effect = RuntimeError("permission denied")
+
+        with patch("runpod.apps.dev.AppsApiClient", return_value=api):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+
+        assert result.exit_code == 1, result.output
+        assert "ep-billed" in result.output
+        assert "permission denied" in result.output
+
+    def test_cancellation_waits_for_entrypoint_before_cleanup(self, tmp_path, monkeypatch):
+        import asyncio
+        import threading
+
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        release = threading.Event()
+        events = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        loop = None
+        session_task = None
+
+        async def provision(payload):
+            nonlocal loop, session_task
+            loop = asyncio.get_running_loop()
+            session_task = asyncio.current_task()
+            return {"id": "ep-active"}
+
+        def cancel():
+            events.append("cancelled")
+            session_task.cancel()
+            loop.call_later(0.05, release.set)
+
+        def entrypoint(fn):
+            loop.call_soon_threadsafe(cancel)
+            if not release.wait(5):
+                raise TimeoutError("entrypoint was not released")
+            events.append("finished")
+
+        async def delete(endpoint_id):
+            events.append("deleted")
+            return True
+
+        api.save_endpoint.side_effect = provision
+        api.delete_endpoint.side_effect = delete
+        try:
+            with (
+                patch("runpod.apps.dev.AppsApiClient", return_value=api),
+                patch("runpod.apps.entrypoint.run_entrypoint", side_effect=entrypoint),
+            ):
+                result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        finally:
+            release.set()
+
+        assert result.exit_code == 0, result.output
+        assert events == ["cancelled", "finished", "deleted"]
 
     def test_module_without_entrypoint(self, tmp_path, monkeypatch):
         module = tmp_path / "main.py"

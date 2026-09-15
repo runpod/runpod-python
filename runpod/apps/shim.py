@@ -54,8 +54,10 @@ def runtime_launcher(kind: str) -> str:
         f'! "$PY" -c "import runpod_sdk_runtime" >/dev/null 2>&1; then '
         f'"$PY" -m pip install -q --upgrade "$RUNTIME_SPEC" || exit 1; '
         f"fi; "
-        f'if [ -n "${{RUNPOD_PACKAGE_SPEC:-}}" ]; then '
-        f'"$PY" -m pip install -q --upgrade "$RUNPOD_PACKAGE_SPEC" || exit 1; '
+        f'SDK_SPEC="${{RUNPOD_PACKAGE_SPEC:-runpod}}"; '
+        f'if [ -n "${{RUNPOD_PACKAGE_SPEC:-}}" ] || '
+        f'! "$PY" -c "import runpod" >/dev/null 2>&1; then '
+        f'"$PY" -m pip install -q --upgrade "$SDK_SPEC" || exit 1; '
         f"fi; "
         f'exec "$PY" -m {module}'
     )

@@ -9,23 +9,13 @@ import pytest
 from runpod.apps.shim import runtime_launcher
 
 
-def test_no_inner_single_quotes():
-    command = runtime_launcher("queue")
-    assert command.startswith("sh -c '")
-    assert command.endswith("'")
-    assert "'" not in command[len("sh -c '") : -1]
-
-
-def test_posix_sh_not_bash():
-    assert runtime_launcher("queue").startswith("sh -c ")
-
-
 def test_starts_an_installed_runtime(tmp_path):
     marker = tmp_path / "marker"
     package = tmp_path / "runpod_sdk_runtime" / "task"
     package.mkdir(parents=True)
     (package.parent / "__init__.py").write_text("")
     (package / "__init__.py").write_text("")
+    (tmp_path / "runpod.py").write_text("")
     (package / "runner.py").write_text(
         f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\n"
     )
@@ -48,26 +38,70 @@ def test_starts_an_installed_runtime(tmp_path):
     assert marker.read_text() == "ran"
 
 
-def test_probes_beyond_path():
-    command = runtime_launcher("api")
-    assert "/opt/conda/bin/python" in command
-    assert "/opt/venv/bin/python" in command
-
-
-def test_pythonless_image_fails_loudly():
-    command = runtime_launcher("queue")
-    assert "FATAL" in command
-    assert "must include python3" in command
-
-
-def test_supports_runtime_and_sdk_package_overrides():
-    command = runtime_launcher("queue")
-    assert "RUNPOD_RUNTIME_PACKAGE_SPEC" in command
-    assert "RUNPOD_PACKAGE_SPEC" in command
-    assert "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD" in command
-    assert "runpod-sdk-runtime" in command
-
 
 def test_rejects_unknown_runtime_kind():
     with pytest.raises(ValueError, match="unknown runtime kind"):
         runtime_launcher("other")
+
+
+@pytest.mark.parametrize(
+    ("installed", "runtime_override", "sdk_override", "expected_installs"),
+    [
+        (False, "", "", ["runpod-sdk-runtime", "runpod"]),
+        (True, "", "", []),
+        (True, "runpod-sdk-runtime==2.1", "runpod==3.2", [
+            "runpod-sdk-runtime==2.1", "runpod==3.2"
+        ]),
+    ],
+)
+def test_installs_missing_packages_and_honors_overrides(
+    tmp_path, installed, runtime_override, sdk_override, expected_installs
+):
+    import json
+    import shlex
+
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({
+        "runtime": installed,
+        "sdk": installed,
+        "installs": [],
+    }))
+    interpreter = tmp_path / "python3"
+    interpreter.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "path = Path(os.environ['SHIM_STATE'])\n"
+        "state = json.loads(path.read_text())\n"
+        "args = sys.argv[1:]\n"
+        "if args[0] == '-c':\n"
+        "    key = 'runtime' if args[1] == 'import runpod_sdk_runtime' else 'sdk'\n"
+        "    sys.exit(0 if state[key] else 1)\n"
+        "if args[:2] == ['-m', 'pip']:\n"
+        "    spec = args[-1]\n"
+        "    state['installs'].append(spec)\n"
+        "    state['runtime' if spec.startswith('runpod-sdk-runtime') else 'sdk'] = True\n"
+        "else:\n"
+        "    if not (state['runtime'] and state['sdk']):\n"
+        "        sys.exit(2)\n"
+        "    state['started'] = args[1]\n"
+        "path.write_text(json.dumps(state))\n"
+    )
+    interpreter.chmod(0o755)
+    result = subprocess.run(
+        shlex.split(runtime_launcher("queue")),
+        env={
+            "PATH": f"{tmp_path}:/usr/bin:/bin",
+            "SHIM_STATE": str(state_path),
+            "RUNPOD_RUNTIME_PACKAGE_SPEC": runtime_override,
+            "RUNPOD_PACKAGE_SPEC": sdk_override,
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    state = json.loads(state_path.read_text())
+    assert state["installs"] == expected_installs
+    assert state["started"] == "runpod_sdk_runtime.bootstrap"

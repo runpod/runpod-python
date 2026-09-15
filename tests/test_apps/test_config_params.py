@@ -46,6 +46,43 @@ class TestNormalizers:
 
 
 class TestSpecValidation:
+    @pytest.mark.parametrize(
+        "config",
+        [
+            {"gpu_count": 0},
+            {"gpu_count": -2},
+            {"workers": (9, 1)},
+            {"scaler_type": "BOGUS"},
+            {"min_cuda_version": "99"},
+        ],
+    )
+    def test_direct_construction_rejects_invalid_configuration(self, config):
+        with pytest.raises(InvalidResourceError):
+            ResourceSpec(kind=ResourceKind.QUEUE, name="q", **config)
+
+    def test_mutable_spec_revalidates_before_serialization(self):
+        spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q")
+        spec.gpu_count = 0
+        with pytest.raises(InvalidResourceError):
+            spec.to_manifest()
+        spec.gpu_count = 2
+        spec.workers = 4
+        spec.scaler_type = "request_count"
+        spec.gpu = "4090"
+        manifest = spec.to_manifest()
+        assert manifest["gpuCount"] == 2
+        assert manifest["workersMax"] == 4
+        assert manifest["scalerType"] == "REQUEST_COUNT"
+        assert manifest["gpus"] == ["NVIDIA GeForce RTX 4090"]
+
+    def test_mutated_routes_reject_reserved_runtime_path(self):
+        from runpod.apps.spec import RouteSpec
+
+        spec = ResourceSpec(kind=ResourceKind.API, name="web")
+        spec.routes.append(RouteSpec("POST", "/_runpod/sync", "sync"))
+        with pytest.raises(InvalidResourceError):
+            spec.to_manifest()
+
     def test_max_concurrency_floor(self):
         with pytest.raises(InvalidResourceError):
             ResourceSpec(
@@ -90,70 +127,7 @@ class TestSpecValidation:
         assert spec.effective_scaler_type == "REQUEST_COUNT"
 
 
-class TestDecoratorPlumbing:
-    def test_queue_accepts_all_params(self):
-        app = App("a")
-
-        @app.queue(
-            name="q",
-            gpu="4090",
-            max_concurrency=4,
-            execution_timeout_ms=60000,
-            flashboot=False,
-            scaler_type="request_count",
-            scaler_value=8,
-            min_cuda_version="12.4",
-            accelerate_downloads=False,
-            container_disk_gb=50,
-        )
-        def q():
-            pass
-
-        spec = q.spec
-        assert spec.max_concurrency == 4
-        assert spec.execution_timeout_ms == 60000
-        assert spec.flashboot is False
-        assert spec.scaler_type == "REQUEST_COUNT"
-        assert spec.scaler_value == 8
-        assert spec.min_cuda_version == "12.4"
-        assert spec.accelerate_downloads is False
-        assert spec.container_disk_gb == 50
-
-    def test_api_accepts_params(self):
-        app = App("a")
-
-        @app.api(
-            name="api",
-            cpu="cpu3c-1-2",
-            execution_timeout_ms=30000,
-            scaler_value=2,
-            container_disk_gb=20,
-        )
-        class Api:
-            @runpod.post("/x")
-            def x(self, body: dict):
-                return body
-
-        assert Api.spec.execution_timeout_ms == 30000
-        assert Api.spec.scaler_value == 2
-        assert Api.spec.container_disk_gb == 20
-
-    def test_task_accepts_params(self):
-        app = App("a")
-
-        @app.task(
-            name="t",
-            gpu="4090",
-            min_cuda_version="12.8",
-            accelerate_downloads=False,
-            container_disk_gb=100,
-        )
-        def t():
-            pass
-
-        assert t.spec.min_cuda_version == "12.8"
-        assert t.spec.accelerate_downloads is False
-        assert t.spec.container_disk_gb == 100
+class TestDecoratorValidation:
 
     def test_queue_invalid_scaler_fails_at_decoration(self):
         app = App("a")

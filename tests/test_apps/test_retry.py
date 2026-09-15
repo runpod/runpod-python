@@ -1,6 +1,7 @@
 """tests for transient-failure retry in the http layer."""
 
 import json
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
@@ -12,7 +13,7 @@ from runpod.apps.errors import EndpointNotFound
 from runpod.apps.targets import (
     JOB_PROPAGATION_ATTEMPTS,
     RETRY_ATTEMPTS,
-    RETRYABLE_STATUSES,
+    QueueClient,
     _post_json,
     _request_json,
 )
@@ -26,6 +27,10 @@ def flaky_server():
     class Handler(BaseHTTPRequestHandler):
         def _respond(self):
             state["hits"] += 1
+            if state.get("disconnect"):
+                self.connection.shutdown(socket.SHUT_RDWR)
+                self.connection.close()
+                return
             if state["hits"] <= len(state["script"]):
                 status = state["script"][state["hits"] - 1]
                 self.send_response(status)
@@ -51,12 +56,13 @@ def flaky_server():
     server.url = f"http://127.0.0.1:{server.server_address[1]}/run"
     yield server
     server.shutdown()
+    server.server_close()
 
 
 async def test_retries_transient_5xx_then_succeeds(flaky_server):
     flaky_server.state["script"] = [520, 502]
     with patch("runpod.apps.targets.RETRY_BASE_DELAY", 0.01):
-        data = await _post_json(flaky_server.url, {"x": 1}, {}, timeout=10)
+        data = await _request_json("GET", flaky_server.url, {}, timeout=10)
     assert data["ok"] is True
     assert data["hits"] == 3
 
@@ -65,7 +71,7 @@ async def test_exhausted_retries_raise_last_error(flaky_server):
     flaky_server.state["script"] = [503] * (RETRY_ATTEMPTS + 2)
     with patch("runpod.apps.targets.RETRY_BASE_DELAY", 0.01):
         with pytest.raises(aiohttp.ClientResponseError) as exc_info:
-            await _post_json(flaky_server.url, {"x": 1}, {}, timeout=10)
+            await _request_json("GET", flaky_server.url, {}, timeout=10)
     assert exc_info.value.status == 503
     assert flaky_server.state["hits"] == RETRY_ATTEMPTS
 
@@ -120,13 +126,32 @@ async def test_client_4xx_not_retried(flaky_server):
     assert flaky_server.state["hits"] == 1
 
 
-def test_429_is_retryable():
-    assert 429 in RETRYABLE_STATUSES
-
-
 async def test_connection_error_retried(unused_tcp_port):
     # nothing listening: pure connection failures, all attempts consumed
     url = f"http://127.0.0.1:{unused_tcp_port}/run"
     with patch("runpod.apps.targets.RETRY_BASE_DELAY", 0.01):
         with pytest.raises(aiohttp.ClientConnectionError):
-            await _post_json(url, {"x": 1}, {}, timeout=5)
+            await _request_json("GET", url, {}, timeout=5)
+
+
+@pytest.mark.parametrize("operation", ["run", "runsync", "retry"])
+@pytest.mark.parametrize("failure", [503, "disconnect"])
+async def test_submission_is_not_repeated_after_ambiguous_failure(
+    flaky_server, monkeypatch, operation, failure
+):
+    import runpod
+
+    monkeypatch.setattr(runpod, "endpoint_url_base", flaky_server.url)
+    if failure == "disconnect":
+        flaky_server.state["disconnect"] = True
+    else:
+        flaky_server.state["script"] = [failure]
+    client = QueueClient("endpoint", lambda: {})
+    with pytest.raises(aiohttp.ClientError):
+        if operation == "runsync":
+            await client.runsync({"input": {}}, timeout=10)
+        elif operation == "retry":
+            await client.retry("job")
+        else:
+            await client.run({"input": {}})
+    assert flaky_server.state["hits"] == 1

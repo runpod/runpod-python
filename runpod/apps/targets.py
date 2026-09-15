@@ -5,10 +5,11 @@ deployed resource. all resolution is server-side (sentinel headers or the
 runpod api); no local state is kept.
 """
 
+import asyncio
 import inspect
 import json
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, Callable, Dict, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import aiohttp
 
@@ -58,6 +59,10 @@ def args_to_input(fn: Callable, args: tuple, kwargs: dict) -> Dict[str, Any]:
             raise TypeError(
                 f"{fn.__name__}() got {len(args)} positional args, "
                 f"expected at most {len(params)}"
+            )
+        if params[i] in kwargs:
+            raise TypeError(
+                f"{fn.__name__}() got multiple values for argument '{params[i]}'"
             )
         body[params[i]] = arg
     body.update(kwargs)
@@ -113,10 +118,22 @@ def merge_job_options(
 
 def unwrap_job_output(data: Dict[str, Any]) -> Any:
     """extract output from a runsync-style response, raising on failure."""
-    if data.get("status") == "FAILED" or data.get("error"):
-        err = data.get("error") or data.get("output", {}).get("error", "unknown")
-        raise RemoteExecutionError(f"remote execution failed: {err}")
     output = data.get("output", data)
+    if data.get("status") == "FAILED" or data.get("error"):
+        err = data.get("error")
+        if not err:
+            if isinstance(output, dict):
+                err = output.get("error")
+            elif isinstance(output, list):
+                err = next(
+                    (
+                        item["error"]
+                        for item in reversed(output)
+                        if isinstance(item, dict) and item.get("error")
+                    ),
+                    None,
+                )
+        raise RemoteExecutionError(f"remote execution failed: {err or 'unknown'}")
     if isinstance(output, dict) and "error" in output:
         raise RemoteExecutionError(f"remote execution failed: {output['error']}")
     return output
@@ -191,9 +208,8 @@ class InvocationTarget(ABC):
         raise NotImplementedError(f"{type(self).__name__} does not serve http routes")
 
 
-# transient statuses worth retrying: gateway/edge errors that occur
-# while the sentinel cache warms or an edge node hiccups. 4xx (other
-# than 429) are never retried; the request itself is wrong.
+# transient statuses are retried only for idempotent requests; a failed
+# submission response does not prove the job was rejected.
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504, 520, 522, 524})
 RETRY_ATTEMPTS = 4
 JOB_PROPAGATION_ATTEMPTS = 7
@@ -212,11 +228,15 @@ async def _request_json(
     retry_not_found: bool = False,
 ) -> Dict[str, Any]:
     """http json call with exponential backoff on transient failures."""
-    import asyncio
+    retry_transient = method.upper() in {"GET", "HEAD", "OPTIONS"}
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
     last_exc: Optional[Exception] = None
-    attempts = JOB_PROPAGATION_ATTEMPTS if retry_not_found else RETRY_ATTEMPTS
+    attempts = (
+        JOB_PROPAGATION_ATTEMPTS
+        if retry_not_found
+        else RETRY_ATTEMPTS if retry_transient else 1
+    )
     for attempt in range(attempts):
         if attempt:
             await asyncio.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
@@ -237,13 +257,14 @@ async def _request_json(
                             status=resp.status,
                             message=await resp.text(),
                         )
+                        if not retry_transient:
+                            raise last_exc
                         continue
                     resp.raise_for_status()
                     return await resp.json()
         except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exc:
-            # connection-level failures (reset, ssl hiccup, dns) are
-            # transient by nature; response-level errors above already
-            # decided retryability
+            if not retry_transient:
+                raise
             last_exc = exc
             continue
     if last_exc is None:  # pragma: no cover - loop always runs once
@@ -320,7 +341,10 @@ async def _wait_terminal(
     while data.get("status") not in FINAL_STATUSES:
         job_id = data.get("id")
         if not job_id:
-            return data
+            raise RemoteExecutionError(
+                "non-terminal job response is missing a job id "
+                f"(status: {data.get('status', 'UNKNOWN')})"
+            )
         if time.monotonic() >= deadline:
             raise TimeoutError(
                 f"job {job_id} did not complete within {timeout}s "
@@ -572,6 +596,7 @@ class LiveTarget(InvocationTarget):
         self._source_spec: Optional[ResourceSpec] = None
         # source hash the worker last confirmed; None forces a sync
         self._synced_hash: Optional[str] = None
+        self._sync_lock = asyncio.Lock()
 
     def attach_source(
         self, target: Any, resource: str, spec: Optional[ResourceSpec] = None
@@ -595,22 +620,23 @@ class LiveTarget(InvocationTarget):
 
         from .serialization import get_function_source
 
-        source = get_function_source(self._source_target)
-        digest = hashlib.sha256(source.encode()).hexdigest()
-        if digest == self._synced_hash:
-            return
-        url = f"https://{self.endpoint_id}.{_lb_domain()}/_runpod/sync"
-        payload: Dict[str, Any] = {
-            "source": source,
-            "resource": self._source_resource,
-        }
-        if self._source_spec is not None:
-            payload["dependencies"] = self._source_spec.dependencies
-            payload["system_dependencies"] = (
-                self._source_spec.system_dependencies
-            )
-        await _post_json(url, payload, _headers(), timeout)
-        self._synced_hash = digest
+        async with self._sync_lock:
+            source = get_function_source(self._source_target)
+            digest = hashlib.sha256(source.encode()).hexdigest()
+            if digest == self._synced_hash:
+                return
+            url = f"https://{self.endpoint_id}.{_lb_domain()}/_runpod/sync"
+            payload: Dict[str, Any] = {
+                "source": source,
+                "resource": self._source_resource,
+            }
+            if self._source_spec is not None:
+                payload["dependencies"] = self._source_spec.dependencies
+                payload["system_dependencies"] = (
+                    self._source_spec.system_dependencies
+                )
+            await _post_json(url, payload, _headers(), timeout)
+            self._synced_hash = digest
 
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
@@ -798,10 +824,13 @@ class PodTarget(InvocationTarget):
         spec: ResourceSpec,
         fn: Callable,
         events: Optional[object] = None,
+        *,
+        specs: Optional[List[ResourceSpec]] = None,
     ):
         self.spec = spec
         self.fn = fn
         self.events = events
+        self.specs = specs
 
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
@@ -837,7 +866,7 @@ class PodTarget(InvocationTarget):
         start = time.monotonic()
 
         stream = None
-        execution = TaskExecution(self.spec)
+        execution = TaskExecution(self.spec, specs=self.specs)
         try:
             await execution.start()
             if execution.pod_id:
@@ -864,9 +893,11 @@ class PodTarget(InvocationTarget):
             )
             raise
         finally:
-            if stream is not None:
-                await stream.stop()
-            await execution.terminate()
+            try:
+                if stream is not None:
+                    await stream.stop()
+            finally:
+                await execution.terminate()
         result = unwrap_task_response(response)
         emit(
             self.events,
@@ -879,8 +910,12 @@ class PodTarget(InvocationTarget):
     async def submit(self, payload: Dict[str, Any]) -> Any:
         from .tasks import TaskExecution, TaskJob
 
-        execution = TaskExecution(self.spec)
-        await execution.start()
-        await execution.wait_ready()
-        await execution.submit(payload)
+        execution = TaskExecution(self.spec, specs=self.specs)
+        try:
+            await execution.start()
+            await execution.wait_ready()
+            await execution.submit(payload)
+        except BaseException:
+            await execution.terminate()
+            raise
         return TaskJob(execution)

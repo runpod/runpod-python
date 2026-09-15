@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from runpod.apps.errors import InvalidResourceError
 from runpod.apps.spec import ResourceKind, ResourceSpec
 from runpod.apps.volume import (
     Volume,
@@ -148,17 +149,13 @@ class TestVolumeResolver:
 
 class TestTaskVolume:
     def test_single_volume_only(self):
-        from runpod.apps.tasks import TaskExecution
-
-        spec = ResourceSpec(
-            kind=ResourceKind.TASK,
-            name="t",
-            cpu=["cpu3c-1-2"],
-            volume=[Volume("a"), Volume("b")],
-        )
-        execution = TaskExecution(spec, api=_api())
-        with pytest.raises(VolumeError, match="exactly one volume"):
-            asyncio.run(execution._attach_volume({}))
+        with pytest.raises(InvalidResourceError):
+            ResourceSpec(
+                kind=ResourceKind.TASK,
+                name="t",
+                cpu=["cpu3c-1-2"],
+                volume=[Volume("a"), Volume("b")],
+            )
 
     def test_pod_pins_to_volume_dc(self):
         from runpod.apps.tasks import TaskExecution

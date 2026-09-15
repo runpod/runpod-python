@@ -18,3 +18,8 @@ rp flash dev examples/apps/hello_world.py
 edit a file while the session is running, then press enter to re-run —
 workers pick up the new code automatically. the exhaustive
 feature-by-feature suite lives in [`tests/e2e/examples`](../../tests/e2e/examples).
+
+`await task.spawn.aio(...)` returns a task job that owns its pod.
+`await job.wait(timeout=...)` terminates that pod when waiting finishes, including
+timeout, task failure, or cancellation. use `await job.cancel()` to abandon a
+spawned task explicitly. a failed termination retains `job.pod_id` for cleanup.

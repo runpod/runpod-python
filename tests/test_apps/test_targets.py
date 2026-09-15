@@ -1,5 +1,6 @@
 """unit tests for invocation targets and their helpers."""
 
+import asyncio
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -78,6 +79,13 @@ class TestArgsToInput:
 
         assert args_to_input(fn, (1,), {"b": 2}) == {"a": 1, "b": 2}
 
+    def test_duplicate_argument_rejected(self):
+        def fn(a):
+            return a
+
+        with pytest.raises(TypeError, match="multiple values.*a"):
+            args_to_input(fn, (1,), {"a": 2})
+
     def test_too_many_positional(self):
         def fn(a):
             pass
@@ -107,6 +115,23 @@ class TestUnwrapJobOutput:
             unwrap_job_output(
                 {"status": "COMPLETED", "output": {"error": "oops"}}
             )
+
+    def test_failed_generator_preserves_error(self):
+        with pytest.raises(RemoteExecutionError, match="generator broke"):
+            unwrap_job_output(
+                {
+                    "status": "FAILED",
+                    "output": [
+                        {"success": True, "json_result": 1},
+                        {"success": False, "error": "generator broke"},
+                    ],
+                }
+            )
+
+    @pytest.mark.parametrize("output", [None, [], "partial", 3])
+    def test_failed_non_mapping_output(self, output):
+        with pytest.raises(RemoteExecutionError):
+            unwrap_job_output({"status": "FAILED", "output": output})
 
     def test_missing_output_returns_data(self):
         data = {"status": "COMPLETED", "value": 7}
@@ -142,10 +167,11 @@ class TestWaitTerminal:
         assert result["status"] == "COMPLETED"
         assert len(seen) == 3
 
-    async def test_no_job_id_returns_data(self):
-        data = {"status": "IN_QUEUE"}
-        result = await _wait_terminal("http://x", data, {}, timeout=5)
-        assert result is data
+    async def test_no_job_id_raises(self):
+        with pytest.raises(RemoteExecutionError, match="missing a job id"):
+            await _wait_terminal(
+                "http://x", {"status": "IN_QUEUE"}, {}, timeout=5
+            )
 
     async def test_timeout(self):
         with (
@@ -304,6 +330,63 @@ class TestSentinelTarget:
         assert payload == {"input": {"prompt": "hi"}}
 
 
+@pytest.fixture
+async def live_api_server(monkeypatch):
+    import aiohttp
+    from aiohttp import web
+    from yarl import URL
+
+    state = {"uploads": 0, "calls": 0, "reject_sync": False, "handler": None}
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def sync(request):
+        state["uploads"] += 1
+        entered.set()
+        await release.wait()
+        if state["reject_sync"]:
+            state["reject_sync"] = False
+            raise web.HTTPServiceUnavailable()
+        payload = await request.json()
+        namespace = {}
+        exec(payload["source"], namespace)
+        state["handler"] = namespace["calculate"]
+        return web.json_response({"status": "synced"})
+
+    async def calculate(request):
+        state["calls"] += 1
+        if state["handler"] is None:
+            raise web.HTTPConflict()
+        body = await request.json()
+        return web.json_response({"result": state["handler"](body["value"])})
+
+    app = web.Application()
+    app.router.add_post("/_runpod/sync", sync)
+    app.router.add_post("/calculate", calculate)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    original_request = aiohttp.ClientSession._request
+
+    async def local_request(session, method, url, **kwargs):
+        local_url = URL(url).with_scheme("http").with_host("127.0.0.1").with_port(port)
+        return await original_request(session, method, local_url, **kwargs)
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", local_request)
+    monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "runpod.apps.serialization.get_function_source",
+        lambda target: "def calculate(value):\n    return value * 2\n",
+    )
+    try:
+        yield state, entered, release
+    finally:
+        release.set()
+        await runner.cleanup()
+
+
 class TestLiveTarget:
     def _spec(self):
         return ResourceSpec(kind=ResourceKind.QUEUE, name="chat")
@@ -416,22 +499,30 @@ class TestLiveTarget:
         assert (await target.cancel_job("j1"))["status"] == "CANCELLED"
         assert (await target.retry_job("j1"))["status"] == "IN_QUEUE"
 
-    async def test_sync_source_skips_unchanged(self, monkeypatch):
-        target = LiveTarget("ep123", "chat")
+    async def test_concurrent_requests_share_completed_source_sync(self, live_api_server):
+        state, entered, release = live_api_server
+        target = LiveTarget("ep123", "calculate")
+        target.attach_source(self._spec, "calculate", self._spec())
+        first = asyncio.create_task(target.request("POST", "/calculate", {"value": 3}))
+        await entered.wait()
+        second = asyncio.create_task(target.request("POST", "/calculate", {"value": 5}))
+        await asyncio.sleep(0)
+        assert state["calls"] == 0
+        release.set()
+        assert await asyncio.gather(first, second) == [{"result": 6}, {"result": 10}]
+        assert state["uploads"] == 1
 
-        def backing():
-            return 1
+    async def test_failed_source_sync_prevents_execution_and_can_retry(self, live_api_server):
+        import aiohttp
 
-        target.attach_source(backing, "chat", self._spec())
-        post = AsyncMock(return_value={})
-        with patch("runpod.apps.targets._post_json", post):
-            await target._sync_source(timeout=10)
-            await target._sync_source(timeout=10)
-        assert post.await_count == 1
-
-    async def test_sync_source_noop_without_attachment(self):
-        target = LiveTarget("ep123", "chat")
-        post = AsyncMock()
-        with patch("runpod.apps.targets._post_json", post):
-            await target._sync_source(timeout=10)
-        post.assert_not_awaited()
+        state, _, release = live_api_server
+        state["reject_sync"] = True
+        release.set()
+        target = LiveTarget("ep123", "calculate")
+        target.attach_source(self._spec, "calculate", self._spec())
+        with pytest.raises(aiohttp.ClientResponseError):
+            await target.request("POST", "/calculate", {"value": 7})
+        assert state["calls"] == 0
+        assert await target.request("POST", "/calculate", {"value": 7}) == {"result": 14}
+        assert state["uploads"] == 2
+        assert state["calls"] == 1

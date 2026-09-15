@@ -39,7 +39,7 @@ class TestExecuteRetry:
             patch("runpod.apps.api.run_graphql_query_async", transport),
             patch("asyncio.sleep", AsyncMock()),
         ):
-            assert await client._execute("query {}") == {"ok": 1}
+            assert await client._execute("query {}", retry=True) == {"ok": 1}
         assert transport.await_count == 3
 
     async def test_exhausted_retries_raise(self):
@@ -50,7 +50,7 @@ class TestExecuteRetry:
             patch("asyncio.sleep", AsyncMock()),
         ):
             with pytest.raises(aiohttp.ClientError):
-                await client._execute("query {}")
+                await client._execute("query {}", retry=True)
         assert transport.await_count == 4
 
     async def test_graphql_errors_propagate_immediately(self):
@@ -59,6 +59,18 @@ class TestExecuteRetry:
         with patch("runpod.apps.api.run_graphql_query_async", transport):
             with pytest.raises(QueryError):
                 await client._execute("query {}")
+        assert transport.await_count == 1
+
+    @pytest.mark.parametrize(
+        "failure",
+        [aiohttp.ClientError("response lost"), OSError("reset")],
+    )
+    async def test_mutation_transport_failure_is_not_retried(self, failure):
+        client = AppsApiClient(api_key="test-key")
+        transport = AsyncMock(side_effect=failure)
+        with patch("runpod.apps.api.run_graphql_query_async", transport):
+            with pytest.raises(type(failure)):
+                await client.create_app("demo")
         assert transport.await_count == 1
 
 
@@ -75,6 +87,11 @@ class TestEndpoints:
         client, patcher = _client_with({"deleteEndpoint": True})
         with patcher:
             assert await client.delete_endpoint("ep1") is True
+
+    async def test_delete_failure_is_not_reported_as_success(self):
+        client, patcher = _client_with({"deleteEndpoint": False})
+        with patcher, pytest.raises(QueryError, match="ep1"):
+            await client.delete_endpoint("ep1")
 
     async def test_list_my_endpoints(self):
         client, patcher = _client_with(
@@ -96,17 +113,41 @@ class TestTaskPods:
             )
         assert result["id"] == "pod1"
 
-    async def test_deploy_cpu_pod_converts_instance_ids(self):
+    async def test_cpu_alternative_can_deploy_in_volume_datacenter(self):
         client = AppsApiClient(api_key="test-key")
-        transport = _respond({"deployCpuPod": {"id": "pod2"}})
+        transport = AsyncMock(
+            side_effect=[
+                QueryError("insufficient capacity"),
+                {"data": {"deployCpuPod": {"id": "pod2"}}},
+            ]
+        )
+        pod = {
+            "instanceIds": ["cpu3c-2-4", "cpu3g-2-8"],
+            "dataCenterIds": ["US-CA-2"],
+            "networkVolumeId": "volume1",
+        }
         with patch("runpod.apps.api.run_graphql_query_async", transport):
-            result = await client.deploy_task_pod(
-                {"instanceIds": ["cpu3c-2-4", "cpu3g-2-8"]}, is_cpu=True
-            )
+            result = await client.deploy_task_pod(pod, is_cpu=True)
         assert result["id"] == "pod2"
-        sent = transport.call_args[1]["variables"]["input"]
-        assert sent["instanceId"] == "cpu3c-2-4"
-        assert "instanceIds" not in sent
+        requests = [
+            call.kwargs["variables"]["input"] for call in transport.await_args_list
+        ]
+        assert [request["instanceId"] for request in requests] == pod["instanceIds"]
+        assert all(request["dataCenterIds"] == ["US-CA-2"] for request in requests)
+        assert all(request["networkVolumeId"] == "volume1" for request in requests)
+
+    @pytest.mark.parametrize(
+        "failure", [QueryError("invalid image"), aiohttp.ClientError("response lost")]
+    )
+    async def test_cpu_alternatives_stop_after_ambiguous_or_invalid_failure(self, failure):
+        client = AppsApiClient(api_key="test-key")
+        transport = AsyncMock(side_effect=failure)
+        with patch("runpod.apps.api.run_graphql_query_async", transport):
+            with pytest.raises(type(failure)):
+                await client.deploy_task_pod(
+                    {"instanceIds": ["cpu3c-2-4", "cpu3g-2-8"]}, is_cpu=True
+                )
+        assert transport.await_count == 1
 
     async def test_terminate_pod(self):
         client = AppsApiClient(api_key="test-key")

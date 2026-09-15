@@ -2,6 +2,8 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from click.testing import CliRunner
 
 from runpod.apps.manage import UndeployResult
@@ -345,29 +347,34 @@ class TestLogsCommand:
 
 
 class TestLoginCommand:
-    def test_api_key_flag(self):
-        with patch(
-            "runpod.cli.groups.config.functions.set_credentials"
-        ) as creds:
-            result = _runner().invoke(
-                cli, ["login", "--api-key", "sk-test"]
-            )
-        assert result.exit_code == 0
-        creds.assert_called_once_with("sk-test", overwrite=True)
+    @pytest.mark.parametrize("browser", [False, True])
+    @pytest.mark.parametrize("profile", ["default", "staging"])
+    def test_login_updates_only_selected_profile(
+        self, tmp_path, monkeypatch, browser, profile
+    ):
+        from runpod.cli.groups.config import functions
 
-    def test_browser_flow(self):
-        with (
-            patch(
-                "runpod.apps.auth.browser_login",
-                AsyncMock(return_value="sk-granted"),
-            ),
-            patch(
-                "runpod.cli.groups.config.functions.set_credentials"
-            ) as creds,
+        credentials = tmp_path / "config.toml"
+        credentials.write_text(
+            '[default]\napi_key = "old-default"\n'
+            '[staging]\napi_key = "old-staging"\n'
+            '[production]\napi_key = "keep-production"\n'
+        )
+        monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(credentials))
+        args = ["login"]
+        if profile != "default":
+            args.extend(["--profile", profile])
+        args.extend(["--no-open"] if browser else ["--api-key", "new-key"])
+        with patch(
+            "runpod.apps.auth.browser_login", AsyncMock(return_value="new-key")
         ):
-            result = _runner().invoke(cli, ["login", "--no-open"])
-        assert result.exit_code == 0
-        creds.assert_called_once_with("sk-granted", overwrite=True)
+            result = _runner().invoke(cli, args)
+
+        assert result.exit_code == 0, result.output
+        assert functions.get_credentials(profile)["api_key"] == "new-key"
+        untouched = "staging" if profile == "default" else "default"
+        assert functions.get_credentials(untouched)["api_key"] == f"old-{untouched}"
+        assert functions.get_credentials("production")["api_key"] == "keep-production"
 
     def test_browser_flow_error(self):
         from runpod.apps.auth import LoginError

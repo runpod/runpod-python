@@ -31,7 +31,7 @@ class _StubBase:
         name: Optional[str] = None,
         id: Optional[str] = None,
         env: Optional[str] = None,
-    ):
+    ) -> None:
         if (name is None) == (id is None):
             raise ValueError("provide exactly one of name= or id=")
         self.app_name = app
@@ -49,8 +49,15 @@ class _StubBase:
 class Queue(_StubBase):
     """client for a queue resource deployed elsewhere."""
 
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        *,
+        app: str,
+        name: Optional[str] = None,
+        id: Optional[str] = None,
+        env: Optional[str] = None,
+    ) -> None:
+        super().__init__(app=app, name=name, id=id, env=env)
         self._job_options: dict = {}
         self.remote = Invoker(self._remote_async)
         self.stream = StreamInvoker(self._stream_async)
@@ -137,8 +144,15 @@ class _StubRouteCaller:
 class Api(_StubBase):
     """client for an api resource deployed elsewhere."""
 
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        *,
+        app: str,
+        name: Optional[str] = None,
+        id: Optional[str] = None,
+        env: Optional[str] = None,
+    ) -> None:
+        super().__init__(app=app, name=name, id=id, env=env)
         self.get = _StubRouteCaller(self, "GET")
         self.post = _StubRouteCaller(self, "POST")
         self.put = _StubRouteCaller(self, "PUT")

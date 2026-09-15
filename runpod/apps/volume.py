@@ -123,6 +123,8 @@ class VolumeResolver:
         specs are all resource specs that attach this volume; they
         drive placement for creation and validate an existing DC.
         """
+        for spec in specs:
+            spec.validate()
         cached = self._resolved.get(volume.name)
         if cached is not None:
             return cached

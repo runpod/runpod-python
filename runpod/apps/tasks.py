@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from .api import AppsApiClient
+from .api import AppsApiClient, is_capacity_error
 from .errors import RemoteExecutionError
 from .spec import ResourceSpec
 
@@ -88,6 +88,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     runtime images have the runner baked in; custom images install and
     start the runtime package via dockerArgs.
     """
+    spec.validate()
     terminate_after = (
         datetime.now(timezone.utc) + DEFAULT_MAX_LIFETIME
     ).isoformat()
@@ -126,9 +127,20 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     else:
         # spread across the storage-supported set; a null DC can pin
         # repeated deploys to one (possibly broken) machine
-        from .datacenter import CPU3_DATACENTERS, DataCenter
+        from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
 
-        pool = CPU3_DATACENTERS if spec.is_cpu else DataCenter.all()
+        if spec.is_cpu:
+            pool = dict.fromkeys(
+                dc
+                for instance in spec.cpu or []
+                for dc in (
+                    CPU5_DATACENTERS
+                    if instance.startswith("cpu5")
+                    else CPU3_DATACENTERS
+                )
+            )
+        else:
+            pool = DataCenter.all()
         pod["dataCenterIds"] = [dc.value for dc in pool]
     if spec.is_cpu:
         pod["instanceIds"] = spec.cpu
@@ -147,8 +159,15 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
 class TaskExecution:
     """one pod running one function."""
 
-    def __init__(self, spec: ResourceSpec, api: Optional[AppsApiClient] = None):
+    def __init__(
+        self,
+        spec: ResourceSpec,
+        api: Optional[AppsApiClient] = None,
+        *,
+        specs: Optional[List[ResourceSpec]] = None,
+    ):
         self.spec = spec
+        self.specs = specs if specs is not None else [spec]
         self.api = api or AppsApiClient()
         self.token = secrets.token_urlsafe(32)
         self.pod_id: Optional[str] = None
@@ -179,7 +198,7 @@ class TaskExecution:
                 pod, is_cpu=self.spec.is_cpu
             )
         except QueryError as exc:
-            if not self._is_capacity_error(exc):
+            if not is_capacity_error(exc):
                 raise
             capacity_error = exc
 
@@ -194,22 +213,9 @@ class TaskExecution:
                     candidate, is_cpu=self.spec.is_cpu
                 )
             except QueryError as exc:
-                if not self._is_capacity_error(exc):
+                if not is_capacity_error(exc):
                     raise
         raise capacity_error
-
-    @staticmethod
-    def _is_capacity_error(exc: Exception) -> bool:
-        message = str(exc).lower()
-        return any(
-            phrase in message
-            for phrase in (
-                "resources to deploy your pod",
-                "insufficient capacity",
-                "no available machine",
-                "out of stock",
-            )
-        )
 
     async def _attach_volume(self, pod: Dict[str, Any]) -> Dict[str, Any]:
         """resolve the task's volume and pin the pod to its datacenter."""
@@ -222,7 +228,16 @@ class TaskExecution:
                 f"({len(volumes)} given)"
             )
         resolver = VolumeResolver(self.api)
-        resolved = await resolver.resolve(volumes[0], [self.spec])
+        sharing = [
+            spec
+            for spec in self.specs
+            if any(ref.name == volumes[0].name for ref in volume_list(spec.volume))
+        ]
+        if not any(spec is self.spec for spec in sharing):
+            sharing.append(self.spec)
+        for spec in sharing:
+            spec.validate()
+        resolved = await resolver.resolve(volumes[0], sharing)
         from .volume import POD_MOUNT_PATH
 
         pod["networkVolumeId"] = resolved["id"]
@@ -330,13 +345,14 @@ class TaskExecution:
         try:
             await self.api.terminate_pod(self.pod_id)
             log.info("task pod %s terminated", self.pod_id)
-        except Exception as exc:  # noqa: BLE001 - terminateAfter is the backstop
+        except Exception as exc:
             log.warning(
                 "failed to terminate task pod %s (terminateAfter is the "
                 "backstop): %s",
                 self.pod_id,
                 exc,
             )
+            raise
         self.pod_id = None
 
 
@@ -366,8 +382,7 @@ class TaskJob:
         return self._execution.pod_id
 
     async def wait(self, timeout: Optional[float] = None) -> Any:
-        """block until the task finishes; terminates the pod and returns
-        the result."""
+        """wait for the result, terminating the pod on every exit."""
         deadline = time.monotonic() + timeout if timeout is not None else None
         try:
             while not self._done:
@@ -382,8 +397,7 @@ class TaskJob:
                     break
                 await asyncio.sleep(RESULT_POLL_INTERVAL)
         finally:
-            if self._done:
-                await self._execution.terminate()
+            await self._execution.terminate()
         return self._result
 
     async def cancel(self) -> None:

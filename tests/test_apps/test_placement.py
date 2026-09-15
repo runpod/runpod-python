@@ -1,10 +1,14 @@
 """placement solve: candidates, intersections, maximin ranking."""
 
 import pytest
+from unittest.mock import AsyncMock
+
+from runpod.apps.datacenter import DataCenter
 
 from runpod.apps.placement import (
     PlacementError,
     StockMap,
+    _hardware_keys,
     candidates,
     solve_placement,
 )
@@ -25,8 +29,8 @@ def _stock(gpu=None, cpu=None):
     stock = StockMap(api=object())
     # task specs query the pod plane; mirror into both tables so the
     # fixtures stay hardware-shaped rather than plane-shaped
-    stock._gpu = dict(gpu or {})
-    stock._gpu_pod = dict(gpu or {})
+    stock._gpu = {(gpu_id, 1, dc): score for (gpu_id, dc), score in (gpu or {}).items()}
+    stock._gpu_pod = dict(stock._gpu)
     stock._cpu = cpu or {}
     return stock
 
@@ -60,6 +64,22 @@ class TestCandidates:
             stock,
         )
         assert dcs == {"US-KS-2"}
+
+    @pytest.mark.parametrize(
+        "pin",
+        [DataCenter.EU_RO_1, [DataCenter.EU_RO_1], " eu_ro_1 ", ["eu-ro-1"]],
+    )
+    def test_datacenter_variants_match_api_ids(self, pin):
+        spec = _spec(cpu="cpu5c-2-4", datacenter=pin)
+        stock = _stock(cpu={("cpu5c-2-4", "EU-RO-1"): 2})
+        assert candidates(spec, stock) == {"EU-RO-1"}
+        assert spec.to_manifest()["locations"] == "EU-RO-1"
+
+    def test_mutated_datacenter_pin_is_normalized(self):
+        spec = _spec(cpu="cpu5c-2-4")
+        spec.datacenter = [DataCenter.EU_RO_1]
+        stock = _stock(cpu={("cpu5c-2-4", "EU-RO-1"): 2})
+        assert candidates(spec, stock) == {"EU-RO-1"}
 
     def test_cpu_stock(self):
         stock = _stock(cpu={("cpu5c-2-4", "EU-RO-1"): 2})
@@ -166,3 +186,27 @@ class TestSolvePlacement:
             volume_name="shared",
         )
         assert dc == "EU-RO-1"
+
+    @pytest.mark.parametrize("kind", [ResourceKind.QUEUE, ResourceKind.TASK])
+    async def test_shared_volume_requires_requested_gpu_count(self, kind):
+        async def gpu_stock(gpu_id, dc, gpu_count=1, pods=False):
+            if dc == "EU-RO-1" and gpu_count == 1:
+                return "HIGH"
+            if dc == "US-KS-2":
+                return "MEDIUM"
+            return None
+
+        api = AsyncMock()
+        api.gpu_stock_status.side_effect = gpu_stock
+        stock = StockMap(api)
+        single = ResourceSpec(kind=kind, name="single", gpu="4090")
+        pair = ResourceSpec(kind=kind, name="pair", gpu="4090", gpu_count=2)
+        await stock.fetch(_hardware_keys(single))
+        await stock.fetch(_hardware_keys(pair))
+
+        assert solve_placement([single], stock, volume_name="one") == "EU-RO-1"
+        assert solve_placement([single, pair], stock, volume_name="shared") == "US-KS-2"
+        with pytest.raises(PlacementError):
+            solve_placement(
+                [pair], stock, volume_name="fixed", existing_dc="EU-RO-1"
+            )

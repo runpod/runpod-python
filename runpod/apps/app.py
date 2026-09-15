@@ -25,11 +25,6 @@ from .spec import (
     DEFAULT_SCALER_VALUE,
     ResourceKind,
     ResourceSpec,
-    normalize_cpu,
-    normalize_cuda_version,
-    normalize_gpu,
-    normalize_scaler_type,
-    normalize_workers,
 )
 from .targets import InvocationTarget, PodTarget, SentinelTarget
 
@@ -46,6 +41,11 @@ def get_registered_apps() -> List["App"]:
 def _clear_registry() -> None:
     """testing only."""
     _REGISTRY.clear()
+
+
+def _restore_registry(apps: List["App"]) -> None:
+    """restore registrations after a failed discovery import."""
+    _REGISTRY[:] = apps
 
 
 class App:
@@ -104,25 +104,25 @@ class App:
             spec = ResourceSpec(
                 kind=ResourceKind.QUEUE,
                 name=name or fn.__name__,
-                gpu=normalize_gpu(gpu),
-                cpu=normalize_cpu(cpu),
+                gpu=gpu,
+                cpu=cpu,
                 gpu_count=gpu_count,
-                workers=normalize_workers(workers),
+                workers=workers,
                 idle_timeout=idle_timeout,
                 dependencies=dependencies,
                 system_dependencies=system_dependencies,
-                volume=_volume_ref(volume),
+                volume=volume,
                 env=env,
-                datacenter=_datacenter_list(datacenter),
+                datacenter=datacenter,
                 image=image,
                 registry_auth=registry_auth,
                 model=model,
                 max_concurrency=max_concurrency,
                 execution_timeout_ms=execution_timeout_ms,
                 flashboot=flashboot,
-                scaler_type=normalize_scaler_type(scaler_type),
+                scaler_type=scaler_type,
                 scaler_value=scaler_value,
-                min_cuda_version=normalize_cuda_version(min_cuda_version),
+                min_cuda_version=min_cuda_version,
                 accelerate_downloads=accelerate_downloads,
                 container_disk_gb=container_disk_gb,
             )
@@ -156,17 +156,17 @@ class App:
             spec = ResourceSpec(
                 kind=ResourceKind.TASK,
                 name=name or fn.__name__,
-                gpu=normalize_gpu(gpu),
-                cpu=normalize_cpu(cpu),
+                gpu=gpu,
+                cpu=cpu,
                 gpu_count=gpu_count,
                 dependencies=dependencies,
                 system_dependencies=system_dependencies,
-                volume=_volume_ref(volume),
+                volume=volume,
                 env=env,
                 image=image,
                 registry_auth=registry_auth,
-                datacenter=_datacenter_list(datacenter),
-                min_cuda_version=normalize_cuda_version(min_cuda_version),
+                datacenter=datacenter,
+                min_cuda_version=min_cuda_version,
                 accelerate_downloads=accelerate_downloads,
                 container_disk_gb=container_disk_gb,
             )
@@ -227,24 +227,24 @@ class App:
             spec = ResourceSpec(
                 kind=ResourceKind.API,
                 name=name or target.__name__,
-                gpu=normalize_gpu(gpu),
-                cpu=normalize_cpu(cpu),
+                gpu=gpu,
+                cpu=cpu,
                 gpu_count=gpu_count,
-                workers=normalize_workers(workers),
+                workers=workers,
                 idle_timeout=idle_timeout,
                 dependencies=dependencies,
                 system_dependencies=system_dependencies,
-                volume=_volume_ref(volume),
+                volume=volume,
                 env=env,
-                datacenter=_datacenter_list(datacenter),
+                datacenter=datacenter,
                 image=image,
                 registry_auth=registry_auth,
                 model=model,
                 execution_timeout_ms=execution_timeout_ms,
                 flashboot=flashboot,
-                scaler_type=normalize_scaler_type(scaler_type),
+                scaler_type=scaler_type,
                 scaler_value=scaler_value,
-                min_cuda_version=normalize_cuda_version(min_cuda_version),
+                min_cuda_version=min_cuda_version,
                 accelerate_downloads=accelerate_downloads,
                 container_disk_gb=container_disk_gb,
             )
@@ -256,10 +256,16 @@ class App:
 
     async def _resolve(self, spec: ResourceSpec) -> InvocationTarget:
         """resolve a resource spec to an invocation target."""
+        spec.validate()
         if spec.kind is ResourceKind.TASK:
             handle = self._resources.get(spec.name)
             fn = getattr(handle, "_fn", None)
-            return PodTarget(spec, fn, events=self._dev_events)
+            return PodTarget(
+                spec,
+                fn,
+                events=self._dev_events,
+                specs=[handle.spec for handle in self._resources.values()],
+            )
 
         ctx = current_context()
 
@@ -297,32 +303,3 @@ class App:
 
     def __repr__(self) -> str:
         return f"<App {self.name!r} resources={len(self._resources)}>"
-
-
-def _datacenter_list(
-    datacenter: Optional[Union[str, List[str]]],
-) -> Optional[List[str]]:
-    """normalize datacenter input to a list of location strings."""
-    if datacenter is None:
-        return None
-    if isinstance(datacenter, str):
-        return [datacenter]
-    return [str(d) for d in datacenter]
-
-
-def _volume_ref(volume: Any) -> Optional[Any]:
-    """validate a volume argument: a Volume, or a name/id string.
-
-    Volume objects pass through whole so creation config (size,
-    datacenter) survives to provision time.
-    """
-    if volume is None:
-        return None
-    from .volume import Volume
-
-    if isinstance(volume, (str, Volume)):
-        return volume
-    raise InvalidResourceError(
-        f"volume must be a runpod.Volume or a name/id string, "
-        f"got {type(volume).__name__}"
-    )
