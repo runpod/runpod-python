@@ -1,5 +1,8 @@
 """tests for context detection and remote dispatch."""
 
+import os
+import subprocess
+import sys
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -210,6 +213,39 @@ class TestRemoteDispatch:
 
         assert q.remote(4) == 40
 
+    def test_worker_local_recursion_from_sync_and_async_callers(self):
+        script = """
+import asyncio
+import runpod
+
+app = runpod.App("self-smoke")
+
+@app.queue(cpu="cpu3c-2-4")
+def countdown(n):
+    return 0 if n == 0 else 1 + countdown.remote(n - 1)
+
+assert countdown.remote(3) == 3
+
+async def main():
+    results = await asyncio.gather(*(countdown.remote.aio(4) for _ in range(40)))
+    assert results == [4] * 40
+
+asyncio.run(main())
+"""
+        subprocess.run(
+            [sys.executable, "-c", script],
+            env={
+                **os.environ,
+                "RUNPOD_POD_ID": "local-worker",
+                "RUNPOD_DEV_APP": "self-smoke",
+                "RUNPOD_DEV_RESOURCE": "countdown",
+            },
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
     def test_worker_calls_sibling_via_sentinel(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-1")
         monkeypatch.setenv("FLASH_RESOURCE_NAME", "other")
@@ -409,7 +445,6 @@ class TestSyncBridge:
 class TestModuleSourceShipping:
     def test_whole_module_ships(self, tmp_path):
         import importlib.util
-        import sys
 
         mod_file = tmp_path / "shipmod.py"
         mod_file.write_text(

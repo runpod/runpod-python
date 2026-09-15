@@ -18,6 +18,7 @@ with the resource:
     def load_model(): ...                    # worker startup hook
 """
 
+import asyncio
 import inspect
 from typing import (
     TYPE_CHECKING,
@@ -30,7 +31,7 @@ from typing import (
     Type,
 )
 
-from .context import Context, current_context
+from .context import Context, block, current_context
 from .discovery_state import DiscoveryInvocationError, in_discovery
 from .errors import InvalidResourceError
 from .invoker import Invoker, StreamInvoker
@@ -64,7 +65,7 @@ class FunctionHandle:
         if stamped and not spec.schedule:
             spec.schedule = stamped
 
-        self.remote = Invoker(self._remote_async)
+        self.remote = Invoker(self._remote_async, sync_factory=self._remote_sync)
         self.stream = StreamInvoker(self._stream_async)
         self.spawn = Invoker(self._spawn_async)
         self.job = Invoker(self._job_async)
@@ -117,22 +118,46 @@ class FunctionHandle:
         function is async."""
         return self._fn(*args, **kwargs)
 
+    def _call_local_sync(self, *args: Any, **kwargs: Any) -> Any:
+        result = self._fn(*args, **kwargs)
+        return list(result) if inspect.isgenerator(result) else result
+
+    @staticmethod
+    async def _await_local_result(result: Any) -> Any:
+        if inspect.isawaitable(result):
+            result = await result
+        if inspect.isasyncgen(result):
+            return [chunk async for chunk in result]
+        return list(result) if inspect.isgenerator(result) else result
+
+    def _remote_sync(self, *args: Any, **kwargs: Any) -> Any:
+        if (
+            current_context() is Context.WORKER
+            and self._is_current_worker()
+            and not inspect.iscoroutinefunction(self._fn)
+            and not inspect.isasyncgenfunction(self._fn)
+        ):
+            self._guard_discovery()
+            self.spec.validate()
+            result = self._call_local_sync(*args, **kwargs)
+            if inspect.isawaitable(result) or inspect.isasyncgen(result):
+                return block(self._await_local_result(result))
+            return result
+        return block(self._remote_async(*args, **kwargs))
+
     async def _remote_async(self, *args: Any, **kwargs: Any) -> Any:
         self._guard_discovery()
         self.spec.validate()
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
-            result = self._fn(*args, **kwargs)
-            if inspect.isawaitable(result):
-                result = await result
-            # generators aggregate, matching the deployed worker's
-            # return_aggregate_stream output for .remote()
-            if inspect.isasyncgen(result):
-                return [chunk async for chunk in result]
-            if inspect.isgenerator(result):
-                return list(result)
-            return result
+            if inspect.iscoroutinefunction(self._fn) or inspect.isasyncgenfunction(
+                self._fn
+            ):
+                result = self._fn(*args, **kwargs)
+            else:
+                result = await asyncio.to_thread(self._call_local_sync, *args, **kwargs)
+            return await self._await_local_result(result)
 
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)

@@ -10,7 +10,7 @@ a StreamInvoker is the same idea for async generators: calling it
 returns a sync iterator, `.aio(...)` returns the async iterator.
 """
 
-from typing import Any, AsyncIterator, Callable, Coroutine, Iterator
+from typing import Any, AsyncIterator, Callable, Coroutine, Iterator, Optional
 
 from .context import block
 
@@ -19,12 +19,17 @@ AsyncGenFactory = Callable[..., AsyncIterator[Any]]
 
 
 class Invoker:
-    __slots__ = ("_factory",)
+    __slots__ = ("_factory", "_sync_factory")
 
-    def __init__(self, factory: CoroFactory):
+    def __init__(
+        self, factory: CoroFactory, *, sync_factory: Optional[Callable] = None
+    ):
         self._factory = factory
+        self._sync_factory = sync_factory
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if self._sync_factory is not None:
+            return self._sync_factory(*args, **kwargs)
         return block(self._factory(*args, **kwargs))
 
     def aio(self, *args: Any, **kwargs: Any) -> Coroutine[Any, Any, Any]:
