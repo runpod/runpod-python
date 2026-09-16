@@ -356,7 +356,7 @@ async def _wait_terminal(
 class QueueClient:
     """queue data-plane client for a single endpoint id.
 
-    owns the run/status/cancel/retry routes and the lb subdomain
+    owns the run/runsync/status/cancel/retry routes and the lb subdomain
     for http resources. targets compose it with their own routing
     headers: the sentinel client carries flash headers, a live client
     carries plain auth headers.
@@ -403,6 +403,27 @@ class QueueClient:
         self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Dict[str, Any]:
         return await self._call("POST", "run", payload, timeout)
+
+    async def invoke(
+        self,
+        payload: Dict[str, Any],
+        *,
+        timeout: float,
+        on_status: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        import time
+
+        start = time.monotonic()
+        # leave transport headroom for the server to return a pollable job id.
+        wait_ms = int(min(90.0, max(1.0, timeout - 1.0)) * 1000)
+        if on_status is not None:
+            wait_ms = 1000
+        data = await self._call("POST", f"runsync?wait={wait_ms}", payload, timeout)
+        return await self.wait(
+            data,
+            timeout=max(0.0, timeout - (time.monotonic() - start)),
+            on_status=on_status,
+        )
 
     async def status(self, job_id: str) -> Dict[str, Any]:
         return await self._call("GET", f"status/{job_id}")
@@ -508,8 +529,7 @@ class SentinelTarget(InvocationTarget):
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> Any:
-        data = await self._client.run(payload, timeout=timeout)
-        data = await self._client.wait(data, timeout=timeout)
+        data = await self._client.invoke(payload, timeout=timeout)
         return self.unwrap(data)
 
     async def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -690,9 +710,8 @@ class LiveTarget(InvocationTarget):
         if monitor is not None:
             await monitor.start()
         try:
-            data = await self._client.run(payload, timeout=timeout)
-            data = await self._client.wait(
-                data,
+            data = await self._client.invoke(
+                payload,
                 timeout=timeout,
                 on_status=monitor.on_status if monitor else None,
             )

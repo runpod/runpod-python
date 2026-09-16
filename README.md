@@ -71,6 +71,8 @@ rp flash deploy         # deploy production endpoints
 
 Functions keep their Python identity: `chat.remote(...)` runs in the cloud, `await chat.remote.aio(...)` is the async form, `chat.local(...)` runs in-process. See [`examples/apps`](examples/apps) for runnable examples and [docs.runpod.io](https://docs.runpod.io) for the full guide.
 
+Queue `.remote()` calls request a synchronous result and poll the same job if the server's wait window expires. Fast results need no client-side polling. Dev sessions use a short sync window to keep worker logs responsive. Use `.spawn()` for an asynchronous job handle. A transport failure before receiving a job ID raises an error without resubmitting the work.
+
 ## Contributing
 
 Pull requests and issues are welcome — see the [contributing guide](CONTRIBUTING.md) to get started.

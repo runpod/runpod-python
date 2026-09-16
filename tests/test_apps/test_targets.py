@@ -182,7 +182,7 @@ class TestWaitTerminal:
 @pytest.fixture
 def local_endpoint(monkeypatch):
     """local http server standing in for the serverless data plane."""
-    state = {"requests": [], "responses": {}, "status_codes": {}, "headers": {}}
+    state = {"requests": [], "responses": {}, "headers": {}}
 
     class Handler(BaseHTTPRequestHandler):
         def _respond(self):
@@ -196,11 +196,12 @@ def local_endpoint(monkeypatch):
                     "body": json.loads(body) if body else None,
                 }
             )
+            path = self.path.split("?", 1)[0]
             reply = state["responses"].get(
-                self.path, {"status": "COMPLETED", "output": {"ok": True}}
+                path, {"status": "COMPLETED", "output": {"ok": True}}
             )
             payload = json.dumps(reply).encode()
-            status = state["status_codes"].get(self.path, 200)
+            status = 200
             if any(
                 self.headers.get(key) != value
                 for key, value in state["headers"].items()
@@ -238,10 +239,9 @@ def local_endpoint(monkeypatch):
         thread.join()
 
 
-@pytest.mark.parametrize("kind", ["sentinel", "live"])
-async def test_invocations_keep_queued_jobs_addressable(
-    local_endpoint, monkeypatch, kind
-):
+@pytest.fixture(params=["sentinel", "live"])
+def invocation_target(local_endpoint, request):
+    kind = request.param
     if kind == "sentinel":
         target = SentinelTarget("demo", "production", "chat")
         endpoint = SENTINEL_ID
@@ -253,20 +253,44 @@ async def test_invocations_keep_queued_jobs_addressable(
     else:
         target = LiveTarget("ep123", "chat")
         endpoint = "ep123"
-    responses = local_endpoint.state["responses"]
-    responses[f"/{endpoint}/run"] = {"id": "durable", "status": "IN_QUEUE"}
-    responses[f"/{endpoint}/runsync"] = {"id": "ephemeral", "status": "IN_QUEUE"}
-    responses[f"/{endpoint}/status/durable"] = {
-        "id": "durable",
+    return target, endpoint
+
+
+async def test_fast_invocation_returns_without_polling(
+    local_endpoint, invocation_target
+):
+    target, endpoint = invocation_target
+    local_endpoint.state["responses"][f"/{endpoint}/runsync"] = {
+        "id": "sync-job",
         "status": "COMPLETED",
         "output": {"answer": 42},
     }
-    local_endpoint.state["status_codes"][f"/{endpoint}/status/ephemeral"] = 404
-    monkeypatch.setattr("runpod.apps.targets.JOB_PROPAGATION_ATTEMPTS", 1)
+    local_endpoint.state["responses"][f"/{endpoint}/run"] = {
+        "id": "async-job",
+        "status": "IN_QUEUE",
+    }
 
-    result = await target.invoke({"input": {"prompt": "hello"}}, timeout=10)
+    assert await target.invoke({"input": {}}, timeout=10) == {"answer": 42}
+    assert len(local_endpoint.state["requests"]) == 1
 
-    assert result == {"answer": 42}
+
+async def test_sync_wait_hands_off_the_same_job(local_endpoint, invocation_target):
+    target, endpoint = invocation_target
+    responses = local_endpoint.state["responses"]
+    responses[f"/{endpoint}/runsync"] = {"id": "sync-job", "status": "IN_QUEUE"}
+    responses[f"/{endpoint}/status/sync-job"] = {
+        "id": "sync-job",
+        "status": "COMPLETED",
+        "output": {"answer": 42},
+    }
+
+    assert await target.invoke({"input": {}}, timeout=10) == {"answer": 42}
+    submissions = [
+        request
+        for request in local_endpoint.state["requests"]
+        if request["method"] == "POST"
+    ]
+    assert len(submissions) == 1
 
 
 class TestSentinelTarget:

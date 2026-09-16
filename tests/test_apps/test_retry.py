@@ -1,5 +1,6 @@
 """tests for transient-failure retry in the http layer."""
 
+import asyncio
 import json
 import socket
 import threading
@@ -22,11 +23,15 @@ from runpod.apps.targets import (
 @pytest.fixture
 def flaky_server():
     """local server whose first responses are scripted status codes."""
-    state = {"script": [], "hits": 0}
+    state = {"script": [], "hits": 0, "release": threading.Event()}
 
     class Handler(BaseHTTPRequestHandler):
         def _respond(self):
             state["hits"] += 1
+            if state.get("stall"):
+                state["release"].wait(5)
+                self.close_connection = True
+                return
             if state.get("disconnect"):
                 self.connection.shutdown(socket.SHUT_RDWR)
                 self.connection.close()
@@ -55,8 +60,10 @@ def flaky_server():
     server.state = state
     server.url = f"http://127.0.0.1:{server.server_address[1]}/run"
     yield server
+    state["release"].set()
     server.shutdown()
     server.server_close()
+    thread.join()
 
 
 async def test_retries_transient_5xx_then_succeeds(flaky_server):
@@ -134,7 +141,7 @@ async def test_connection_error_retried(unused_tcp_port):
             await _request_json("GET", url, {}, timeout=5)
 
 
-@pytest.mark.parametrize("operation", ["run", "retry"])
+@pytest.mark.parametrize("operation", ["run", "invoke", "retry"])
 @pytest.mark.parametrize("failure", [503, "disconnect"])
 async def test_submission_is_not_repeated_after_ambiguous_failure(
     flaky_server, monkeypatch, operation, failure
@@ -148,8 +155,23 @@ async def test_submission_is_not_repeated_after_ambiguous_failure(
         flaky_server.state["script"] = [failure]
     client = QueueClient("endpoint", lambda: {})
     with pytest.raises(aiohttp.ClientError):
-        if operation == "retry":
+        if operation == "invoke":
+            await client.invoke({"input": {}}, timeout=10)
+        elif operation == "retry":
             await client.retry("job")
         else:
             await client.run({"input": {}})
+    assert flaky_server.state["hits"] == 1
+
+
+async def test_sync_transport_timeout_does_not_resubmit(flaky_server, monkeypatch):
+    import runpod
+
+    monkeypatch.setattr(runpod, "endpoint_url_base", flaky_server.url)
+    flaky_server.state["stall"] = True
+    client = QueueClient("endpoint", lambda: {})
+
+    with pytest.raises(asyncio.TimeoutError):
+        await client.invoke({"input": {}}, timeout=0.2)
+
     assert flaky_server.state["hits"] == 1
