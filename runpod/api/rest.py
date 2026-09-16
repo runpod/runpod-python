@@ -1,8 +1,10 @@
 """Runpod REST API transport."""
 
+import json as json_module
 import os
 from typing import Any, Mapping, Optional
 
+import aiohttp
 import requests
 
 from runpod import error
@@ -37,34 +39,31 @@ def _build_headers(api_key: str) -> dict[str, str]:
     }
 
 
-def _response_json(response: requests.Response) -> dict[str, Any]:
-    try:
-        payload = response.json()
-    except ValueError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def _raise_for_error(
-    response: requests.Response, method: str, path: str
+    status_code: int, method: str, path: str, text: str = ""
 ) -> None:
-    if response.status_code == HTTP_STATUS_UNAUTHORIZED:
+    if status_code == HTTP_STATUS_UNAUTHORIZED:
         raise error.AuthenticationError(
             "Unauthorized request, please check your API key."
         )
 
-    if response.status_code < HTTP_STATUS_BAD_REQUEST:
+    if status_code < HTTP_STATUS_BAD_REQUEST:
         return
 
-    payload = _response_json(response)
+    try:
+        payload = json_module.loads(text)
+    except ValueError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
     message = payload.get("detail") or payload.get("title")
     if not message:
-        message = response.text or f"Request failed with status {response.status_code}"
+        message = text or f"Request failed with status {status_code}"
 
     raise error.QueryError(
         str(message),
         f"{method.upper()} {path}",
-        status_code=response.status_code,
+        status_code=status_code,
         errors=payload.get("errors"),
     )
 
@@ -87,8 +86,44 @@ def run_rest_request(
         json=json,
         timeout=timeout,
     )
-    _raise_for_error(response, method, path)
+    if response.status_code >= HTTP_STATUS_BAD_REQUEST:
+        _raise_for_error(response.status_code, method, path, response.text)
 
     if response.status_code == HTTP_STATUS_NO_CONTENT or not response.content:
         return None
     return response.json()
+
+
+async def run_rest_request_async(
+    method: str,
+    path: str,
+    *,
+    api_key: Optional[str] = None,
+    params: Optional[Mapping[str, Any]] = None,
+    json: Optional[Mapping[str, Any]] = None,
+    timeout: float = 30,
+) -> Optional[dict[str, Any]]:
+    """Send an authenticated REST request without blocking the event loop."""
+    headers = _build_headers(_resolve_api_key(api_key))
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+    async with aiohttp.ClientSession(timeout=client_timeout) as session:
+        # aiohttp otherwise replays put/delete requests after an ambiguous disconnect.
+        session._retry_connection = False  # pylint: disable=protected-access
+        async with session.request(
+            method,
+            _build_url(path),
+            headers=headers,
+            params=params,
+            json=json,
+        ) as response:
+            if response.status >= HTTP_STATUS_BAD_REQUEST:
+                text = (
+                    ""
+                    if response.status == HTTP_STATUS_UNAUTHORIZED
+                    else await response.text(errors="replace")
+                )
+                _raise_for_error(response.status, method, path, text)
+
+            if response.status == HTTP_STATUS_NO_CONTENT or not await response.read():
+                return None
+            return await response.json(content_type=None)
