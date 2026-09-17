@@ -21,6 +21,9 @@ def cleanup_fitness_checks(monkeypatch):
     to raise SystemExit(1) so tests can assert exit behavior in-process.
     Tests that need the real os._exit patch it themselves.
     """
+    monkeypatch.delenv("RUNPOD_ENDPOINT_ID", raising=False)
+    monkeypatch.delenv(rp_fitness.EARLY_CHECKS_DONE_ENV, raising=False)
+    monkeypatch.delenv("RUNPOD_TEST", raising=False)
     monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
     monkeypatch.setenv("RUNPOD_SKIP_GPU_CHECK", "true")
 
@@ -31,6 +34,8 @@ def cleanup_fitness_checks(monkeypatch):
 
     _reset_registration_state()
     clear_fitness_checks()
+    rp_fitness._config_snapshot.clear()
     yield
     _reset_registration_state()
     clear_fitness_checks()
+    rp_fitness._config_snapshot.clear()
