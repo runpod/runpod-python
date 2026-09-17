@@ -8,7 +8,7 @@ __all__ = ["is_early_check_eligible", "run_import_checks"]
 
 
 def run_import_checks() -> None:
-    """Run shared early checks in eligible Serverless containers."""
+    """Run early hardware checks in eligible Serverless worker processes."""
     if not is_early_check_eligible():
         return
     try:

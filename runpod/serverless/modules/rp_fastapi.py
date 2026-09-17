@@ -3,7 +3,6 @@
 import os
 import threading
 import uuid
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
 
@@ -178,25 +177,6 @@ def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
 class WorkerAPI:
     """Used to launch the FastAPI web server when the worker is running in API mode."""
 
-    @asynccontextmanager
-    async def _lifespan(self, app):
-        """Validate production realtime workers before accepting requests.
-
-        Run in the serving process, after any server process creation, so CUDA
-        initialization cannot poison a later fork. Local API simulation skips it.
-        """
-        from ..worker import _is_local
-        from .rp_fitness import run_fitness_checks
-
-        args = self.config.get("rp_args", {})
-        if (
-            os.environ.get("RUNPOD_REALTIME_PORT") not in (None, "", "0")
-            and not args.get("rp_serve_api")
-            and not _is_local({"rp_args": args})
-        ):
-            await run_fitness_checks()
-        yield
-
     def __init__(self, config: Dict[str, Any]):
         """
         Initializes the WorkerAPI class.
@@ -237,7 +217,6 @@ class WorkerAPI:
             version=runpod_version,
             docs_url="/",
             openapi_tags=tags_metadata,
-            lifespan=self._lifespan,
         )
 
         # Create an APIRouter and add the route for processing jobs.

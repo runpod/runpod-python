@@ -10,9 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from runpod._health import fitness, system, coordination
-
-coordination.container_start_id = lambda: "lazy-test-" + str(os.getpid())
+from runpod._health import fitness, system
 from runpod._startup import run_import_checks
 
 
@@ -143,29 +141,81 @@ def test_changed_threshold_is_applied_without_rerunning_unrelated_checks(monkeyp
     assert disk.call_count == 2
 
 
-@pytest.mark.parametrize("local", [False, True])
-@pytest.mark.asyncio
-async def test_realtime_checks_before_serving_but_local_api_exempt(monkeypatch, local):
-    from runpod.serverless.modules.rp_fastapi import WorkerAPI
-
-    monkeypatch.setenv("RUNPOD_REALTIME_PORT", "8000")
+def test_passing_early_pass_marks_environment_for_children(monkeypatch):
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
-    api = object.__new__(WorkerAPI)
-    api.config = {"rp_args": {"rp_serve_api": local}}
-    with patch.object(fitness, "run_fitness_checks", new_callable=AsyncMock) as run:
-        async with api._lifespan(None):
-            assert run.await_count == (0 if local else 1)
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
+    run_import_checks()
+    assert os.environ[fitness.EARLY_CHECKS_DONE_ENV] == "1"
 
 
-def run_child(code, **kwargs):
+def test_setup_failure_does_not_mark_environment(monkeypatch):
+    monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
+    monkeypatch.setenv("RUNPOD_MIN_MEMORY_GB", "invalid")
+    monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
+    run_import_checks()
+    assert fitness.EARLY_CHECKS_DONE_ENV not in os.environ
+
+
+def test_child_process_with_marker_skips_early_pass(monkeypatch):
+    monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
+    monkeypatch.setenv(fitness.EARLY_CHECKS_DONE_ENV, "1")
+    with patch.object(fitness, "run_fitness_checks") as run:
+        run_import_checks()
+    run.assert_not_called()
+
+
+def test_spawned_child_inherits_marker_and_skips_probes(tmp_path):
+    """A multiprocessing spawn child re-imports the handler; it must not re-probe."""
+    # Spawn re-imports __main__ by path, so the script must live in a file.
+    script = tmp_path / "handler.py"
+    script.write_text("""
+import multiprocessing, os, sys
+from unittest.mock import patch
+from runpod._health import fitness, system
+from runpod._startup import run_import_checks
+
+def child(queue):
+    from runpod._health import fitness, system
+    with patch.object(system, '_check_memory_availability') as memory:
+        run_import_checks()
+    queue.put((os.environ.get(fitness.EARLY_CHECKS_DONE_ENV), memory.call_count))
+
+if __name__ == '__main__':
+    os.environ['RUNPOD_WEBHOOK_GET_JOB'] = 'https://example.test/job'
+    os.environ['RUNPOD_ENDPOINT_ID'] = 'endpoint'
+    os.environ['RUNPOD_SKIP_AUTO_SYSTEM_CHECKS'] = 'false'
+    with patch.object(system, 'gpu_available', return_value=False), \
+         patch.object(system, '_check_memory_availability') as memory, \
+         patch.object(system, '_check_disk_space'):
+        run_import_checks()
+    assert memory.call_count == 1
+    ctx = multiprocessing.get_context('spawn')
+    queue = ctx.Queue()
+    proc = ctx.Process(target=child, args=(queue,))
+    proc.start()
+    marker, child_calls = queue.get(timeout=30)
+    proc.join(30)
+    assert marker == '1', marker
+    assert child_calls == 0, child_calls
+    print('SPAWN_PASS')
+""")
+    result = run_child(str(script), argv_mode="file", timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert "SPAWN_PASS" in result.stdout
+
+
+def run_child(code, argv_mode="-c", timeout=15, **kwargs):
     env = {k: v for k, v in os.environ.items() if not k.startswith("RUNPOD_")}
     env.update(RUNPOD_SKIP_GPU_CHECK="true", RUNPOD_SKIP_AUTO_SYSTEM_CHECKS="true")
+    argv = [sys.executable, "-c", code] if argv_mode == "-c" else [sys.executable, code]
     return subprocess.run(
-        [sys.executable, "-c", code],
+        argv,
         env=env,
         text=True,
         capture_output=True,
-        timeout=15,
+        timeout=timeout,
         **kwargs,
     )
 
@@ -210,8 +260,7 @@ class Guard(importlib.abc.MetaPathFinder):
             raise AssertionError('early check loaded ' + fullname)
 sys.meta_path.insert(0, Guard())
 from unittest.mock import patch, MagicMock
-from runpod._health import fitness, system, coordination
-coordination.container_start_id = lambda: 'lazy-test-' + str(os.getpid())
+from runpod._health import fitness, system
 from runpod._startup import run_import_checks
 os.environ['RUNPOD_WEBHOOK_GET_JOB'] = 'https://example.test/job'
 os.environ['RUNPOD_ENDPOINT_ID'] = 'endpoint'

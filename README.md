@@ -143,9 +143,9 @@ runpod.serverless.start({"handler": handler})
 
 **Key Features:**
 - Supports both synchronous and asynchronous check functions
-- Shared hardware checks run once per container at the first Serverless import; network and process-specific checks run at worker start
-- Local tests/helper imports remain exempt; network readiness and custom checks run at worker start
-- Successful early checks are reused unless their configuration changes
+- Hardware checks run once per process tree at the first Serverless import; child processes inherit the result via `RUNPOD_EARLY_FITNESS_CHECKS_DONE`
+- Local tests and non-worker imports remain exempt; network readiness and custom checks run at worker start
+- Successful early checks are reused at worker start unless their configuration changes
 - Runs before handler initialization and job processing begins
 - Any check failure exits with code 1 (worker marked unhealthy)
 
