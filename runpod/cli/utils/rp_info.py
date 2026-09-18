@@ -15,27 +15,34 @@ def get_pod_ssh_ip_port(pod_id, timeout=300):
     start_time = time.time()
     pod_ip = None
     pod_port = None
+    status = None
 
     while time.time() - start_time < timeout and (pod_ip is None or pod_port is None):
-        pod = get_pod(pod_id)
-        desired_status = pod.get("desiredStatus", None)
-        runtime = pod.get("runtime", None)
+        pod = get_pod(pod_id) or {}
+        status = pod.get("status")
+        direct_ssh = (pod.get("ssh") or {}).get("direct")
 
-        if desired_status == "RUNNING" and runtime and "ports" in pod["runtime"]:
-            for port in pod["runtime"]["ports"]:
-                if port["privatePort"] == 22:
+        if status == "RUNNING" and direct_ssh:
+            pod_ip = direct_ssh["host"]
+            pod_port = int(direct_ssh["port"])
+            break
+
+        runtime = pod.get("runtime") or {}
+        if status == "RUNNING":
+            for port in runtime.get("ports", []):
+                if port["private"] == 22:
                     pod_ip = port["ip"]
-                    pod_port = int(port["publicPort"])
+                    pod_port = int(port["public"])
                     break
 
         time.sleep(1)
 
-    if desired_status != "RUNNING":
+    if status != "RUNNING":
         raise TimeoutError(
             f"Pod {pod_id} did not reach 'RUNNING' state within {timeout} seconds."
         )
 
-    if runtime is None:
+    if pod_ip is None or pod_port is None:
         raise TimeoutError(
             f"Pod {pod_id} did not report runtime data within {timeout} seconds."
         )
