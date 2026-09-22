@@ -311,7 +311,13 @@ def auto_register_gpu_check() -> None:
             check=False,
         )
         has_gpu = result.returncode == 0 and "NVIDIA-SMI" in result.stdout
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        log.warn(
+            "nvidia-smi did not respond within 5s; skipping the GPU binary check "
+            "because no usable GPU was detected"
+        )
+        has_gpu = False
+    except FileNotFoundError:
         has_gpu = False
     except Exception:
         # Catch any other exceptions and assume no GPU

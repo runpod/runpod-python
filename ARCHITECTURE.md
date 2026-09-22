@@ -597,7 +597,7 @@ log.error(message, job_id=None)
 
 ---
 
-### Fitness Checks: `modules/rp_fitness.py`
+### Fitness Checks: `_health/fitness.py`
 
 **Location**: `runpod/_health/fitness.py` (legacy `serverless.modules.rp_fitness` imports remain aliases)
 
@@ -1456,7 +1456,7 @@ stateDiagram-v2
 - Heartbeat: `runpod/serverless/modules/rp_ping.py`
 - Progress updates: `runpod/serverless/modules/rp_progress.py`
 - Local API: `runpod/serverless/modules/rp_fastapi.py`
-- Fitness checks: `runpod/serverless/modules/rp_fitness.py`
+- Fitness checks: `runpod/_health/fitness.py` (legacy `serverless/modules/rp_fitness.py` alias)
 
 **Performance analysis**: See [TODO.md](TODO.md)
 

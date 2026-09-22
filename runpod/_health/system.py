@@ -175,6 +175,32 @@ def _check_disk_space() -> None:
         ) from None
 
 
+DEFAULT_NETWORK_PROBE = ("api.runpod.ai", 443)
+
+
+def _network_probe_target(url: str | None) -> tuple[str, int]:
+    """Host and port to probe, taken from the worker API URL when it parses.
+
+    A URL the platform hands out in an unexpected shape (no scheme, odd port)
+    must not turn healthy hardware into an unhealthy worker, so any parse
+    problem falls back to the public API host instead of raising.
+    """
+    if not url:
+        return DEFAULT_NETWORK_PROBE
+    try:
+        target = urlsplit(url)
+        if target.scheme not in ("http", "https") or not target.hostname:
+            raise ValueError("missing scheme or host")
+        port = target.port or (443 if target.scheme == "https" else 80)
+        return target.hostname, port
+    except ValueError as exc:
+        log.warn(
+            "Worker API URL not usable for the network check; probing "
+            f"{DEFAULT_NETWORK_PROBE[0]}:{DEFAULT_NETWORK_PROBE[1]} instead ({exc})"
+        )
+        return DEFAULT_NETWORK_PROBE
+
+
 async def _check_network_connectivity() -> None:
     """Probe the worker API host with three attempts within one time budget.
 
@@ -182,13 +208,7 @@ async def _check_network_connectivity() -> None:
     TCP reachability is a basic check, not a guarantee of API authentication or
     application readiness. Do not send job requests or expose URL credentials.
     """
-    target = urlsplit(
-        os.environ.get("RUNPOD_WEBHOOK_GET_JOB") or "https://api.runpod.ai"
-    )
-    if target.scheme not in ("http", "https") or not target.hostname:
-        raise RuntimeError("Invalid worker API URL for network connectivity check")
-    host = target.hostname
-    port = target.port or (443 if target.scheme == "https" else 80)
+    host, port = _network_probe_target(os.environ.get("RUNPOD_WEBHOOK_GET_JOB"))
 
     async def probe() -> None:
         _, writer = await asyncio.open_connection(host, port)

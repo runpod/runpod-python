@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
 On Serverless, the first `import runpod` runs RAM, disk, CUDA-version, and native GPU health checks. Eligibility requires both `RUNPOD_ENDPOINT_ID` and `RUNPOD_WEBHOOK_GET_JOB`. Platform tests (`RUNPOD_TEST`), `--test_input`, and local `--rp_serve_api` invocations skip early checks.
 
-Each process tree runs these checks once. When the pass succeeds, the process sets `RUNPOD_EARLY_FITNESS_CHECKS_DONE=1` in its own environment. Child processes inherit it, so `multiprocessing` spawn workers that re-import the handler, subprocesses, and shell wrappers skip the early pass instead of repeating the hardware probes. A failed check exits before the marker is set, so the marker only ever means a parent process passed. Unrelated processes that do not inherit the environment run their own checks. The first import may occur after model loading; no earlier timing is guaranteed in that case.
+Each worker runs these checks once. When the pass succeeds, the process sets `RUNPOD_EARLY_FITNESS_CHECKS_DONE=1` in its own environment. Processes launched by that worker inherit it, so `multiprocessing` spawn workers that re-import the handler and subprocesses skip the early pass instead of repeating the hardware probes. Only descendants inherit it: a wrapper script that starts the handler, or a sibling process started before it, runs its own checks. A failed check exits before the marker is set, so the marker only ever means a parent process passed. Unrelated processes that do not inherit the environment run their own checks. The first import may occur after model loading; no earlier timing is guaranteed in that case.
 
 Network connectivity, Python CUDA initialization, GPU compute, and customer-registered checks run in the worker process at `.start()`, before accepting jobs. Network checks retry against the worker API with a bounded budget. Keeping Python CUDA initialization out of imports protects subsequent customer forks.
 
@@ -302,7 +302,7 @@ Tests TCP reachability of the worker API host at worker start.
 
 - **Default**: Up to three attempts within a 5-second total connection/cleanup budget.
 - **Configure**: `RUNPOD_NETWORK_CHECK_TIMEOUT=10` (positive seconds).
-- **Target**: Host and port from `RUNPOD_WEBHOOK_GET_JOB`; defaults to `api.runpod.ai:443` if absent. URL paths and credentials are not sent or logged by this probe.
+- **Target**: Host and port from `RUNPOD_WEBHOOK_GET_JOB`; falls back to `api.runpod.ai:443` if the variable is absent or does not parse as a URL (logged at WARN). URL paths and credentials are not sent or logged by this probe.
 - Tests connection reachability, not API authentication or full application readiness.
 - Retries temporary connection failures; persistent failure exits through the worker failure path.
 

@@ -166,6 +166,121 @@ def test_child_process_with_marker_skips_early_pass(monkeypatch):
     run.assert_not_called()
 
 
+def test_failing_hardware_check_exits_before_marking_environment(monkeypatch):
+    """A failed check must hard-exit and leave no marker for children to trust."""
+    monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
+    monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
+    with (
+        patch.object(system, "gpu_available", return_value=False),
+        patch.object(
+            system,
+            "_check_memory_availability",
+            side_effect=RuntimeError("Insufficient memory"),
+        ),
+        patch.object(system, "_check_disk_space") as disk,
+        patch.object(fitness, "_report_unhealthy") as report,
+    ):
+        with pytest.raises(SystemExit) as exc:
+            run_import_checks()
+    assert exc.value.code == 1
+    assert report.call_args.args[0] == "_memory_check"
+    disk.assert_not_called()
+    assert fitness.EARLY_CHECKS_DONE_ENV not in os.environ
+
+
+def test_skip_flag_flipped_between_import_and_start_is_applied(monkeypatch):
+    """Skip flags set (or cleared) in the handler take effect at worker start."""
+    monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
+    monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
+    with (
+        patch.object(system, "gpu_available", return_value=False),
+        patch.object(system, "_check_memory_availability") as memory,
+        patch.object(system, "_check_disk_space") as disk,
+        patch.object(system, "_check_network_connectivity", new_callable=AsyncMock),
+    ):
+        run_import_checks()
+        assert memory.call_count == 1
+        assert any(
+            getattr(c, "_runpod_builtin", None) == "system_checks"
+            for c in fitness._fitness_checks
+        )
+
+        # Handler turns the system checks off after import: start() drops them.
+        monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
+        asyncio.run(fitness.run_fitness_checks())
+        assert not any(
+            getattr(c, "_runpod_builtin", None) == "system_checks"
+            for c in fitness._fitness_checks
+        )
+        assert fitness._registration_state["system_checks"] is True
+        assert memory.call_count == 1
+
+        # Handler turns them back on: start() re-registers and reruns them.
+        monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
+        asyncio.run(fitness.run_fitness_checks())
+        assert any(
+            getattr(c, "_runpod_builtin", None) == "system_checks"
+            for c in fitness._fitness_checks
+        )
+        assert memory.call_count == 2
+        assert disk.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["api.runpod.ai/v2/x/job-take", "https://worker.example:$PORT/job", "://"],
+)
+def test_unparseable_worker_url_falls_back_to_public_api(monkeypatch, url):
+    with patch.object(system.log, "warn") as warn:
+        assert system._network_probe_target(url) == system.DEFAULT_NETWORK_PROBE
+    warn.assert_called_once()
+
+
+def test_parseable_worker_url_is_used():
+    assert system._network_probe_target("http://worker.example/job") == (
+        "worker.example",
+        80,
+    )
+    assert system._network_probe_target(None) == system.DEFAULT_NETWORK_PROBE
+
+
+def test_hung_nvidia_smi_is_warned_not_silent(monkeypatch):
+    from runpod._health import cuda, gpu
+
+    hang = subprocess.TimeoutExpired(cmd="nvidia-smi", timeout=5)
+    with (
+        patch.object(cuda.subprocess, "check_output", side_effect=hang),
+        patch.object(cuda.log, "warn") as warn,
+    ):
+        assert cuda.is_available() is False
+    warn.assert_called_once()
+    assert "nvidia-smi" in warn.call_args.args[0]
+
+    monkeypatch.delenv("RUNPOD_SKIP_GPU_CHECK")
+    with (
+        patch.object(gpu.subprocess, "run", side_effect=hang),
+        patch.object(gpu.log, "warn") as warn,
+    ):
+        gpu.auto_register_gpu_check()
+    warn.assert_called_once()
+    assert not any(
+        c.__name__ == "_gpu_health_check" for c in fitness._fitness_checks
+    )
+
+
+def test_missing_nvidia_smi_stays_quiet():
+    from runpod._health import cuda
+
+    with (
+        patch.object(cuda.subprocess, "check_output", side_effect=FileNotFoundError),
+        patch.object(cuda.log, "warn") as warn,
+    ):
+        assert cuda.is_available() is False
+    warn.assert_not_called()
+
+
 def test_spawned_child_inherits_marker_and_skips_probes(tmp_path):
     """A multiprocessing spawn child re-imports the handler; it must not re-probe."""
     # Spawn re-imports __main__ by path, so the script must live in a file.
