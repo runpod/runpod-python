@@ -64,8 +64,15 @@ def _rollback_modules(before: set, root: Path) -> None:
     for name in set(sys.modules) - before:
         module = sys.modules.get(name)
         source = getattr(module, "__file__", None)
-        if not source or not Path(source).resolve().is_relative_to(root):
+        if not source:
             continue
+        source_path = Path(source).resolve()
+        if not source_path.is_relative_to(root) or any(
+            part in _SKIP_DIRS for part in source_path.relative_to(root).parts
+        ):
+            continue
+        if cached := getattr(module, "__cached__", None):
+            Path(cached).unlink(missing_ok=True)
         sys.modules.pop(name, None)
         parent_name, _, child_name = name.rpartition(".")
         parent = sys.modules.get(parent_name)
@@ -109,14 +116,34 @@ def discover_apps(target: Path) -> List[App]:
     collected as warnings, and discovery only fails outright when no
     app was found anywhere (the failures are then the likely cause and
     are included in the error).
+
+    each scan imports fresh project modules while preserving sdk and
+    unrelated application registrations.
     """
     target = target.resolve()
-    before = set(id(a) for a in get_registered_apps())
 
     local_root = target if target.is_dir() else target.parent
     root = local_root
+    project_root = local_root
     while (root / "__init__.py").is_file():
+        project_root = root
         root = root.parent
+    protected_modules = {
+        name for name in sys.modules if name == "runpod" or name.startswith("runpod.")
+    }
+    _rollback_modules(protected_modules, project_root)
+    _restore_registry(
+        [
+            app
+            for app in get_registered_apps()
+            if not (
+                (source := getattr(app, "_source_file", None))
+                and Path(source).resolve().is_relative_to(project_root)
+            )
+        ]
+    )
+    before = {id(app) for app in get_registered_apps()}
+    importlib.invalidate_caches()
     added_paths = []
     for import_root in (local_root, root):
         root_str = str(import_root)

@@ -49,10 +49,7 @@ class TestPodInput:
         assert pod["instanceIds"] == ["cpu3c-1-2"]
         from runpod.apps.images import local_python_version
 
-        assert (
-            pod["imageName"]
-            == f"runpod/task:py{local_python_version()}-latest"
-        )
+        assert pod["imageName"] == f"runpod/task:py{local_python_version()}-latest"
         assert pod["ports"] == "8080/http"
         assert pod["terminateAfter"]
         env = {e["key"]: e["value"] for e in pod["env"]}
@@ -69,10 +66,24 @@ class TestPodInput:
         # gpu runtime image matched to the local python version
         from runpod.apps.images import local_python_version
 
-        assert (
-            pod["imageName"]
-            == f"runpod/task-gpu:py{local_python_version()}-latest"
-        )
+        assert pod["imageName"] == f"runpod/task-gpu:py{local_python_version()}-latest"
+
+    def test_any_gpu_selects_all_supported_devices(self):
+        from runpod.apps.gpu import GpuType
+
+        pod = _pod_input(self._spec(gpu="any"), "tok", "t")
+
+        assert set(pod["gpuTypeIdList"]) == {gpu.value for gpu in GpuType.all()}
+
+    @pytest.mark.parametrize("gpu", ["H100", "ADA_80_PRO"])
+    def test_h100_selection_includes_all_catalog_variants(self, gpu):
+        pod = _pod_input(self._spec(gpu=gpu), "tok", "t")
+
+        assert set(pod["gpuTypeIdList"]) == {
+            "NVIDIA H100 80GB HBM3",
+            "NVIDIA H100 PCIe",
+            "NVIDIA H100 NVL",
+        }
 
     def test_custom_image_starts_runtime_package(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_RUNTIME_PACKAGE_SPEC", "runpod-sdk-runtime==1.2.3")
@@ -107,10 +118,9 @@ class TestUnwrapTaskResponse:
         assert unwrap_task_response({"success": True, "result": _b64(42)}) == 42
 
     def test_success_json(self):
-        assert (
-            unwrap_task_response({"success": True, "json_result": {"a": 1}})
-            == {"a": 1}
-        )
+        assert unwrap_task_response({"success": True, "json_result": {"a": 1}}) == {
+            "a": 1
+        }
 
     def test_failure_raises(self):
         with pytest.raises(RemoteExecutionError, match="boom"):
@@ -165,9 +175,7 @@ class TestPodTargetPayload:
         with patch("runpod.apps.tasks.TaskExecution") as MockExec:
             instance = MockExec.return_value
             instance.start = AsyncMock()
-            instance.wait_ready = AsyncMock(
-                side_effect=TimeoutError("never ready")
-            )
+            instance.wait_ready = AsyncMock(side_effect=TimeoutError("never ready"))
             instance.terminate = AsyncMock()
 
             with pytest.raises(TimeoutError):
@@ -297,9 +305,7 @@ class TestGpuPoolExpansion:
 
         names = _device_names(None)
         assert "any" not in names
-        all_devices = {
-            t.value for types in POOLS_TO_TYPES.values() for t in types
-        }
+        all_devices = {t.value for types in POOLS_TO_TYPES.values() for t in types}
         assert set(names) == all_devices
 
     def test_mixed_pool_and_device(self):
@@ -373,9 +379,7 @@ class TestTaskExecutionLifecycle:
         from runpod.apps.volume import Volume
 
         volume = Volume("shared")
-        spec = self._spec(
-            volume=volume, datacenter=["US-IL-1", "EU-RO-1"]
-        )
+        spec = self._spec(volume=volume, datacenter=["US-IL-1", "EU-RO-1"])
         sibling = ResourceSpec(
             kind=ResourceKind.QUEUE,
             name="sibling",
@@ -392,8 +396,8 @@ class TestTaskExecutionLifecycle:
         )
         api = AsyncMock()
         api.list_network_volumes.return_value = []
-        api.cpu_stock_status.side_effect = (
-            lambda instance, dc, *, pods=False: "High" if dc == "US-IL-1" else "Low"
+        api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
+            "High" if dc == "US-IL-1" else "Low"
         )
         api.create_network_volume.return_value = {"id": "volume-1"}
         api.deploy_task_pod.return_value = {"id": "pod-9"}
@@ -401,7 +405,6 @@ class TestTaskExecutionLifecycle:
         await execution.start()
         assert api.create_network_volume.call_args.kwargs["data_center_id"] == "EU-RO-1"
         assert api.deploy_task_pod.call_args.args[0]["dataCenterIds"] == ["EU-RO-1"]
-
 
     async def test_start_resolves_registry_auth(self):
         from runpod.apps.tasks import TaskExecution
@@ -495,9 +498,7 @@ class TestTaskJob:
         execution.poll_result = AsyncMock(return_value=None)
         with (
             patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()),
-            patch(
-                "runpod.apps.tasks.time.monotonic", side_effect=[0, 100]
-            ),
+            patch("runpod.apps.tasks.time.monotonic", side_effect=[0, 100]),
         ):
             with pytest.raises(TimeoutError):
                 await job.wait(timeout=10)
@@ -548,7 +549,9 @@ class TestSpawnCleanup:
         spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
         execution = TaskExecution(spec, api=MagicMock())
         pods = set()
-        failure = asyncio.CancelledError() if cancelled else RuntimeError("setup failed")
+        failure = (
+            asyncio.CancelledError() if cancelled else RuntimeError("setup failed")
+        )
 
         async def start():
             execution.pod_id = "pod-9"
@@ -564,9 +567,7 @@ class TestSpawnCleanup:
         execution.wait_ready = AsyncMock(
             side_effect=failure if stage == "wait_ready" else None
         )
-        execution.submit = AsyncMock(
-            side_effect=failure if stage == "submit" else None
-        )
+        execution.submit = AsyncMock(side_effect=failure if stage == "submit" else None)
         with patch("runpod.apps.tasks.TaskExecution", return_value=execution):
             with pytest.raises(type(failure)):
                 await PodTarget(spec, lambda: None).submit({})

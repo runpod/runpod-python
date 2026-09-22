@@ -73,9 +73,7 @@ def normalize_workers(workers: Union[int, Tuple[int, int], None]) -> Tuple[int, 
     if min_w < 0 or max_w < 1:
         raise InvalidResourceError(f"invalid worker range ({min_w}, {max_w})")
     if min_w > max_w:
-        raise InvalidResourceError(
-            f"workers min ({min_w}) cannot exceed max ({max_w})"
-        )
+        raise InvalidResourceError(f"workers min ({min_w}) cannot exceed max ({max_w})")
     return (min_w, max_w)
 
 
@@ -112,12 +110,14 @@ def normalize_cpu(
     if cpu is None:
         return None
     if isinstance(cpu, str):
-        return [cpu]
-    if isinstance(cpu, list):
-        return [str(c) for c in cpu]
-    raise InvalidResourceError(
-        f"cpu must be an instance id string or list, got {type(cpu).__name__}"
-    )
+        cpu = [cpu]
+    if not isinstance(cpu, list):
+        raise InvalidResourceError(
+            f"cpu must be an instance id string or list, got {type(cpu).__name__}"
+        )
+    if not cpu or any(not isinstance(c, str) or not c.strip() for c in cpu):
+        raise InvalidResourceError("cpu must contain non-empty instance ids")
+    return list(cpu)
 
 
 def normalize_scaler_type(scaler_type: Optional[str]) -> Optional[str]:
@@ -302,9 +302,7 @@ class ResourceSpec:
         """the scaler the endpoint deploys with: explicit or kind default."""
         if self.scaler_type:
             return self.scaler_type
-        return (
-            "REQUEST_COUNT" if self.kind is ResourceKind.API else "QUEUE_DELAY"
-        )
+        return "REQUEST_COUNT" if self.kind is ResourceKind.API else "QUEUE_DELAY"
 
     def to_manifest(self) -> Dict[str, Any]:
         """serialize for the deploy manifest."""
@@ -332,9 +330,9 @@ class ResourceSpec:
                     for volume in self.volume
                 ]
             else:
-                data["networkVolume"] = getattr(
-                    self.volume, "name", None
-                ) or str(self.volume)
+                data["networkVolume"] = getattr(self.volume, "name", None) or str(
+                    self.volume
+                )
         if self.env:
             from .secret import render_env
 

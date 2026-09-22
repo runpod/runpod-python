@@ -77,14 +77,22 @@ def test_package_relative_imports_preserve_local_handle_identity(tmp_path, singl
         "def double(value):\n"
         "    return value * FACTOR\n"
     )
+    existing = App("outside-discovery")
+    helper = package / "helpers.py"
+    original_mtime = helper.stat().st_mtime_ns
+    for factor in (2, 3):
+        helper.write_text(f"FACTOR = {factor}\n")
+        os.utime(helper, ns=(original_mtime, original_mtime))
 
-    apps = discover_apps(target if single_file else tmp_path)
-    module = importlib.import_module("discovery_identity_package.main")
+        apps = discover_apps(target if single_file else tmp_path)
+        module = importlib.import_module("discovery_identity_package.main")
+        parent = importlib.import_module("discovery_identity_package")
 
-    assert apps == [module.app]
-    assert get_registered_apps() == apps
-    assert apps[0].resources["double"] is module.double
-    assert module.double.local(3) == 6
+        assert apps == [module.app]
+        assert get_registered_apps() == [existing, *apps]
+        assert parent.app is module.app
+        assert apps[0].resources["double"] is module.double
+        assert module.double.local(3) == 3 * factor
 
 
 def test_discovery_restores_existing_invocation_guard(tmp_path, monkeypatch):
@@ -98,17 +106,16 @@ def test_discovery_restores_existing_invocation_guard(tmp_path, monkeypatch):
     assert os.environ[DISCOVERY_ENV] == "outer-scan"
 
 
-def test_interrupt_aborts_discovery_and_rolls_back_partial_import(tmp_path, monkeypatch):
+def test_interrupt_aborts_discovery_and_rolls_back_partial_import(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv(DISCOVERY_ENV, raising=False)
     existing = App("existing")
     (tmp_path / "a_interrupted.py").write_text(
-        "from runpod import App\n"
-        "app = App('partial')\n"
-        "raise KeyboardInterrupt\n"
+        "from runpod import App\n" "app = App('partial')\n" "raise KeyboardInterrupt\n"
     )
     (tmp_path / "b_later.py").write_text(
-        "from pathlib import Path\n"
-        "Path(__file__).with_suffix('.started').touch()\n"
+        "from pathlib import Path\n" "Path(__file__).with_suffix('.started').touch()\n"
     )
 
     with pytest.raises(KeyboardInterrupt):

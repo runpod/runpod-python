@@ -15,9 +15,7 @@ def _respond(data):
 
 def _client_with(data):
     client = AppsApiClient(api_key="test-key")
-    return client, patch(
-        "runpod.apps.api.run_graphql_query_async", _respond(data)
-    )
+    return client, patch("runpod.apps.api.run_graphql_query_async", _respond(data))
 
 
 class TestExecuteRetry:
@@ -79,11 +77,17 @@ class TestEndpoints:
         from runpod.apps import App
         from runpod.apps.dev import _endpoint_input
         from runpod.apps.spec import ResourceKind, ResourceSpec
+
         monkeypatch.setattr("runpod.apps.app._REGISTRY", [])
 
         spec = ResourceSpec(
-            kind=ResourceKind.QUEUE, name="chat", gpu="4090", gpu_count=2,
-            datacenter="EU-RO-1", workers=(1, 3), idle_timeout=60,
+            kind=ResourceKind.QUEUE,
+            name="chat",
+            gpu="4090",
+            gpu_count=2,
+            datacenter="EU-RO-1",
+            workers=(1, 3),
+            idle_timeout=60,
         )
         payload = _endpoint_input(App("demo"), spec)
         payload["template"]["containerRegistryAuthId"] = "registry1"
@@ -109,18 +113,25 @@ class TestEndpoints:
             assert (await client.save_endpoint(payload))["id"] == "ep1"
         graphql.assert_not_awaited()
 
-    @pytest.mark.parametrize("capability", [
-        {"flashEnvironmentId": "env1"},
-        {"modelReferences": [{"name": "model"}]},
-        {"schedule": {"cron": "* * * * *"}},
-        {"template": {"name": "user-template", "imageName": "image"}},
-        {"instanceIds": ["cpu3c-1-2"]},
-        {"instanceIds": ["cpu3c-2-4", "cpu3c-1-2"]},
-    ])
-    async def test_unsupported_capability_remains_one_atomic_graphql_save(self, capability):
+    @pytest.mark.parametrize(
+        "capability",
+        [
+            {"flashEnvironmentId": "env1"},
+            {"modelReferences": [{"name": "model"}]},
+            {"schedule": {"cron": "* * * * *"}},
+            {"template": {"name": "user-template", "imageName": "image"}},
+            {"instanceIds": ["cpu3c-1-2"]},
+            {"instanceIds": ["cpu3c-2-4", "cpu3c-1-2"]},
+        ],
+    )
+    async def test_unsupported_capability_remains_one_atomic_graphql_save(
+        self, capability
+    ):
         payload = {
-            "name": "chat", "template": {"imageName": "image"},
-            "scalerType": "QUEUE_DELAY", "scalerValue": 4,
+            "name": "chat",
+            "template": {"imageName": "image"},
+            "scalerType": "QUEUE_DELAY",
+            "scalerValue": 4,
             **capability,
         }
         client = AppsApiClient(api_key="test-key")
@@ -133,7 +144,8 @@ class TestEndpoints:
         rest.assert_not_awaited()
         expected_template = {"name": payload["name"], **payload["template"]}
         assert graphql.call_args.kwargs["variables"]["input"] == {
-            **payload, "template": expected_template,
+            **payload,
+            "template": expected_template,
         }
         assert payload["template"] == capability.get("template", {"imageName": "image"})
 
@@ -142,36 +154,55 @@ class TestEndpoints:
         client = AppsApiClient(api_key="test-key")
         transport = AsyncMock(return_value={"id": "ep1"})
         with patch("runpod.apps.api.run_rest_request_async", transport):
-            await client.save_endpoint({
-                "name": "chat", "type": routing, "template": {"imageName": "image"},
-                "scalerType": "REQUEST_COUNT", "scalerValue": 7, "idleTimeout": 60,
-                "workersMin": 0, "workersMax": 2,
-            })
+            await client.save_endpoint(
+                {
+                    "name": "chat",
+                    "type": routing,
+                    "template": {"imageName": "image"},
+                    "scalerType": "REQUEST_COUNT",
+                    "scalerValue": 7,
+                    "idleTimeout": 60,
+                    "workersMin": 0,
+                    "workersMax": 2,
+                }
+            )
         body = transport.call_args.kwargs["json"]
         assert body["scaling"] == {"type": "REQUEST_COUNT", "requestCount": 7}
         assert body["workers"].get("idleTimeout") == (60 if routing == "LB" else None)
 
-    async def test_rest_update_preserves_cpu_alternatives_and_load_balancer_idle_timeout(self):
+    async def test_rest_update_preserves_cpu_alternatives_and_load_balancer_idle_timeout(
+        self,
+    ):
         client = AppsApiClient(api_key="test-key")
-        rest = AsyncMock(side_effect=[
-            {"id": "ep1", "type": "LOAD_BALANCER", "cpu": [{"id": "cpu5c"}]},
-            {"id": "ep1"},
-        ])
+        rest = AsyncMock(
+            side_effect=[
+                {"id": "ep1", "type": "LOAD_BALANCER", "cpu": [{"id": "cpu5c"}]},
+                {"id": "ep1"},
+            ]
+        )
         with (
             patch("runpod.apps.api.run_rest_request_async", rest),
             patch("runpod.apps.api.run_graphql_query_async", AsyncMock()) as graphql,
         ):
-            await client.save_endpoint({
-                "id": "ep1", "type": "LB",
-                "instanceIds": ["cpu5c-2-4", "cpu5g-4-16"],
-                "scalerType": "REQUEST_COUNT", "scalerValue": 7, "idleTimeout": 60,
-                "template": {"env": [{"key": "RUNPOD_DEV_GENERATION", "value": "2"}]},
-            })
+            await client.save_endpoint(
+                {
+                    "id": "ep1",
+                    "type": "LB",
+                    "instanceIds": ["cpu5c-2-4", "cpu5g-4-16"],
+                    "scalerType": "REQUEST_COUNT",
+                    "scalerValue": 7,
+                    "idleTimeout": 60,
+                    "template": {
+                        "env": [{"key": "RUNPOD_DEV_GENERATION", "value": "2"}]
+                    },
+                }
+            )
         patch_request = rest.call_args
         assert patch_request.args == ("PATCH", "/v2/serverless/ep1")
         body = patch_request.kwargs["json"]
         assert body["cpu"] == [
-            {"id": "cpu5c", "vcpuCount": 2}, {"id": "cpu5g", "vcpuCount": 4},
+            {"id": "cpu5c", "vcpuCount": 2},
+            {"id": "cpu5g", "vcpuCount": 4},
         ]
         assert body["workers"]["idleTimeout"] == 60
         assert body["env"] == {"RUNPOD_DEV_GENERATION": "2"}
@@ -190,9 +221,13 @@ class TestEndpoints:
         assert rest.await_count == 1
         assert graphql.call_args.kwargs["variables"]["input"]["type"] == "LB"
 
-    @pytest.mark.parametrize("failure", [
-        aiohttp.ClientError("response lost"), QueryError("denied", status_code=403),
-    ])
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            aiohttp.ClientError("response lost"),
+            QueryError("denied", status_code=403),
+        ],
+    )
     async def test_rest_save_failure_never_retries_or_falls_back(self, failure):
         rest = AsyncMock(side_effect=failure)
         client = AppsApiClient(api_key="test-key")
@@ -201,14 +236,34 @@ class TestEndpoints:
             patch("runpod.apps.api.run_graphql_query_async", AsyncMock()) as graphql,
             pytest.raises(type(failure)),
         ):
-            await client.save_endpoint({
-                "name": "chat", "template": {"imageName": "image"},
-                "scalerType": "QUEUE_DELAY", "scalerValue": 4,
-            })
+            await client.save_endpoint(
+                {
+                    "name": "chat",
+                    "template": {"imageName": "image"},
+                    "scalerType": "QUEUE_DELAY",
+                    "scalerValue": 4,
+                }
+            )
         assert rest.await_count == 1
         graphql.assert_not_awaited()
 
-    @pytest.mark.parametrize("method", ["delete_endpoint", "delete_registry_auth", "terminate_pod"])
+    @pytest.mark.parametrize("response", [None, {}])
+    async def test_empty_endpoint_read_prevents_mutation(self, response):
+        client = AppsApiClient(api_key="test-key")
+        rest = AsyncMock(return_value=response)
+        with (
+            patch("runpod.apps.api.run_rest_request_async", rest),
+            patch("runpod.apps.api.run_graphql_query_async", AsyncMock()) as graphql,
+            pytest.raises(QueryError),
+        ):
+            await client.save_endpoint({"id": "ep1", "name": "chat"})
+
+        assert [call.args[0] for call in rest.await_args_list] == ["GET"]
+        graphql.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "method", ["delete_endpoint", "delete_registry_auth", "terminate_pod"]
+    )
     async def test_delete_failure_is_not_reported_as_success(self, method):
         client = AppsApiClient(api_key="test-key")
         rest = AsyncMock(side_effect=QueryError("denied", status_code=403))
@@ -234,7 +289,8 @@ class TestTaskPods:
                     "gpuTypeIdList": ["NVIDIA GeForce RTX 4090"],
                     "terminateAfter": "2026-09-15T12:30:00Z",
                     "supportPublicIp": True,
-                }, is_cpu=False
+                },
+                is_cpu=False,
             )
         assert result["id"] == "pod1"
         sent = transport.call_args.kwargs["variables"]["input"]
@@ -267,7 +323,9 @@ class TestTaskPods:
     @pytest.mark.parametrize(
         "failure", [QueryError("invalid image"), aiohttp.ClientError("response lost")]
     )
-    async def test_cpu_alternatives_stop_after_ambiguous_or_invalid_failure(self, failure):
+    async def test_cpu_alternatives_stop_after_ambiguous_or_invalid_failure(
+        self, failure
+    ):
         client = AppsApiClient(api_key="test-key")
         transport = AsyncMock(side_effect=failure)
         with patch("runpod.apps.api.run_graphql_query_async", transport):
@@ -276,6 +334,24 @@ class TestTaskPods:
                     {"instanceIds": ["cpu3c-2-4", "cpu3g-2-8"]}, is_cpu=True
                 )
         assert transport.await_count == 1
+
+    @pytest.mark.parametrize(
+        "pod",
+        [
+            {},
+            {"instanceIds": []},
+            {"instanceIds": ["cpu3c-2-4", None]},
+        ],
+    )
+    async def test_invalid_cpu_selection_cannot_provision(self, pod):
+        client = AppsApiClient(api_key="test-key")
+        with (
+            patch("runpod.apps.api.run_graphql_query_async", AsyncMock()) as graphql,
+            pytest.raises(ValueError),
+        ):
+            await client.deploy_task_pod(pod, is_cpu=True)
+
+        graphql.assert_not_awaited()
 
 
 class TestAppLifecycle:
@@ -303,9 +379,7 @@ class TestAppLifecycle:
         assert result["id"] == "env1"
 
     async def test_list_apps(self):
-        client, patcher = _client_with(
-            {"myself": {"flashApps": [{"id": "app1"}]}}
-        )
+        client, patcher = _client_with({"myself": {"flashApps": [{"id": "app1"}]}})
         with patcher:
             assert await client.list_apps() == [{"id": "app1"}]
 
@@ -357,12 +431,16 @@ class TestStock:
     async def test_gpu_availability_respects_count_product_and_datacenter(self):
         async def catalog(method, path, *, api_key, params):
             available = (
-                params["product"] == "SERVERLESS" and params["count"] == 1
-                and params["cloud"] == "SECURE" and params["include"] == "AVAILABILITY"
+                params["product"] == "SERVERLESS"
+                and params["count"] == 1
+                and params["cloud"] == "SECURE"
+                and params["include"] == "AVAILABILITY"
             )
-            return {"dataCenters": [
-                {"id": "EU-RO-1", "availability": "HIGH" if available else "LOW"}
-            ]}
+            return {
+                "dataCenters": [
+                    {"id": "EU-RO-1", "availability": "HIGH" if available else "LOW"}
+                ]
+            }
 
         client = AppsApiClient(api_key="test-key")
         with patch("runpod.apps.api.run_rest_request_async", side_effect=catalog):
@@ -374,17 +452,27 @@ class TestStock:
     async def test_cpu_availability_respects_flavor_size_and_product(self):
         async def catalog(method, path, *, api_key, params):
             available = (
-                path == "/v2/catalog/cpus/cpu3c" and params["vcpuCount"] == 2
-                and params["product"] == "POD" and params["include"] == "AVAILABILITY"
+                path == "/v2/catalog/cpus/cpu3c"
+                and params["vcpuCount"] == 2
+                and params["product"] == "POD"
+                and params["include"] == "AVAILABILITY"
             )
-            return {"dataCenters": [
-                {"id": "EU-RO-1", "availability": "MEDIUM" if available else "NONE"}
-            ]}
+            return {
+                "dataCenters": [
+                    {"id": "EU-RO-1", "availability": "MEDIUM" if available else "NONE"}
+                ]
+            }
 
         client = AppsApiClient(api_key="test-key")
         with patch("runpod.apps.api.run_rest_request_async", side_effect=catalog):
-            assert await client.cpu_stock_status("cpu3c-2-4", "EU-RO-1", pods=True) == "MEDIUM"
-            assert await client.cpu_stock_status("cpu3c-4-8", "EU-RO-1", pods=True) == "NONE"
+            assert (
+                await client.cpu_stock_status("cpu3c-2-4", "EU-RO-1", pods=True)
+                == "MEDIUM"
+            )
+            assert (
+                await client.cpu_stock_status("cpu3c-4-8", "EU-RO-1", pods=True)
+                == "NONE"
+            )
             assert await client.cpu_stock_status("cpu3c-2-4", "EU-RO-1") == "NONE"
 
     @pytest.mark.parametrize("pods", [False, True])
@@ -393,23 +481,28 @@ class TestStock:
         async def graphql(query, *, api_key, variables, anonymous):
             flavor = variables["cpuFlavorInput"]
             specifics = variables["specificsInput"]
-            available = (
-                flavor == {"id": "cpu3c", "isSls": not pods}
-                and specifics == {
-                    "dataCenterId": "EU-RO-1", "instanceId": instance_id,
-                    "isSls": not pods,
+            available = flavor == {"id": "cpu3c", "isSls": not pods} and specifics == {
+                "dataCenterId": "EU-RO-1",
+                "instanceId": instance_id,
+                "isSls": not pods,
+            }
+            return {
+                "data": {
+                    "cpuFlavors": [
+                        {"specifics": {"stockStatus": "High" if available else "None"}}
+                    ]
                 }
-            )
-            return {"data": {"cpuFlavors": [
-                {"specifics": {"stockStatus": "High" if available else "None"}}
-            ]}}
+            }
 
         client = AppsApiClient(api_key="test-key")
         with (
             patch("runpod.apps.api.run_graphql_query_async", side_effect=graphql),
             patch("runpod.apps.api.run_rest_request_async", AsyncMock()) as rest,
         ):
-            assert await client.cpu_stock_status(instance_id, "EU-RO-1", pods=pods) == "High"
+            assert (
+                await client.cpu_stock_status(instance_id, "EU-RO-1", pods=pods)
+                == "High"
+            )
         rest.assert_not_awaited()
 
 

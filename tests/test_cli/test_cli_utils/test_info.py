@@ -1,4 +1,4 @@
-""" Unit testing for runpod.cli.utils.rp_info.py """
+"""Unit testing for runpod.cli.utils.rp_info.py"""
 
 from unittest.mock import patch
 
@@ -22,20 +22,33 @@ class TestGetPodSSHIpPort:
             assert ip == "127.0.0.1"
             assert port == 2222
 
-    def test_get_pod_ssh_ip_port_timeout(self):
-        """Test get_pod_ssh_ip_port timeout"""
-        with patch("runpod.cli.utils.rp_info.get_pod") as mock_get_pod:
-            mock_get_pod.return_value = {"status": "RUNNING", "runtime": None}
+    def test_waits_through_temporary_pod_absence(self):
+        ready = {
+            "status": "RUNNING",
+            "ssh": {"direct": {"host": "127.0.0.1", "port": 2222}},
+        }
+        with (
+            patch("runpod.cli.utils.rp_info.get_pod", side_effect=[None, ready]),
+            patch("runpod.cli.utils.rp_info.time") as clock,
+        ):
+            clock.time.side_effect = [0, 0, 1]
+
+            assert get_pod_ssh_ip_port("pod_id", timeout=2) == ("127.0.0.1", 2222)
+
+    @pytest.mark.parametrize(
+        "pod",
+        [
+            {"status": "RUNNING", "runtime": None},
+            {"status": "PROVISIONING"},
+            None,
+        ],
+    )
+    def test_get_pod_ssh_ip_port_timeout(self, pod):
+        with (
+            patch("runpod.cli.utils.rp_info.get_pod", return_value=pod),
+            patch("runpod.cli.utils.rp_info.time") as clock,
+        ):
+            clock.time.side_effect = [0, 0, 1]
 
             with pytest.raises(TimeoutError):
-                get_pod_ssh_ip_port("pod_id", timeout=0.1)
-
-            mock_get_pod.return_value = {"status": "PROVISIONING"}
-
-            with pytest.raises(TimeoutError):
-                get_pod_ssh_ip_port("pod_id", timeout=0.1)
-
-            mock_get_pod.return_value = {}
-
-            with pytest.raises(ValueError, match="not found"):
-                get_pod_ssh_ip_port("pod_id", timeout=0.1)
+                get_pod_ssh_ip_port("pod_id", timeout=1)

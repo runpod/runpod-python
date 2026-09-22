@@ -44,7 +44,7 @@ def _clear_registry() -> None:
 
 
 def _restore_registry(apps: List["App"]) -> None:
-    """restore registrations after a failed discovery import."""
+    """restore the registry from a discovery snapshot."""
     _REGISTRY[:] = apps
 
 

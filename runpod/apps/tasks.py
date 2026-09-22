@@ -53,9 +53,7 @@ def cuda_versions_at_least(minimum: str) -> List[str]:
         return (int(major), int(minor))
 
     floor = _key(minimum)
-    return sorted(
-        (v for v in CUDA_VERSIONS if _key(v) >= floor), key=_key
-    )
+    return sorted((v for v in CUDA_VERSIONS if _key(v) >= floor), key=_key)
 
 
 def _device_names(gpu: Optional[List[str]]) -> List[str]:
@@ -65,10 +63,8 @@ def _device_names(gpu: Optional[List[str]]) -> List[str]:
     only understands as the full device list."""
     from .gpu import POOLS_TO_TYPES, GpuGroup
 
-    if not gpu:
-        return sorted(
-            {t.value for types in POOLS_TO_TYPES.values() for t in types}
-        )
+    if not gpu or GpuGroup.ANY.value in gpu:
+        return sorted({t.value for types in POOLS_TO_TYPES.values() for t in types})
     names: List[str] = []
     for entry in gpu:
         try:
@@ -89,9 +85,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     start the runtime package via dockerArgs.
     """
     spec.validate()
-    terminate_after = (
-        datetime.now(timezone.utc) + DEFAULT_MAX_LIFETIME
-    ).isoformat()
+    terminate_after = (datetime.now(timezone.utc) + DEFAULT_MAX_LIFETIME).isoformat()
 
     from .secret import render_env
 
@@ -105,12 +99,9 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
 
     pod: Dict[str, Any] = {
         "name": f"task-{task_name}-{secrets.token_hex(4)}",
-        "imageName": image_for_spec(
-            spec, python_version=local_python_version()
-        ),
+        "imageName": image_for_spec(spec, python_version=local_python_version()),
         "ports": f"{TASK_PORT}/http",
-        "containerDiskInGb": spec.container_disk_gb
-        or (10 if spec.is_cpu else 30),
+        "containerDiskInGb": spec.container_disk_gb or (10 if spec.is_cpu else 30),
         "terminateAfter": terminate_after,
         "supportPublicIp": True,
     }
@@ -150,9 +141,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
         if spec.min_cuda_version:
             # pods have no min-version filter; allow every version at
             # or above the requested floor
-            pod["allowedCudaVersions"] = cuda_versions_at_least(
-                spec.min_cuda_version
-            )
+            pod["allowedCudaVersions"] = cuda_versions_at_least(spec.min_cuda_version)
     return pod
 
 
@@ -194,9 +183,7 @@ class TaskExecution:
         from ..error import QueryError
 
         try:
-            return await self.api.deploy_task_pod(
-                pod, is_cpu=self.spec.is_cpu
-            )
+            return await self.api.deploy_task_pod(pod, is_cpu=self.spec.is_cpu)
         except QueryError as exc:
             if not is_capacity_error(exc):
                 raise

@@ -204,6 +204,11 @@ class AppsApiClient:
                 f"/v2/serverless/{_path_segment(endpoint_id)}",
                 api_key=self._api_key,
             )
+            if not current:
+                raise QueryError(
+                    f"endpoint '{endpoint_id}' returned an empty response",
+                    f"GET /v2/serverless/{_path_segment(endpoint_id)}",
+                )
             requested_type = endpoint_input.get("type")
             expected = (
                 ("LOAD_BALANCER" if requested_type == "LB" else "QUEUE")
@@ -273,9 +278,18 @@ class AppsApiClient:
         """provision with a termination deadline and public-ip requirement."""
         pod_input = dict(pod_input)
         if is_cpu:
-            instance_ids = pod_input.pop("instanceIds", None) or [
-                pod_input.get("instanceId")
-            ]
+            instance_ids = pod_input.pop("instanceIds", None)
+            if instance_ids is None:
+                instance_ids = [pod_input.pop("instanceId", None)]
+            if (
+                not isinstance(instance_ids, list)
+                or not instance_ids
+                or any(
+                    not isinstance(instance_id, str) or not instance_id.strip()
+                    for instance_id in instance_ids
+                )
+            ):
+                raise ValueError("cpu tasks require non-empty instance ids")
             mutation = app_mutations.MUTATION_DEPLOY_CPU_POD
             for index, instance_id in enumerate(instance_ids):
                 candidate = dict(pod_input, instanceId=instance_id)

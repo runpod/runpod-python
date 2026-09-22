@@ -77,6 +77,8 @@ class GpuType(Enum):
         "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
     )
     NVIDIA_H100_80GB_HBM3 = "NVIDIA H100 80GB HBM3"
+    NVIDIA_H100_PCIe = "NVIDIA H100 PCIe"
+    NVIDIA_H100_NVL = "NVIDIA H100 NVL"
     NVIDIA_RTX_A4000 = "NVIDIA RTX A4000"
     NVIDIA_RTX_A4500 = "NVIDIA RTX A4500"
     NVIDIA_RTX_4000_ADA_GENERATION = "NVIDIA RTX 4000 Ada Generation"
@@ -101,7 +103,11 @@ POOLS_TO_TYPES = {
     GpuGroup.ADA_24: [GpuType.NVIDIA_GEFORCE_RTX_4090],
     GpuGroup.ADA_32_PRO: [GpuType.NVIDIA_GEFORCE_RTX_5090],
     GpuGroup.ADA_48_PRO: [GpuType.NVIDIA_RTX_6000_ADA_GENERATION],
-    GpuGroup.ADA_80_PRO: [GpuType.NVIDIA_H100_80GB_HBM3],
+    GpuGroup.ADA_80_PRO: [
+        GpuType.NVIDIA_H100_80GB_HBM3,
+        GpuType.NVIDIA_H100_PCIe,
+        GpuType.NVIDIA_H100_NVL,
+    ],
     GpuGroup.AMPERE_16: [
         GpuType.NVIDIA_RTX_A4000,
         GpuType.NVIDIA_RTX_A4500,

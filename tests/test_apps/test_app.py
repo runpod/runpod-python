@@ -63,6 +63,34 @@ def test_task_decorator():
     assert t.spec.cpu == ["cpu5c-2-4"]
 
 
+@pytest.mark.parametrize("cpu", [[], "", ["cpu3c-2-4", ""], [None]])
+def test_cpu_selection_requires_nonempty_instance_ids(cpu):
+    app = App("a")
+
+    with pytest.raises(InvalidResourceError):
+        app.task(cpu=cpu)(lambda: None)
+
+    assert app.resources == {}
+
+
+async def test_remote_rejects_cleared_cpu_selection(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        "runpod.apps.tasks.TaskExecution.start",
+        AsyncMock(side_effect=AssertionError("invalid specs must not provision")),
+    )
+    app = App("a")
+
+    @app.task(cpu="cpu3c-2-4")
+    def task():
+        raise AssertionError("invalid specs must not execute")
+
+    task.spec.cpu.clear()
+    with pytest.raises(InvalidResourceError):
+        await task.remote.aio()
+
+
 def test_gpu_cpu_mutually_exclusive():
     app = App("a")
     with pytest.raises(InvalidResourceError):
