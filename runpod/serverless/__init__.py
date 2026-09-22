@@ -10,21 +10,24 @@ import os
 import signal
 import sys
 import time
-from typing import Any, Dict
+from typing import Any
 
 from ..version import __version__ as runpod_version
 from . import worker
-from .modules.rp_logger import RunPodLogger
-from .modules.rp_progress import progress_update
 from .modules.rp_fitness import register_fitness_check
+from .modules.rp_logger import RunPodLogger
+from .modules.rp_prestart import has_prestart_hooks as _has_prestart_hooks
+from .modules.rp_prestart import register_prestart_hook
+from .modules.rp_progress import progress_update
 from .utils.rp_volume_cache import VolumeCache
 
 __all__ = [
-    "start",
+    "VolumeCache",
     "progress_update",
     "register_fitness_check",
+    "register_prestart_hook",
     "runpod_version",
-    "VolumeCache",
+    "start",
 ]
 
 log = RunPodLogger()
@@ -84,7 +87,7 @@ parser.add_argument(
 )
 
 
-def _set_config_args(config) -> dict:
+def _set_config_args(config: dict[str, Any]) -> dict[str, Any]:
     """
     Sets the config rp_args, removing any recognized arguments from sys.argv.
     Returns: config
@@ -133,18 +136,49 @@ def _signal_handler(sig, frame):
     sys.exit(0)
 
 
+def _validate_prestart_mode(config: dict[str, Any], realtime_port: int) -> None:
+    """Check whether registered hooks have a safe adapter for the selected mode.
+
+    Queue and local-input modes are single-process SDK lifecycles. Hosted API
+    mode is supported only with one Uvicorn worker so the hook runs exactly once
+    in the same process as the handler. Realtime is rejected because its worker
+    cardinality, readiness, and persistent-connection failure contract are not
+    defined for prestart hooks.
+    """
+    if not _has_prestart_hooks():
+        return
+
+    if config["rp_args"]["rp_serve_api"]:
+        if config["rp_args"]["rp_api_concurrency"] != 1:
+            raise RuntimeError(
+                "Prestart hooks require rp_api_concurrency=1 in hosted API mode."
+            )
+        return
+
+    if realtime_port:
+        raise RuntimeError("Prestart hooks are not supported in realtime mode.")
+
+
 # ---------------------------------------------------------------------------- #
 #                            Start Serverless Worker                           #
 # ---------------------------------------------------------------------------- #
-def start(config: Dict[str, Any]):
+def start(config: dict[str, Any]):
     """
     Starts the serverless worker.
 
-    config (Dict[str, Any]): Configuration parameters for the worker.
+    config (dict[str, Any]): Configuration parameters for the worker.
 
     config["handler"] (Callable): The handler function to run.
 
-    config["rp_args"] (Dict[str, Any]): Arguments for the worker, populated by runtime arguments.
+    config["rp_args"] (dict[str, Any]): Arguments populated by runtime arguments.
+
+    Prestart hooks registered with `register_prestart_hook` run once before
+    handler execution in queue-based, local test, and hosted API modes.
+    Production queue intake continues while hooks run; local and hosted API
+    handlers do not accept work until every hook finishes.
+
+    config["prestart_timeout"] (int, optional): Seconds allowed for the complete
+        prestart phase. Omit for no timeout.
     """
     print(f"--- Starting Serverless Worker |  Version {runpod_version} ---")
 
@@ -156,9 +190,12 @@ def start(config: Dict[str, Any]):
     realtime_port = _get_realtime_port()
     realtime_concurrency = _get_realtime_concurrency()
 
+    _validate_prestart_mode(config, realtime_port)
+
     if config["rp_args"]["rp_serve_api"]:
         log.info("Starting API server.")
         from .modules import rp_fastapi
+
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(
@@ -171,6 +208,7 @@ def start(config: Dict[str, Any]):
     if realtime_port:
         log.info(f"Starting API server for realtime on port {realtime_port}.")
         from .modules import rp_fastapi
+
         api_server = rp_fastapi.WorkerAPI(config)
 
         api_server.start_uvicorn(

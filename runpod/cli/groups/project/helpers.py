@@ -67,7 +67,6 @@ def attempt_pod_launch(config, environment_variables):
                 config["project"]["base_image"],
                 gpu_type,
                 gpu_count=int(config["project"]["gpu_count"]),
-                support_public_ip=True,
                 ports=f'{config["project"]["ports"]}',
                 network_volume_id=f'{config["project"]["storage_id"]}',
                 volume_mount_path=f'{config["project"]["volume_mount_path"]}',
