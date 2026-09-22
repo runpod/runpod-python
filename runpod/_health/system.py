@@ -20,7 +20,11 @@ import shutil
 import time
 from urllib.parse import urlsplit
 
-from .fitness import defer_to_worker_start, register_fitness_check
+from .fitness import (
+    defer_to_worker_start,
+    recheck_at_worker_start,
+    register_fitness_check,
+)
 from runpod._logger import RunPodLogger
 from .cuda import is_available as gpu_available
 
@@ -546,6 +550,7 @@ def auto_register_system_checks() -> None:
         _check_memory_availability()
 
     @register_fitness_check
+    @recheck_at_worker_start
     def _disk_check() -> None:
         """System disk space check."""
         _check_disk_space()

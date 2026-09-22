@@ -24,6 +24,7 @@ def cleanup_fitness_checks(monkeypatch):
     monkeypatch.delenv("RUNPOD_ENDPOINT_ID", raising=False)
     monkeypatch.delenv(rp_fitness.EARLY_CHECKS_DONE_ENV, raising=False)
     monkeypatch.delenv("RUNPOD_TEST", raising=False)
+    monkeypatch.delenv("RUNPOD_REALTIME_PORT", raising=False)
     monkeypatch.setenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS", "true")
     monkeypatch.setenv("RUNPOD_SKIP_GPU_CHECK", "true")
 

@@ -57,6 +57,10 @@ _fitness_checks: list[Callable] = []
 # run_worker -- so the second pass only runs what was registered in between.
 _completed_checks: list[Callable] = []
 
+# Checks that passed at import but must also observe resources after the
+# handler finishes loading, before the worker begins accepting jobs.
+_worker_start_completed_checks: list[Callable] = []
+
 # Disables every check, built-in and user-registered.
 SKIP_FITNESS_CHECKS_ENV = "RUNPOD_SKIP_FITNESS_CHECKS"
 
@@ -122,6 +126,12 @@ def _is_deferred(func: Callable) -> bool:
     return getattr(func, "_runpod_defer_to_worker_start", False)
 
 
+def recheck_at_worker_start(func: Callable) -> Callable:
+    """Run a built-in check again after handler initialization."""
+    func._runpod_recheck_at_worker_start = True
+    return func
+
+
 def register_fitness_check(func: Callable) -> Callable:
     """
     Decorator to register a fitness check function.
@@ -164,6 +174,7 @@ def clear_fitness_checks() -> None:
     """
     _fitness_checks.clear()
     _completed_checks.clear()
+    _worker_start_completed_checks.clear()
 
 
 _registration_state: dict[str, bool] = {
@@ -400,6 +411,11 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
         check
         for check in _fitness_checks
         if not any(check is done for done in _completed_checks)
+        or (
+            include_deferred
+            and getattr(check, "_runpod_recheck_at_worker_start", False)
+            and not any(check is done for done in _worker_start_completed_checks)
+        )
     ]
 
     if not include_deferred:
@@ -423,7 +439,12 @@ async def run_fitness_checks(include_deferred: bool = True) -> None:
             await _invoke_check(check_func)
 
             check_elapsed_ms = (time.perf_counter() - check_start_time) * 1000
-            _completed_checks.append(check_func)
+            if not any(check_func is done for done in _completed_checks):
+                _completed_checks.append(check_func)
+            if include_deferred and getattr(
+                check_func, "_runpod_recheck_at_worker_start", False
+            ):
+                _worker_start_completed_checks.append(check_func)
             log.debug(f"Fitness check passed: {check_name} ({check_elapsed_ms:.2f}ms)")
 
         except Exception as exc:

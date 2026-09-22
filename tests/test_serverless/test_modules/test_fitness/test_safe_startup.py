@@ -35,6 +35,21 @@ def test_import_does_not_run_for_unmarked_or_local_process(monkeypatch, args):
     run.assert_not_called()
 
 
+def test_realtime_worker_skips_early_checks(monkeypatch):
+    monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://example.test/job")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
+    monkeypatch.setenv("RUNPOD_REALTIME_PORT", "8000")
+    monkeypatch.setattr(sys, "argv", ["handler.py"])
+    with patch.object(fitness, "run_startup_fitness_checks") as run:
+        run_import_checks()
+    run.assert_not_called()
+
+    monkeypatch.setenv("RUNPOD_REALTIME_PORT", "0")
+    with patch.object(fitness, "run_startup_fitness_checks") as run:
+        run_import_checks()
+    run.assert_called_once()
+
+
 def test_initial_pass_does_not_compare_config(monkeypatch):
     monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://example.test/job")
     monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
@@ -139,6 +154,48 @@ def test_changed_threshold_is_applied_without_rerunning_unrelated_checks(monkeyp
         assert system.MIN_DISK_PERCENT == 2
     assert memory.call_count == 1
     assert disk.call_count == 2
+
+
+def test_disk_is_rechecked_after_handler_setup(monkeypatch):
+    monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
+    monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
+    with (
+        patch.object(system, "gpu_available", return_value=False),
+        patch.object(system, "_check_memory_availability") as memory,
+        patch.object(system, "_check_disk_space") as disk,
+        patch.object(system, "_check_network_connectivity", new_callable=AsyncMock),
+    ):
+        run_import_checks()
+        assert disk.call_count == 1
+        asyncio.run(fitness.run_fitness_checks())
+        assert disk.call_count == 2
+        asyncio.run(fitness.run_fitness_checks())
+    assert disk.call_count == 2
+    assert memory.call_count == 1
+
+
+def test_disk_exhausted_during_handler_setup_fails_worker(monkeypatch):
+    monkeypatch.delenv("RUNPOD_SKIP_AUTO_SYSTEM_CHECKS")
+    monkeypatch.setenv("RUNPOD_WEBHOOK_GET_JOB", "https://worker.example/job")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "endpoint")
+    with (
+        patch.object(system, "gpu_available", return_value=False),
+        patch.object(system, "_check_memory_availability"),
+        patch.object(
+            system,
+            "_check_disk_space",
+            side_effect=[None, RuntimeError("Insufficient disk space")],
+        ) as disk,
+        patch.object(system, "_check_network_connectivity", new_callable=AsyncMock),
+        patch.object(fitness, "_report_unhealthy") as report,
+    ):
+        run_import_checks()
+        with pytest.raises(SystemExit) as exc:
+            asyncio.run(fitness.run_fitness_checks())
+    assert exc.value.code == 1
+    assert disk.call_count == 2
+    assert report.call_args.args[0] == "_disk_check"
 
 
 def test_passing_early_pass_marks_environment_for_children(monkeypatch):
