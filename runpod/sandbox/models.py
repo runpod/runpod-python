@@ -16,7 +16,7 @@ def _timestamp(value: str) -> datetime:
 
 @dataclass(frozen=True)
 class SandboxCompute:
-    vcpu_count: float
+    vcpu_count: int
     memory_in_gb: float
     container_disk_in_gb: int
     cost_per_hr: float

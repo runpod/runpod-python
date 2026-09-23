@@ -27,6 +27,7 @@ class SandboxService:
         self.requests = []
         self.executed = []
         self.exec_statuses = deque()
+        self.exec_responses = deque()
         self.log_statuses = deque()
         self.delete_status = 204
         self.create_started = threading.Event()
@@ -130,10 +131,12 @@ def sandbox_peer():
             service.executed.append(body["command"])
             if status >= 400:
                 return failure(status, "response lost after command execution")
+            if service.exec_responses:
+                return service.exec_responses.popleft()
             result = (
                 {"output": "partial output", "error": "command failed"}
                 if body["command"] == ["fail"]
-                else {"output": "completed", "error": None}
+                else {"output": "completed"}
             )
             return web.json_response(result)
         if operation == "logs":
@@ -222,7 +225,7 @@ async def test_async_startup_conflict_and_borrowed_context_ownership(peer):
     peer.exec_statuses.extend([409, 200])
     async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options) as owner:
         async with await AsyncioSandbox.get(owner.id, **peer.options) as borrowed:
-            assert (await borrowed.exec(["work"])).output == "completed"
+            assert (await borrowed.exec(["work"], check=True)).output == "completed"
         assert peer.records[owner.id]["state"] == "RUNNING"
         with pytest.raises(RuntimeError):
             async with owner:
@@ -335,6 +338,27 @@ async def test_exec_never_replays_ambiguous_failure_and_preserves_partial_output
             await sandbox.exec(["fail"], check=True)
         assert failure.value.result == result
         assert failure.value.sandbox_id == sandbox.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body, content_type",
+    [
+        ("{}", "application/json"),
+        ('{"output": null}', "application/json"),
+        ("<html>proxy error</html>", "text/html"),
+        ("[]", "application/json"),
+    ],
+)
+async def test_malformed_exec_response_is_a_query_error_without_replay(
+    peer, body, content_type
+):
+    async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options) as sandbox:
+        peer.exec_responses.append(web.Response(text=body, content_type=content_type))
+        with pytest.raises(QueryError) as failure:
+            await sandbox.exec(["side-effect"])
+        assert failure.value.query == f"POST /v2/sandboxes/{sandbox.id}/exec"
+        assert peer.executed == [["side-effect"]]
 
 
 @pytest.mark.asyncio

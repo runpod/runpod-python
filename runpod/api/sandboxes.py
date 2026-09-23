@@ -273,8 +273,9 @@ class AsyncSandboxAPI:
                 cookie_jar=aiohttp.DummyCookieJar(),
             )
             # aiohttp otherwise transparently replays disconnected GET/DELETE
-            # requests. It currently exposes no public switch for this policy.
-            self._session._retry_connection = False
+            # requests. it currently exposes no public switch for this policy.
+            if hasattr(self._session, "_retry_connection"):
+                self._session._retry_connection = False
         return self._session
 
     async def _request(
@@ -296,9 +297,20 @@ class AsyncSandboxAPI:
             await _raise_response_error(response, method, path)
             if response.status == 204:
                 return None
-            payload = await response.json(content_type=None)
+            try:
+                payload = await response.json(content_type=None)
+            except ValueError as cause:
+                raise error.QueryError(
+                    "Sandbox API response is not valid JSON",
+                    f"{method} {path}",
+                    status_code=response.status,
+                ) from cause
             if not isinstance(payload, dict):
-                raise ValueError("Sandbox API response must be a JSON object")
+                raise error.QueryError(
+                    "Sandbox API response must be a JSON object",
+                    f"{method} {path}",
+                    status_code=response.status,
+                )
             return payload
 
     async def create(self, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -342,11 +354,13 @@ class AsyncSandboxAPI:
         await self._request("DELETE", _sandbox_path(sandbox_id))
 
     async def exec(self, sandbox_id: str, command: Sequence[str]) -> dict[str, Any]:
-        payload = await self._request(
-            "POST", f"{_sandbox_path(sandbox_id)}/exec", body={"command": list(command)}
-        )
-        if payload is None:
-            raise ValueError("Sandbox execution returned no result")
+        path = f"{_sandbox_path(sandbox_id)}/exec"
+        payload = await self._request("POST", path, body={"command": list(command)})
+        if payload is None or not isinstance(payload.get("output"), str):
+            raise error.QueryError(
+                "Sandbox execution response must contain a string 'output'",
+                f"POST {path}",
+            )
         return payload
 
     def logs(

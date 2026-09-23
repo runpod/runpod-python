@@ -354,12 +354,14 @@ class AsyncioSandbox:
         check: bool = False,
         startup_timeout: Optional[float] = None,
     ) -> ExecResult:
-        """Execute argv, retrying only explicit 409 startup rejections.
+        """execute argv, retrying only explicit 409 startup rejections.
 
-        The startup deadline limits retries, not execution of an accepted
-        command. Each request retains its request timeout. Transport errors,
+        the startup deadline limits retries, not execution of an accepted
+        command. each request retains its request timeout. transport errors,
         timeouts, and other HTTP errors are never retried because the command
-        might already have executed. ``check=True`` preserves output on failure.
+        might already have executed. ``check=False`` returns command failures
+        in ``ExecResult.error``, matching ``subprocess.run``. use ``check=True``
+        to raise ``SandboxExecutionError`` with partial output on failure.
         """
         if isinstance(command, (str, bytes)) or not isinstance(command, Sequence):
             raise TypeError(

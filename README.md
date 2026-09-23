@@ -175,6 +175,8 @@ runpod.api_key = "your_runpod_api_key_found_under_settings"
 
 ### Sandboxes
 
+Sandboxes are an access-controlled preview. An authorized account and a sandbox-enabled API environment are required; installing the SDK does not grant access. Configure the API origin supplied for your environment with `RUNPOD_API_BASE_URL` or the handle's `base_url` option.
+
 `Sandbox` and `AsyncioSandbox` manage isolated CPU sandboxes through REST API v2. Set `RUNPOD_API_KEY`, assign `runpod.api_key`, or pass `api_key` to a handle. Supply exactly one of `image_name` or `template_id`.
 
 ```python
@@ -185,7 +187,7 @@ with Sandbox(image_name="python:3.12-slim") as sandbox:
     print(result.output)
 ```
 
-Use `AsyncioSandbox` in asynchronous applications:
+Use `AsyncioSandbox` in asynchronous applications. Its name follows the SDK's `AsyncioEndpoint` and `AsyncioJob` convention:
 
 ```python
 import asyncio
@@ -204,7 +206,7 @@ asyncio.run(main())
 
 These contexts create a sandbox on entry and terminate it on exit, including when the body raises. `Sandbox.create(...)` and `await AsyncioSandbox.create(...)` return owned handles for explicit lifetime management. Call `terminate()` to release remote compute; `close()` releases local connections only. Handles returned by `get(sandbox_id)` or `list(state=..., labels=...)` are borrowed, so their contexts only close local resources. Async factories and lifecycle methods are awaited.
 
-Handle properties such as `state`, `compute`, and `expires_at` read cached metadata; `refresh()` fetches a current snapshot. Command execution accepts an argument sequence. `check=True` raises `SandboxExecutionError` with the partial output available in `error.result`. Explicit startup rejections are retried within `startup_timeout`; ambiguous transport failures are not replayed.
+Handle properties such as `state`, `compute`, and `expires_at` read cached metadata; `refresh()` fetches a current snapshot. Command execution accepts an argument sequence. Like `subprocess.run`, `exec` defaults to `check=False` so callers can inspect command failures through `ExecResult.error`. Use `check=True` when subsequent work depends on success: it raises `SandboxExecutionError` with the partial output available in `error.result`. HTTP errors and malformed responses raise regardless of `check`. Explicit startup rejections are retried within `startup_timeout`; ambiguous transport failures are not replayed.
 
 `sandbox.logs(source="container", tail=10)` streams typed log events from the container's main process; `source="system"` selects lifecycle logs. Command output is returned by `exec`, not this stream. Use `with` and regular iteration for synchronous log streams, or `async with` and `async for` for asynchronous streams, to close the connection when stopping early. Preserve an event's `id` and pass it as `last_event_id` to resume a stream, or filter by `since`.
 
