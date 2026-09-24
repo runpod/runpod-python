@@ -264,6 +264,7 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
             )
 
             log.debug(f"Handler output: {job_output}", job["id"])
+            empty_handler_output = isinstance(job_output, dict) and not job_output
 
             if isinstance(job_output, dict):
                 error_msg = job_output.pop("error", None)
@@ -280,6 +281,9 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
             else:
                 run_result = {"output": job_output}
+
+            if run_result.get("output") == {} and not empty_handler_output:
+                run_result.pop("output")
 
             check_return_size(run_result)  # Checks the size of the return body.
 
