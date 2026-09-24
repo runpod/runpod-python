@@ -1,4 +1,4 @@
-""" Allows runpod to be imported as a module. """
+"""Allows runpod to be imported as a module."""
 
 import logging
 import os
@@ -33,19 +33,20 @@ from .cli.groups.config.functions import (
     set_credentials,
 )
 from .endpoint import AsyncioEndpoint, AsyncioJob, Endpoint
+from .sandbox import AsyncioSandbox, Sandbox
 from .serverless.modules.rp_logger import RunPodLogger
 from .version import __version__
 
 __all__ = [
     # API functions
     "create_container_registry_auth",
-    "create_endpoint", 
+    "create_endpoint",
     "create_pod",
     "create_template",
     "delete_container_registry_auth",
     "get_endpoints",
     "get_gpu",
-    "get_gpus", 
+    "get_gpus",
     "get_pod",
     "get_pods",
     "get_user",
@@ -57,12 +58,15 @@ __all__ = [
     "update_user_settings",
     # Config functions
     "check_credentials",
-    "get_credentials", 
+    "get_credentials",
     "set_credentials",
     # Endpoint classes
     "AsyncioEndpoint",
     "AsyncioJob",
     "Endpoint",
+    # Sandbox classes
+    "AsyncioSandbox",
+    "Sandbox",
     # Serverless module
     "serverless",
     # Logger class
@@ -72,8 +76,8 @@ __all__ = [
     # Module variables
     "SSH_KEY_PATH",
     "profile",
-    "api_key", 
-    "endpoint_url_base"
+    "api_key",
+    "endpoint_url_base",
 ]
 
 # ------------------------------- Config Paths ------------------------------- #

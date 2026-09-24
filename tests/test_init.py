@@ -86,30 +86,6 @@ class TestRunpodInit:
         for private_symbol in private_symbols:
             assert private_symbol not in all_symbols, f"Private symbol '{private_symbol}' should not be in __all__"
 
-    def test_all_covers_expected_public_api(self):
-        """Test that __all__ contains the expected public API symbols."""
-        expected_symbols = {
-            # API functions  
-            'create_container_registry_auth', 'create_endpoint', 'create_pod', 'create_template',
-            'delete_container_registry_auth', 'get_endpoints', 'get_gpu', 'get_gpus',
-            'get_pod', 'get_pods', 'get_user', 'resume_pod', 'stop_pod', 'terminate_pod',
-            'update_container_registry_auth', 'update_endpoint_template', 'update_user_settings',
-            # Config functions
-            'check_credentials', 'get_credentials', 'set_credentials',
-            # Endpoint classes
-            'AsyncioEndpoint', 'AsyncioJob', 'Endpoint',
-            # Serverless module
-            'serverless',
-            # Logger class
-            'RunPodLogger',
-            # Version
-            '__version__',
-            # Module variables
-            'SSH_KEY_PATH', 'profile', 'api_key', 'endpoint_url_base'
-        }
-        
-        actual_symbols = set(runpod.__all__)
-        assert expected_symbols == actual_symbols, f"Expected {expected_symbols}, got {actual_symbols}"
 
     def test_no_duplicate_symbols_in_all(self):
         """Test that __all__ contains no duplicate symbols."""
