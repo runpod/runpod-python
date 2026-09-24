@@ -90,7 +90,23 @@ theme = Theme(
     }
 )
 
-console = Console(highlight=False, theme=theme)
+
+def _build_console(stderr: bool = False) -> Console:
+    return Console(highlight=False, theme=theme, stderr=stderr)
+
+
+console = _build_console()
+
+
+def route_to_stderr() -> None:
+    """rebind human-facing rendering to stderr.
+
+    machine-readable modes (--json) own stdout; every rich line moves
+    to stderr so stdout stays parseable. Console(stderr=True) resolves
+    sys.stderr per write, keeping capture-based tests working.
+    """
+    global console
+    console = _build_console(stderr=True)
 
 
 def _spinner_column(finished_text: str = "[ok]✓[/ok]") -> SpinnerColumn:
