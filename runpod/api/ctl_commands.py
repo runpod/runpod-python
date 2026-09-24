@@ -1,113 +1,112 @@
-"""
-Runpod | API Wrapper | CTL Commands
-"""
+"""Runpod API wrapper commands."""
 
 # pylint: disable=too-many-arguments,too-many-locals
 
-from typing import Optional
+import re
+from typing import Any, Iterable, Optional
+from urllib.parse import quote
+
+from runpod import error
 
 from .graphql import run_graphql_query
 from .mutations import container_register_auth as container_register_auth_mutations
-from .mutations import endpoints as endpoint_mutations
-from .mutations import pods as pod_mutations
-from .mutations import templates as template_mutations
-from .mutations import user as user_mutations
-from .queries import endpoints as endpoint_queries
-from .queries import gpus
-from .queries import pods as pod_queries
 from .queries import user as user_queries
+from .rest import HTTP_STATUS_NOT_FOUND, run_rest_request
+
+
+def _path_segment(value: str) -> str:
+    return quote(value, safe="")
+
+
+def _split_values(value: Optional[Iterable[Any] | str]) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = value.split(",")
+    else:
+        values = value
+    return [str(item).strip() for item in values if str(item).strip()]
+
+
+def _environment(env: Optional[dict]) -> dict[str, str]:
+    return {str(key): str(value) for key, value in (env or {}).items()}
+
+
+def _cpu_config(instance_id: Optional[str]) -> dict[str, Any]:
+    if not instance_id:
+        raise ValueError("instance_id must be provided for CPU pods")
+
+    match = re.fullmatch(r"([^-\s]+)-([1-9][0-9]*)-([1-9][0-9]*)", instance_id)
+    if match is None:
+        raise ValueError(
+            "instance_id must use the format <cpu-flavor>-<vcpu-count>-<memory>"
+        )
+
+    return {"id": match[1], "vcpuCount": int(match[2])}
 
 
 def get_user(api_key: Optional[str] = None) -> dict:
-    """
-    Get the current user with optional API key override.
-    
-    Args:
-        api_key: Optional API key to use for this query.
-    """
+    """Get the current user."""
     raw_response = run_graphql_query(user_queries.QUERY_USER, api_key=api_key)
-    cleaned_return = raw_response["data"]["myself"]
-    return cleaned_return
+    return raw_response["data"]["myself"]
 
 
 def update_user_settings(pubkey: str, api_key: Optional[str] = None) -> dict:
-    """
-    Update the current user
-
-    Args:
-        pubkey: the public key of the user
-        api_key: Optional API key to use for this query.
-    """
-    raw_response = run_graphql_query(
-        user_mutations.generate_user_mutation(pubkey), 
-        api_key=api_key
+    """Replace the current user's SSH public keys."""
+    keys = [key.strip() for key in pubkey.splitlines() if key.strip()]
+    run_rest_request(
+        "PUT",
+        "/v2/account/ssh-keys",
+        api_key=api_key,
+        json={"keys": keys},
     )
-    cleaned_return = raw_response["data"]["updateUserSettings"]
-    return cleaned_return
+    return get_user(api_key=api_key)
 
 
-def get_gpus(api_key: Optional[str] = None) -> dict:
-    """
-    Get all GPU types
-    
-    Args:
-        api_key: Optional API key to use for this query.
-    """
-    raw_response = run_graphql_query(gpus.QUERY_GPU_TYPES, api_key=api_key)
-    cleaned_return = raw_response["data"]["gpuTypes"]
-    return cleaned_return
+def get_gpus(api_key: Optional[str] = None) -> list[dict]:
+    """Get all GPU types."""
+    response = run_rest_request("GET", "/v2/catalog/gpus", api_key=api_key)
+    return response["gpus"]
 
 
-def get_gpu(gpu_id: str, gpu_quantity: int = 1, api_key: Optional[str] = None):
-    """
-    Get a specific GPU type
-
-    Args:
-        gpu_id: the id of the gpu
-        gpu_quantity: how many of the gpu should be returned
-        api_key: Optional API key to use for this query.
-    """
-    raw_response = run_graphql_query(
-        gpus.generate_gpu_query(gpu_id, gpu_quantity), 
-        api_key=api_key
-    )
-
-    cleaned_return = raw_response["data"]["gpuTypes"]
-
-    if len(cleaned_return) < 1:
-        raise ValueError(
-            "No GPU found with the specified ID, "
-            "run runpod.get_gpus() to get a list of all GPUs"
+def get_gpu(gpu_id: str, gpu_quantity: int = 1, api_key: Optional[str] = None) -> dict:
+    """Get a GPU type and its pod availability."""
+    try:
+        return run_rest_request(
+            "GET",
+            f"/v2/catalog/gpus/{_path_segment(gpu_id)}",
+            api_key=api_key,
+            params={
+                "include": "AVAILABILITY",
+                "product": "POD",
+                "count": gpu_quantity,
+            },
         )
-
-    return cleaned_return[0]
-
-
-def get_pods(api_key: Optional[str] = None) -> dict:
-    """
-    Get all pods
-    
-    Args:
-        api_key: Optional API key to use for this query.
-    """
-    raw_return = run_graphql_query(pod_queries.QUERY_POD, api_key=api_key)
-    cleaned_return = raw_return["data"]["myself"]["pods"]
-    return cleaned_return
+    except error.QueryError as exc:
+        if exc.status_code == HTTP_STATUS_NOT_FOUND:
+            raise ValueError(
+                "No GPU found with the specified ID, "
+                "run runpod.get_gpus() to get a list of all GPUs"
+            ) from exc
+        raise
 
 
-def get_pod(pod_id: str, api_key: Optional[str] = None):
-    """
-    Get a specific pod
+def get_pods(api_key: Optional[str] = None) -> list[dict]:
+    """Get all standalone pods."""
+    response = run_rest_request("GET", "/v2/pods", api_key=api_key)
+    return response["pods"]
 
-    Args:
-        pod_id: the id of the pod
-        api_key: Optional API key to use for this query.
-    """
-    raw_response = run_graphql_query(
-        pod_queries.generate_pod_query(pod_id), 
-        api_key=api_key
-    )
-    return raw_response["data"]["pod"]
+
+def get_pod(pod_id: str, api_key: Optional[str] = None) -> Optional[dict]:
+    """Get a pod by ID."""
+    try:
+        return run_rest_request(
+            "GET", f"/v2/pods/{_path_segment(pod_id)}", api_key=api_key
+        )
+    except error.QueryError as exc:
+        if exc.status_code == HTTP_STATUS_NOT_FOUND:
+            return None
+        raise
 
 
 def create_pod(
@@ -115,7 +114,7 @@ def create_pod(
     image_name: Optional[str] = "",
     gpu_type_id: Optional[str] = None,
     cloud_type: str = "ALL",
-    support_public_ip: bool = True,
+    support_public_ip: bool = False,
     start_ssh: bool = True,
     data_center_id: Optional[str] = None,
     country_code: Optional[str] = None,
@@ -124,151 +123,120 @@ def create_pod(
     container_disk_in_gb: Optional[int] = None,
     min_vcpu_count: int = 1,
     min_memory_in_gb: int = 1,
-    docker_args: str = "",
+    docker_args: Optional[str] = None,
     ports: Optional[str] = None,
-    volume_mount_path: str = "/runpod-volume",
+    volume_mount_path: Optional[str] = None,
     env: Optional[dict] = None,
     template_id: Optional[str] = None,
     network_volume_id: Optional[str] = None,
     allowed_cuda_versions: Optional[list] = None,
-    min_download = None,
-    min_upload = None,
+    min_download=None,
+    min_upload=None,
     instance_id: Optional[str] = None,
 ) -> dict:
-    """
-    Create a pod
-
-    :param name: the name of the pod
-    :param image_name: the name of the docker image to be used by the pod
-    :param gpu_type_id: the gpu type wanted by the pod (retrievable by get_gpus). If None, creates a CPU-only pod
-    :param cloud_type: if secure cloud, community cloud or all is wanted
-    :param data_center_id: the id of the data center
-    :param country_code: the code for country to start the pod in
-    :param gpu_count: how many gpus should be attached to the pod (ignored for CPU-only pods)
-    :param volume_in_gb: how big should the pod volume be
-    :param ports: the ports to open in the pod, example format - "8888/http,666/tcp"
-    :param volume_mount_path: where to mount the volume?
-    :param env: the environment variables to inject into the pod,
-                for example {EXAMPLE_VAR:"example_value", EXAMPLE_VAR2:"example_value 2"}, will
-                inject EXAMPLE_VAR and EXAMPLE_VAR2 into the pod with the mentioned values
-    :param template_id: the id of the template to use for the pod
-    :param min_download: minimum download speed in Mbps
-    :param min_upload: minimum upload speed in Mbps
-    :param instance_id: the id of a specific instance to deploy to (for CPU pods)
-    :example:
-
-    >>> # Create GPU pod
-    >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
-    >>> # Create CPU pod
-    >>> pod_id = runpod.create_pod("test", "runpod/stack")
-    >>> # Create CPU pod on specific instance
-    >>> pod_id = runpod.create_pod("test", "runpod/stack", instance_id="cpu3c-2-4")
-    """
-    # Input Validation
-
+    """Create a GPU or CPU pod."""
     if not image_name and not template_id:
         raise ValueError("Either image_name or template_id must be provided")
-
-    if gpu_type_id is not None:
-        get_gpu(gpu_type_id)  # Check if GPU exists, will raise ValueError if not.
-    if cloud_type not in ["ALL", "COMMUNITY", "SECURE"]:
+    if cloud_type not in {"ALL", "COMMUNITY", "SECURE"}:
         raise ValueError("cloud_type must be one of ALL, COMMUNITY or SECURE")
 
-    if network_volume_id and data_center_id is None:
-        user_info = get_user()
-        for network_volume in user_info["networkVolumes"]:
-            if network_volume["id"] == network_volume_id:
-                data_center_id = network_volume["dataCenterId"]
-                break
+    unsupported = []
+    if support_public_ip is not False:
+        unsupported.append("support_public_ip")
+    if country_code is not None:
+        unsupported.append("country_code")
+    if not gpu_type_id and min_memory_in_gb != 1:
+        unsupported.append("min_memory_in_gb")
+    if not gpu_type_id and volume_mount_path is not None and not network_volume_id:
+        unsupported.append("volume_mount_path on CPU pods without network_volume_id")
+    if min_download is not None:
+        unsupported.append("min_download")
+    if min_upload is not None:
+        unsupported.append("min_upload")
+    if unsupported:
+        fields = ", ".join(unsupported)
+        raise ValueError(f"REST API v2 does not support: {fields}")
 
-    if container_disk_in_gb is None and template_id is None:
-        container_disk_in_gb = 10
+    body: dict[str, Any] = {
+        "name": name,
+        "startSsh": start_ssh,
+    }
+    if docker_args is not None:
+        body["args"] = docker_args
+    if image_name:
+        body["image"] = image_name
+    if template_id:
+        body["templateId"] = template_id
+    if cloud_type != "ALL":
+        body["cloud"] = cloud_type
+    if data_center_id:
+        body["dataCenterIds"] = [data_center_id]
+    if container_disk_in_gb is not None:
+        body["disk"] = container_disk_in_gb
+    elif not template_id:
+        body["disk"] = 10
+    if ports is not None:
+        body["ports"] = _split_values(ports)
+    if env is not None:
+        body["env"] = _environment(env)
 
-    raw_response = run_graphql_query(
-        pod_mutations.generate_pod_deployment_mutation(
-            name,
-            image_name,
-            gpu_type_id,
-            cloud_type,
-            support_public_ip,
-            start_ssh,
-            data_center_id,
-            country_code,
-            gpu_count if gpu_type_id is not None else None,
-            volume_in_gb,
-            container_disk_in_gb,
-            min_vcpu_count,
-            min_memory_in_gb,
-            docker_args,
-            ports,
-            volume_mount_path,
-            env,
-            template_id,
-            network_volume_id,
-            allowed_cuda_versions,
-            min_download,
-            min_upload,
-            instance_id,
+    mount_path = (
+        volume_mount_path if volume_mount_path is not None else "/runpod-volume"
+    )
+    if network_volume_id:
+        body["mounts"] = {
+            "network": [{"volumeId": network_volume_id, "path": mount_path}]
+        }
+    elif volume_in_gb:
+        body["mounts"] = {"persistent": {"size": volume_in_gb, "path": mount_path}}
+    elif template_id and gpu_type_id and volume_mount_path is not None:
+        template = run_rest_request(
+            "GET", f"/v2/templates/{_path_segment(template_id)}"
         )
-    )
+        persistent = template.get("mounts", {}).get("persistent")
+        if persistent is not None:
+            body["mounts"] = {
+                "persistent": {"size": persistent["size"], "path": volume_mount_path}
+            }
 
-    if gpu_type_id is not None:
-        cleaned_response = raw_response["data"]["podFindAndDeployOnDemand"]
+    if gpu_type_id:
+        gpu: dict[str, Any] = {"id": gpu_type_id, "count": gpu_count}
+        if min_memory_in_gb != 1:
+            gpu["minRamPerGpu"] = min_memory_in_gb
+        if min_vcpu_count != 1:
+            gpu["minVcpuCountPerGpu"] = min_vcpu_count
+        if allowed_cuda_versions is not None:
+            gpu["allowedCudaVersions"] = _split_values(allowed_cuda_versions)
+        body["gpu"] = gpu
     else:
-        cleaned_response = raw_response["data"]["deployCpuPod"]
-    return cleaned_response
+        body["cpu"] = _cpu_config(instance_id)
+
+    return run_rest_request("POST", "/v2/pods", json=body)
 
 
-def stop_pod(pod_id: str):
-    """
-    Stop a pod
-
-    :param pod_id: the id of the pod
-
-    :example:
-
-    >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
-    >>> runpod.stop_pod(pod_id)
-    """
-    raw_response = run_graphql_query(pod_mutations.generate_pod_stop_mutation(pod_id))
-
-    cleaned_response = raw_response["data"]["podStop"]
-    return cleaned_response
-
-
-def resume_pod(pod_id: str, gpu_count: int):
-    """
-    Resume a pod
-
-    :param pod_id: the id of the pod
-    :param gpu_count: the number of GPUs to attach to the pod
-
-    :example:
-
-    >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
-    >>> runpod.stop_pod(pod_id)
-    >>> runpod.resume_pod(pod_id)
-    """
-    raw_response = run_graphql_query(
-        pod_mutations.generate_pod_resume_mutation(pod_id, gpu_count)
+def stop_pod(pod_id: str) -> dict:
+    """Stop a pod."""
+    return run_rest_request(
+        "POST",
+        f"/v2/pods/{_path_segment(pod_id)}/action",
+        json={"action": "stop"},
     )
 
-    cleaned_response = raw_response["data"]["podResume"]
-    return cleaned_response
+
+def resume_pod(pod_id: str, gpu_count: Optional[int] = None) -> dict:
+    """Start a stopped pod without changing its GPU allocation."""
+    if gpu_count is not None:
+        raise ValueError("REST API v2 does not support gpu_count when resuming a pod")
+    return run_rest_request(
+        "POST",
+        f"/v2/pods/{_path_segment(pod_id)}/action",
+        json={"action": "start"},
+    )
 
 
-def terminate_pod(pod_id: str):
-    """
-    Terminate a pod
-
-    :param pod_id: the id of the pod
-
-    :example:
-
-    >>> pod_id = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
-    >>> runpod.terminate_pod(pod_id)
-    """
-    run_graphql_query(pod_mutations.generate_pod_terminate_mutation(pod_id))
+def terminate_pod(pod_id: str) -> None:
+    """Terminate a pod."""
+    run_rest_request("DELETE", f"/v2/pods/{_path_segment(pod_id)}")
 
 
 def create_template(
@@ -282,52 +250,37 @@ def create_template(
     env: dict = None,
     is_serverless: bool = False,
     registry_auth_id: str = None,
-):
-    """
-    Create a template
+) -> dict:
+    """Create a pod or serverless template."""
+    body: dict[str, Any] = {
+        "name": name,
+        "image": image_name,
+        "disk": container_disk_in_gb,
+        "serverless": is_serverless,
+    }
+    if docker_start_cmd is not None:
+        body["args"] = docker_start_cmd
+    if volume_in_gb:
+        body["mounts"] = {
+            "persistent": {
+                "size": volume_in_gb,
+                "path": volume_mount_path or "/workspace",
+            }
+        }
+    if ports is not None:
+        body["ports"] = _split_values(ports)
+    if env is not None:
+        body["env"] = _environment(env)
+    if registry_auth_id is not None:
+        body["registry"] = registry_auth_id
 
-    :param name: the name of the template
-    :param image_name: the name of the docker image to be used by the template
-    :param docker_start_cmd: the command to start the docker container with
-    :param container_disk_in_gb: how big should the container disk be
-    :param volume_in_gb: how big should the volume be
-    :param ports: the ports to open in the pod, example format - "8888/http,666/tcp"
-    :param volume_mount_path: where to mount the volume?
-    :param env: the environment variables to inject into the pod,
-                for example {EXAMPLE_VAR:"example_value", EXAMPLE_VAR2:"example_value 2"}, will
-                inject EXAMPLE_VAR and EXAMPLE_VAR2 into the pod with the mentioned values
-    :param is_serverless: is the template serverless?
-    :param registry_auth_id: the id of the registry auth
-
-    :example:
-
-    >>> template_id = runpod.create_template("test", "runpod/stack", "python3 main.py")
-    """
-    raw_response = run_graphql_query(
-        template_mutations.generate_pod_template(
-            name=name,
-            image_name=image_name,
-            docker_start_cmd=docker_start_cmd,
-            container_disk_in_gb=container_disk_in_gb,
-            volume_in_gb=volume_in_gb,
-            volume_mount_path=volume_mount_path,
-            ports=ports,
-            env=env,
-            is_serverless=is_serverless,
-            registry_auth_id=registry_auth_id,
-        )
-    )
-
-    return raw_response["data"]["saveTemplate"]
+    return run_rest_request("POST", "/v2/templates", json=body)
 
 
-def get_endpoints() -> dict:
-    """
-    Get all endpoints
-    """
-    raw_return = run_graphql_query(endpoint_queries.QUERY_ENDPOINT)
-    cleaned_return = raw_return["data"]["myself"]["endpoints"]
-    return cleaned_return
+def get_endpoints() -> list[dict]:
+    """Get all serverless endpoints."""
+    response = run_rest_request("GET", "/v2/serverless")
+    return response["endpoints"]
 
 
 def create_endpoint(
@@ -336,7 +289,7 @@ def create_endpoint(
     gpu_ids: str = "AMPERE_16",
     network_volume_id: str = None,
     locations: str = None,
-    idle_timeout: int = 5,
+    idle_timeout: Optional[int] = None,
     scaler_type: str = "QUEUE_DELAY",
     scaler_value: int = 4,
     workers_min: int = 0,
@@ -344,98 +297,79 @@ def create_endpoint(
     flashboot=False,
     allowed_cuda_versions: str = None,
     gpu_count: int = 1,
-):
-    """
-    Create an endpoint
+) -> dict:
+    """Create a queue-based serverless endpoint; locations are datacenter IDs."""
+    if scaler_type == "QUEUE_DELAY":
+        scaling = {"type": scaler_type, "queueDelay": scaler_value}
+    elif scaler_type == "REQUEST_COUNT":
+        if idle_timeout is not None:
+            raise ValueError("idle_timeout is only supported with QUEUE_DELAY scaling")
+        scaling = {"type": scaler_type, "requestCount": scaler_value}
+    else:
+        raise ValueError("scaler_type must be QUEUE_DELAY or REQUEST_COUNT")
 
-    :param name: the name of the endpoint
-    :param template_id: the id of the template to use for the endpoint
-    :param gpu_ids: the ids of the GPUs to use for the endpoint
-    :param network_volume_id: the id of the network volume to use for the endpoint
-    :param locations: the locations to use for the endpoint
-    :param idle_timeout: the idle timeout for the endpoint
-    :param scaler_type: the scaler type for the endpoint
-    :param scaler_value: the scaler value for the endpoint
-    :param workers_min: the minimum number of workers for the endpoint
-    :param workers_max: the maximum number of workers for the endpoint
-    :param allowed_cuda_versions: Comma-separated list of allowed CUDA versions (e.g., ["12.4", "12.5"]).
-    :param gpu_count: the number of GPUs to use for the endpoint
+    pools = []
+    excluded_types = []
+    for gpu_id in _split_values(gpu_ids):
+        if gpu_id.startswith("-"):
+            excluded_type = gpu_id[1:].strip()
+            if excluded_type and excluded_type not in excluded_types:
+                excluded_types.append(excluded_type)
+        else:
+            pools.append(gpu_id)
 
-    :example:
+    gpu: dict[str, Any] = {
+        "pools": pools,
+        "count": gpu_count,
+    }
+    if excluded_types:
+        gpu["excludedTypes"] = excluded_types
+    if allowed_cuda_versions is not None:
+        gpu["allowedCudaVersions"] = _split_values(allowed_cuda_versions)
 
-    >>> endpoint_id = runpod.create_endpoint("test", "template_id")
-    """
-    raw_response = run_graphql_query(
-        endpoint_mutations.generate_endpoint_mutation(
-            name,
-            template_id,
-            gpu_ids,
-            network_volume_id,
-            locations,
-            idle_timeout,
-            scaler_type,
-            scaler_value,
-            workers_min,
-            workers_max,
-            flashboot,
-            allowed_cuda_versions,
-            gpu_count
-        )
+    workers = {"min": workers_min, "max": workers_max}
+    if scaler_type == "QUEUE_DELAY":
+        workers["idleTimeout"] = 5 if idle_timeout is None else idle_timeout
+
+    body: dict[str, Any] = {
+        "name": name,
+        "templateId": template_id,
+        "type": "QUEUE",
+        "gpu": gpu,
+        "workers": workers,
+        "scaling": scaling,
+        "flashboot": "FLASHBOOT" if flashboot else "OFF",
+    }
+    if network_volume_id:
+        body["networkVolumes"] = [network_volume_id]
+    if locations:
+        body["dataCenterIds"] = _split_values(locations)
+
+    return run_rest_request("POST", "/v2/serverless", json=body)
+
+
+def update_endpoint_template(endpoint_id: str, template_id: str) -> dict:
+    """Apply a serverless template to an endpoint."""
+    return run_rest_request(
+        "PATCH",
+        f"/v2/serverless/{_path_segment(endpoint_id)}",
+        json={"templateId": template_id},
     )
 
-    return raw_response["data"]["saveEndpoint"]
 
-
-def update_endpoint_template(endpoint_id: str, template_id: str):
-    """
-    Update an endpoint template
-
-    :param endpoint_id: the id of the endpoint
-    :param template_id: the id of the template to use for the endpoint
-
-    :example:
-
-    >>> endpoint_id = runpod.update_endpoint_template("test", "template_id")
-    """
-    raw_response = run_graphql_query(
-        endpoint_mutations.update_endpoint_template_mutation(endpoint_id, template_id)
+def create_container_registry_auth(name: str, username: str, password: str) -> dict:
+    """Create a container registry credential."""
+    return run_rest_request(
+        "POST",
+        "/v2/registries",
+        json={"name": name, "username": username, "password": password},
     )
 
-    return raw_response["data"]["updateEndpointTemplate"]
 
-
-def create_container_registry_auth(name: str, username: str, password: str):
-    """
-    Create a container registry authentication.
-
-    Args:
-        name (str): The name of the container registry.
-        username (str): The username for authentication.
-        password (str): The password for authentication.
-
-    Returns:
-        dict: The response data containing the saved container registry authentication.
-    """
-    raw_response = run_graphql_query(
-        container_register_auth_mutations.generate_container_registry_auth(
-            name, username, password
-        )
-    )
-    return raw_response["data"]["saveRegistryAuth"]
-
-
-def update_container_registry_auth(registry_auth_id: str, username: str, password: str):
-    """
-    Update a container registry authentication.
-
-    Args:
-        registry_auth_id (str): The id of the container registry authentication
-        username (str): The username for authentication.
-        password (str): The password for authentication.
-
-    Returns:
-        dict: The response data containing the updated container registry authentication.
-    """
+def update_container_registry_auth(
+    registry_auth_id: str, username: str, password: str
+) -> dict:
+    """Update a container registry credential."""
     raw_response = run_graphql_query(
         container_register_auth_mutations.update_container_registry_auth(
             registry_auth_id, username, password
@@ -444,16 +378,7 @@ def update_container_registry_auth(registry_auth_id: str, username: str, passwor
     return raw_response["data"]["updateRegistryAuth"]
 
 
-def delete_container_registry_auth(registry_auth_id: str):
-    """
-    Delete a container registry authentication.
-
-    Args:
-        registry_auth_id (str): The id of the container registry authentication
-    """
-    raw_response = run_graphql_query(
-        container_register_auth_mutations.delete_container_registry_auth(
-            registry_auth_id
-        )
-    )
-    return raw_response["data"]["deleteRegistryAuth"]
+def delete_container_registry_auth(registry_auth_id: str) -> bool:
+    """Delete a container registry credential."""
+    run_rest_request("DELETE", f"/v2/registries/{_path_segment(registry_auth_id)}")
+    return True

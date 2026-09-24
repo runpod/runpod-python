@@ -26,16 +26,25 @@ class TestErrorClasses(unittest.TestCase):
         err = AuthenticationError(error_msg)
         self.assertEqual(str(err), error_msg)
 
-    def test_query_error_with_message_and_query(self):
-        """Test the QueryError class with a message and query."""
+    def test_query_error_with_request_details(self):
+        """Test the QueryError class with request details."""
         error_msg = "Query failed"
-        query_str = "SELECT * FROM some_table WHERE condition"
-        err = QueryError(error_msg, query_str)
+        query_str = "POST /v2/pods"
+        err = QueryError(
+            error_msg,
+            query_str,
+            status_code=422,
+            errors=["$.name is required"],
+        )
         self.assertEqual(str(err), error_msg)
         self.assertEqual(err.query, query_str)
+        self.assertEqual(err.status_code, 422)
+        self.assertEqual(err.errors, ["$.name is required"])
 
-    def test_query_error_without_message_and_query(self):
-        """Test the QueryError class without a message or query."""
+    def test_query_error_without_request_details(self):
+        """Test the QueryError class without request details."""
         err = QueryError()
         self.assertEqual(str(err), "None")
         self.assertIsNone(err.query)
+        self.assertIsNone(err.status_code)
+        self.assertEqual(err.errors, [])

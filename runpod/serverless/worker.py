@@ -7,8 +7,9 @@ import asyncio
 import os
 from typing import Any, Dict
 
-from runpod.serverless.modules import rp_logger, rp_local, rp_ping, rp_scale
+from runpod.serverless.modules import rp_capture, rp_local, rp_logger, rp_ping, rp_scale
 from runpod.serverless.modules.rp_fitness import run_fitness_checks
+from runpod.serverless.modules.rp_prestart import has_prestart_hooks
 
 log = rp_logger.RunPodLogger()
 heartbeat = rp_ping.Heartbeat()
@@ -42,11 +43,15 @@ def run_worker(config: Dict[str, Any]) -> None:
     # One per-worker mirror: the job tracker writes it, the ping process reads
     # it. Attaching to JobsProgress means every add/remove syncs automatically.
     from runpod.serverless.modules.worker_state import JobsProgress, PingJobMirror
+
     mirror = PingJobMirror()
     JobsProgress().set_mirror(mirror)
 
     # Start pinging Runpod to show that the worker is alive.
     heartbeat.start_ping(mirror)
+
+    # Capture stdout/stderr so handler and prestart failures report their logs.
+    rp_capture.install(hooks_registered=has_prestart_hooks())
 
     # Create a JobScaler responsible for adjusting the concurrency
     job_scaler = rp_scale.JobScaler(config)

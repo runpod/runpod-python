@@ -10,12 +10,24 @@ WARN - 3 - An indication that something unexpected happened.
 ERROR - 4 - Serious problem, the software has not been able to perform some function.
 """
 
+from contextvars import ContextVar, Token
 import json
 import os
 from typing import Optional
 
 MAX_MESSAGE_LENGTH = 4096
 LOG_LEVELS = ["NOTSET", "TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
+_batch_id: ContextVar[Optional[str]] = ContextVar("runpod_batch_id", default=None)
+
+
+def _set_batch_id(batch_id: Optional[str]) -> Token:
+    """Set the batch ID associated with the current job task."""
+    return _batch_id.set(batch_id)
+
+
+def _reset_batch_id(token: Token):
+    """Restore the previous batch ID for the current job task."""
+    _batch_id.reset(token)
 
 
 def _validate_log_level(log_level):
@@ -74,6 +86,9 @@ class RunPodLogger:
             return
 
         message = str(message)
+        if batch_id := _batch_id.get():
+            message = f"[batchId={batch_id}] {message}"
+
         # Truncate message over 10MB, remove chunk from the middle
         if len(message) > MAX_MESSAGE_LENGTH:
             half_max_length = MAX_MESSAGE_LENGTH // 2

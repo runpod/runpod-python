@@ -4,17 +4,29 @@ Provides the functionality for scaling the runpod serverless worker.
 """
 
 import asyncio
+import json
 import signal
 import sys
 import traceback
-from typing import Any, Dict, Set
+from typing import Any
 
 from ...http_client import AsyncClientSession, ClientSession, TooManyRequests
+from .rp_http import send_result
 from .rp_job import _job_stop_url, get_job, get_stop_signals, handle_job
-from .rp_logger import RunPodLogger
-from .worker_state import JobsProgress, IS_LOCAL_TEST
+from .rp_logger import RunPodLogger, _reset_batch_id, _set_batch_id
+from .rp_prestart import (
+    build_prestart_cancelled_payload,
+    get_prestart_hooks,
+    run_prestart_phase,
+)
+from .worker_state import IS_LOCAL_TEST, JobsProgress
 
 log = RunPodLogger()
+# If no queued request was ever grabbed, give some time to grab one
+# and attach a failure reason, for better UX.
+PRESTART_CLAIM_TIMEOUT_SECONDS = 10
+# Bound best-effort failure reporting well below the shared 600s HTTP timeout.
+PRESTART_FAILURE_REPORT_TIMEOUT_SECONDS = 15
 
 
 def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
@@ -42,15 +54,23 @@ class JobScaler:
     Job Scaler. This class is responsible for scaling the number of concurrent requests.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self._shutdown_event = asyncio.Event()
+        self._prestart_ready = asyncio.Event()
+        self._prestart_succeeded = False
+        self._prestart_error: dict[str, Any] | None = None
+        # Whether any job-take has returned a request, which decides if a
+        # prestart failure still needs to claim one to report itself against.
+        self._took_a_request = False
+        self._failing_acquired_request = False
         self.current_concurrency = 1
         self.config = config
+        self.prestart_hooks = get_prestart_hooks()
         self.job_progress = JobsProgress()  # Cache the singleton instance
 
         # maps in-progress job ids to their running tasks so individual jobs
         # can be stopped without killing the whole worker
-        self.jobs_tasks: Dict[str, asyncio.Task] = {}
+        self.jobs_tasks: dict[str, asyncio.Task[Any]] = {}
 
         self.stop_signals_fetcher = get_stop_signals
         self.stop_signals_fetcher_timeout = 90
@@ -60,6 +80,8 @@ class JobScaler:
         self.concurrency_modifier = _default_concurrency_modifier
         self.jobs_fetcher = get_job
         self.jobs_fetcher_timeout = 90
+        self.prestart_claim_timeout = PRESTART_CLAIM_TIMEOUT_SECONDS
+        self.prestart_failure_report_timeout = PRESTART_FAILURE_REPORT_TIMEOUT_SECONDS
         self.jobs_handler = handle_job
 
         if concurrency_modifier := config.get("concurrency_modifier"):
@@ -81,7 +103,9 @@ class JobScaler:
         if stop_signals_fetcher := self.config.get("stop_signals_fetcher"):
             self.stop_signals_fetcher = stop_signals_fetcher
 
-        if stop_signals_fetcher_timeout := self.config.get("stop_signals_fetcher_timeout"):
+        if stop_signals_fetcher_timeout := self.config.get(
+            "stop_signals_fetcher_timeout"
+        ):
             self.stop_signals_fetcher_timeout = stop_signals_fetcher_timeout
 
     async def set_scale(self):
@@ -136,17 +160,73 @@ class JobScaler:
         self.kill_worker()
 
     async def run(self):
-        # Create an async session that will be closed when the worker is killed.
+        """Run prestart and the three persistent request loops concurrently."""
         async with AsyncClientSession() as session:
-            # Create the worker's concurrent loops.
-            jobtake_task = asyncio.create_task(self.get_jobs(session))
-            jobrun_task = asyncio.create_task(self.run_jobs(session))
-            jobstop_task = asyncio.create_task(self.monitor_stop_signals(session))
+            # Keep prestart separate so hooks without timeouts can be cancelled.
+            prestart_task = asyncio.create_task(self._run_prestart())
+            job_take_task = asyncio.create_task(self.get_jobs(session))
+            run_jobs_task = asyncio.create_task(self.run_jobs(session))
+            stop_signals_task = asyncio.create_task(self.monitor_stop_signals(session))
+            request_loop_tasks = (job_take_task, run_jobs_task, stop_signals_task)
+            request_loops_future = asyncio.gather(*request_loop_tasks)
 
-            tasks = [jobtake_task, jobrun_task, jobstop_task]
+            try:
+                done, _ = await asyncio.wait(
+                    {prestart_task, request_loops_future},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
 
-            # Run the worker's concurrent loops until shutdown.
-            await asyncio.gather(*tasks)
+                if prestart_task in done:
+                    try:
+                        await prestart_task
+                    except BaseException:
+                        # Prestart raised instead of returning an error payload.
+                        self.kill_worker()
+                        raise
+
+                    if self._prestart_error is not None:
+                        # If prestart fails, attempt to gracefully cancel everything and shut down.
+                        if not stop_signals_task.done():
+                            stop_signals_task.cancel()
+                        # Keep job intake alive when it is sending a failure result.
+                        if (
+                            not self._failing_acquired_request
+                            and not job_take_task.done()
+                        ):
+                            job_take_task.cancel()
+                        try:
+                            await asyncio.wait_for(
+                                self._report_prestart_failure(
+                                    session,
+                                    job_take_task,
+                                    stop_signals_task,
+                                    run_jobs_task,
+                                ),
+                                timeout=self.prestart_failure_report_timeout,
+                            )
+                        except asyncio.TimeoutError:
+                            log.warn("Timed out delivering prestart failure; exiting.")
+                    else:
+                        await request_loops_future
+                else:
+                    await request_loops_future
+            finally:
+                # Drain tasks before closing their shared HTTP session.
+                for task in request_loop_tasks:
+                    if not task.done():
+                        task.cancel()
+                if not prestart_task.done():
+                    prestart_task.cancel()
+                await asyncio.gather(
+                    *request_loop_tasks, prestart_task, return_exceptions=True
+                )
+                await asyncio.gather(request_loops_future, return_exceptions=True)
+
+        # Report startup failures before forcing respawn.
+        if self._prestart_error is not None:
+            from .rp_fitness import _terminate_unhealthy
+
+            _terminate_unhealthy(1)
 
     def is_alive(self):
         """
@@ -170,6 +250,45 @@ class JobScaler:
         )
         return current_progress_count + current_queue_count
 
+    async def _claim_one_job_to_fail(self, session: ClientSession) -> None:
+        """Prestart failed before this worker held a request. Claim one queued
+        request and fail it with the reason.
+
+        Without this, an instant failure never reaches a caller. The worker exits,
+        the platform respawns it into the same failure, and the request that
+        triggered the scale-up waits out its queue TTL with no explanation.
+        """
+        payload = self._prestart_error
+        if payload is None:
+            return
+        try:
+            jobs = await asyncio.wait_for(
+                self.jobs_fetcher(session, 1), timeout=self.prestart_claim_timeout
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - reporting must not mask the failure
+            log.debug(f"JobScaler.get_jobs | No request claimed to fail: {error}")
+            return
+
+        for job in jobs or []:
+            await self._fail_job(session, job, payload)
+
+    async def _report_prestart_failure(
+        self,
+        session: ClientSession,
+        job_take_task: asyncio.Task,
+        stop_signals_task: asyncio.Task,
+        run_jobs_task: asyncio.Task,
+    ) -> None:
+        """Wait for claimed requests to receive the startup error, then claim
+        one more if this worker never held one."""
+        await asyncio.gather(job_take_task, stop_signals_task, return_exceptions=True)
+        await run_jobs_task
+        # Claim one so the startup failure is surfaced to the user.
+        if not self._took_a_request:
+            await self._claim_one_job_to_fail(session)
+
     async def get_jobs(self, session: ClientSession):
         """
         Retrieve multiple jobs from the server in batches using blocking requests.
@@ -179,6 +298,10 @@ class JobScaler:
         Adds jobs to the JobsQueue
         """
         while self.is_alive():
+            if self._prestart_error is not None:
+                # Prestart failure is terminal for this worker. Draining requests
+                # already held by the worker is owned by run_jobs.
+                break
             await self.set_scale()
 
             jobs_needed = self.current_concurrency - self.current_occupancy()
@@ -199,6 +322,17 @@ class JobScaler:
                 if not acquired_jobs:
                     log.debug("JobScaler.get_jobs | No jobs acquired.")
                     continue
+
+                self._took_a_request = True
+
+                if self._prestart_error is not None:
+                    self._failing_acquired_request = True
+                    try:
+                        for job in acquired_jobs:
+                            await self._fail_job(session, job, self._prestart_error)
+                    finally:
+                        self._failing_acquired_request = False
+                    return
 
                 for job in acquired_jobs:
                     await self.jobs_queue.put(job)
@@ -233,7 +367,7 @@ class JobScaler:
 
         Runs the block in an infinite loop while the worker is alive or jobs queue is not empty.
         """
-        tasks: Set[asyncio.Task] = set()
+        tasks: set[asyncio.Task[Any]] = set()
 
         last_task_count = 0
         while self.is_alive() or not self.jobs_queue.empty():
@@ -263,14 +397,17 @@ class JobScaler:
                 # don't busy wait
                 await asyncio.sleep(0.1)
 
-
         # Ensure all remaining tasks finish before stopping. Stopped jobs raise
         # CancelledError during this drain, which is expected, but a genuine
         # handler error must not be silently discarded.
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for result in results:
-            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
-                log.error(f"JobScaler.run_jobs | Task failed during shutdown drain: {result}")
+            if isinstance(result, Exception) and not isinstance(
+                result, asyncio.CancelledError
+            ):
+                log.error(
+                    f"JobScaler.run_jobs | Task failed during shutdown drain: {result}"
+                )
 
     async def monitor_stop_signals(self, session: ClientSession):
         """
@@ -309,7 +446,9 @@ class JobScaler:
                 log.debug("JobScaler.monitor_stop_signals | Request was cancelled.")
                 raise  # CancelledError is a BaseException
             except asyncio.TimeoutError:
-                log.debug("JobScaler.monitor_stop_signals | Stop poll timed out. Retrying.")
+                log.debug(
+                    "JobScaler.monitor_stop_signals | Stop poll timed out. Retrying."
+                )
             except Exception as error:
                 log.error(
                     f"JobScaler.monitor_stop_signals | Error Type: {type(error).__name__} | Error Message: {str(error)}"
@@ -338,12 +477,25 @@ class JobScaler:
         task.cancel()
         return True
 
-    async def handle_job(self, session: ClientSession, job: dict):
+    async def handle_job(self, session: ClientSession, job: dict[str, Any]):
         """
         Process an individual job. This function is run concurrently for multiple jobs.
         """
+        batch_id_token = _set_batch_id(job.get("batchId"))
         try:
             log.debug("Handling Job", job["id"])
+
+            # A handler runs only after prestart succeeds.
+            if self.prestart_hooks:
+                await self._wait_for_prestart()
+                if self._prestart_error is not None:
+                    await self._fail_job(session, job, self._prestart_error)
+                    return
+                if not self._prestart_succeeded:
+                    await self._fail_job(
+                        session, job, build_prestart_cancelled_payload()
+                    )
+                    return
 
             await self.jobs_handler(session, self.config, job)
 
@@ -367,3 +519,35 @@ class JobScaler:
             self.jobs_tasks.pop(job["id"], None)
 
             log.debug("Finished Job", job["id"])
+            _reset_batch_id(batch_id_token)
+
+    async def _wait_for_prestart(self) -> None:
+        """Wait for prestart to finish or shutdown to begin."""
+        ready = asyncio.create_task(self._prestart_ready.wait())
+        stopping = asyncio.create_task(self._shutdown_event.wait())
+        try:
+            await asyncio.wait({ready, stopping}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            ready.cancel()
+            stopping.cancel()
+
+    async def _fail_job(
+        self, session: ClientSession, job: dict[str, Any], payload: dict[str, Any]
+    ):
+        """Fail a request because prestart did not complete."""
+        log.error(f"Failing job before prestart completed. | {job['id']}")
+        await send_result(session, {"error": json.dumps(payload)}, job, is_stream=False)
+
+    async def _run_prestart(self):
+        """Run hooks beside queue intake, then release held handlers."""
+        try:
+            self._prestart_error = await run_prestart_phase(
+                self.prestart_hooks, self.config.get("prestart_timeout")
+            )
+            if self._prestart_error is None:
+                self._prestart_succeeded = True
+            else:
+                self.kill_worker()
+        finally:
+            # Wake held handlers; the success flag distinguishes cancellation.
+            self._prestart_ready.set()

@@ -25,7 +25,7 @@ def list_pods():
     """
     table = PrettyTable(["ID", "Name", "Status", "Image"])
     for pod in get_pods():
-        table.add_row((pod["id"], pod["name"], pod["desiredStatus"], pod["imageName"]))
+        table.add_row((pod["id"], pod["name"], pod["status"], pod["image"]))
 
     click.echo(table)
 
@@ -36,7 +36,9 @@ def list_pods():
 @click.option("--gpu-type", default=None, help="The GPU type to use for the pod.")
 @click.option("--gpu-count", default=1, help="The number of GPUs to use for the pod.")
 @click.option(
-    "--support-public-ip", default=True, help="Whether or not to support a public IP."
+    "--support-public-ip",
+    default=False,
+    help="Require a public-IP-capable host (unsupported by REST API v2).",
 )
 def create_new_pod(
     name, image, gpu_type, gpu_count, support_public_ip
