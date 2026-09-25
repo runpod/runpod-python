@@ -1,0 +1,10 @@
+# >>> runpod secret gate (deploy-secret-gate.sh) >>>
+# Only the gate's OWN files, not all of .github/ — owning the whole
+# directory made one person the required reviewer for every unrelated
+# workflow in the repo. These are the paths an author must not be able to
+# weaken unreviewed. CODEOWNERS is LAST-match-wins, so this block belongs
+# at the end of the file: it must outrank any broader `*` rule above it.
+/.github/security/ @runpod/security
+/.github/workflows/pr-security-scan.yml @runpod/security
+/.github/workflows/pr-ai-review.yml @runpod/security
+# <<< runpod secret gate (deploy-secret-gate.sh) <<<
