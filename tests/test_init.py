@@ -23,7 +23,8 @@ class TestRunpodInit:
         api_functions = [
             'create_container_registry_auth', 'create_endpoint', 'create_pod', 'create_template',
             'delete_container_registry_auth', 'get_endpoints', 'get_gpu', 'get_gpus',
-            'get_pod', 'get_pods', 'get_user', 'resume_pod', 'stop_pod', 'terminate_pod',
+            'get_endpoint_worker_logs', 'get_endpoint_workers', 'get_pod', 'get_pod_logs',
+            'get_pods', 'get_user', 'iter_endpoint_worker_logs', 'iter_pod_logs', 'resume_pod', 'stop_pod', 'terminate_pod',
             'update_container_registry_auth', 'update_endpoint_template', 'update_user_settings'
         ]
         
@@ -92,7 +93,8 @@ class TestRunpodInit:
             # API functions  
             'create_container_registry_auth', 'create_endpoint', 'create_pod', 'create_template',
             'delete_container_registry_auth', 'get_endpoints', 'get_gpu', 'get_gpus',
-            'get_pod', 'get_pods', 'get_user', 'resume_pod', 'stop_pod', 'terminate_pod',
+            'get_endpoint_worker_logs', 'get_endpoint_workers', 'get_pod', 'get_pod_logs',
+            'get_pods', 'get_user', 'iter_endpoint_worker_logs', 'iter_pod_logs', 'resume_pod', 'stop_pod', 'terminate_pod',
             'update_container_registry_auth', 'update_endpoint_template', 'update_user_settings',
             # Config functions
             'check_credentials', 'get_credentials', 'set_credentials',
