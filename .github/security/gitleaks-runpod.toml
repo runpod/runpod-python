@@ -1,0 +1,95 @@
+# Gitleaks config — Runpod custom rules layered on top of the defaults.
+#
+# `useDefault = true` keeps all ~150 built-in gitleaks rules (AWS, Stripe, GCP,
+# private keys, etc.) and ADDS the Runpod-specific ones below. Gitleaks ships
+# no Runpod rule, so without this our own API keys sail straight through the
+# second engine exactly as they do the first.
+#
+# Usage: gitleaks git <repo> --config=gitleaks-runpod.toml --log-opts=--all
+#   (the old --source= flag was removed in gitleaks 8.19)
+
+title = "Runpod deep-audit ruleset"
+
+[extend]
+useDefault = true
+
+# --- CRITICAL: undo the default config's lockfile path allowlist --------------
+# `useDefault = true` inherits gitleaks' global allowlist, which skips files by
+# PATH: package-lock.json, go.sum, go.mod, yarn.lock, pnpm-lock.yaml, deno.lock,
+# npm-shrinkwrap.json, plus extensions .bin .pdb .dll .exe .gltf and every image
+# and font type.
+#
+# That is a complete gate bypass requiring no change under .github/, so
+# CODEOWNERS review never fires on it: commit a live rpa_ key as a value inside
+# package-lock.json and the scan comes back green. A dependency-bump PR touching
+# a lockfile is also the most mundane-looking diff in existence.
+#
+# gitleaks has no "un-allowlist" directive, so we re-scan those paths explicitly
+# with a dedicated rule that carries no path allowlist of its own. Keep this rule
+# broad: it exists to catch the case the default config would silently skip.
+[[rules]]
+id          = "runpod-key-in-allowlisted-path"
+description = "Runpod API key in a path gitleaks would otherwise skip (lockfile, binary, asset)"
+regex       = '''\b(rpa_[A-Za-z0-9]{20,})\b'''
+keywords    = ["rpa_"]
+tags        = ["runpod", "api-key", "lockfile-bypass"]
+
+  [[rules.allowlists]]
+  description = "only obvious placeholders"
+  regexTarget = "match"
+  regexes = ['''(?i)(example|dummy|placeholder|xxxx+|your[_-]?key|redacted|000000)''']
+
+# --- current-generation keys: rpa_ prefix (issued after 2024-11-11) ----------
+[[rules]]
+id          = "runpod-api-key"
+description = "Runpod API key (rpa_ prefix)"
+# rpa_ + mixed-case alphanumerics; real sample body was 46 chars. 20-80 range
+# is intentionally wide to avoid false negatives.
+regex       = '''\b(rpa_[A-Za-z0-9]{20,80})\b'''
+keywords    = ["rpa_"]
+tags        = ["runpod", "api-key"]
+
+# --- key passed as a URL query parameter (old GraphQL convention) ------------
+[[rules]]
+id          = "runpod-api-key-in-url"
+description = "Runpod API key in URL query parameter"
+regex       = '''runpod\.io/[^\s"']*[?&]api_key=([A-Za-z0-9_\-]{16,64})'''
+keywords    = ["runpod.io"]
+
+# --- assignment heuristic: a RUNPOD_* var set to a non-placeholder value ------
+# Catches home-rolled env var names and internal token formats. Higher false-
+# positive rate by design; entropy gate trims the obvious placeholders.
+[[rules]]
+id          = "runpod-credential-assignment"
+description = "RUNPOD_* credential assignment"
+regex       = '''(?i)runpod_(?:api_key|token|secret)["']?\s*[:=]\s*["']([^"'\s]{12,120})["']'''
+keywords    = ["runpod_api_key","runpod_token","runpod_secret"]
+entropy     = 3.0
+
+# --- legacy UUID keys (pre 2024-11-11), gated on nearby Runpod context --------
+# A bare UUID is indistinguishable from a request ID, so we only flag UUIDs that
+# sit near the word "runpod". A legacy key with NO nearby context is unfindable
+# by pattern — rotate all legacy keys on principle instead of hunting them.
+[[rules]]
+id          = "runpod-legacy-uuid-key"
+description = "Possible legacy Runpod API key (UUID near Runpod context)"
+regex       = '''(?i)runpod[^\n]{0,40}?\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+keywords    = ["runpod"]
+
+# --- allowlist: keep obvious dummies out of the report -----------------------
+# MUST be top-level `[[allowlists]]`, NOT `[[rules.allowlists]]`.
+#
+# TOML array-of-tables syntax binds `[[rules.allowlists]]` to the IMMEDIATELY
+# PRECEDING `[[rules]]` table. The previous version of this file used that form
+# at the end, so the placeholder suppression applied to `runpod-legacy-uuid-key`
+# alone and to none of the other rules — despite reading as global. Consequence:
+# `rpa_EXAMPLE...` and `RUNPOD_API_KEY = "your-key-here"` in docs and fixtures
+# fired the BLOCKING gate. That is not a cosmetic bug — alert fatigue is the
+# delivery mechanism for a real bypass, because the fix someone reaches for under
+# pressure is a broad allowlist or a .gitleaksignore.
+[[allowlists]]
+description = "ignore common placeholders across all rules"
+regexTarget = "match"
+regexes = [
+  '''(?i)(example|dummy|placeholder|xxxx+|your[_-]?key|redacted|000000|changeme|sample)''',
+]
