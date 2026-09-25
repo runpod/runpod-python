@@ -26,3 +26,18 @@ except runpod.error.QueryError as err:
     print(err.query)
     print(err.errors)
 ```
+
+Rate-limited responses (`429`) also set `retry_after`, the seconds to wait from
+the `Retry-After` header, or `None` when the header is missing:
+
+```python
+import time
+
+try:
+    pods = runpod.get_pods()
+except runpod.error.QueryError as err:
+    if err.status_code != 429:
+        raise
+    time.sleep(err.retry_after or 1)
+    pods = runpod.get_pods()
+```

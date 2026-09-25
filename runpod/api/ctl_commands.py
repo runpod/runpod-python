@@ -2,16 +2,33 @@
 
 # pylint: disable=too-many-arguments,too-many-locals
 
+import json
+import math
 import re
-from typing import Any, Iterable, Optional
+import time
+from collections import deque
+from datetime import datetime
+from typing import Any, Iterable, Iterator, Optional, Union
 from urllib.parse import quote
+
+import requests
 
 from runpod import error
 
 from .graphql import run_graphql_query
 from .mutations import container_register_auth as container_register_auth_mutations
 from .queries import user as user_queries
-from .rest import HTTP_STATUS_NOT_FOUND, run_rest_request
+from .rest import (
+    HTTP_STATUS_NOT_FOUND,
+    HTTP_STATUS_TOO_MANY_REQUESTS,
+    read_event_stream,
+    run_rest_request,
+)
+
+LOG_SOURCES = ("container", "system")
+LOG_MAX_TAIL = 5000
+LOG_MAX_BYTES = 4 * 1024 * 1024
+LOG_RECONNECT_DELAY = 1
 
 
 def _path_segment(value: str) -> str:
@@ -107,6 +124,185 @@ def get_pod(pod_id: str, api_key: Optional[str] = None) -> Optional[dict]:
         if exc.status_code == HTTP_STATUS_NOT_FOUND:
             return None
         raise
+
+
+def _log_params(
+    tail: Optional[int],
+    since: Optional[Union[str, datetime]],
+    source: Optional[str],
+) -> dict[str, Any]:
+    if tail is not None and not 0 <= tail <= LOG_MAX_TAIL:
+        raise ValueError(f"tail must be between 0 and {LOG_MAX_TAIL}")
+    if source is not None and source not in LOG_SOURCES:
+        raise ValueError(f"source must be one of {LOG_SOURCES} or None")
+    if isinstance(since, datetime):
+        if since.utcoffset() is None:
+            raise ValueError("since must be timezone-aware")
+        since = since.isoformat()
+    params = {"tail": tail, "since": since, "source": source}
+    return {key: value for key, value in params.items() if value is not None}
+
+
+def _check_max_wait(max_wait: Optional[float], required: bool) -> None:
+    if max_wait is None and not required:
+        return
+    if max_wait is None or max_wait <= 0:
+        raise ValueError("max_wait must be positive")
+
+
+def _iter_logs(
+    path: str,
+    params: dict[str, Any],
+    max_wait: Optional[float],
+    follow: bool,
+    api_key: Optional[str],
+) -> Iterator[dict]:
+    """Yield log entries from an SSE log endpoint.
+
+    With `follow`, a closed or idle stream is reopened from the last event ID
+    so no line is repeated or skipped. Errors on the first connection raise;
+    on a reconnect, network errors and 429s are retried.
+    """
+    deadline = math.inf if max_wait is None else time.monotonic() + max_wait
+    last_event_id = None
+    connected = False
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        delay = LOG_RECONNECT_DELAY
+        try:
+            for event in read_event_stream(
+                path,
+                api_key=api_key,
+                params=params,
+                max_wait=None if max_wait is None else remaining,
+                last_event_id=last_event_id,
+            ):
+                connected = True
+                entry = json.loads(event["data"])
+                if "id" in event:
+                    entry["id"] = last_event_id = event["id"]
+                yield entry
+            connected = True
+        except (requests.exceptions.RequestException, error.QueryError) as exc:
+            retryable = not isinstance(exc, error.QueryError) or (
+                exc.status_code == HTTP_STATUS_TOO_MANY_REQUESTS
+            )
+            if not (follow and connected and retryable):
+                raise
+            delay = getattr(exc, "retry_after", None) or delay
+        if not follow:
+            return
+        time.sleep(max(0, min(delay, deadline - time.monotonic())))
+
+
+def _snapshot_logs(
+    path: str,
+    params: dict[str, Any],
+    max_wait: float,
+    max_bytes: int,
+    api_key: Optional[str],
+) -> list[dict]:
+    logs: deque[dict] = deque()
+    size = 0
+    for entry in _iter_logs(path, params, max_wait, follow=False, api_key=api_key):
+        logs.append(entry)
+        size += len(entry.get("line", ""))
+        while size > max_bytes and len(logs) > 1:
+            size -= len(logs.popleft().get("line", ""))
+    return list(logs)
+
+
+def _pod_logs_path(pod_id: str) -> str:
+    return f"/v2/pods/{_path_segment(pod_id)}/logs"
+
+
+def _worker_logs_path(endpoint_id: str, worker_id: str) -> str:
+    return (
+        f"/v2/serverless/{_path_segment(endpoint_id)}"
+        f"/workers/{_path_segment(worker_id)}/logs"
+    )
+
+
+def get_pod_logs(
+    pod_id: str,
+    tail: Optional[int] = None,
+    since: Optional[Union[str, datetime]] = None,
+    source: Optional[str] = None,
+    max_wait: float = 5,
+    max_bytes: int = LOG_MAX_BYTES,
+    api_key: Optional[str] = None,
+) -> list[dict]:
+    """Get a snapshot of a pod's logs.
+
+    Reads the live log stream for up to `max_wait` seconds and returns the
+    lines received, oldest first, as dicts with `id`, `ts`, `source` and `line`.
+    `tail` backfills that many historical lines (API default 100, max 5000) and
+    is ignored when `since` is set. `source` is "container", "system", or None
+    for both. Past `max_bytes` of log text, the oldest lines are dropped.
+    """
+    params = _log_params(tail, since, source)
+    _check_max_wait(max_wait, required=True)
+    return _snapshot_logs(_pod_logs_path(pod_id), params, max_wait, max_bytes, api_key)
+
+
+def iter_pod_logs(
+    pod_id: str,
+    tail: Optional[int] = None,
+    since: Optional[Union[str, datetime]] = None,
+    source: Optional[str] = None,
+    max_wait: Optional[float] = None,
+    api_key: Optional[str] = None,
+) -> Iterator[dict]:
+    """Follow a pod's logs, yielding entries as they arrive.
+
+    Takes the same `tail`, `since` and `source` as `get_pod_logs`. Dropped or
+    idle connections are resumed from the last event ID. Runs until the caller
+    stops iterating, or for `max_wait` seconds when it is set.
+    """
+    params = _log_params(tail, since, source)
+    _check_max_wait(max_wait, required=False)
+    return _iter_logs(_pod_logs_path(pod_id), params, max_wait, True, api_key)
+
+
+def get_endpoint_worker_logs(
+    endpoint_id: str,
+    worker_id: str,
+    tail: Optional[int] = None,
+    since: Optional[Union[str, datetime]] = None,
+    source: Optional[str] = None,
+    max_wait: float = 5,
+    max_bytes: int = LOG_MAX_BYTES,
+    api_key: Optional[str] = None,
+) -> list[dict]:
+    """Get a snapshot of a Serverless worker's logs.
+
+    Behaves like `get_pod_logs`. A crash-looping worker can still report as
+    running, so its logs are the reliable signal when jobs stay in queue.
+    """
+    params = _log_params(tail, since, source)
+    _check_max_wait(max_wait, required=True)
+    return _snapshot_logs(
+        _worker_logs_path(endpoint_id, worker_id), params, max_wait, max_bytes, api_key
+    )
+
+
+def iter_endpoint_worker_logs(
+    endpoint_id: str,
+    worker_id: str,
+    tail: Optional[int] = None,
+    since: Optional[Union[str, datetime]] = None,
+    source: Optional[str] = None,
+    max_wait: Optional[float] = None,
+    api_key: Optional[str] = None,
+) -> Iterator[dict]:
+    """Follow a Serverless worker's logs. Behaves like `iter_pod_logs`."""
+    params = _log_params(tail, since, source)
+    _check_max_wait(max_wait, required=False)
+    return _iter_logs(
+        _worker_logs_path(endpoint_id, worker_id), params, max_wait, True, api_key
+    )
 
 
 def create_pod(
@@ -281,6 +477,16 @@ def get_endpoints() -> list[dict]:
     """Get all serverless endpoints."""
     response = run_rest_request("GET", "/v2/serverless")
     return response["endpoints"]
+
+
+def get_endpoint_workers(endpoint_id: str, api_key: Optional[str] = None) -> list[dict]:
+    """Get the active workers of a Serverless endpoint."""
+    response = run_rest_request(
+        "GET",
+        f"/v2/serverless/{_path_segment(endpoint_id)}/workers",
+        api_key=api_key,
+    )
+    return response["workers"]
 
 
 def create_endpoint(

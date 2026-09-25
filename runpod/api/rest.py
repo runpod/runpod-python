@@ -1,7 +1,9 @@
 """Runpod REST API transport."""
 
+import math
 import os
-from typing import Any, Mapping, Optional
+import time
+from typing import Any, Iterator, Mapping, Optional
 
 import requests
 
@@ -12,6 +14,8 @@ HTTP_STATUS_NO_CONTENT = 204
 HTTP_STATUS_BAD_REQUEST = 400
 HTTP_STATUS_UNAUTHORIZED = 401
 HTTP_STATUS_NOT_FOUND = 404
+HTTP_STATUS_TOO_MANY_REQUESTS = 429
+STREAM_IDLE_TIMEOUT = 60
 
 
 def _resolve_api_key(api_key: Optional[str]) -> str:
@@ -45,6 +49,13 @@ def _response_json(response: requests.Response) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _retry_after(response: requests.Response) -> Optional[float]:
+    try:
+        return float(response.headers["Retry-After"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _raise_for_error(
     response: requests.Response, method: str, path: str
 ) -> None:
@@ -66,6 +77,7 @@ def _raise_for_error(
         f"{method.upper()} {path}",
         status_code=response.status_code,
         errors=payload.get("errors"),
+        retry_after=_retry_after(response),
     )
 
 
@@ -92,3 +104,80 @@ def run_rest_request(
     if response.status_code == HTTP_STATUS_NO_CONTENT or not response.content:
         return None
     return response.json()
+
+
+def _parse_event_stream(chunks: Iterator[bytes]) -> Iterator[dict[str, str]]:
+    """Parse text/event-stream bytes into events with `id`, `event` and `data`.
+
+    Only events terminated by a blank line are yielded, so an event cut off
+    mid-frame when the stream is closed early is discarded.
+    """
+    buffer = b""
+    event: dict[str, str] = {}
+    data: list[str] = []
+    for chunk in chunks:
+        buffer += chunk
+        *lines, buffer = buffer.replace(b"\r\n", b"\n").split(b"\n")
+        for raw_line in lines:
+            line = raw_line.decode("utf-8")
+            if not line:
+                if data:
+                    event["data"] = "\n".join(data)
+                    yield event
+                event, data = {}, []
+                continue
+            if line.startswith(":"):
+                continue
+            field, _, value = line.partition(":")
+            value = value[1:] if value.startswith(" ") else value
+            if field == "data":
+                data.append(value)
+            elif field in ("id", "event"):
+                event[field] = value
+
+
+def read_event_stream(
+    path: str,
+    *,
+    api_key: Optional[str] = None,
+    params: Optional[Mapping[str, Any]] = None,
+    max_wait: Optional[float] = 5,
+    last_event_id: Optional[str] = None,
+) -> Iterator[dict[str, str]]:
+    """Read events from a Runpod REST SSE endpoint for up to `max_wait` seconds.
+
+    The endpoints behind this hold the connection open to tail live output, so
+    the read ends at the deadline, or once the stream has been idle for
+    `max_wait` seconds (`STREAM_IDLE_TIMEOUT` when `max_wait` is None, which
+    sets no deadline). A timeout before the response headers arrive raises.
+    `last_event_id` resumes the stream after that event.
+    """
+    deadline = math.inf if max_wait is None else time.monotonic() + max_wait
+    headers = _build_headers(_resolve_api_key(api_key))
+    headers["Accept"] = "text/event-stream"
+    if last_event_id is not None:
+        headers["Last-Event-ID"] = last_event_id
+
+    with requests.get(
+        _build_url(path),
+        headers=headers,
+        params=params,
+        stream=True,
+        timeout=(30, STREAM_IDLE_TIMEOUT if max_wait is None else max_wait),
+    ) as response:
+        _raise_for_error(response, "GET", path)
+
+        def chunks() -> Iterator[bytes]:
+            try:
+                for chunk in response.iter_content(chunk_size=None):
+                    yield chunk
+                    if time.monotonic() >= deadline:
+                        return
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ChunkedEncodingError,
+            ):
+                # An idle-read timeout or a dropped connection ends the snapshot.
+                return
+
+        yield from _parse_event_stream(chunks())

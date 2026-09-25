@@ -1,11 +1,13 @@
 """Tests for the REST API transport."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 import runpod
-from runpod.api.rest import run_rest_request
+import requests
+
+from runpod.api.rest import _parse_event_stream, read_event_stream, run_rest_request
 from runpod.error import AuthenticationError, QueryError
 from runpod.user_agent import USER_AGENT
 
@@ -115,3 +117,119 @@ def test_request_uses_text_for_non_json_error():
         run_rest_request("GET", "/v2/pods", api_key="key")
 
     assert raised.value.status_code == 500
+
+
+def _stream_response(chunks, status_code=200):
+    response = MagicMock()
+    response.status_code = status_code
+    response.headers = {}
+    response.__enter__.return_value = response
+
+    def iter_content(chunk_size=None):
+        for chunk in chunks:
+            if isinstance(chunk, Exception):
+                raise chunk
+            yield chunk
+
+    response.iter_content.side_effect = iter_content
+    return response
+
+
+def test_parse_event_stream_reassembles_split_frames():
+    chunks = [
+        b"id: 1\r\ndata: {\"line\": \"caf",
+        "\u00e9\"}\r\n\r\n: keep-alive\n\n".encode()[:1],
+        "\u00e9\"}\r\n\r\n: keep-alive\n\n".encode()[1:],
+        b"event: log\ndata: a\ndata: b\n\n",
+        b"id: 3\ndata: incomplete",
+    ]
+
+    assert list(_parse_event_stream(iter(chunks))) == [
+        {"id": "1", "data": '{"line": "caf\u00e9"}'},
+        {"event": "log", "data": "a\nb"},
+    ]
+
+
+def test_read_event_stream_requests_sse():
+    response = _stream_response([b"id: 1\ndata: x\n\n"])
+    with patch("runpod.api.rest.requests.get", return_value=response) as get:
+        events = list(
+            read_event_stream(
+                "/v2/pods/pod/logs", api_key="key", params={"tail": 5}, max_wait=2
+            )
+        )
+
+    assert events == [{"id": "1", "data": "x"}]
+    get.assert_called_once_with(
+        "https://api.runpod.io/v2/pods/pod/logs",
+        headers={
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+            "Authorization": "Bearer key",
+        },
+        params={"tail": 5},
+        stream=True,
+        timeout=(30, 2),
+    )
+
+
+def test_read_event_stream_raises_for_error_response():
+    response = _stream_response([], status_code=404)
+    response.json.return_value = {"detail": "pod not found"}
+    with (
+        patch("runpod.api.rest.requests.get", return_value=response),
+        pytest.raises(QueryError, match="pod not found") as raised,
+    ):
+        list(read_event_stream("/v2/pods/pod/logs", api_key="key"))
+
+    assert raised.value.status_code == 404
+
+
+def test_read_event_stream_stops_at_deadline():
+    response = _stream_response([b"data: 1\n\n", b"data: 2\n\n", b"data: 3\n\n"])
+    with (
+        patch("runpod.api.rest.requests.get", return_value=response),
+        patch("runpod.api.rest.time.monotonic", side_effect=[0, 1, 5]),
+    ):
+        events = list(read_event_stream("/v2/pods/pod/logs", api_key="key", max_wait=5))
+
+    assert events == [{"data": "1"}, {"data": "2"}]
+
+
+def test_read_event_stream_ends_on_idle_timeout():
+    response = _stream_response(
+        [b"data: 1\n\n", requests.exceptions.ConnectionError("read timed out")]
+    )
+    with patch("runpod.api.rest.requests.get", return_value=response):
+        events = list(read_event_stream("/v2/pods/pod/logs", api_key="key"))
+
+    assert events == [{"data": "1"}]
+
+
+def test_read_event_stream_resumes_and_uses_idle_timeout_without_deadline():
+    response = _stream_response([b"id: 2\ndata: x\n\n"])
+    with patch("runpod.api.rest.requests.get", return_value=response) as get:
+        events = list(
+            read_event_stream(
+                "/v2/pods/pod/logs", api_key="key", max_wait=None, last_event_id="1"
+            )
+        )
+
+    assert events == [{"id": "2", "data": "x"}]
+    assert get.call_args.kwargs["headers"]["Last-Event-ID"] == "1"
+    assert get.call_args.kwargs["timeout"] == (30, 60)
+
+
+@pytest.mark.parametrize(("header", "expected"), [("12", 12.0), ("soon", None)])
+def test_request_exposes_retry_after_on_rate_limit(header, expected):
+    response = _response(status_code=429, payload={"detail": "rate limited"})
+    response.headers = {"Retry-After": header}
+    with (
+        patch("runpod.api.rest.requests.request", return_value=response),
+        pytest.raises(QueryError, match="rate limited") as raised,
+    ):
+        run_rest_request("GET", "/v2/pods", api_key="key")
+
+    assert raised.value.status_code == 429
+    assert raised.value.retry_after == expected

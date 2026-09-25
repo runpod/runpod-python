@@ -25,6 +25,7 @@ Welcome to the official Python library for Runpod API &amp; SDK.
 - [📚 | REST API v2 Wrapper](#--rest-api-v2-wrapper)
   - [Endpoints](#endpoints)
   - [GPU Cloud (Pods)](#gpu-cloud-pods)
+  - [Logs](#logs)
 - [📁 | Directory](#--directory)
 - [🤝 | Community and Contributing](#--community-and-contributing)
 
@@ -304,6 +305,37 @@ runpod.resume_pod(pod["id"])
 # terminate the pod
 runpod.terminate_pod(pod["id"])
 ```
+
+### Logs
+
+Pod and Serverless worker logs are read from the REST v2 log streams. Each entry
+is a dict with `id`, `ts`, `source` (`container` or `system`) and `line`.
+
+```python
+import runpod
+
+# snapshot: backfill the last 200 container lines, then read live output for 5s
+logs = runpod.get_pod_logs(pod["id"], tail=200, source="container", max_wait=5)
+print("\n".join(entry["line"] for entry in logs))
+
+# follow: yield lines as they arrive until you stop iterating
+for entry in runpod.iter_pod_logs(pod["id"], tail=0):
+    print(entry["ts"], entry["line"])
+
+# Serverless workers
+workers = runpod.get_endpoint_workers("ENDPOINT_ID")
+logs = runpod.get_endpoint_worker_logs("ENDPOINT_ID", workers[0]["id"])
+```
+
+- `tail` backfills 0–5000 historical lines (API default 100) and is ignored when
+  `since` is set. `since` takes an RFC3339 string or a timezone-aware `datetime`.
+- `get_*_logs` returns once `max_wait` seconds pass, or once the stream has been
+  idle that long. Past `max_bytes` of log text (default 4 MiB) the oldest lines
+  are dropped, so the newest output is always kept.
+- `iter_*_logs` reconnects from the last event ID when the stream closes or goes
+  idle, so lines are neither repeated nor skipped. It waits out `429` responses
+  on reconnect. Errors on the first connection raise. Pass `max_wait` to stop
+  after that many seconds.
 
 ### Template and placement options
 

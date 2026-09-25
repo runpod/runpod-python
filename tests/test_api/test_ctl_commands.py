@@ -1,10 +1,12 @@
 """Tests for the API wrapper commands."""
 
 from copy import deepcopy
+from datetime import datetime, timezone
 from urllib.parse import unquote
 from unittest.mock import patch
 
 import pytest
+import requests
 
 from runpod.api import ctl_commands
 from runpod.error import QueryError
@@ -123,6 +125,256 @@ def test_get_pod_propagates_other_api_errors():
         pytest.raises(QueryError, match="forbidden"),
     ):
         ctl_commands.get_pod("pod")
+
+
+def _log_event(event_id, line, source="container"):
+    return {
+        "id": event_id,
+        "data": f'{{"ts": "2026-06-01T12:00:00Z", "source": "{source}", "line": "{line}"}}',
+    }
+
+
+def _entry(event_id, line, source="container"):
+    return {"id": event_id, "ts": "2026-06-01T12:00:00Z", "source": source, "line": line}
+
+
+def _streams(*batches):
+    """Return a read_event_stream side effect that serves one batch per call.
+
+    A batch is a list of events, optionally ending in an exception to raise.
+    """
+    batches = list(batches)
+
+    def stream(*_args, **_kwargs):
+        for item in batches.pop(0):
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+    return stream
+
+
+def test_get_pod_logs_returns_entries_with_ids():
+    events = [_log_event("1", "starting"), _log_event("2", "ready", "system")]
+    with patch(
+        "runpod.api.ctl_commands.read_event_stream", side_effect=_streams(events)
+    ) as stream:
+        logs = ctl_commands.get_pod_logs(
+            "pod/id",
+            tail=50,
+            since=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            max_wait=2,
+            api_key="key",
+        )
+
+    assert logs == [_entry("1", "starting"), _entry("2", "ready", "system")]
+    stream.assert_called_once()
+    assert stream.call_args.args == ("/v2/pods/pod%2Fid/logs",)
+    kwargs = stream.call_args.kwargs
+    assert kwargs["api_key"] == "key"
+    assert kwargs["params"] == {"tail": 50, "since": "2026-06-01T00:00:00+00:00"}
+    assert kwargs["last_event_id"] is None
+    assert 0 < kwargs["max_wait"] <= 2
+
+
+def test_get_pod_logs_omits_unset_params():
+    with patch(
+        "runpod.api.ctl_commands.read_event_stream", side_effect=_streams([])
+    ) as stream:
+        assert ctl_commands.get_pod_logs("pod", source="system") == []
+
+    assert stream.call_args.kwargs["params"] == {"source": "system"}
+
+
+def test_get_pod_logs_drops_oldest_lines_past_byte_cap():
+    events = [_log_event(str(i), "x" * 10) for i in range(5)]
+    with patch("runpod.api.ctl_commands.read_event_stream", side_effect=_streams(events)):
+        logs = ctl_commands.get_pod_logs("pod", max_bytes=25)
+
+    assert [entry["id"] for entry in logs] == ["3", "4"]
+
+
+def test_get_pod_logs_does_not_retry():
+    with (
+        patch(
+            "runpod.api.ctl_commands.read_event_stream",
+            side_effect=_streams([QueryError("slow down", status_code=429)]),
+        ),
+        pytest.raises(QueryError),
+    ):
+        ctl_commands.get_pod_logs("pod")
+
+
+def test_get_endpoint_worker_logs_uses_worker_path():
+    with patch(
+        "runpod.api.ctl_commands.read_event_stream",
+        side_effect=_streams([_log_event("1", "Worker ready.")]),
+    ) as stream:
+        logs = ctl_commands.get_endpoint_worker_logs("ep", "worker/1", tail=10)
+
+    assert logs == [_entry("1", "Worker ready.")]
+    assert stream.call_args.args == ("/v2/serverless/ep/workers/worker%2F1/logs",)
+    assert stream.call_args.kwargs["params"] == {"tail": 10}
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"tail": -1},
+        {"tail": 5001},
+        {"source": "both"},
+        {"max_wait": 0},
+        {"since": datetime(2026, 6, 1)},
+    ],
+)
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda **kw: ctl_commands.get_pod_logs("pod", **kw),
+        lambda **kw: ctl_commands.iter_pod_logs("pod", **kw),
+        lambda **kw: ctl_commands.get_endpoint_worker_logs("ep", "w", **kw),
+        lambda **kw: ctl_commands.iter_endpoint_worker_logs("ep", "w", **kw),
+    ],
+    ids=["get_pod", "iter_pod", "get_worker", "iter_worker"],
+)
+def test_log_functions_validate_arguments_eagerly(call, kwargs):
+    with (
+        patch("runpod.api.ctl_commands.read_event_stream") as stream,
+        pytest.raises(ValueError),
+    ):
+        call(**kwargs)
+
+    stream.assert_not_called()
+
+
+def test_get_pod_logs_requires_max_wait():
+    with pytest.raises(ValueError):
+        ctl_commands.get_pod_logs("pod", max_wait=None)
+
+
+def test_iter_pod_logs_resumes_from_last_event_id():
+    with (
+        patch(
+            "runpod.api.ctl_commands.read_event_stream",
+            side_effect=_streams(
+                [_log_event("1", "a"), _log_event("2", "b")],
+                [],
+                [_log_event("3", "c")],
+            ),
+        ) as stream,
+        patch("runpod.api.ctl_commands.time.sleep") as sleep,
+    ):
+        logs = ctl_commands.iter_pod_logs("pod", tail=5, source="container")
+        lines = [next(logs)["line"] for _ in range(3)]
+        logs.close()
+
+    assert lines == ["a", "b", "c"]
+    assert [call.kwargs["last_event_id"] for call in stream.call_args_list] == [
+        None,
+        "2",
+        "2",
+    ]
+    assert all(call.kwargs["max_wait"] is None for call in stream.call_args_list)
+    assert all(
+        call.kwargs["params"] == {"tail": 5, "source": "container"}
+        for call in stream.call_args_list
+    )
+    assert [call.args for call in sleep.call_args_list] == [(1,), (1,)]
+
+
+def test_iter_pod_logs_retries_rate_limit_and_network_errors_on_reconnect():
+    with (
+        patch(
+            "runpod.api.ctl_commands.read_event_stream",
+            side_effect=_streams(
+                [_log_event("1", "a")],
+                [QueryError("slow down", status_code=429, retry_after=12)],
+                [requests.exceptions.ConnectionError("reset")],
+                [_log_event("2", "b")],
+            ),
+        ),
+        patch("runpod.api.ctl_commands.time.sleep") as sleep,
+    ):
+        logs = ctl_commands.iter_pod_logs("pod")
+        lines = [next(logs)["line"] for _ in range(2)]
+        logs.close()
+
+    assert lines == ["a", "b"]
+    assert [call.args for call in sleep.call_args_list] == [(1,), (12,), (1,)]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        QueryError("pod not found", status_code=404),
+        QueryError("slow down", status_code=429, retry_after=3),
+        requests.exceptions.ConnectionError("refused"),
+    ],
+)
+def test_iter_pod_logs_raises_on_first_connection_failure(failure):
+    with (
+        patch(
+            "runpod.api.ctl_commands.read_event_stream",
+            side_effect=_streams([failure]),
+        ),
+        pytest.raises(type(failure)),
+    ):
+        next(ctl_commands.iter_pod_logs("pod"))
+
+
+def test_iter_pod_logs_raises_non_retryable_error_on_reconnect():
+    with (
+        patch(
+            "runpod.api.ctl_commands.read_event_stream",
+            side_effect=_streams(
+                [_log_event("1", "a")],
+                [QueryError("forbidden", status_code=403)],
+            ),
+        ),
+        patch("runpod.api.ctl_commands.time.sleep"),
+        pytest.raises(QueryError, match="forbidden"),
+    ):
+        list(ctl_commands.iter_pod_logs("pod"))
+
+
+def test_iter_pod_logs_stops_at_max_wait():
+    with (
+        patch(
+            "runpod.api.ctl_commands.read_event_stream",
+            side_effect=_streams([_log_event("1", "a")], [_log_event("2", "b")]),
+        ) as stream,
+        patch("runpod.api.ctl_commands.time.sleep"),
+        patch("runpod.api.ctl_commands.time.monotonic", side_effect=[0, 0, 4, 4, 11, 11]),
+    ):
+        logs = list(ctl_commands.iter_pod_logs("pod", max_wait=10))
+
+    assert [entry["line"] for entry in logs] == ["a", "b"]
+    assert [call.kwargs["max_wait"] for call in stream.call_args_list] == [10, 6]
+
+
+def test_iter_endpoint_worker_logs_uses_worker_path():
+    with patch(
+        "runpod.api.ctl_commands.read_event_stream",
+        side_effect=_streams([_log_event("1", "a")]),
+    ) as stream:
+        logs = ctl_commands.iter_endpoint_worker_logs("ep", "w")
+        assert next(logs)["line"] == "a"
+        logs.close()
+
+    assert stream.call_args.args == ("/v2/serverless/ep/workers/w/logs",)
+
+
+def test_get_endpoint_workers_unwraps_response():
+    workers = [{"id": "worker", "status": "RUNNING"}]
+    with patch(
+        "runpod.api.ctl_commands.run_rest_request",
+        return_value={"workers": workers, "summary": {"RUNNING": 1}},
+    ) as request:
+        assert ctl_commands.get_endpoint_workers("ep/1", api_key="key") == workers
+
+    request.assert_called_once_with(
+        "GET", "/v2/serverless/ep%2F1/workers", api_key="key"
+    )
 
 
 @pytest.fixture

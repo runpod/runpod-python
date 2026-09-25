@@ -39,8 +39,11 @@ class QueryError(RunPodError):
         query: Optional[str] = None,
         status_code: Optional[int] = None,
         errors: Optional[list[str]] = None,
+        retry_after: Optional[float] = None,
     ):
         super().__init__(message)
         self.query = query
         self.status_code = status_code
         self.errors = errors or []
+        # Seconds to wait before retrying, from a 429's Retry-After header.
+        self.retry_after = retry_after
