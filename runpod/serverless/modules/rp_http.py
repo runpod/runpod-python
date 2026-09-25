@@ -26,7 +26,7 @@ JOB_STREAM_URL = JOB_STREAM_URL_TEMPLATE.replace("$RUNPOD_POD_ID", WORKER_ID)
 log = RunPodLogger()
 
 
-async def _transmit(client_session: ClientSession, url, job_data):
+async def _transmit(client_session: ClientSession, url, job_data, request_id=None):
     """
     Wrapper for transmitting results via POST.
     """
@@ -35,12 +35,18 @@ async def _transmit(client_session: ClientSession, url, job_data):
         client_session=client_session, retry_options=retry_options
     )
 
+    headers = {
+        "charset": "utf-8",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    # Pass the request id per-request rather than mutating the shared session's
+    # headers, which would race across concurrently handled jobs.
+    if request_id is not None:
+        headers["X-Request-ID"] = request_id
+
     kwargs = {
         "data": job_data,
-        "headers": {
-            "charset": "utf-8",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
+        "headers": headers,
         "raise_for_status": True,
     }
 
@@ -55,14 +61,12 @@ async def _handle_result(
     A helper function to handle the result, either for sending or streaming.
     """
     try:
-        session.headers["X-Request-ID"] = job["id"]
-
         serialized_job_data = json.dumps(job_data, ensure_ascii=False)
 
         is_stream = "true" if is_stream else "false"
         url = url_template.replace("$ID", job["id"]) + f"&isStream={is_stream}"
 
-        await _transmit(session, url, serialized_job_data)
+        await _transmit(session, url, serialized_job_data, request_id=job["id"])
         log.debug(f"{log_message}", job["id"])
 
     except ClientError as err:
