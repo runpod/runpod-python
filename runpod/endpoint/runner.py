@@ -36,16 +36,17 @@ class RunPodClient:
             api_key as global_api_key,
             endpoint_url_base,
         )
-        
+
         # Use provided api_key or fall back to global
         self.api_key = api_key or global_api_key
-        
+
         if self.api_key is None:
             raise RuntimeError(API_KEY_NOT_SET_MSG)
 
         self.rp_session = requests.Session()
         retries = Retry(total=5, backoff_factor=1, status_forcelist=[408, 429])
         self.rp_session.mount("http://", HTTPAdapter(max_retries=retries))
+        self.rp_session.mount("https://", HTTPAdapter(max_retries=retries))
 
         self.headers = {
             "Content-Type": "application/json",
