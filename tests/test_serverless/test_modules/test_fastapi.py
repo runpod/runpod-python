@@ -220,9 +220,34 @@ class TestFastAPI(unittest.TestCase):
             )
             assert "error" in error_runsync_return
 
-            # Test webhook caller sent
+            # Test webhook caller sent with full cloud-parity payload
             asyncio.run(worker_api._sim_runsync(input_object_with_webhook))
             assert mock_threading.Thread.called
+            webhook_kwargs = mock_threading.Thread.call_args
+            webhook_payload = webhook_kwargs[1]["args"][1] if "args" in webhook_kwargs[1] else webhook_kwargs[0][0][1] if webhook_kwargs[0] else webhook_kwargs[1]["args"][1]
+            # Extract payload from the positional args passed to Thread(target=..., args=(...))
+            call_args = mock_threading.Thread.call_args
+            payload = call_args.kwargs.get("args", call_args[1].get("args", (None, None)))[1]
+            assert "id" in payload
+            assert payload["status"] == "COMPLETED"
+            assert "input" in payload
+            assert "webhook" in payload
+            assert "delayTime" in payload
+            assert "executionTime" in payload
+            assert "output" in payload
+
+            # Test webhook fires on error too (fixes #410)
+            mock_threading.reset_mock()
+            error_input_with_webhook = rp_fastapi.DefaultRequest(
+                input={"test_input": "test_input"}, webhook="test_webhook"
+            )
+            error_worker_api_wh = rp_fastapi.WorkerAPI({"handler": self.error_handler})
+            asyncio.run(error_worker_api_wh._sim_runsync(error_input_with_webhook))
+            assert mock_threading.Thread.called, "Webhook must fire on failed jobs"
+            call_args = mock_threading.Thread.call_args
+            payload = call_args.kwargs.get("args", call_args[1].get("args", (None, None)))[1]
+            assert payload["status"] == "FAILED"
+            assert "error" in payload
 
 
     @pytest.mark.asyncio
@@ -330,10 +355,18 @@ class TestFastAPI(unittest.TestCase):
                 "output": {"result": "success"},
             }
 
-            # Test webhook caller sent
+            # Test webhook caller sent with full cloud-parity payload
             asyncio.run(worker_api._sim_run(input_object_with_webhook))
             asyncio.run(worker_api._sim_status("test-123"))
             assert mock_threading.Thread.called
+            call_args = mock_threading.Thread.call_args
+            payload = call_args.kwargs.get("args", call_args[1].get("args", (None, None)))[1]
+            assert "id" in payload
+            assert payload["status"] == "COMPLETED"
+            assert "input" in payload
+            assert "webhook" in payload
+            assert "delayTime" in payload
+            assert "executionTime" in payload
 
             # Test with generator handler
             def generator_handler(job):
