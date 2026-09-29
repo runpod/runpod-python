@@ -1,6 +1,7 @@
 """Tests for runpod.serverless.__init__ module exports."""
 
 import inspect
+
 import runpod.serverless
 
 
@@ -24,6 +25,7 @@ class TestServerlessInit:
             'start',
             'progress_update',
             'register_fitness_check',
+            'register_prestart_hook',
             'runpod_version',
             'VolumeCache'
         }
@@ -99,5 +101,5 @@ class TestServerlessInit:
         assert all_symbols.issubset(public_attrs), f"__all__ contains non-public symbols: {all_symbols - public_attrs}"
 
         # Expected public API should be exactly what's in __all__
-        expected_public_api = {'start', 'progress_update', 'register_fitness_check', 'runpod_version', 'VolumeCache'}
+        expected_public_api = {'start', 'progress_update', 'register_fitness_check', 'register_prestart_hook', 'runpod_version', 'VolumeCache'}
         assert all_symbols == expected_public_api, f"Expected {expected_public_api}, got {all_symbols}"

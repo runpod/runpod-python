@@ -4,8 +4,18 @@ import asyncio
 import threading
 from concurrent.futures import Future
 from datetime import datetime
-from typing import Any, Coroutine, Iterator, Mapping, Optional, Sequence, TypeVar
+from typing import (
+    Any,
+    Coroutine,
+    Iterator,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    TypeVar,
+)
 
+from runpod.apps.volume import Volume
 from runpod.sandbox.asyncio import AsyncioSandbox
 from .models import (
     ExecResult,
@@ -185,7 +195,7 @@ class SandboxLogs(Iterator[LogEvent]):
 class Sandbox:
     """An isolated CPU sandbox with blocking methods.
 
-    ``with Sandbox(image_name=...)`` creates on entry and terminates on exit.
+    ``with Sandbox(image=...)`` creates on entry and terminates on exit.
     ``create`` leaves the lifetime under your control; call ``terminate`` when
     finished, or ``close`` to release only local connections. Handles retrieved
     with ``get`` or ``list`` never terminate compute on context exit.
@@ -198,13 +208,26 @@ class Sandbox:
     def __init__(
         self,
         *,
-        image_name: Optional[str] = None,
+        image: Optional[str] = None,
         template_id: Optional[str] = None,
         name: Optional[str] = None,
         cpu_flavor_id: Optional[str] = None,
         vcpu_count: Optional[int] = None,
         memory_in_gb: Optional[int] = None,
-        data_center_id: Optional[str] = None,
+        disk_gb: Optional[int] = None,
+        data_center_ids: Optional[Sequence[str]] = None,
+        mounts: Optional[Mapping[str, Volume]] = None,
+        ports: Optional[
+            Mapping[
+                int,
+                Literal["http", "tcp", "udp"]
+                | tuple[Literal["http", "tcp", "udp"], ...],
+            ]
+        ] = None,
+        cmd: Optional[Sequence[str]] = None,
+        entrypoint: Optional[Sequence[str]] = None,
+        start_ssh: Optional[bool] = None,
+        registry_auth: Optional[str] = None,
         env: Optional[Mapping[str, str]] = None,
         idle_timeout_seconds: Optional[int] = None,
         max_lifetime_seconds: Optional[int] = None,
@@ -217,13 +240,20 @@ class Sandbox:
         self._runner = _LoopRunner()
         self._entered = False
         self._sandbox = AsyncioSandbox(
-            image_name=image_name,
+            image=image,
             template_id=template_id,
             name=name,
             cpu_flavor_id=cpu_flavor_id,
             vcpu_count=vcpu_count,
             memory_in_gb=memory_in_gb,
-            data_center_id=data_center_id,
+            disk_gb=disk_gb,
+            data_center_ids=data_center_ids,
+            mounts=mounts,
+            ports=ports,
+            cmd=cmd,
+            entrypoint=entrypoint,
+            start_ssh=start_ssh,
+            registry_auth=registry_auth,
             env=env,
             idle_timeout_seconds=idle_timeout_seconds,
             max_lifetime_seconds=max_lifetime_seconds,
@@ -333,6 +363,24 @@ class Sandbox:
     def refresh(self) -> SandboxInfo:
         """Fetch current server metadata and replace the local snapshot."""
         return self._runner.run(self._sandbox.refresh())
+
+    def update(
+        self,
+        *,
+        idle_timeout_seconds: Optional[int] = None,
+        max_lifetime_seconds: Optional[int] = None,
+    ) -> SandboxInfo:
+        """update the supplied timeout fields and return the refreshed snapshot."""
+        return self._runner.run(
+            self._sandbox.update(
+                idle_timeout_seconds=idle_timeout_seconds,
+                max_lifetime_seconds=max_lifetime_seconds,
+            )
+        )
+
+    def extend(self, *, seconds: int) -> SandboxInfo:
+        """add to the current total lifetime; not atomic across separate clients."""
+        return self._runner.run(self._sandbox.extend(seconds=seconds))
 
     def exec(
         self,

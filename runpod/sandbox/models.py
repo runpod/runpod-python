@@ -37,17 +37,27 @@ class SandboxInfo:
     created_at: datetime
     updated_at: datetime
     template_id: Optional[str]
-    image_name: Optional[str]
+    image: Optional[str]
     cpu_flavor_id: Optional[str]
     termination_reason: Optional[str]
     terminated_at: Optional[datetime]
-    labels: Mapping[str, str]
+    labels: Optional[Mapping[str, str]]
     compute: Optional[SandboxCompute]
+    data_center_id: Optional[str]
+    env: Optional[Mapping[str, str]]
+    registry: Optional[str]
+    started_at: Optional[datetime]
+    ssh: Optional[Mapping[str, Any]]
+    ports: Optional[list[Mapping[str, Any]]]
+    mounts: Optional[Mapping[str, list[Mapping[str, str]]]]
+    cmd: Optional[list[str]]
+    entrypoint: Optional[list[str]]
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SandboxInfo":
         compute = data.get("compute")
         terminated_at = data.get("terminatedAt")
+        started_at = data.get("startedAt")
         return cls(
             id=data["id"],
             name=data["name"],
@@ -60,11 +70,33 @@ class SandboxInfo:
             created_at=_timestamp(data["createdAt"]),
             updated_at=_timestamp(data["updatedAt"]),
             template_id=data.get("templateId"),
-            image_name=data.get("imageName"),
+            image=data.get("imageName"),
             cpu_flavor_id=data.get("cpuFlavorId"),
             termination_reason=data.get("terminationReason"),
             terminated_at=_timestamp(terminated_at) if terminated_at else None,
-            labels=dict(data.get("labels") or {}),
+            labels=dict(data["labels"]) if data.get("labels") is not None else None,
+            data_center_id=data.get("dataCenterId"),
+            env=dict(data["env"]) if data.get("env") is not None else None,
+            registry=data.get("registry"),
+            started_at=_timestamp(started_at) if started_at is not None else None,
+            ssh=dict(data["ssh"]) if data.get("ssh") is not None else None,
+            ports=(
+                [dict(port) for port in data["ports"]]
+                if data.get("ports") is not None
+                else None
+            ),
+            mounts=(
+                {
+                    kind: [dict(mount) for mount in mounts]
+                    for kind, mounts in data["mounts"].items()
+                }
+                if data.get("mounts") is not None
+                else None
+            ),
+            cmd=list(data["cmd"]) if data.get("cmd") is not None else None,
+            entrypoint=(
+                list(data["entrypoint"]) if data.get("entrypoint") is not None else None
+            ),
             compute=(
                 SandboxCompute(
                     vcpu_count=compute["vcpuCount"],
@@ -80,10 +112,15 @@ class SandboxInfo:
 
 @dataclass(frozen=True)
 class ExecResult:
-    """Combined command output and the host's optional failure description."""
+    """command output with nullable host-reported execution details."""
 
     output: str
     error: Optional[str] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+    exit_code: Optional[int] = None
+    duration_ms: Optional[int] = None
+    truncated: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -109,7 +146,9 @@ class SandboxExecutionError(RunPodError):
     """A command failed with check=True; its partial output remains available."""
 
     def __init__(self, sandbox_id: str, result: ExecResult):
-        super().__init__(result.error)
+        super().__init__(
+            result.error or f"Sandbox command exited with status {result.exit_code}"
+        )
         self.sandbox_id = sandbox_id
         self.result = result
 

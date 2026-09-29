@@ -6,9 +6,11 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 from types import TracebackType
-from typing import Any, Optional, TypeVar
+from typing import Any, Literal, Optional, TypeVar
 
-from runpod.api.sandboxes import AsyncSandboxAPI
+from runpod.api.sandboxes import AsyncSandboxAPI, SandboxConflictError
+from runpod.apps.registry import resolve_registry_auth
+from runpod.apps.volume import Volume, VolumeResolver, normalize_mounts, validate_mounts
 from runpod.error import QueryError
 from runpod.sandbox.models import (
     ExecResult,
@@ -31,6 +33,63 @@ def _timeout(value: float, name: str, *, allow_zero: bool = False) -> float:
             f"{name} must be finite and {'nonnegative' if allow_zero else 'positive'}"
         )
     return value
+
+
+def _string_list(
+    value: Optional[Sequence[str]], name: str, *, nonempty: bool = False
+) -> Optional[list[str]]:
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise TypeError(f"{name} must be a sequence of strings")
+    if any(not isinstance(item, str) for item in value):
+        raise TypeError(f"{name} must be a sequence of strings")
+    if nonempty and (not value or any(not item for item in value)):
+        raise ValueError(f"{name} must contain at least one nonempty string")
+    return list(value)
+
+
+def _ports(
+    ports: Optional[Mapping[int, str | tuple[str, ...]]],
+) -> Optional[list[dict[str, Any]]]:
+    if ports is None:
+        return None
+    if not isinstance(ports, Mapping):
+        raise TypeError("ports must map port numbers to protocols")
+    rows = []
+    for port, protocols in ports.items():
+        if (
+            isinstance(port, bool)
+            or not isinstance(port, int)
+            or not 1 <= port <= 65535
+        ):
+            raise ValueError("port numbers must be integers from 1 to 65535")
+        if isinstance(protocols, str):
+            protocols = (protocols,)
+        if not isinstance(protocols, tuple) or not protocols:
+            raise TypeError("port protocols must be a string or nonempty tuple")
+        transports = set()
+        for protocol in protocols:
+            if protocol not in ("http", "tcp", "udp"):
+                raise ValueError("port protocols must be http, tcp, or udp")
+            transport = "udp" if protocol == "udp" else "tcp"
+            if transport in transports:
+                raise ValueError(f"port {port} has overlapping protocols")
+            transports.add(transport)
+            rows.append({"port": port, "protocol": protocol})
+    if len(rows) > 15:
+        raise ValueError("sandboxes support at most 15 exposed ports")
+    return rows
+
+
+def _sandbox_mounts(
+    mounts: Optional[Mapping[str, Volume]],
+) -> Optional[dict[str, Volume]]:
+    if mounts is None:
+        return None
+    normalized = normalize_mounts(mounts)
+    validate_mounts(normalized, "sandbox", is_cpu=True)
+    return normalized
 
 
 async def _cleanup(
@@ -61,24 +120,37 @@ async def _cleanup(
 
 
 class AsyncioSandbox:
-    """A cached sandbox handle; construction never performs network I/O.
+    """a cached sandbox handle; construction never performs network I/O.
 
-    Supply exactly one of ``image_name`` or ``template_id``. Unspecified
+    supply exactly one of ``image`` or ``template_id``. unspecified
     resource and lifetime options are left to the server's account policy.
-    Created handles own their remote sandbox in a context; ``get`` and ``list``
+    created handles own their remote sandbox in a context; ``get`` and ``list``
     return borrowed handles whose context only closes local resources.
     """
 
     def __init__(
         self,
         *,
-        image_name: Optional[str] = None,
+        image: Optional[str] = None,
         template_id: Optional[str] = None,
         name: Optional[str] = None,
         cpu_flavor_id: Optional[str] = None,
         vcpu_count: Optional[int] = None,
         memory_in_gb: Optional[int] = None,
-        data_center_id: Optional[str] = None,
+        disk_gb: Optional[int] = None,
+        data_center_ids: Optional[Sequence[str]] = None,
+        mounts: Optional[Mapping[str, Volume]] = None,
+        ports: Optional[
+            Mapping[
+                int,
+                Literal["http", "tcp", "udp"]
+                | tuple[Literal["http", "tcp", "udp"], ...],
+            ]
+        ] = None,
+        cmd: Optional[Sequence[str]] = None,
+        entrypoint: Optional[Sequence[str]] = None,
+        start_ssh: Optional[bool] = None,
+        registry_auth: Optional[str] = None,
         env: Optional[Mapping[str, str]] = None,
         idle_timeout_seconds: Optional[int] = None,
         max_lifetime_seconds: Optional[int] = None,
@@ -88,17 +160,26 @@ class AsyncioSandbox:
         request_timeout: float = 30,
         startup_timeout: float = 60,
     ) -> None:
-        if (image_name is None) == (template_id is None):
-            raise ValueError("Supply exactly one of image_name or template_id")
+        if (image is None) == (template_id is None):
+            raise ValueError("Supply exactly one of image or template_id")
         self._initialize(api_key, base_url, request_timeout, startup_timeout)
+        self._mounts = _sandbox_mounts(mounts)
+        self._registry_auth = registry_auth
         self._create_body = {
-            "imageName": image_name,
+            "imageName": image,
             "templateId": template_id,
             "name": name,
             "cpuFlavorId": cpu_flavor_id,
             "vcpuCount": vcpu_count,
             "memoryInGb": memory_in_gb,
-            "dataCenterId": data_center_id,
+            "disk": disk_gb,
+            "dataCenterIds": _string_list(
+                data_center_ids, "data_center_ids", nonempty=True
+            ),
+            "ports": _ports(ports),
+            "cmd": _string_list(cmd, "cmd"),
+            "entrypoint": _string_list(entrypoint, "entrypoint"),
+            "startSsh": start_ssh,
             "env": dict(env) if env is not None else None,
             "idleTimeoutSeconds": idle_timeout_seconds,
             "maxLifetimeSeconds": max_lifetime_seconds,
@@ -120,6 +201,9 @@ class AsyncioSandbox:
         self._info: Optional[SandboxInfo] = None
         self._sandbox_id: Optional[str] = None
         self._create_body: Optional[dict[str, Any]] = None
+        self._mounts: Optional[dict[str, Volume]] = None
+        self._registry_auth: Optional[str] = None
+        self._lifetime_lock = asyncio.Lock()
         self._owned = False
         self._entering = False
         self._creating = False
@@ -222,7 +306,34 @@ class AsyncioSandbox:
         self._creating = True
 
         async def create_remote() -> None:
-            data = await self._api.create(self._create_body)
+            body = dict(self._create_body)
+            if self._mounts is not None:
+                resolved = await VolumeResolver(api=self._api).resolve_mounts(
+                    self._mounts
+                )
+                wire_mounts = {}
+                ids = set()
+                for mount in resolved:
+                    if mount["id"] in ids:
+                        raise ValueError("a sandbox cannot mount the same volume twice")
+                    ids.add(mount["id"])
+                    wire_mounts[mount["kind"]] = [
+                        {"volumeId": mount["id"], "path": mount["path"]}
+                    ]
+                    if mount["kind"] == "network":
+                        dc = mount["dataCenterId"]
+                        requested = body.get("dataCenterIds")
+                        if requested is not None and dc not in requested:
+                            raise ValueError(
+                                f"network volume data center {dc!r} is not in data_center_ids"
+                            )
+                        body["dataCenterIds"] = [dc]
+                body["mounts"] = wire_mounts
+            if self._registry_auth is not None:
+                body["registry"] = await resolve_registry_auth(
+                    self._registry_auth, api=self._api
+                )
+            data = await self._api.create(body)
             sandbox_id = data["id"]
             if not isinstance(sandbox_id, str) or not sandbox_id:
                 raise ValueError("Create response has no valid sandbox id")
@@ -235,7 +346,7 @@ class AsyncioSandbox:
             await asyncio.shield(task)
         except BaseException as original:
 
-            async def recover_and_release() -> None:
+            async def recover_and_release(original_error: BaseException) -> None:
                 recovery_error = None
                 try:
                     if not task.done():
@@ -244,7 +355,7 @@ class AsyncioSandbox:
                         task.result()
                 except BaseException as error:
                     # finish releasing the resource before propagating recovery errors.
-                    if error is not original:
+                    if error is not original_error:
                         recovery_error = error
                 try:
                     if self._sandbox_id is not None:
@@ -258,7 +369,9 @@ class AsyncioSandbox:
                 if recovery_error is not None:
                     raise recovery_error
 
-            await _cleanup(recover_and_release(), 2 * self._request_timeout, original)
+            await _cleanup(
+                recover_and_release(original), 2 * self._request_timeout, original
+            )
             raise
         finally:
             self._creating = False
@@ -297,6 +410,40 @@ class AsyncioSandbox:
         self._info = SandboxInfo.from_dict(await self._api.get(self._sandbox_id))
         return self._info
 
+    async def update(
+        self,
+        *,
+        idle_timeout_seconds: Optional[int] = None,
+        max_lifetime_seconds: Optional[int] = None,
+    ) -> SandboxInfo:
+        """update only the supplied lifetime fields and cache the returned snapshot."""
+        body = {}
+        if idle_timeout_seconds is not None:
+            body["idleTimeoutSeconds"] = idle_timeout_seconds
+        if max_lifetime_seconds is not None:
+            body["maxLifetimeSeconds"] = max_lifetime_seconds
+        if not body:
+            raise ValueError("update requires at least one timeout")
+        async with self._lifetime_lock:
+            self._info = SandboxInfo.from_dict(await self._api.update(self.id, body))
+            return self._info
+
+    async def extend(self, *, seconds: int) -> SandboxInfo:
+        """add seconds to the current total lifetime, not to the current time.
+
+        this refreshes before sending an absolute lifetime to the server.
+        updates through this handle are serialized, but extensions made by
+        different clients are not atomic and may race.
+        """
+        if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+            raise ValueError("seconds must be a positive integer")
+        async with self._lifetime_lock:
+            info = await self.refresh()
+            self._info = SandboxInfo.from_dict(
+                await self._api.extend(self.id, info.max_lifetime_seconds + seconds)
+            )
+            return self._info
+
     async def _ready_operation(
         self,
         operation: Callable[[], Awaitable[_T]],
@@ -325,7 +472,11 @@ class AsyncioSandbox:
                         raise
                 return await operation()
             except QueryError as error:
-                if error.status_code != 409 or timeout == 0:
+                if (
+                    not isinstance(error, SandboxConflictError)
+                    or error.code != "sandbox_starting"
+                    or timeout == 0
+                ):
                     raise
                 remaining = deadline - loop.time()
                 if remaining <= 0:
@@ -373,8 +524,16 @@ class AsyncioSandbox:
         data = await self._ready_operation(
             lambda: self._api.exec(self.id, argv), startup_timeout
         )
-        result = ExecResult(output=data["output"], error=data.get("error"))
-        if check and result.error is not None:
+        result = ExecResult(
+            output=data["output"],
+            error=data.get("error"),
+            stdout=data.get("stdout"),
+            stderr=data.get("stderr"),
+            exit_code=data.get("exitCode"),
+            duration_ms=data.get("durationMs"),
+            truncated=data.get("truncated"),
+        )
+        if check and (result.error is not None or result.exit_code not in (None, 0)):
             raise SandboxExecutionError(self.id, result)
         return result
 
@@ -430,6 +589,7 @@ class AsyncioSandbox:
                     error = stream_error
         try:
             await self._api.close()
+            self._lifetime_lock = asyncio.Lock()
         except BaseException as close_error:
             if error is not None:
                 raise error from close_error

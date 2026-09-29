@@ -6,11 +6,13 @@ import sys
 import threading
 from collections import deque
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 
 import pytest
 from aiohttp import web
 
 from runpod import AsyncioSandbox, Sandbox
+from runpod.apps.volume import GlobalVolume, NetworkVolume, VolumeError
 from runpod.error import AuthenticationError, QueryError
 from runpod.sandbox import (
     SandboxExecutionError,
@@ -29,6 +31,9 @@ class SandboxService:
         self.exec_statuses = deque()
         self.exec_responses = deque()
         self.log_statuses = deque()
+        self.conflict_code = "sandbox_starting"
+        self.network_volumes = []
+        self.registries = []
         self.delete_status = 204
         self.create_started = threading.Event()
         self.allow_create = threading.Event()
@@ -67,10 +72,20 @@ class SandboxService:
             "createdAt": now,
             "updatedAt": now,
             "labels": body.get("labels", {}),
+            "cpuFlavorId": body.get("cpuFlavorId"),
+            "dataCenterId": (body.get("dataCenterIds") or [None])[0],
+            "env": body.get("env", {}),
+            "registry": body.get("registry"),
+            "startedAt": now,
+            "ssh": {"proxy": {"command": "ssh sandbox@ssh.runpod.io"}},
+            "ports": body.get("ports", []),
+            "mounts": body.get("mounts", {"network": [], "global": []}),
+            "cmd": body.get("cmd", ["tail", "-f", "/dev/null"]),
+            "entrypoint": body.get("entrypoint", []),
             "compute": {
                 "vcpuCount": body.get("vcpuCount", 2),
                 "memoryInGb": body.get("memoryInGb", 4),
-                "containerDiskInGb": 10,
+                "containerDiskInGb": body.get("disk", 10),
                 "costPerHr": 0.026,
             },
         }
@@ -83,9 +98,12 @@ def sandbox_peer():
     service = SandboxService()
     ready, stopped = threading.Event(), asyncio.Event()
 
-    def failure(status, detail):
+    def failure(status, detail, code=None):
+        payload = {"detail": detail}
+        if code is not None:
+            payload["code"] = code
         return web.json_response(
-            {"detail": detail}, status=status, content_type="application/problem+json"
+            payload, status=status, content_type="application/problem+json"
         )
 
     async def handle(request):
@@ -95,6 +113,14 @@ def sandbox_peer():
         )
         if request.headers.get("Authorization") != "Bearer sandbox-test-key":
             return failure(401, "invalid key")
+        if request.path == "/v2/network-volumes":
+            if request.method == "POST":
+                volume = {"id": "created-volume", **body}
+                service.network_volumes.append(volume)
+                return web.json_response(volume, status=201)
+            return web.json_response({"networkVolumes": service.network_volumes})
+        if request.path == "/v2/registries":
+            return web.json_response({"registries": service.registries})
         sandbox_id = request.match_info.get("id")
         if sandbox_id is None:
             if request.method == "POST":
@@ -119,6 +145,25 @@ def sandbox_peer():
             return failure(404, "missing sandbox")
         record = service.records[sandbox_id]
         operation = request.match_info.get("operation")
+        if request.method == "PATCH" or operation == "extend":
+            if (
+                operation == "extend"
+                and body["maxLifetimeSeconds"] < record["maxLifetimeSeconds"]
+            ):
+                return failure(422, "extension cannot reduce lifetime")
+            for field, origin, deadline in (
+                ("idleTimeoutSeconds", "lastActivityAt", "idleExpiresAt"),
+                ("maxLifetimeSeconds", "createdAt", "expiresAt"),
+            ):
+                if field in body:
+                    record[field] = body[field]
+                    start = datetime.fromisoformat(
+                        record[origin].replace("Z", "+00:00")
+                    )
+                    record[deadline] = (
+                        start + timedelta(seconds=body[field])
+                    ).isoformat()
+            return web.json_response(record)
         if request.method == "DELETE":
             if service.delete_status != 204:
                 return failure(service.delete_status, "cleanup unavailable")
@@ -127,7 +172,7 @@ def sandbox_peer():
         if operation == "exec":
             status = service.exec_statuses.popleft() if service.exec_statuses else 200
             if status == 409 or record["state"] in ("FAILED", "TERMINATED"):
-                return failure(409, "container not started")
+                return failure(409, "container not started", service.conflict_code)
             service.executed.append(body["command"])
             if status >= 400:
                 return failure(status, "response lost after command execution")
@@ -144,7 +189,7 @@ def sandbox_peer():
             await asyncio.to_thread(service.allow_logs.wait, 5)
             status = service.log_statuses.popleft() if service.log_statuses else 200
             if status != 200:
-                return failure(status, "logs not ready")
+                return failure(status, "logs not ready", service.conflict_code)
             response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
             try:
                 await response.prepare(request)
@@ -167,6 +212,8 @@ def sandbox_peer():
         app = web.Application()
         for path in (
             "/v2/sandboxes",
+            "/v2/network-volumes",
+            "/v2/registries",
             "/v2/sandboxes/{id}",
             "/v2/sandboxes/{id}/{operation}",
         ):
@@ -207,7 +254,7 @@ def peer():
 
 def test_sync_startup_conflict_and_borrowed_context_ownership(peer):
     peer.exec_statuses.extend([409, 200])
-    with Sandbox(image_name="python:3.12-slim", **peer.options) as owner:
+    with Sandbox(image="python:3.12-slim", **peer.options) as owner:
         with Sandbox.get(owner.id, **peer.options) as borrowed:
             assert borrowed.exec(["work"]).output == "completed"
         assert peer.records[owner.id]["state"] == "RUNNING"
@@ -223,7 +270,7 @@ def test_sync_startup_conflict_and_borrowed_context_ownership(peer):
 @pytest.mark.asyncio
 async def test_async_startup_conflict_and_borrowed_context_ownership(peer):
     peer.exec_statuses.extend([409, 200])
-    async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options) as owner:
+    async with AsyncioSandbox(image="python:3.12-slim", **peer.options) as owner:
         async with await AsyncioSandbox.get(owner.id, **peer.options) as borrowed:
             assert (await borrowed.exec(["work"], check=True)).output == "completed"
         assert peer.records[owner.id]["state"] == "RUNNING"
@@ -240,7 +287,7 @@ async def test_cancellation_during_creation_recovers_id_and_terminates(peer):
     peer.allow_create.clear()
 
     async def create():
-        async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options):
+        async with AsyncioSandbox(image="python:3.12-slim", **peer.options):
             pytest.fail("cancelled context was entered")
 
     task = asyncio.create_task(create())
@@ -269,7 +316,7 @@ with sandbox_peer() as peer:
     worker = threading.Thread(target=interrupt)
     worker.start()
     try:
-        Sandbox.create(image_name="python:3.12-slim", **peer.options)
+        Sandbox.create(image="python:3.12-slim", **peer.options)
         raise AssertionError("SIGINT was swallowed")
     except KeyboardInterrupt:
         assert peer.records["sandbox-1"]["state"] == "TERMINATED"
@@ -291,7 +338,7 @@ def test_sync_body_exception_remains_primary_during_cleanup(
     failure = failure_type("application failed")
     caught = None
     try:
-        with Sandbox(image_name="python:3.12-slim", **peer.options):
+        with Sandbox(image="python:3.12-slim", **peer.options):
             raise failure
     except failure_type as error:
         caught = error
@@ -311,7 +358,7 @@ async def test_async_body_exception_remains_primary_during_cleanup(peer, delete_
     failure = ValueError("application failed")
     caught = None
     try:
-        async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options):
+        async with AsyncioSandbox(image="python:3.12-slim", **peer.options):
             raise failure
     except ValueError as error:
         caught = error
@@ -325,7 +372,7 @@ async def test_async_body_exception_remains_primary_during_cleanup(peer, delete_
 
 @pytest.mark.asyncio
 async def test_exec_never_replays_ambiguous_failure_and_preserves_partial_output(peer):
-    async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options) as sandbox:
+    async with AsyncioSandbox(image="python:3.12-slim", **peer.options) as sandbox:
         peer.exec_statuses.append(500)
         with pytest.raises(QueryError) as raised:
             await sandbox.exec(["side-effect"])
@@ -353,7 +400,7 @@ async def test_exec_never_replays_ambiguous_failure_and_preserves_partial_output
 async def test_malformed_exec_response_is_a_query_error_without_replay(
     peer, body, content_type
 ):
-    async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options) as sandbox:
+    async with AsyncioSandbox(image="python:3.12-slim", **peer.options) as sandbox:
         peer.exec_responses.append(web.Response(text=body, content_type=content_type))
         with pytest.raises(QueryError) as failure:
             await sandbox.exec(["side-effect"])
@@ -363,7 +410,7 @@ async def test_malformed_exec_response_is_a_query_error_without_replay(
 
 @pytest.mark.asyncio
 async def test_startup_deadline_and_terminal_state_do_not_execute_commands(peer):
-    async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options) as sandbox:
+    async with AsyncioSandbox(image="python:3.12-slim", **peer.options) as sandbox:
         peer.exec_statuses.extend([409] * 20)
         with pytest.raises(QueryError) as rejected:
             await sandbox.exec(["work"], startup_timeout=0)
@@ -379,7 +426,7 @@ async def test_startup_deadline_and_terminal_state_do_not_execute_commands(peer)
 
 
 def test_sync_sse_decodes_fragments_and_retains_resume_cursor(peer):
-    with Sandbox(image_name="python:3.12-slim", **peer.options) as sandbox:
+    with Sandbox(image="python:3.12-slim", **peer.options) as sandbox:
         with sandbox.logs(source="container", tail=0) as logs:
             events = list(logs)
         assert [(event.source, event.line, event.id) for event in events] == [
@@ -401,7 +448,7 @@ async def test_async_log_early_close_releases_live_connection(peer):
     # Exclude the timeout frame so this stays open until the client closes it.
     peer.log_bytes = peer.log_bytes.split(b"event: timeout")[0]
     peer.log_statuses.extend([409, 200])
-    async with AsyncioSandbox(image_name="python:3.12-slim", **peer.options) as sandbox:
+    async with AsyncioSandbox(image="python:3.12-slim", **peer.options) as sandbox:
         async with sandbox.logs() as logs:
             event = await logs.__anext__()
             assert event.line == "caf\u00e9"
@@ -411,7 +458,7 @@ async def test_async_log_early_close_releases_live_connection(peer):
 @pytest.mark.asyncio
 async def test_closing_sandbox_cancels_pending_log_handshake(peer):
     peer.allow_logs.clear()
-    sandbox = await AsyncioSandbox.create(image_name="python:3.12-slim", **peer.options)
+    sandbox = await AsyncioSandbox.create(image="python:3.12-slim", **peer.options)
     logs = sandbox.logs()
     opening = asyncio.create_task(logs.open())
     try:
@@ -452,3 +499,315 @@ async def test_list_authentication_failure_propagates_after_cleanup(peer):
     options = {**peer.options, "api_key": "invalid-key"}
     with pytest.raises(AuthenticationError):
         await AsyncioSandbox.list(**options)
+
+
+def test_mixed_mounts_are_lazy_remote_bindings_with_explicit_transport(peer):
+    network = NetworkVolume("datasets", create=False)
+    global_volume = GlobalVolume("global-models")
+    peer.network_volumes = [
+        {"id": "network-data", "name": "datasets", "dataCenter": "US-KS-2"}
+    ]
+    peer.registries = [{"id": "registry-id", "name": "private-images"}]
+    sandbox = Sandbox(
+        image="private/image",
+        mounts={"/datasets/": network, "/models": global_volume},
+        data_center_ids=["US-KS-2", "US-TX-3"],
+        registry_auth="private-images",
+        ports={8080: "http", 53: ("tcp", "udp")},
+        disk_gb=20,
+        cmd=["python", "-m", "http.server"],
+        entrypoint=[],
+        start_ssh=True,
+        env={},
+        **peer.options,
+    )
+    assert peer.requests == []
+    with sandbox:
+        with pytest.raises(VolumeError):
+            _ = network.path
+        with pytest.raises(VolumeError):
+            _ = global_volume.path
+        assert sandbox.info.mounts == {
+            "network": [{"volumeId": "network-data", "path": "/datasets"}],
+            "global": [{"volumeId": "global-models", "path": "/models"}],
+        }
+        assert sandbox.info.data_center_id == "US-KS-2"
+        assert sandbox.info.registry == "registry-id"
+        assert sandbox.info.compute.container_disk_in_gb == 20
+        assert sandbox.info.cmd == ["python", "-m", "http.server"]
+        assert sandbox.info.entrypoint == []
+        assert sandbox.info.ports == [
+            {"port": 8080, "protocol": "http"},
+            {"port": 53, "protocol": "tcp"},
+            {"port": 53, "protocol": "udp"},
+        ]
+        create_body = next(
+            body
+            for method, path, body, _ in peer.requests
+            if path == "/v2/sandboxes" and method == "POST"
+        )
+        assert create_body["dataCenterIds"] == ["US-KS-2"]
+        assert create_body["startSsh"] is True
+        assert "RUNPOD_MOUNTS" not in create_body["env"]
+    assert all(
+        headers["Authorization"] == "Bearer sandbox-test-key"
+        for _, _, _, headers in peer.requests
+    )
+    assert not any(path.startswith("/v2/catalog") for _, path, _, _ in peer.requests)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data_center_ids", [None, ["US-TX-3", "US-KS-2"]])
+async def test_global_mount_does_not_lookup_or_pin_network_placement(
+    peer, data_center_ids
+):
+    async with AsyncioSandbox(
+        image="image",
+        mounts={"/models": GlobalVolume("global-models")},
+        data_center_ids=data_center_ids,
+        **peer.options,
+    ) as sandbox:
+        assert sandbox.info.mounts == {
+            "global": [{"volumeId": "global-models", "path": "/models"}]
+        }
+        create_body = peer.requests[0][2]
+        if data_center_ids is None:
+            assert "dataCenterIds" not in create_body
+        else:
+            assert create_body["dataCenterIds"] == data_center_ids
+        assert len(peer.requests) == 1
+        async with await AsyncioSandbox.get(sandbox.id, **peer.options):
+            pass
+        assert [method for method, _, _, _ in peer.requests] == ["POST", "GET"]
+
+
+@pytest.mark.asyncio
+async def test_omitted_and_empty_mounts_preserve_template_override_semantics(peer):
+    async with AsyncioSandbox(template_id="template", **peer.options):
+        assert "mounts" not in peer.requests[0][2]
+    async with AsyncioSandbox(
+        template_id="template", mounts={}, ports={}, cmd=[], **peer.options
+    ):
+        body = next(
+            body
+            for method, path, body, _ in reversed(peer.requests)
+            if method == "POST"
+        )
+        assert body["mounts"] == {}
+        assert body["ports"] == []
+        assert body["cmd"] == []
+        assert "entrypoint" not in body
+
+
+@pytest.mark.asyncio
+async def test_network_creation_requires_explicit_placement_and_checks_requested_dc(
+    peer,
+):
+    missing = NetworkVolume("new-dataset")
+    with pytest.raises(VolumeError):
+        await AsyncioSandbox.create(
+            image="image", mounts={"/data": missing}, **peer.options
+        )
+    assert peer.records == {}
+    assert peer.network_volumes == []
+    volume = NetworkVolume("new-dataset", size=25, datacenter="US-KS-2")
+    async with AsyncioSandbox(
+        image="image", mounts={"/data": volume}, **peer.options
+    ) as sandbox:
+        assert sandbox.info.data_center_id == "US-KS-2"
+        assert sandbox.info.mounts["network"] == [
+            {"volumeId": "created-volume", "path": "/data"}
+        ]
+    count = len(peer.records)
+    with pytest.raises(ValueError):
+        await AsyncioSandbox.create(
+            image="image",
+            mounts={"/data": NetworkVolume("created-volume", create=False)},
+            data_center_ids=["US-TX-3"],
+            **peer.options,
+        )
+    assert len(peer.records) == count
+
+
+def test_mount_and_port_collisions_are_rejected_before_provisioning(peer):
+    for mounts in (
+        {"/data": NetworkVolume("first"), "/other": NetworkVolume("second")},
+        {"/data": NetworkVolume("first"), "/data/models": GlobalVolume("second")},
+        {"/etc": GlobalVolume("second")},
+        {"/data": "untyped-volume"},
+    ):
+        with pytest.raises((TypeError, ValueError, VolumeError)):
+            Sandbox(image="image", mounts=mounts, **peer.options)
+    with pytest.raises(ValueError):
+        Sandbox(image="image", ports={8080: ("http", "tcp")}, **peer.options)
+    assert peer.requests == []
+
+
+@pytest.mark.asyncio
+async def test_snapshots_preserve_unavailable_versus_empty_configuration(peer):
+    async with AsyncioSandbox(image="image", **peer.options) as sandbox:
+        row = peer.records[sandbox.id]
+        row.update(
+            env=None,
+            ports=None,
+            mounts=None,
+            cmd=None,
+            entrypoint=None,
+            ssh=None,
+            startedAt=None,
+        )
+        unavailable = await sandbox.refresh()
+        assert unavailable.env is None
+        assert unavailable.ports is None
+        assert unavailable.mounts is None
+        assert unavailable.cmd is None
+        assert unavailable.entrypoint is None
+        assert unavailable.ssh is None
+        assert unavailable.started_at is None
+        row.update(
+            env={},
+            ports=[],
+            mounts={"network": [], "global": []},
+            cmd=[],
+            entrypoint=[],
+            ssh={},
+        )
+        empty = await sandbox.refresh()
+        assert empty.env == {}
+        assert empty.ports == []
+        assert empty.mounts == {"network": [], "global": []}
+        assert empty.cmd == []
+        assert empty.entrypoint == []
+        assert empty.ssh == {}
+
+
+@pytest.mark.asyncio
+async def test_rich_exec_results_preserve_nulls_and_check_exit_status(peer):
+    async with AsyncioSandbox(image="image", **peer.options) as sandbox:
+        peer.exec_responses.append(
+            web.json_response(
+                {
+                    "output": "partial",
+                    "stdout": None,
+                    "stderr": "",
+                    "exitCode": 3,
+                    "durationMs": 0,
+                    "truncated": False,
+                    "error": None,
+                }
+            )
+        )
+        with pytest.raises(SandboxExecutionError) as failed:
+            await sandbox.exec(["fail-status"], check=True)
+        result = failed.value.result
+        assert result.output == "partial"
+        assert result.stdout is None
+        assert result.stderr == ""
+        assert result.exit_code == 3
+        assert result.duration_ms == 0
+        assert result.truncated is False
+        peer.exec_responses.append(
+            web.json_response(
+                {
+                    "output": "partial",
+                    "stdout": "partial",
+                    "stderr": None,
+                    "exitCode": None,
+                    "durationMs": 4000,
+                    "truncated": True,
+                    "error": "execution timed out",
+                }
+            )
+        )
+        timed_out = await sandbox.exec(["long-command"])
+        assert timed_out.exit_code is None
+        assert timed_out.stderr is None
+        assert timed_out.duration_ms == 4000
+        assert timed_out.truncated is True
+        assert timed_out.error == "execution timed out"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["container_exited", "sandbox_terminated", None])
+async def test_non_startup_conflicts_are_not_retried_even_with_running_snapshot(
+    peer, code
+):
+    async with AsyncioSandbox(image="image", **peer.options) as sandbox:
+        peer.conflict_code = code
+        peer.exec_statuses.append(409)
+        with pytest.raises(QueryError) as conflict:
+            await sandbox.exec(["work"])
+        assert conflict.value.status_code == 409
+        assert peer.executed == []
+        assert [path for _, path, _, _ in peer.requests] == [
+            "/v2/sandboxes",
+            f"/v2/sandboxes/{sandbox.id}/exec",
+        ]
+
+
+def test_sync_extend_uses_fresh_total_lifetime_and_update_preserves_omissions(peer):
+    with Sandbox(image="image", **peer.options) as sandbox:
+        peer.records[sandbox.id]["maxLifetimeSeconds"] = 1200
+        extended = sandbox.extend(seconds=300)
+        assert extended.max_lifetime_seconds == 1500
+        assert extended.expires_at == extended.created_at + timedelta(seconds=1500)
+        updated = sandbox.update(idle_timeout_seconds=600)
+        assert updated.max_lifetime_seconds == 1500
+        assert updated.idle_expires_at == updated.last_activity_at + timedelta(
+            seconds=600
+        )
+        assert updated.expires_at == extended.expires_at
+
+
+@pytest.mark.asyncio
+async def test_async_extensions_serialize_on_one_handle(peer):
+    async with AsyncioSandbox(image="image", **peer.options) as sandbox:
+        await sandbox.update(max_lifetime_seconds=1200)
+        await asyncio.gather(sandbox.extend(seconds=100), sandbox.extend(seconds=200))
+        assert sandbox.info.max_lifetime_seconds == 1500
+        assert sandbox.info.expires_at == sandbox.info.created_at + timedelta(
+            seconds=1500
+        )
+
+
+def test_lifetime_updates_survive_close_and_event_loop_reuse(peer):
+    async def first_session():
+        sandbox = await AsyncioSandbox.create(image="image", **peer.options)
+        try:
+            await sandbox.update(max_lifetime_seconds=1200)
+            await asyncio.gather(
+                sandbox.extend(seconds=100), sandbox.extend(seconds=200)
+            )
+        finally:
+            await sandbox.close()
+        return sandbox
+
+    sandbox = asyncio.run(first_session())
+
+    async def second_session():
+        try:
+            await asyncio.gather(
+                sandbox.extend(seconds=100), sandbox.extend(seconds=200)
+            )
+        finally:
+            await sandbox.terminate()
+
+    asyncio.run(second_session())
+    assert sandbox.info.max_lifetime_seconds == 1800
+
+
+@pytest.mark.asyncio
+async def test_same_resolved_volume_id_cannot_be_mounted_as_two_kinds(peer):
+    peer.network_volumes = [
+        {"id": "same-id", "name": "dataset", "dataCenter": "US-KS-2"}
+    ]
+    with pytest.raises(ValueError):
+        await AsyncioSandbox.create(
+            image="image",
+            mounts={
+                "/data": NetworkVolume("dataset", create=False),
+                "/models": GlobalVolume("same-id"),
+            },
+            **peer.options,
+        )
+    assert peer.records == {}

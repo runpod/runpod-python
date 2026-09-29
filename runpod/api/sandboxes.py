@@ -26,6 +26,19 @@ _SANDBOX_PATH = "/v2/sandboxes"
 _LINE_END = re.compile(r"\r\n|\r|\n")
 
 
+class SandboxConflictError(error.QueryError):
+    """a structured rejection whose code determines whether startup can be retried."""
+
+    def __init__(self, payload: Mapping[str, Any], method: str, path: str) -> None:
+        super().__init__(
+            payload.get("detail") or payload.get("title") or "Sandbox conflict",
+            f"{method} {path}",
+            status_code=409,
+            errors=payload.get("errors"),
+        )
+        self.code = payload.get("code")
+
+
 def _sandbox_path(sandbox_id: str) -> str:
     return f"{_SANDBOX_PATH}/{quote(sandbox_id, safe='')}"
 
@@ -44,6 +57,8 @@ async def _raise_response_error(
         payload = {}
     if not isinstance(payload, dict):
         payload = {}
+    if response.status == 409:
+        raise SandboxConflictError(payload, method, path)
     try:
         text = raw.decode(response.charset or "utf-8", errors="replace")
     except LookupError:
@@ -313,6 +328,31 @@ class AsyncSandboxAPI:
                 )
             return payload
 
+    async def list_network_volumes(self) -> list[dict[str, Any]]:
+        """list storage through this handle's credentials and control-plane URL."""
+        payload = await self._request("GET", "/v2/network-volumes")
+        if payload is None:
+            raise ValueError("Network volume listing returned no response")
+        return payload["networkVolumes"]
+
+    async def create_network_volume(
+        self, name: str, size: int, data_center_id: str
+    ) -> dict[str, Any]:
+        payload = await self._request(
+            "POST",
+            "/v2/network-volumes",
+            body={"name": name, "size": size, "dataCenter": data_center_id},
+        )
+        if payload is None:
+            raise ValueError("Network volume creation returned no response")
+        return payload
+
+    async def list_registry_auths(self) -> list[dict[str, Any]]:
+        payload = await self._request("GET", "/v2/registries")
+        if payload is None:
+            raise ValueError("Registry listing returned no response")
+        return payload["registries"]
+
     async def create(self, body: Mapping[str, Any]) -> dict[str, Any]:
         payload = await self._request(
             "POST",
@@ -348,6 +388,24 @@ class AsyncSandboxAPI:
         payload = await self._request("GET", _sandbox_path(sandbox_id))
         if payload is None:
             raise ValueError("Sandbox lookup returned no snapshot")
+        return payload
+
+    async def update(self, sandbox_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        payload = await self._request("PATCH", _sandbox_path(sandbox_id), body=body)
+        if payload is None:
+            raise ValueError("Sandbox update returned no snapshot")
+        return payload
+
+    async def extend(
+        self, sandbox_id: str, max_lifetime_seconds: int
+    ) -> dict[str, Any]:
+        payload = await self._request(
+            "POST",
+            f"{_sandbox_path(sandbox_id)}/extend",
+            body={"maxLifetimeSeconds": max_lifetime_seconds},
+        )
+        if payload is None:
+            raise ValueError("Sandbox extension returned no snapshot")
         return payload
 
     async def terminate(self, sandbox_id: str) -> None:
