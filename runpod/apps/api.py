@@ -1,8 +1,8 @@
 """control-plane calls for app provisioning.
 
 rest handles equivalent resource operations; graphql handles flash lifecycle,
-auth, secrets, task provisioning, and endpoint capabilities absent from rest.
-management verbs for the wider sdk stay in runpod.api.ctl_commands.
+auth, secrets, global storage, task provisioning, and endpoint capabilities
+absent from rest. management verbs for the wider sdk stay in runpod.api.ctl_commands.
 """
 
 from typing import Any, Dict, List, Optional
@@ -386,6 +386,16 @@ class AppsApiClient:
             },
         )
         return _stock_in_datacenter(data, data_center_id)
+
+    async def list_global_volumes(self) -> List[Dict[str, Any]]:
+        data = await self._execute(app_queries.QUERY_GLOBAL_VOLUMES, retry=True)
+        return data["myself"]["globalStoreBuckets"]
+
+    async def create_global_volume(self, name: str) -> Dict[str, Any]:
+        data = await self._execute(
+            app_mutations.MUTATION_CREATE_GLOBAL_VOLUME, {"input": {"name": name}}
+        )
+        return data["globalStoreBucketCreate"]
 
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
         data = await run_rest_request_async(

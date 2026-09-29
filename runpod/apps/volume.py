@@ -84,19 +84,20 @@ class NetworkVolume(Volume):
 
 
 class GlobalVolume(Volume):
-    """an existing global volume identified by its resource id."""
+    """a global volume resolved by name or id without datacenter placement."""
 
     kind = "global"
 
-    def __init__(self, id: str):
-        super().__init__(id)
+    def __init__(self, name: str, *, create: bool = True):
+        super().__init__(name)
+        self.create = create
 
     @property
-    def id(self) -> str:
+    def name(self) -> str:
         return self.reference
 
     def __repr__(self) -> str:
-        return f"<GlobalVolume {self.id!r}>"
+        return f"<GlobalVolume {self.name!r}>"
 
 
 def _mount_path(path: str) -> str:
@@ -183,7 +184,21 @@ class VolumeResolver:
         if cached is not None:
             return cached
         if isinstance(volume, GlobalVolume):
-            resolved = {"id": volume.id}
+            client = await self._client()
+            record = find_by_id_or_name(
+                await client.list_global_volumes(),
+                volume.name,
+                noun="global volumes",
+                error=VolumeError,
+            )
+            if record is None:
+                if not volume.create:
+                    raise VolumeError(
+                        f"global volume '{volume.name}' not found and create=False"
+                    )
+                record = await client.create_global_volume(name=volume.name)
+                log.info("created global volume %s (%s)", volume.name, record["id"])
+            resolved = {"id": record["id"]}
             self._resolved[key] = resolved
             return resolved
         if not isinstance(volume, NetworkVolume):

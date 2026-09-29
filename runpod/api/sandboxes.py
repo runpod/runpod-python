@@ -15,6 +15,9 @@ import aiohttp
 from yarl import URL
 
 from runpod import error
+from runpod.api.graphql import _build_payload, _check_response
+from runpod.api.mutations.apps import MUTATION_CREATE_GLOBAL_VOLUME
+from runpod.api.queries.apps import QUERY_GLOBAL_VOLUMES
 from runpod.api.rest import (
     _build_headers,
     _build_url,
@@ -327,6 +330,26 @@ class AsyncSandboxAPI:
                     status_code=response.status,
                 )
             return payload
+
+    async def _graphql(
+        self, query: str, variables: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        payload = await self._request(
+            "POST", "/graphql", body=_build_payload(query, variables)
+        )
+        if payload is None:
+            raise error.QueryError("GraphQL response is empty", query)
+        return _check_response(payload, query)["data"]
+
+    async def list_global_volumes(self) -> list[dict[str, Any]]:
+        data = await self._graphql(QUERY_GLOBAL_VOLUMES)
+        return data["myself"]["globalStoreBuckets"]
+
+    async def create_global_volume(self, name: str) -> dict[str, Any]:
+        data = await self._graphql(
+            MUTATION_CREATE_GLOBAL_VOLUME, {"input": {"name": name}}
+        )
+        return data["globalStoreBucketCreate"]
 
     async def list_network_volumes(self) -> list[dict[str, Any]]:
         """list storage through this handle's credentials and control-plane URL."""

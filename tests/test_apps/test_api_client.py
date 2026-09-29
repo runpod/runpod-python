@@ -59,16 +59,17 @@ class TestExecuteRetry:
                 await client._execute("query {}")
         assert transport.await_count == 1
 
+    @pytest.mark.parametrize("operation", ["create_app", "create_global_volume"])
     @pytest.mark.parametrize(
         "failure",
         [aiohttp.ClientError("response lost"), OSError("reset")],
     )
-    async def test_mutation_transport_failure_is_not_retried(self, failure):
+    async def test_mutation_transport_failure_is_not_retried(self, failure, operation):
         client = AppsApiClient(api_key="test-key")
         transport = AsyncMock(side_effect=failure)
         with patch("runpod.apps.api.run_graphql_query_async", transport):
             with pytest.raises(type(failure)):
-                await client.create_app("demo")
+                await getattr(client, operation)("demo")
         assert transport.await_count == 1
 
 

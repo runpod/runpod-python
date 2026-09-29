@@ -339,6 +339,9 @@ class TestTaskExecutionLifecycle:
         from runpod.error import QueryError
 
         api = MagicMock()
+        api.list_global_volumes = AsyncMock(
+            return_value=[{"id": "global-1", "name": "models"}]
+        )
         capacity = "This machine does not have the resources to deploy your pod"
         api.deploy_task_pod = AsyncMock(
             side_effect=[
@@ -380,9 +383,7 @@ class TestTaskExecutionLifecycle:
         from runpod.apps.tasks import TaskExecution
 
         volume = NetworkVolume("shared")
-        spec = self._spec(
-            mounts={"/data": volume}, datacenter=["US-IL-1", "EU-RO-1"]
-        )
+        spec = self._spec(mounts={"/data": volume}, datacenter=["US-IL-1", "EU-RO-1"])
         sibling = ResourceSpec(
             kind=ResourceKind.QUEUE,
             name="sibling",

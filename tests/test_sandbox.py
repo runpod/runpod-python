@@ -33,6 +33,8 @@ class SandboxService:
         self.log_statuses = deque()
         self.conflict_code = "sandbox_starting"
         self.network_volumes = []
+        self.global_volumes = []
+        self.global_error = None
         self.registries = []
         self.delete_status = 204
         self.create_started = threading.Event()
@@ -113,6 +115,24 @@ def sandbox_peer():
         )
         if request.headers.get("Authorization") != "Bearer sandbox-test-key":
             return failure(401, "invalid key")
+        if request.path == "/graphql":
+            if service.global_error:
+                return web.json_response(
+                    {"errors": [{"message": service.global_error}]}
+                )
+            query = body["query"]
+            if "globalStoreBucketCreate(" in query:
+                volume = {
+                    "id": f"global-{len(service.global_volumes) + 1}",
+                    "name": body["variables"]["input"]["name"],
+                }
+                service.global_volumes.append(volume)
+                return web.json_response({"data": {"globalStoreBucketCreate": volume}})
+            if "globalStoreBuckets" in query:
+                return web.json_response(
+                    {"data": {"myself": {"globalStoreBuckets": service.global_volumes}}}
+                )
+            return failure(400, "unknown graphql operation")
         if request.path == "/v2/network-volumes":
             if request.method == "POST":
                 volume = {"id": "created-volume", **body}
@@ -211,6 +231,7 @@ def sandbox_peer():
         service.loop = asyncio.get_running_loop()
         app = web.Application()
         for path in (
+            "/graphql",
             "/v2/sandboxes",
             "/v2/network-volumes",
             "/v2/registries",
@@ -507,6 +528,7 @@ def test_mixed_mounts_are_lazy_remote_bindings_with_explicit_transport(peer):
     peer.network_volumes = [
         {"id": "network-data", "name": "datasets", "dataCenter": "US-KS-2"}
     ]
+    peer.global_volumes = [{"id": "gv-models", "name": "global-models"}]
     peer.registries = [{"id": "registry-id", "name": "private-images"}]
     sandbox = Sandbox(
         image="private/image",
@@ -529,7 +551,7 @@ def test_mixed_mounts_are_lazy_remote_bindings_with_explicit_transport(peer):
             _ = global_volume.path
         assert sandbox.info.mounts == {
             "network": [{"volumeId": "network-data", "path": "/datasets"}],
-            "global": [{"volumeId": "global-models", "path": "/models"}],
+            "global": [{"volumeId": "gv-models", "path": "/models"}],
         }
         assert sandbox.info.data_center_id == "US-KS-2"
         assert sandbox.info.registry == "registry-id"
@@ -561,6 +583,7 @@ def test_mixed_mounts_are_lazy_remote_bindings_with_explicit_transport(peer):
 async def test_global_mount_does_not_lookup_or_pin_network_placement(
     peer, data_center_ids
 ):
+    peer.global_volumes = [{"id": "global-models", "name": "shared-models"}]
     async with AsyncioSandbox(
         image="image",
         mounts={"/models": GlobalVolume("global-models")},
@@ -570,15 +593,65 @@ async def test_global_mount_does_not_lookup_or_pin_network_placement(
         assert sandbox.info.mounts == {
             "global": [{"volumeId": "global-models", "path": "/models"}]
         }
-        create_body = peer.requests[0][2]
+        create_body = next(
+            body
+            for method, path, body, _ in peer.requests
+            if path == "/v2/sandboxes" and method == "POST"
+        )
         if data_center_ids is None:
             assert "dataCenterIds" not in create_body
         else:
             assert create_body["dataCenterIds"] == data_center_ids
-        assert len(peer.requests) == 1
-        async with await AsyncioSandbox.get(sandbox.id, **peer.options):
-            pass
-        assert [method for method, _, _, _ in peer.requests] == ["POST", "GET"]
+        assert not any(
+            path.startswith(("/v2/catalog", "/v2/network-volumes"))
+            for _, path, _, _ in peer.requests
+        )
+
+
+@pytest.mark.asyncio
+async def test_global_creation_reuses_storage_by_name_and_id(peer):
+    volume = GlobalVolume("shared-models")
+    sandbox = AsyncioSandbox(image="image", mounts={"/models": volume}, **peer.options)
+    assert peer.requests == []
+    async with sandbox:
+        assert sandbox.info.mounts == {
+            "global": [{"volumeId": "global-1", "path": "/models"}]
+        }
+    for reference in ("shared-models", "global-1"):
+        async with AsyncioSandbox(
+            image="image",
+            mounts={"/data": GlobalVolume(reference, create=False)},
+            **peer.options,
+        ) as reused:
+            assert reused.info.mounts == {
+                "global": [{"volumeId": "global-1", "path": "/data"}]
+            }
+    assert peer.global_volumes == [{"id": "global-1", "name": "shared-models"}]
+
+
+@pytest.mark.asyncio
+async def test_missing_global_with_creation_disabled_prevents_provisioning(peer):
+    with pytest.raises(VolumeError):
+        await AsyncioSandbox.create(
+            image="image",
+            mounts={"/models": GlobalVolume("missing-models", create=False)},
+            **peer.options,
+        )
+    assert peer.global_volumes == []
+    assert peer.records == {}
+
+
+@pytest.mark.asyncio
+async def test_graphql_global_lookup_failure_prevents_provisioning(peer):
+    peer.global_error = "global store access denied"
+    with pytest.raises(QueryError):
+        await AsyncioSandbox.create(
+            image="image",
+            mounts={"/models": GlobalVolume("shared-models")},
+            **peer.options,
+        )
+    assert peer.global_volumes == []
+    assert peer.records == {}
 
 
 @pytest.mark.asyncio
@@ -801,6 +874,7 @@ async def test_same_resolved_volume_id_cannot_be_mounted_as_two_kinds(peer):
     peer.network_volumes = [
         {"id": "same-id", "name": "dataset", "dataCenter": "US-KS-2"}
     ]
+    peer.global_volumes = [{"id": "same-id", "name": "shared-models"}]
     with pytest.raises(ValueError):
         await AsyncioSandbox.create(
             image="image",

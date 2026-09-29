@@ -1,5 +1,11 @@
 """GraphQL mutations for capabilities absent from the resource REST API."""
 
+MUTATION_CREATE_GLOBAL_VOLUME = """
+mutation createGlobalVolume($input: GlobalStoreBucketCreateInput!) {
+    globalStoreBucketCreate(input: $input) { id name }
+}
+"""
+
 # endpoint saves retain flash bindings, cached models, and schedules atomically.
 MUTATION_SAVE_ENDPOINT = """
 mutation saveEndpoint($input: EndpointInput!) {
