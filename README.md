@@ -77,9 +77,11 @@ Queue `.remote()` calls request a synchronous result and poll the same job if th
 
 `NetworkVolume(name_or_id, size=50, datacenter=None, create=True)` references
 datacenter-local storage. Apps resolve names and choose a datacenter compatible
-with every resource sharing the volume. `GlobalVolume(id)` references existing
-global storage without imposing a network-volume datacenter constraint. Both
-inherit from the abstract `Volume` base.
+with every resource sharing the volume. `GlobalVolume(name_or_id, create=True)`
+references global storage without a datacenter constraint. Both inherit from
+the abstract `Volume` base, resolve by name or ID, and create missing storage
+when provisioning remote compute. Set `create=False` to require existing storage.
+Global-volume lookup and creation use GraphQL; network volumes use REST.
 
 Declare attachments with `mounts={"/path": volume}`. Tasks support one network
 and one global volume at distinct, non-overlapping paths. Queue and API resources

@@ -1,5 +1,13 @@
 """GraphQL queries for capabilities absent from the resource REST API."""
 
+QUERY_GLOBAL_VOLUMES = """
+query myGlobalVolumes {
+    myself {
+        globalStoreBuckets { id name }
+    }
+}
+"""
+
 # rest stock filters require a power-of-two count of at least two.
 QUERY_CPU_STOCK = """
 query CpuStock($cpuFlavorInput: CpuFlavorInput, $specificsInput: SpecificsInput) {

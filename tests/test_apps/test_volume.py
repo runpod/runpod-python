@@ -23,9 +23,11 @@ def _spec(name="r", gpu=None, cpu=None):
     return ResourceSpec(kind=ResourceKind.TASK, name=name, gpu=gpu, cpu=cpu)
 
 
-def _api(volumes=None, created=None):
+def _api(volumes=None, created=None, global_volumes=None):
     api = AsyncMock()
     api.list_network_volumes.return_value = volumes or []
+    api.list_global_volumes.return_value = global_volumes or []
+    api.create_global_volume.return_value = {"id": "gv-new", "name": "models"}
     api.create_network_volume.return_value = created or {
         "id": "nv-new",
         "name": "models",
@@ -174,26 +176,57 @@ class TestVolumeResolver:
         assert resolved["id"] == "nv-new"
         api.create_network_volume.assert_awaited_once()
 
-    def test_missing_no_create_raises(self):
+    @pytest.mark.parametrize("volume_type", [NetworkVolume, GlobalVolume])
+    def test_missing_no_create_raises(self, volume_type):
         api = _api()
         resolver = VolumeResolver(api)
         with pytest.raises(VolumeError, match="create=False"):
             asyncio.run(
-                resolver.resolve(
-                    NetworkVolume("models", create=False), [_spec(gpu=None)]
-                )
+                resolver.resolve(volume_type("models", create=False), [_spec(gpu=None)])
             )
 
-    def test_duplicate_names_raise(self):
+    @pytest.mark.parametrize("volume_type", [NetworkVolume, GlobalVolume])
+    def test_duplicate_names_raise(self, volume_type):
         api = _api(
             volumes=[
                 {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"},
                 {"id": "nv-2", "name": "models", "size": 50, "dataCenter": "US-KS-2"},
             ]
         )
+        api.list_global_volumes.return_value = api.list_network_volumes.return_value
         resolver = VolumeResolver(api)
         with pytest.raises(VolumeError, match="reference by id"):
-            asyncio.run(resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)]))
+            asyncio.run(resolver.resolve(volume_type("models"), [_spec(gpu=None)]))
+
+    @pytest.mark.parametrize("reference", ["models", "gv-1"])
+    def test_existing_global_resolves_without_creation_or_placement(self, reference):
+        api = _api(global_volumes=[{"id": "gv-1", "name": "models"}])
+        resolved = asyncio.run(
+            VolumeResolver(api).resolve(GlobalVolume(reference, create=False))
+        )
+        assert resolved == {"id": "gv-1"}
+        api.create_global_volume.assert_not_awaited()
+        api.list_network_volumes.assert_not_awaited()
+
+    def test_global_creation_is_cached_and_mounts_resolve_by_name_and_id(
+        self, tmp_path
+    ):
+        (tmp_path / "model").write_text("global weights")
+        api = _api()
+        resolver = VolumeResolver(api)
+
+        async def run():
+            bindings = await resolver.resolve_mounts(
+                {str(tmp_path): GlobalVolume("models")}
+            )
+            assert await resolver.resolve(GlobalVolume("models")) == {"id": "gv-new"}
+            return bindings
+
+        _configure_mounts(asyncio.run(run()))
+        assert (GlobalVolume("models").path / "model").read_text() == "global weights"
+        assert (GlobalVolume("gv-new").path / "model").read_text() == "global weights"
+        api.create_global_volume.assert_awaited_once()
+        api.list_network_volumes.assert_not_awaited()
 
     def test_resolution_cached_per_name(self):
         api = _api(
@@ -214,7 +247,7 @@ class TestVolumeResolver:
         resolver = VolumeResolver(
             _api(volumes=[{"id": "nv-1", "name": "models", "dataCenter": "EU-RO-1"}])
         )
-        assert asyncio.run(resolver.resolve(GlobalVolume("models"))) == {"id": "models"}
+        assert asyncio.run(resolver.resolve(GlobalVolume("models"))) == {"id": "gv-new"}
         assert asyncio.run(resolver.resolve(NetworkVolume("models"))) == {
             "id": "nv-1",
             "dataCenterId": "EU-RO-1",
@@ -244,9 +277,10 @@ class TestTaskVolume:
         from runpod.apps.tasks import TaskExecution
 
         api = _api(
+            global_volumes=[{"id": "gv-1", "name": "shared-global"}],
             volumes=[
                 {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"}
-            ]
+            ],
         )
         spec = ResourceSpec(
             kind=ResourceKind.TASK,
@@ -298,18 +332,18 @@ class TestEndpointMounts:
 
         app = App("global-model")
 
-        @app.queue(gpu="4090", mounts={"/runpod-volume": GlobalVolume("gv-1")})
+        @app.queue(gpu="4090", mounts={"/runpod-volume": GlobalVolume("models")})
         def generate():
             return None
 
         payload = {"locations": "EU-RO-1,US-KS-2"}
         asyncio.run(
-            attach_endpoint_volumes(payload, generate.spec, VolumeResolver(), app)
+            attach_endpoint_volumes(payload, generate.spec, VolumeResolver(_api()), app)
         )
         assert payload["locations"] == "EU-RO-1,US-KS-2"
         assert payload["networkVolumeIds"] == []
         assert payload["volumes"] == [
-            {"volumeId": "gv-1", "volumeType": "OBJECT_STORE_VOLUME"}
+            {"volumeId": "gv-new", "volumeType": "OBJECT_STORE_VOLUME"}
         ]
 
     def test_removing_storage_clears_backend_and_worker_bindings(self):
