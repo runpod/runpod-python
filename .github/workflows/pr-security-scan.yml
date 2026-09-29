@@ -11,7 +11,7 @@
 # status, and that is what fails on a real credential.
 #
 # Blocking:  betterleaks ERRORS   -> job fails (a crashed scanner is not a pass)
-#            .gitleaksignore or `gitleaks:allow` introduced -> job fails
+#            .gitleaksignore or an inline allow annotation introduced -> job fails
 #            semgrep failing to INSTALL -> job fails (see that step)
 # Advisory:  betterleaks findings -> annotation only. A pattern match is not a
 #                                    leak; the true/false-positive call and the
@@ -61,7 +61,7 @@ env:
   # Verified drop-in for this pipeline: identical JSON field names for everything
   # sanitize_findings.py reads, and --gitleaks-ignore-path /
   # --ignore-gitleaks-allow keep their names AND cover the .betterleaksignore and
-  # betterleaks:allow variants too.
+  # betterleaks-prefixed inline annotation too.
   #
   # ONE behavioural difference, found the hard way: with zero findings betterleaks
   # writes JSON `null`, not `[]` (Go marshals a nil slice as null). The report
@@ -124,7 +124,9 @@ jobs:
       # The scanner honours two suppression channels that live OUTSIDE .github/, so
       # CODEOWNERS review never fires on them:
       #   * a root `.gitleaksignore` listing finding fingerprints
-      #   * an inline `# gitleaks:allow` comment on the offending line
+      #   * an inline allow annotation comment on the offending line (not spelled
+      #     out here: the check below matches its text in any added line, and
+      #     deploying adds this whole file)
       # Either one turns a live secret into a green check. Both are blocked here.
       - name: Reject scanner-suppression additions
         env:

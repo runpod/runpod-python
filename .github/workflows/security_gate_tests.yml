@@ -43,7 +43,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install pytest
-        run: pip install --disable-pip-version-check pytest==8.4.2
+        run: pip install --disable-pip-version-check --only-binary :all: pytest==8.4.2
 
       - name: Run the gate regression suite
         working-directory: .github/security

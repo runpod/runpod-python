@@ -39,6 +39,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 
 from ghapi import changed_files, fetch_blob, log, resolve_pr
 from redaction import looks_fake, safe_rule_name
@@ -190,7 +191,9 @@ def run_betterleaks(work: str, config: str, report: str) -> None:
     invokes it, so the `File` paths in the report come back in the same
     spelling. Every other path passed in is absolute for the same reason.
     """
-    os.makedirs("/tmp/bl-noignore", exist_ok=True)
+    # Fresh per run. A fixed path created with exist_ok would honour an ignore
+    # file planted there earlier — on a reused self-hosted runner, by stage 1.
+    noignore = tempfile.mkdtemp(prefix="bl-noignore-")
     proc = subprocess.run(
         [
             "betterleaks", "git", ".",
@@ -198,7 +201,7 @@ def run_betterleaks(work: str, config: str, report: str) -> None:
             # The flag takes a path to an ignore file OR a folder containing
             # one, and defaults to the scan target. Aimed at an empty directory
             # there is nothing for it to find.
-            "--gitleaks-ignore-path=/tmp/bl-noignore",
+            f"--gitleaks-ignore-path={noignore}",
             "--ignore-gitleaks-allow",
             "--report-format=json",
             f"--report-path={report}",
@@ -372,7 +375,7 @@ def main() -> int:
     head_sha = os.environ.get("TRUSTED_HEAD_SHA", "").strip()
     head_repo = os.environ.get("TRUSTED_HEAD_REPO", "").strip()
     out_path = os.environ["FINDINGS_PATH"]
-    work = os.environ.get("SCAN_WORKDIR", "/tmp/head-tree")
+    work = os.environ.get("SCAN_WORKDIR") or tempfile.mkdtemp(prefix="head-tree-")
     config = os.environ.get(
         "BETTERLEAKS_CONFIG", ".github/security/gitleaks-runpod.toml"
     )
@@ -424,8 +427,10 @@ def main() -> int:
     # on a runner that keeps running, so remove it rather than trusting that.
     try:
         os.remove(report_path)
-    except OSError:
-        pass
+    except FileNotFoundError:
+        pass  # nothing to remove is the goal
+    except OSError as exc:
+        log(f"::warning::could not remove the raw report ({type(exc).__name__})")
 
     payload = {
         "head_sha": head_sha,

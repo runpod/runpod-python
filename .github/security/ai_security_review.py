@@ -3,32 +3,29 @@
 
 Runs in the privileged stage and IS THE MERGE GATE. Its job is the judgment call
 a regex cannot make: not "does this line match a credential pattern" (betterleaks
-answers that, and now only advises) but "is that match a real credential, or a
+answers that, and only advises) but "is that match a real credential, or a
 placeholder, a vendor-published demo value, or a fixture that names itself fake".
 True positives fail the build through the `AI secret verdict` commit status;
 false positives are dropped and never rendered.
 
-WHAT THE MODEL IS SENT, AND WHY IT CHANGED. It used to be the whole unified
-diff, packed to a 120KB budget with the overflow named in the comment as "not
-reviewed". That was the wrong shape for the question. A verdict on one detection
-needs that detection and its surroundings; it does not need the other 4,000
-changed lines, and paying for them meant a PR could grow until the lines under
-judgement fell off the end. It could — silently — have published a verdict on a
-finding it never saw. Now `scan_head.py` reports WHERE each detection is and
-this file reads a window around each one from the head blob, so the payload is
-proportional to findings rather than to PR size and nothing is ever dropped for
-budget. Cost falls by roughly an order of magnitude on a large PR.
+WHAT THE MODEL IS SENT. Not the diff: one window per detection. `scan_head.py`
+reports WHERE each detection is, and this file reads ±WINDOW_LINES around each
+one from the head blob. A verdict on one detection needs that detection and its
+surroundings, not every other changed line, so the payload is proportional to
+findings rather than to PR size and nothing is ever dropped for budget. Sending
+the whole diff under a size budget, the obvious alternative, lets a PR grow
+until the lines under judgement fall off the end — a verdict on a finding the
+model never saw — and costs roughly ten times as much on a large PR.
 
 The window comes from the blob, NOT from the diff. A detection can sit in a file
 whose diff hunk does not include the surrounding lines — betterleaks scans the
 file, the hunk only carries what changed — so reading context out of the diff
 would hand the model a truncated view of exactly the thing it is judging.
 
-THE TRADE. The old prompt could also flag a secret the scanner missed, because
-it saw everything. This one cannot, by construction: it sees only what
-betterleaks pointed at. That recall now rests entirely on the scanner, which is
-why the scan is unfiltered — no path exclusions, no noise list, no size budget —
-and why it moved into the trusted stage.
+THE TRADE. The model cannot flag a secret the scanner missed, by construction:
+it sees only what betterleaks pointed at. Recall rests entirely on the scanner,
+which is why the scan is unfiltered — no path exclusions, no noise list, no size
+budget — and why it runs in the trusted stage.
 
 THREAT MODEL. PRs come from hostile authors with no repo access. Under
 `pull_request`, GitHub runs the workflow definition from the PR's own merge ref,
@@ -77,8 +74,8 @@ https://docs.runpod.io/public-endpoints/models/moonshot-kimi
   * We send "low", for cost. Pricing (K3) is $3.00 per 1M input and $15.00 per
     1M output, and REASONING IS BILLED AS OUTPUT, so effort is the whole cost
     lever: "low" measured at 15 reasoning tokens against 1094 for the default.
-    Combined with the rewrite — the call happens only when the scanner found
-    something, and carries a few 40-line windows rather than a 120KB diff —
+    Combined with the windowing — the call happens only when the scanner found
+    something, and carries a few 40-line windows rather than a whole diff —
     this is the cheapest the stage can be without switching it off.
   * What "low" costs you is judgement on the ambiguous detections, which is
     the whole point of the stage. It is a deliberate trade, not an oversight:
@@ -712,13 +709,19 @@ def call_kimi(prompt_system: str, prompt_user: str, api_key: str):
 # field quotes a source line into a world-readable comment, and the column mask
 # only covers what the scanner matched — a second high-entropy value on the same
 # line is not covered by either.
-_HIGH_ENTROPY = re.compile(
-    r"(?=[A-Za-z0-9+/_-]*[A-Za-z])(?=[A-Za-z0-9+/_-]*[0-9])[A-Za-z0-9+/_-]{20,}"
-)
+# Matched as a plain run, then tested for a letter AND a digit: the same thing
+# as putting both tests in lookaheads, but linear. The lookahead form rescans
+# the run from every start position, which is quadratic on a long letter-only
+# run. `[0-9]`, not `\d`: `\d` also matches every other script's digits.
+_TOKEN_RUN = re.compile(r"[A-Za-z0-9+/_-]{20,}")
+_LETTER = re.compile(r"[A-Za-z]")
+_DIGIT = re.compile(r"[0-9]")
 
 
 def mask_high_entropy(line: str) -> str:
-    return _HIGH_ENTROPY.sub("«…»", line)
+    return _TOKEN_RUN.sub(
+        lambda m: "«…»" if _LETTER.search(m[0]) and _DIGIT.search(m[0]) else m[0],
+        line)
 
 
 def contact_links() -> str:
@@ -924,8 +927,8 @@ def render_comment(review, scan_conclusion, blocked, cost, note=""):
         # it crashed or a suppression was added — exactly when a green verdict
         # here must not read as clearance.
         L += [
-            "⚠️ **PR Security Scan did not finish cleanly** — the scanner errored "
-            "or a suppression was added. Resolve that before reading this.",
+            ("⚠️ **PR Security Scan did not finish cleanly** — the scanner errored "
+             "or a suppression was added. Resolve that before reading this."),
             "",
         ]
 
@@ -943,8 +946,8 @@ def render_comment(review, scan_conclusion, blocked, cost, note=""):
 
     if review["injection"]:
         L += [
-            "🚨 **The scanned source attempts to instruct the reviewer.** The "
-            "verdict below is unreliable; read the change by hand.",
+            ("🚨 **The scanned source attempts to instruct the reviewer.** The "
+             "verdict below is unreliable; read the change by hand."),
             "",
         ]
 
@@ -965,9 +968,9 @@ def render_comment(review, scan_conclusion, blocked, cost, note=""):
         L.append(f"- **{f['file']} {f['location']}** ({f['rule']}) — {f['snippet']}"
                  f"\n  {f['analysis']}")
     if findings:
-        L += ["", "Rotate before anything else — the value is already in git "
-              "history and on GitHub's servers, so deleting the line does not "
-              "un-leak it.", ""]
+        L += ["", ("Rotate before anything else — the value is already in git "
+                   "history and on GitHub's servers, so deleting the line does "
+                   "not un-leak it."), ""]
 
     tail = []
     if review["false_positives"]:

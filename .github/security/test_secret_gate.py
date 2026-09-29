@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import re
 import subprocess
+import time
 
 import pytest
 
@@ -614,3 +616,59 @@ def test_contact_links_never_mention_or_escape(monkeypatch, contact):
     out = air.contact_links()
     assert "@" not in out
     assert re.fullmatch(r"(\[[\w./-]+\]\(https://github\.com/[\w./-]+\))?", out)
+
+
+# ------------------------------ the gate must pass its own suppression check
+
+
+def test_gate_files_never_spell_the_inline_allow_annotation():
+    """Stage 1 rejects any ADDED line matching the annotation, prose included.
+
+    Deploying adds every gate file whole, so three comments in the workflow
+    that named the annotation failed stage 1 on every consumer's first PR.
+    """
+    from pathlib import Path
+
+    github = Path(__file__).resolve().parent.parent
+    pattern = re.compile(r"(git|better)leaks[: ]*allow", re.I)
+    hits = [f"{p.relative_to(github)}:{n}"
+            for p in sorted(github.rglob("*")) if p.is_file()
+            for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1)
+            if pattern.search(line)]
+    assert not hits
+
+
+# ------------------------------------------ ignore dir and entropy mask
+
+
+def test_ignore_path_is_a_fresh_empty_directory(monkeypatch, tmp_path):
+    """A fixed, pre-creatable ignore dir let a planted ignore file suppress."""
+    seen = {}
+
+    def fake_run(args, **kw):
+        ignore = next(a.split("=", 1)[1] for a in args
+                      if a.startswith("--gitleaks-ignore-path="))
+        seen["dir"], seen["listing"] = ignore, os.listdir(ignore)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(scan_head.subprocess, "run", fake_run)
+    scan_head.run_betterleaks(str(tmp_path), "cfg.toml", str(tmp_path / "r.json"))
+    assert seen["dir"] != "/tmp/bl-noignore"
+    assert seen["listing"] == []
+
+
+@pytest.mark.parametrize("line, masked", [
+    ("key = " + "a1" * 12, "key = «…»"),
+    ("x " + "a" * 30 + " y", "x " + "a" * 30 + " y"),        # no digit
+    ("x " + "1" * 30 + " y", "x " + "1" * 30 + " y"),        # no letter
+    ("short a1b2c3", "short a1b2c3"),                         # under 20
+    ("p=" + "Ab/+_-9" * 4 + ";q", "p=«…»;q"),
+])
+def test_mask_high_entropy_keeps_its_semantics(line, masked):
+    assert air.mask_high_entropy(line) == masked
+
+
+def test_mask_high_entropy_is_linear():
+    t = time.perf_counter()
+    air.mask_high_entropy("a" * 20_000)
+    assert time.perf_counter() - t < 0.5
