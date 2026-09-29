@@ -1,18 +1,6 @@
-"""
-Provides some of the torch.cuda functionality without requiring torch.
-"""
+"""Compatibility alias for :mod:`runpod._health.cuda`."""
 
-import subprocess
+import importlib
+import sys
 
-
-def is_available():
-    """
-    Returns True if CUDA is available, False otherwise.
-    """
-    try:
-        output = subprocess.check_output(["nvidia-smi"], stderr=subprocess.DEVNULL)
-        if "NVIDIA-SMI" in output.decode():
-            return True
-    except Exception:  # pylint: disable=broad-except
-        pass
-    return False
+sys.modules[__name__] = importlib.import_module("runpod._health.cuda")

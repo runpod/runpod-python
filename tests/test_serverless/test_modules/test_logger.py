@@ -105,8 +105,30 @@ class TestLogger(unittest.TestCase):
         with patch("runpod.serverless.modules.rp_logger.RunPodLogger.log") as mock_log:
             self.logger.secret("test_secret", "test_secret_value")
             mock_log.assert_called_once_with(
-                "test_secret: t***************e", "INFO", None
+                "test_secret: [REDACTED]", "INFO", None
             )
+
+    def test_secret_redacts_short_empty_and_object_values(self):
+        class Sensitive:
+            def __str__(self):
+                raise AssertionError("A secret must not be converted to text")
+
+        for value in ("", "a", "ab", "long-secret", None, Sensitive()):
+            with self.subTest(value_type=type(value).__name__):
+                with patch.object(self.logger, "log") as mock_log:
+                    self.logger.secret("credential", value)
+                    mock_log.assert_called_once_with("credential: [REDACTED]", "INFO", None)
+
+    def test_secret_legacy_keyword_label(self):
+        with patch.object(self.logger, "log") as mock_log:
+            self.logger.secret(secret_name="credential", secret="sensitive")
+            mock_log.assert_called_once_with("credential: [REDACTED]", "INFO", None)
+
+    def test_secret_rejects_conflicting_or_unknown_labels(self):
+        with self.assertRaises(TypeError):
+            self.logger.secret("first", "sensitive", secret_name="second")
+        with self.assertRaises(TypeError):
+            self.logger.secret("credential", "sensitive", unexpected="value")
 
     def test_log_tip(self):
         """
