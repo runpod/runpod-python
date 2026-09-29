@@ -1,11 +1,9 @@
-"""A training workflow: tasks, volumes, and functions working together.
+"""a training workflow with shared network storage.
 
-@app.task gives each call its own dedicated pod that terminates when
-the function returns — right for work that runs minutes to hours.
-A Volume persists files between calls and across resources: train()
-writes a checkpoint, evaluate() reads it from a different pod. The
-volume is created on first use, and both tasks are automatically
-placed in its datacenter.
+each task runs on a dedicated pod that terminates when the function returns.
+train() writes a checkpoint and evaluate() reads it from another pod.
+the network volume is created on first use, and both tasks are placed
+in its datacenter. each worker resolves checkpoints.path from its mount.
 
     rp flash dev examples/apps/train_and_eval.py
 """
@@ -14,10 +12,10 @@ import runpod
 
 app = runpod.App("trainer")
 
-checkpoints = runpod.Volume("checkpoints", size=10)
+checkpoints = runpod.NetworkVolume("checkpoints", size=10)
 
 
-@app.task(gpu="4090", volume=checkpoints)
+@app.task(gpu="4090", mounts={"/checkpoints": checkpoints})
 def train(steps: int = 200):
     import torch
     import torch.nn as nn
@@ -47,7 +45,7 @@ def train(steps: int = 200):
     return {"checkpoint": "linear", "final_loss": round(loss.item(), 5)}
 
 
-@app.task(gpu="4090", volume=checkpoints)
+@app.task(gpu="4090", mounts={"/checkpoints": checkpoints})
 def evaluate(checkpoint: str):
     import torch
     import torch.nn as nn

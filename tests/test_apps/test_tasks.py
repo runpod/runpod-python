@@ -14,6 +14,7 @@ from runpod.apps.errors import RemoteExecutionError
 from runpod.apps.spec import ResourceKind, ResourceSpec
 from runpod.apps.targets import PodTarget
 from runpod.apps.tasks import _pod_input, unwrap_task_response
+from runpod.apps.volume import GlobalVolume, NetworkVolume
 
 # the sync bridge finalizes coroutines on a background loop thread;
 # asyncmock coroutines observed there trip the unraisable checker
@@ -89,12 +90,11 @@ class TestPodInput:
         monkeypatch.setenv("RUNPOD_RUNTIME_PACKAGE_SPEC", "runpod-sdk-runtime==1.2.3")
         monkeypatch.setenv("RUNPOD_PACKAGE_SPEC", "runpod==2.0.0")
         pod = _pod_input(
-            self._spec(cpu=["cpu3c-1-2"], image="my/image:1", volume="vol-1"),
+            self._spec(cpu=["cpu3c-1-2"], image="my/image:1"),
             "tok",
             "t",
         )
         assert pod["imageName"] == "my/image:1"
-        assert "networkVolumeId" not in pod
         env = {e["key"]: e["value"] for e in pod["env"]}
         assert env["RUNPOD_RUNTIME_PACKAGE_SPEC"] == "runpod-sdk-runtime==1.2.3"
         assert env["RUNPOD_PACKAGE_SPEC"] == "runpod==2.0.0"
@@ -333,7 +333,8 @@ class TestTaskExecutionLifecycle:
         assert execution.pod_id == "pod-9"
         assert api.deploy_task_pod.call_args[1]["is_cpu"] is True
 
-    async def test_start_retries_datacenters_after_capacity_error(self):
+    @pytest.mark.parametrize("mounts", [{}, {"/data": GlobalVolume("global-1")}])
+    async def test_start_retries_datacenters_after_capacity_error(self, mounts):
         from runpod.apps.tasks import TaskExecution
         from runpod.error import QueryError
 
@@ -351,6 +352,7 @@ class TestTaskExecutionLifecycle:
                 gpu=["NVIDIA GeForce RTX 4090"],
                 cpu=None,
                 datacenter=["US-IL-1", "EU-RO-1"],
+                mounts=mounts,
             ),
             api=api,
         )
@@ -376,22 +378,23 @@ class TestTaskExecutionLifecycle:
 
     async def test_shared_volume_placement_accounts_for_siblings(self):
         from runpod.apps.tasks import TaskExecution
-        from runpod.apps.volume import Volume
 
-        volume = Volume("shared")
-        spec = self._spec(volume=volume, datacenter=["US-IL-1", "EU-RO-1"])
+        volume = NetworkVolume("shared")
+        spec = self._spec(
+            mounts={"/data": volume}, datacenter=["US-IL-1", "EU-RO-1"]
+        )
         sibling = ResourceSpec(
             kind=ResourceKind.QUEUE,
             name="sibling",
             cpu=["cpu3c-1-2"],
-            volume=volume,
+            mounts={"/runpod-volume": volume},
             datacenter=["EU-RO-1"],
         )
         unrelated = ResourceSpec(
             kind=ResourceKind.QUEUE,
             name="unrelated",
             cpu=["cpu3c-1-2"],
-            volume=Volume("other"),
+            mounts={"/runpod-volume": NetworkVolume("other")},
             datacenter=["US-IL-1"],
         )
         api = AsyncMock()

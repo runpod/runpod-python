@@ -173,8 +173,7 @@ class TaskExecution:
             pod["containerRegistryAuthId"] = await resolve_registry_auth(
                 self.spec.registry_auth, api=self.api
             )
-        if self.spec.volume:
-            pod = await self._attach_volume(pod)
+        pod = await self._attach_mounts(pod)
         result = await self._deploy_pod(pod)
         self.pod_id = result["id"]
         log.info("task pod %s deployed for %s", self.pod_id, self.spec.name)
@@ -190,7 +189,7 @@ class TaskExecution:
             capacity_error = exc
 
         datacenters = pod.get("dataCenterIds") or []
-        if self.spec.volume or len(datacenters) < 2:
+        if len(datacenters) < 2:
             raise capacity_error
 
         for datacenter in datacenters:
@@ -204,34 +203,13 @@ class TaskExecution:
                     raise
         raise capacity_error
 
-    async def _attach_volume(self, pod: Dict[str, Any]) -> Dict[str, Any]:
-        """resolve the task's volume and pin the pod to its datacenter."""
-        from .volume import VolumeError, VolumeResolver, volume_list
+    async def _attach_mounts(self, pod: Dict[str, Any]) -> Dict[str, Any]:
+        """resolve storage mounts and apply their placement constraints."""
+        from .volume import VolumeResolver, attach_pod_mounts
 
-        volumes = volume_list(self.spec.volume)
-        if len(volumes) > 1:
-            raise VolumeError(
-                f"task '{self.spec.name}': pods mount exactly one volume "
-                f"({len(volumes)} given)"
-            )
-        resolver = VolumeResolver(self.api)
-        sharing = [
-            spec
-            for spec in self.specs
-            if any(ref.name == volumes[0].name for ref in volume_list(spec.volume))
-        ]
-        if not any(spec is self.spec for spec in sharing):
-            sharing.append(self.spec)
-        for spec in sharing:
-            spec.validate()
-        resolved = await resolver.resolve(volumes[0], sharing)
-        from .volume import POD_MOUNT_PATH
-
-        pod["networkVolumeId"] = resolved["id"]
-        # the host bind-mounts to this target; empty means a broken
-        # mount config and the container never starts
-        pod["volumeMountPath"] = str(POD_MOUNT_PATH)
-        pod["dataCenterIds"] = [resolved["dataCenterId"]]
+        await attach_pod_mounts(
+            pod, self.spec, VolumeResolver(self.api), self.specs
+        )
         return pod
 
     async def wait_ready(self, timeout: float = READY_TIMEOUT) -> None:

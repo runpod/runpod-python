@@ -26,11 +26,11 @@ Requires Python 3.10+. Installing the package also installs the `rp` CLI.
 
 ```python
 import runpod
-from runpod import App, Model, Secret, Volume
+from runpod import App, Model, NetworkVolume, Secret
 
 app = App("inference")
 
-models = Volume("models", size=100)
+models = NetworkVolume("models", size=100)
 llama = Model("meta-llama/Llama-3.1-8B-Instruct")
 
 
@@ -40,7 +40,7 @@ llama = Model("meta-llama/Llama-3.1-8B-Instruct")
     gpu="H100",
     workers=(0, 3),
     dependencies=["vllm"],
-    volume=models,
+    mounts={"/runpod-volume": models},
     model=llama,
     env={"HF_TOKEN": Secret("hf-token")},
 )
@@ -52,7 +52,7 @@ def chat(prompt: str):
 
 
 # one ephemeral pod per call: provisions, runs to completion, terminates
-@app.task(gpu="H100", gpu_count=2, volume=models)
+@app.task(gpu="H100", gpu_count=2, mounts={"/models": models})
 def finetune(steps: int = 1000):
     ...
     return {"loss": final_loss}
@@ -72,6 +72,24 @@ rp flash deploy         # deploy production endpoints
 Functions keep their Python identity: `chat.remote(...)` runs in the cloud, `await chat.remote.aio(...)` is the async form, `chat.local(...)` runs in-process. See [`examples/apps`](examples/apps) for runnable examples and [docs.runpod.io](https://docs.runpod.io) for the full guide.
 
 Queue `.remote()` calls request a synchronous result and poll the same job if the server's wait window expires. Fast results need no client-side polling. Dev sessions use a short sync window to keep worker logs responsive. Use `.spawn()` for an asynchronous job handle. A transport failure before receiving a job ID raises an error without resubmitting the work.
+
+## Storage
+
+`NetworkVolume(name_or_id, size=50, datacenter=None, create=True)` references
+datacenter-local storage. Apps resolve names and choose a datacenter compatible
+with every resource sharing the volume. `GlobalVolume(id)` references existing
+global storage without imposing a network-volume datacenter constraint. Both
+inherit from the abstract `Volume` base.
+
+Declare attachments with `mounts={"/path": volume}`. Tasks support one network
+and one global volume at distinct, non-overlapping paths. Queue and API resources
+support one volume at `/runpod-volume`; global storage requires a GPU endpoint.
+
+Inside worker code, `volume.path` returns the configured mount path. The runtime
+binds declared references and resolved IDs before importing user code. Access
+raises if the volume is unmounted or has multiple bindings. Evaluate `.path`
+inside remote functions, not during local module discovery. Calling `.local()`
+does not mount remote storage on the client machine.
 
 ## Contributing
 

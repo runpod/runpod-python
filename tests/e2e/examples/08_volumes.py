@@ -10,10 +10,10 @@ import runpod
 
 app = runpod.App("ex-volumes")
 
-scratch = runpod.Volume("ex-scratch", size=10)
+scratch = runpod.NetworkVolume("ex-scratch", size=10)
 
 
-@app.task(cpu="cpu3c-1-2", volume=scratch)
+@app.task(cpu="cpu3c-1-2", mounts={"/data": scratch})
 def write(content: str):
     target = scratch.path / "message.txt"
     target.write_text(content)
@@ -21,7 +21,7 @@ def write(content: str):
     return str(target)
 
 
-@app.task(cpu="cpu3c-1-2", volume=scratch)
+@app.task(cpu="cpu3c-1-2", mounts={"/data": scratch})
 def read():
     target = scratch.path / "message.txt"
     content = target.read_text()

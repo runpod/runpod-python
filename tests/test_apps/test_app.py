@@ -272,44 +272,29 @@ async def test_remote_rejects_mutated_invalid_spec():
         await q.remote.aio()
 
 
-@pytest.mark.parametrize("collection", [list, tuple])
-async def test_endpoint_volume_collections_reach_attachment(collection):
-    from unittest.mock import AsyncMock
-
-    from runpod.apps.volume import Volume, VolumeResolver, attach_endpoint_volumes
+@pytest.mark.parametrize("decorator", ["queue", "task", "api"])
+@pytest.mark.parametrize(
+    "mounts",
+    ["models", ["models"], {"/runpod-volume": "models"}],
+)
+def test_decorators_reject_implicit_storage_references(decorator, mounts):
+    from runpod.apps.volume import VolumeError
 
     app = App("a")
-
-    @app.api(name="web", cpu="cpu5c-2-4", volume=collection([Volume("models"), "data"]))
-    def web():
-        return None
-
-    api = AsyncMock()
-    api.list_network_volumes.return_value = [
-        {"id": "nv-models", "name": "models", "dataCenter": "EU-RO-1"},
-        {"id": "nv-data", "name": "data", "dataCenter": "EU-RO-1"},
-    ]
-    api.cpu_stock_status.return_value = "HIGH"
-    payload = {}
-    await attach_endpoint_volumes(payload, web.spec, VolumeResolver(api), app)
-    assert payload["networkVolumeIds"] == [
-        {"networkVolumeId": "nv-models"},
-        {"networkVolumeId": "nv-data"},
-    ]
-    assert payload["locations"] == "EU-RO-1"
-    assert web.spec.to_manifest()["networkVolumes"] == ["models", "data"]
+    with pytest.raises(VolumeError):
+        getattr(app, decorator)(mounts=mounts)(lambda: None)
 
 
 def test_manifest_serialization():
     app = App("a")
-    volume = "my-volume"
+    volume = runpod.NetworkVolume("my-volume")
 
     @app.queue(
         name="q",
         gpu=[runpod.GpuGroup.ADA_24],
         workers=(1, 3),
         dependencies=["torch"],
-        volume=volume,
+        mounts={"/runpod-volume": volume},
         env={"KEY": "val"},
     )
     def q():
@@ -325,9 +310,29 @@ def test_manifest_serialization():
         "idleTimeout": 60,
         "gpus": ["ADA_24"],
         "dependencies": ["torch"],
-        "networkVolume": "my-volume",
+        "mounts": [
+            {"kind": "network", "reference": "my-volume", "path": "/runpod-volume"}
+        ],
         "env": {"KEY": "val"},
     }
+
+
+def test_task_manifest_preserves_mount_backend_identity_and_path():
+    app = App("a")
+
+    @app.task(
+        mounts={
+            "/network": runpod.NetworkVolume("shared"),
+            "/global": runpod.GlobalVolume("shared"),
+        }
+    )
+    def work():
+        pass
+
+    assert work.spec.to_manifest()["mounts"] == [
+        {"kind": "network", "reference": "shared", "path": "/network"},
+        {"kind": "global", "reference": "shared", "path": "/global"},
+    ]
 
 
 class TestGpuStringResolution:

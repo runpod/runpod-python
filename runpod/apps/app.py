@@ -15,7 +15,7 @@ no persistent local state.
 """
 
 import os
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 from .context import Context, current_context
 from .errors import EndpointNotFound, InvalidResourceError
@@ -27,6 +27,7 @@ from .spec import (
     ResourceSpec,
 )
 from .targets import InvocationTarget, PodTarget, SentinelTarget
+from .volume import Volume
 
 DEFAULT_ENV = "default"
 
@@ -83,7 +84,7 @@ class App:
         idle_timeout: int = 60,
         dependencies: Optional[List[str]] = None,
         system_dependencies: Optional[List[str]] = None,
-        volume: Optional[Any] = None,
+        mounts: Optional[Mapping[str, Volume]] = None,
         env: Optional[Dict[str, Any]] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
         image: Optional[str] = None,
@@ -111,7 +112,7 @@ class App:
                 idle_timeout=idle_timeout,
                 dependencies=dependencies,
                 system_dependencies=system_dependencies,
-                volume=volume,
+                mounts=mounts,
                 env=env,
                 datacenter=datacenter,
                 image=image,
@@ -141,7 +142,7 @@ class App:
         gpu_count: int = 1,
         dependencies: Optional[List[str]] = None,
         system_dependencies: Optional[List[str]] = None,
-        volume: Optional[Any] = None,
+        mounts: Optional[Mapping[str, Volume]] = None,
         env: Optional[Dict[str, Any]] = None,
         image: Optional[str] = None,
         registry_auth: Optional[str] = None,
@@ -161,7 +162,7 @@ class App:
                 gpu_count=gpu_count,
                 dependencies=dependencies,
                 system_dependencies=system_dependencies,
-                volume=volume,
+                mounts=mounts,
                 env=env,
                 image=image,
                 registry_auth=registry_auth,
@@ -187,7 +188,7 @@ class App:
         idle_timeout: int = 60,
         dependencies: Optional[List[str]] = None,
         system_dependencies: Optional[List[str]] = None,
-        volume: Optional[Any] = None,
+        mounts: Optional[Mapping[str, Volume]] = None,
         env: Optional[Dict[str, Any]] = None,
         datacenter: Optional[Union[str, List[str]]] = None,
         image: Optional[str] = None,
@@ -234,7 +235,7 @@ class App:
                 idle_timeout=idle_timeout,
                 dependencies=dependencies,
                 system_dependencies=system_dependencies,
-                volume=volume,
+                mounts=mounts,
                 env=env,
                 datacenter=datacenter,
                 image=image,

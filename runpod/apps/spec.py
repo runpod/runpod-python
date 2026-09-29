@@ -7,11 +7,12 @@ and what dev-session provisioning consumes. it holds no live state.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from .errors import InvalidResourceError
 from .datacenter import DataCenter
 from .gpu import GpuGroup, GpuLike, GpuType
+from .volume import Volume, normalize_mounts, validate_mounts
 
 DEFAULT_WORKERS: Tuple[int, int] = (0, 3)
 
@@ -159,29 +160,6 @@ def normalize_datacenter(
         raise InvalidResourceError(f"invalid datacenter: {datacenter!r}") from exc
 
 
-def normalize_volume(volume: Any) -> Any:
-    """preserve volume configuration while normalizing reference collections."""
-    from .volume import Volume
-
-    if volume is None or isinstance(volume, (str, Volume)):
-        return volume
-    if isinstance(volume, (list, tuple)):
-        refs = []
-        for item in volume:
-            if item is None:
-                raise InvalidResourceError("volume collections must contain references")
-            normalized = normalize_volume(item)
-            if isinstance(normalized, list):
-                refs.extend(normalized)
-            else:
-                refs.append(normalized)
-        return refs
-    raise InvalidResourceError(
-        f"volume must be a runpod.Volume, a name/id string, or a list/tuple "
-        f"of references, got {type(volume).__name__}"
-    )
-
-
 @dataclass
 class ResourceSpec:
     """declarative config for one app resource."""
@@ -195,7 +173,7 @@ class ResourceSpec:
     idle_timeout: int = 60
     dependencies: Optional[List[str]] = None
     system_dependencies: Optional[List[str]] = None
-    volume: Optional[Any] = None
+    mounts: Optional[Mapping[str, Volume]] = None
     env: Optional[Dict[str, Any]] = None
     datacenter: Optional[Union[str, List[str]]] = None
     image: Optional[str] = None
@@ -228,11 +206,12 @@ class ResourceSpec:
         self.scaler_type = normalize_scaler_type(self.scaler_type)
         self.min_cuda_version = normalize_cuda_version(self.min_cuda_version)
         self.datacenter = normalize_datacenter(self.datacenter)
-        self.volume = normalize_volume(self.volume)
+        self.mounts = normalize_mounts(self.mounts)
         if self.gpu is not None and self.cpu is not None:
             raise InvalidResourceError(
                 f"resource '{self.name}': gpu and cpu are mutually exclusive"
             )
+        validate_mounts(self.mounts, self.kind.value, self.is_cpu)
         if not isinstance(self.name, str) or not self.name:
             raise InvalidResourceError("resource name must be a non-empty string")
         if self.gpu_count < 1:
@@ -267,11 +246,6 @@ class ResourceSpec:
                 f"available on queue and api resources; tasks download "
                 f"weights themselves"
             )
-        if self.kind is ResourceKind.TASK and isinstance(self.volume, list):
-            if len(self.volume) > 1:
-                raise InvalidResourceError(
-                    f"task '{self.name}': pods mount exactly one volume"
-                )
         if self.schedule is not None and (
             not isinstance(self.schedule, str) or not self.schedule
         ):
@@ -323,16 +297,11 @@ class ResourceSpec:
             data["dependencies"] = self.dependencies
         if self.system_dependencies:
             data["systemDependencies"] = self.system_dependencies
-        if self.volume:
-            if isinstance(self.volume, list):
-                data["networkVolumes"] = [
-                    getattr(volume, "name", None) or str(volume)
-                    for volume in self.volume
-                ]
-            else:
-                data["networkVolume"] = getattr(self.volume, "name", None) or str(
-                    self.volume
-                )
+        if self.mounts:
+            data["mounts"] = [
+                {"kind": volume.kind, "reference": volume.reference, "path": path}
+                for path, volume in self.mounts.items()
+            ]
         if self.env:
             from .secret import render_env
 

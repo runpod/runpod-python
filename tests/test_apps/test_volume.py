@@ -1,24 +1,26 @@
 """volume references and provision-time resolution."""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock
 
 import pytest
 
-from runpod.apps.errors import InvalidResourceError
 from runpod.apps.spec import ResourceKind, ResourceSpec
 from runpod.apps.volume import (
+    GlobalVolume,
+    NetworkVolume,
     Volume,
     VolumeError,
     VolumeResolver,
-    volume_list,
+    _configure_mounts,
+    attach_endpoint_volumes,
+    normalize_mounts,
 )
 
 
 def _spec(name="r", gpu=None, cpu=None):
-    return ResourceSpec(
-        kind=ResourceKind.TASK, name=name, gpu=gpu, cpu=cpu
-    )
+    return ResourceSpec(kind=ResourceKind.TASK, name=name, gpu=gpu, cpu=cpu)
 
 
 def _api(volumes=None, created=None):
@@ -36,26 +38,105 @@ def _api(volumes=None, created=None):
     return api
 
 
+@pytest.fixture(autouse=True)
+def clean_mounts():
+    _configure_mounts([])
+    yield
+    _configure_mounts([])
+
+
 class TestVolumeRef:
-    def test_path_follows_context(self, monkeypatch):
-        from pathlib import Path
+    def test_base_is_abstract(self):
+        with pytest.raises(TypeError):
+            Volume("models")
 
-        # task pods mount at /workspace
-        monkeypatch.delenv("RUNPOD_ENDPOINT_ID", raising=False)
-        assert Volume("models").path == Path("/workspace")
-        # endpoint workers mount at /runpod-volume
+    def test_unmounted_volume_has_no_conventional_path(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-1")
-        assert Volume("models").path == Path("/runpod-volume")
-
-    def test_empty_name_raises(self):
         with pytest.raises(VolumeError):
-            Volume("")
+            NetworkVolume("models").path
 
-    def test_volume_list_normalizes(self):
-        vols = volume_list([Volume("a"), "b"])
-        assert [v.name for v in vols] == ["a", "b"]
-        assert volume_list(None) == []
-        assert [v.name for v in volume_list("single")] == ["single"]
+    def test_kind_and_resolved_id_bind_to_actual_files(self, tmp_path):
+        network_path = tmp_path / "network"
+        global_path = tmp_path / "global"
+        network_path.mkdir()
+        global_path.mkdir()
+        (network_path / "model").write_text("network weights")
+        (global_path / "model").write_text("global weights")
+        _configure_mounts(
+            [
+                {
+                    "kind": "network",
+                    "reference": "models",
+                    "id": "nv-1",
+                    "path": str(network_path),
+                },
+                {
+                    "kind": "global",
+                    "reference": "models",
+                    "id": "models",
+                    "path": str(global_path),
+                },
+            ]
+        )
+        assert (NetworkVolume("models").path / "model").read_text() == "network weights"
+        assert (NetworkVolume("nv-1").path / "model").read_text() == "network weights"
+        assert (GlobalVolume("models").path / "model").read_text() == "global weights"
+
+    def test_multiple_bindings_require_explicit_path(self):
+        _configure_mounts(
+            [
+                {
+                    "kind": "network",
+                    "reference": "models",
+                    "id": "nv-1",
+                    "path": "/one",
+                },
+                {
+                    "kind": "network",
+                    "reference": "models",
+                    "id": "nv-1",
+                    "path": "/two",
+                },
+            ]
+        )
+        with pytest.raises(VolumeError):
+            NetworkVolume("models").path
+        with pytest.raises(VolumeError):
+            NetworkVolume("nv-1").path
+
+    def test_invalid_configuration_does_not_partially_publish(self, tmp_path):
+        (tmp_path / "model").write_text("retained")
+        binding = {
+            "kind": "network",
+            "reference": "models",
+            "id": "nv-1",
+            "path": str(tmp_path),
+        }
+        _configure_mounts([binding])
+        with pytest.raises(VolumeError):
+            _configure_mounts([dict(binding, path="/other"), {"kind": "global"}])
+        assert (NetworkVolume("models").path / "model").read_text() == "retained"
+        _configure_mounts([])
+        with pytest.raises(VolumeError):
+            NetworkVolume("models").path
+
+    @pytest.mark.parametrize("volume_type", [NetworkVolume, GlobalVolume])
+    def test_empty_reference_raises(self, volume_type):
+        with pytest.raises(VolumeError):
+            volume_type("")
+
+    @pytest.mark.parametrize(
+        "mounts",
+        [
+            {"/models": "models"},
+            {"models": NetworkVolume("models")},
+            {"/models/../data": NetworkVolume("models")},
+            {"/models": NetworkVolume("models"), "/models/": GlobalVolume("global")},
+        ],
+    )
+    def test_invalid_mount_mapping_raises(self, mounts):
+        with pytest.raises(VolumeError):
+            normalize_mounts(mounts)
 
 
 class TestVolumeResolver:
@@ -67,7 +148,7 @@ class TestVolumeResolver:
         )
         resolver = VolumeResolver(api)
         resolved = asyncio.run(
-            resolver.resolve(Volume("models"), [_spec(gpu=None)])
+            resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)])
         )
         assert resolved == {"id": "nv-1", "dataCenterId": "EU-RO-1"}
         api.create_network_volume.assert_not_awaited()
@@ -80,7 +161,7 @@ class TestVolumeResolver:
         )
         resolver = VolumeResolver(api)
         resolved = asyncio.run(
-            resolver.resolve(Volume("nv-1"), [_spec(gpu=None)])
+            resolver.resolve(NetworkVolume("nv-1"), [_spec(gpu=None)])
         )
         assert resolved["id"] == "nv-1"
 
@@ -88,7 +169,7 @@ class TestVolumeResolver:
         api = _api()
         resolver = VolumeResolver(api)
         resolved = asyncio.run(
-            resolver.resolve(Volume("models"), [_spec(gpu=None)])
+            resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)])
         )
         assert resolved["id"] == "nv-new"
         api.create_network_volume.assert_awaited_once()
@@ -99,7 +180,7 @@ class TestVolumeResolver:
         with pytest.raises(VolumeError, match="create=False"):
             asyncio.run(
                 resolver.resolve(
-                    Volume("models", create=False), [_spec(gpu=None)]
+                    NetworkVolume("models", create=False), [_spec(gpu=None)]
                 )
             )
 
@@ -112,9 +193,7 @@ class TestVolumeResolver:
         )
         resolver = VolumeResolver(api)
         with pytest.raises(VolumeError, match="reference by id"):
-            asyncio.run(
-                resolver.resolve(Volume("models"), [_spec(gpu=None)])
-            )
+            asyncio.run(resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)]))
 
     def test_resolution_cached_per_name(self):
         api = _api(
@@ -125,36 +204,40 @@ class TestVolumeResolver:
         resolver = VolumeResolver(api)
 
         async def run():
-            await resolver.resolve(Volume("models"), [_spec(gpu=None)])
-            await resolver.resolve(Volume("models"), [_spec(gpu=None)])
+            await resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)])
+            await resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)])
 
         asyncio.run(run())
         assert api.list_network_volumes.await_count == 1
 
-    def test_created_event_emitted(self):
-        events = []
+    def test_same_reference_in_different_backends_does_not_share_cache(self):
+        resolver = VolumeResolver(
+            _api(volumes=[{"id": "nv-1", "name": "models", "dataCenter": "EU-RO-1"}])
+        )
+        assert asyncio.run(resolver.resolve(GlobalVolume("models"))) == {"id": "models"}
+        assert asyncio.run(resolver.resolve(NetworkVolume("models"))) == {
+            "id": "nv-1",
+            "dataCenterId": "EU-RO-1",
+        }
 
-        class Sink:
-            def volume_created(self, name, size, dc):
-                events.append((name, size, dc))
-
-        api = _api()
-        resolver = VolumeResolver(api, events=Sink())
-        asyncio.run(resolver.resolve(Volume("models"), [_spec(gpu=None)]))
-        assert len(events) == 1
-        name, size, dc = events[0]
-        assert (name, size) == ("models", 50)
-        assert dc  # placement picks a concrete datacenter
+    def test_creation_without_app_requires_explicit_placement(self):
+        resolver = VolumeResolver(_api())
+        with pytest.raises(VolumeError):
+            asyncio.run(resolver.resolve(NetworkVolume("models")))
+        resolved = asyncio.run(
+            resolver.resolve(NetworkVolume("models", datacenter="EU-RO-1"))
+        )
+        assert resolved == {"id": "nv-new", "dataCenterId": "EU-RO-1"}
 
 
 class TestTaskVolume:
-    def test_single_volume_only(self):
-        with pytest.raises(InvalidResourceError):
+    def test_one_volume_per_backend(self):
+        with pytest.raises(VolumeError):
             ResourceSpec(
                 kind=ResourceKind.TASK,
                 name="t",
                 cpu=["cpu3c-1-2"],
-                volume=[Volume("a"), Volume("b")],
+                mounts={"/a": NetworkVolume("a"), "/b": NetworkVolume("b")},
             )
 
     def test_pod_pins_to_volume_dc(self):
@@ -169,9 +252,95 @@ class TestTaskVolume:
             kind=ResourceKind.TASK,
             name="t",
             cpu=["cpu3c-1-2"],
-            volume=Volume("models"),
+            mounts={"/models": NetworkVolume("models"), "/data": GlobalVolume("gv-1")},
         )
         execution = TaskExecution(spec, api=api)
-        pod = asyncio.run(execution._attach_volume({}))
-        assert pod["networkVolumeId"] == "nv-1"
+        pod = asyncio.run(execution._attach_mounts({}))
+        assert pod["volumeMounts"] == [
+            {
+                "volumeId": "nv-1",
+                "volumeType": "NETWORK_VOLUME",
+                "mountPath": "/models",
+            },
+            {
+                "volumeId": "gv-1",
+                "volumeType": "OBJECT_STORE_VOLUME",
+                "mountPath": "/data",
+            },
+        ]
         assert pod["dataCenterIds"] == ["EU-RO-1"]
+        _configure_mounts(json.loads(pod["env"][0]["value"]))
+        assert str(NetworkVolume("models").path) == "/models"
+        assert str(GlobalVolume("gv-1").path) == "/data"
+
+
+class TestEndpointMounts:
+    @pytest.mark.parametrize(
+        "mounts,cpu",
+        [
+            ({"/models": NetworkVolume("models")}, None),
+            ({"/runpod-volume": GlobalVolume("global")}, "cpu3c-1-2"),
+            (
+                {
+                    "/runpod-volume": NetworkVolume("models"),
+                    "/data": GlobalVolume("global"),
+                },
+                None,
+            ),
+        ],
+    )
+    def test_unsupported_attachment_rejected_before_provisioning(self, mounts, cpu):
+        with pytest.raises(VolumeError):
+            ResourceSpec(kind=ResourceKind.QUEUE, name="queue", cpu=cpu, mounts=mounts)
+
+    def test_global_attachment_does_not_pin_datacenter(self):
+        from runpod import App
+
+        app = App("global-model")
+
+        @app.queue(gpu="4090", mounts={"/runpod-volume": GlobalVolume("gv-1")})
+        def generate():
+            return None
+
+        payload = {"locations": "EU-RO-1,US-KS-2"}
+        asyncio.run(
+            attach_endpoint_volumes(payload, generate.spec, VolumeResolver(), app)
+        )
+        assert payload["locations"] == "EU-RO-1,US-KS-2"
+        assert payload["networkVolumeIds"] == []
+        assert payload["volumes"] == [
+            {"volumeId": "gv-1", "volumeType": "OBJECT_STORE_VOLUME"}
+        ]
+
+    def test_removing_storage_clears_backend_and_worker_bindings(self):
+        from runpod import App
+
+        app = App("no-storage")
+
+        @app.queue()
+        def generate():
+            return None
+
+        old_binding = {
+            "kind": "network",
+            "reference": "models",
+            "id": "nv-1",
+            "path": "/runpod-volume",
+        }
+        _configure_mounts([old_binding])
+        payload = {
+            "networkVolumeIds": [{"networkVolumeId": "nv-1"}],
+            "volumes": [{"volumeId": "gv-1", "volumeType": "OBJECT_STORE_VOLUME"}],
+            "template": {
+                "env": [{"key": "RUNPOD_MOUNTS", "value": json.dumps([old_binding])}]
+            },
+        }
+        asyncio.run(
+            attach_endpoint_volumes(payload, generate.spec, VolumeResolver(), app)
+        )
+        assert payload["networkVolumeIds"] == []
+        assert payload["volumes"] == []
+        env = {entry["key"]: entry["value"] for entry in payload["template"]["env"]}
+        _configure_mounts(json.loads(env["RUNPOD_MOUNTS"]))
+        with pytest.raises(VolumeError):
+            NetworkVolume("models").path

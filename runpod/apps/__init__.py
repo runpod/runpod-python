@@ -18,7 +18,7 @@ from .spec import ResourceKind, ResourceSpec, RouteSpec
 from .stubs import Api, Queue
 from .model import Model
 from .secret import Secret
-from .volume import Volume
+from .volume import GlobalVolume, NetworkVolume, Volume
 
 __all__ = [
     "Api",
@@ -29,8 +29,10 @@ __all__ = [
     "DataCenter",
     "EndpointNotFound",
     "FunctionHandle",
+    "GlobalVolume",
     "Job",
     "Model",
+    "NetworkVolume",
     "Queue",
     "Secret",
     "Volume",

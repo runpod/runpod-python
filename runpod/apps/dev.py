@@ -232,8 +232,6 @@ class DevSession:
             from .model import model_reference
 
             payload["modelReferences"] = [model_reference(spec.model)]
-        if not spec.volume:
-            return
         if self._volume_resolver is None:
             self._volume_resolver = VolumeResolver(self.api, events=self.events)
         await attach_endpoint_volumes(payload, spec, self._volume_resolver, app)

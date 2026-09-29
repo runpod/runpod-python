@@ -7,10 +7,10 @@ import runpod
 
 app = runpod.App("ex-train-eval")
 
-models = runpod.Volume("ex-models", size=10)
+models = runpod.NetworkVolume("ex-models", size=10)
 
 
-@app.task(gpu="4090", volume=models)
+@app.task(gpu="4090", mounts={"/models": models})
 def train(steps: int = 200):
     import json
 
@@ -42,7 +42,7 @@ def train(steps: int = 200):
     return {"checkpoint": "linear-run", "loss": round(loss.item(), 5)}
 
 
-@app.task(gpu="4090", volume=models)
+@app.task(gpu="4090", mounts={"/models": models})
 def evaluate(checkpoint: str):
     import torch
     import torch.nn as nn
