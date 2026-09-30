@@ -4,6 +4,13 @@ import importlib
 import logging
 import os
 
+# early serverless-worker startup gate (fitness/hardware checks). safe to
+# call at import time: it no-ops outside eligible worker processes and
+# defers the heavy fitness imports internally, so `import runpod` stays
+# light and the lazy surface below is preserved.
+from ._startup import run_import_checks
+
+run_import_checks()
 
 from .version import __version__
 
