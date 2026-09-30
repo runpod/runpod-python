@@ -1,0 +1,16 @@
+# keep the runtime image build context to what pip install needs:
+# package source, metadata, and the files setup.py/MANIFEST.in read
+.git
+.github
+.venv
+build
+benchmark_results
+docs
+examples
+job_files
+scripts
+tests
+uv.lock
+**/__pycache__
+**/*.pyc
+*.egg-info
