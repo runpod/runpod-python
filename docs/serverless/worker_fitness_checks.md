@@ -41,6 +41,20 @@ if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
 ```
 
+## When Checks Run
+
+On Serverless, the first `import runpod` runs RAM, disk, CUDA-version, and native GPU health checks. Eligibility requires both `RUNPOD_ENDPOINT_ID` and `RUNPOD_WEBHOOK_GET_JOB`. Platform tests (`RUNPOD_TEST`), `--test_input`, local `--rp_serve_api` invocations, and realtime workers (`RUNPOD_REALTIME_PORT`) skip early checks.
+
+Each worker runs the early pass once; disk space is checked again at worker start. When the early pass succeeds, the process sets `RUNPOD_EARLY_FITNESS_CHECKS_DONE=1` in its own environment. Processes launched by that worker inherit it, so `multiprocessing` spawn workers that re-import the handler and subprocesses skip the early pass instead of repeating the hardware probes. Only descendants inherit it: a wrapper script that starts the handler, or a sibling process started before it, runs its own checks. A failed check exits before the marker is set, so the marker only ever means a parent process passed. Unrelated processes that do not inherit the environment run their own checks. The first import may occur after model loading; no earlier timing is guaranteed in that case.
+
+At `.start()`, the worker rechecks disk space after handler setup, then runs network connectivity, Python CUDA initialization, GPU compute, and customer-registered checks before accepting jobs. This catches model downloads that fill the disk after the import-time pass. Network checks retry against the worker API with a bounded budget. Keeping Python CUDA initialization out of imports protects subsequent customer forks.
+
+`RUNPOD_DEFER_FITNESS_CHECKS=true` restores worker-start timing. `RUNPOD_SKIP_FITNESS_CHECKS=true` disables all checks. Set early thresholds before importing the SDK; late changes are applied at worker start. No launcher or Docker entrypoint changes are needed.
+
+### Rollout
+
+Validate in a small set of workers before broader rollout. The deferral variable provides a rollback of early timing without handler edits. This SDK change does not itself alter deployed platform configuration.
+
 ## Async Fitness Checks
 
 Fitness checks support both synchronous and asynchronous functions:
@@ -284,19 +298,17 @@ Disk space check passed: 50.00GB free (50.0% available)
 
 ### Network Connectivity
 
-Tests basic internet connectivity for API calls and job processing.
+Tests TCP reachability of the worker API host at worker start.
 
-- **Default**: 5 second timeout to 8.8.8.8:53
-- **Configure**: `RUNPOD_NETWORK_CHECK_TIMEOUT=10`
-
-What it checks:
-- Connection to Google DNS (8.8.8.8 port 53)
-- Response latency
-- Overall internet accessibility
+- **Default**: Up to three attempts within a 5-second total connection/cleanup budget.
+- **Configure**: `RUNPOD_NETWORK_CHECK_TIMEOUT=10` (positive seconds).
+- **Target**: Host and port from `RUNPOD_WEBHOOK_GET_JOB`; falls back to `api.runpod.ai:443` if the variable is absent or does not parse as a URL (logged at WARN). URL paths and credentials are not sent or logged by this probe.
+- Tests connection reachability, not API authentication or full application readiness.
+- Retries temporary connection failures; persistent failure exits through the worker failure path.
 
 Example log output:
 ```
-Network connectivity passed: Connected to 8.8.8.8 (45ms)
+Network connectivity passed: Connected to api.runpod.ai:443
 ```
 
 ### CUDA Version (GPU workers only)
@@ -343,15 +355,15 @@ ERROR  | Fitness check failed: _cuda_init_check | RuntimeError: Failed to initia
 
 Quick matrix multiplication to verify GPU compute functionality and responsiveness. Skips silently on CPU-only workers.
 
-- **Default**: 100ms maximum execution time
-- **Configure**: `RUNPOD_GPU_BENCHMARK_TIMEOUT=2`
+- **Default**: 2 seconds maximum execution time
+- **Configure**: `RUNPOD_GPU_BENCHMARK_TIMEOUT=2` (seconds)
 
 What it tests:
 - GPU compute capability (matrix multiplication)
 - GPU response time
 - Memory bandwidth to GPU
 
-If the operation takes longer than 100ms, the worker exits as the GPU is too slow for reliable job processing.
+If the operation takes longer than the timeout, the worker exits as the GPU is too slow for reliable job processing.
 
 Example log output:
 ```
@@ -371,13 +383,15 @@ ENV RUNPOD_NETWORK_CHECK_TIMEOUT=10
 ENV RUNPOD_GPU_BENCHMARK_TIMEOUT=2
 ```
 
-Or in Python:
+For deferred launches, settings can also be configured in Python before worker start:
 
 ```python
 import os
 
 os.environ["RUNPOD_MIN_MEMORY_GB"] = "8.0"
 os.environ["RUNPOD_MIN_DISK_PERCENT"] = "15.0"
+
+import runpod
 ```
 
 ### Disabling Built-in Checks
@@ -388,6 +402,8 @@ For testing or specialized deployments, built-in checks can be disabled via envi
 |---|---|
 | `RUNPOD_SKIP_AUTO_SYSTEM_CHECKS=true` | Skips auto-registration of memory, disk, network, CUDA version, CUDA init, and GPU benchmark checks |
 | `RUNPOD_SKIP_GPU_CHECK=true` | Skips auto-registration of the native GPU memory allocation test (`gpu_test` binary) |
+| `RUNPOD_SKIP_FITNESS_CHECKS=true` | Skips every fitness check, built-in **and** user-registered |
+| `RUNPOD_DEFER_FITNESS_CHECKS=true` | Keeps the checks but runs them only at `runpod.serverless.start()`, not at import |
 
 ```python
 import os
@@ -397,15 +413,19 @@ os.environ["RUNPOD_SKIP_AUTO_SYSTEM_CHECKS"] = "true"
 
 # Disable the automatic GPU memory allocation test
 os.environ["RUNPOD_SKIP_GPU_CHECK"] = "true"
+
+import runpod
 ```
 
-User-registered checks via `@register_fitness_check` still run regardless of these flags.
+For early checks, set these before launching the handler. For deferred launches, set them before worker start.
+
+User-registered checks via `@register_fitness_check` still run regardless of `RUNPOD_SKIP_AUTO_SYSTEM_CHECKS` and `RUNPOD_SKIP_GPU_CHECK`. Only `RUNPOD_SKIP_FITNESS_CHECKS` disables those too.
 
 ## Behavior
 
 ### Execution Timing
 
-- Fitness checks run **only once at worker startup**
+- Early checks run in eligible Serverless containers; the final pass runs before job processing. Successful checks are reused unless their configuration changes.
 - They run **before the first job is processed**
 - They run **only on the actual Runpod serverless platform**
 - Local development and testing modes skip fitness checks
@@ -555,7 +575,7 @@ async def check_api_with_retry():
 
 ## Testing
 
-When developing locally, fitness checks don't run. To test them, you can manually invoke the runner:
+When developing locally, fitness checks don't run. To test them, you can manually invoke the runner. Note that each check runs once per process: a second `run_fitness_checks()` call skips checks that already passed, so call `clear_fitness_checks()` (as below) between runs:
 
 ```python
 import asyncio
