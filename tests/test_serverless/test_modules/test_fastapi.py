@@ -60,6 +60,25 @@ class TestFastAPI(unittest.TestCase):
             os.environ.pop("RUNPOD_REALTIME_PORT")
             os.environ.pop("RUNPOD_ENDPOINT_ID")
 
+    def test_status_route_accepts_get_and_post(self):
+        """The local status endpoint mirrors the API's GET and POST methods."""
+        module_location = "runpod.serverless.modules.rp_fastapi"
+        router = Mock()
+        with patch(f"{module_location}.Heartbeat.start_ping", Mock()), patch(
+            f"{module_location}.FastAPI", Mock()
+        ), patch(f"{module_location}.APIRouter", return_value=router), patch(
+            f"{module_location}.uvicorn", Mock()
+        ):
+            rp_fastapi.WorkerAPI({"handler": self.handler})
+
+        status_calls = [
+            call
+            for call in router.add_api_route.call_args_list
+            if call.args and call.args[0] == "/status/{job_id}"
+        ]
+        self.assertEqual(len(status_calls), 1)
+        self.assertEqual(status_calls[0].kwargs["methods"], ["GET", "POST"])
+
     def test_worker_api_attaches_ping_mirror(self):
         """WorkerAPI attaches a PingJobMirror to job_list and passes the same
         instance to the ping; job tracking then syncs it. Regression guard for
@@ -356,4 +375,3 @@ class TestFastAPI(unittest.TestCase):
             asyncio.run(error_worker_api._sim_run(default_input_object))
             error_status_return = asyncio.run(error_worker_api._sim_status("test-123"))
             assert "error" in error_status_return
-
