@@ -59,6 +59,7 @@ def _raise_for_status(
     if status_code < HTTP_STATUS_BAD_REQUEST:
         return
 
+
     message = payload.get("detail") or payload.get("title")
     if not message:
         message = text or f"Request failed with status {status_code}"
