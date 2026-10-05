@@ -1,12 +1,6 @@
-"""Regression tests for the two-stage secret gate.
+"""Hermetic tests for the two-stage secret gate: no network, no betterleaks binary.
 
-Every test here pins a defect that reached a vendored, security-critical gate
-with no test to catch it. Each one fails against the code as it was.
-
-Hermetic by construction: no network, and no betterleaks binary. The scanner
-outputs driving the archive and path-only cases are recorded verbatim from real
-`betterleaks 1.8.1` runs — the version pinned in `pr-ai-review.yml` — so the
-fixtures cannot drift from the shapes the scanner actually emits.
+Scanner outputs are recorded from betterleaks 1.8.1, as pinned in `pr-ai-review.yml`.
 """
 
 from __future__ import annotations
@@ -44,15 +38,11 @@ def _raw(**over) -> dict:
     return {**base, **over}
 
 
-# ------------------------------------------- #1  gate bypass via .gitignore
+# ------------------------------------------------------- scan tree: .gitignore
 
 
 def test_commit_tree_stages_gitignored_files(tmp_path):
-    """A PR-supplied `.gitignore` must not decide what gets scanned.
-
-    `main`'s own .gitignore already lists `.env*` and `.vault*`, so the only
-    precondition for a total bypass was a PR touching that file for any reason.
-    """
+    """The PR controls `.gitignore`, so it must not decide what is scanned."""
     (tmp_path / ".gitignore").write_text(".env*\n.vault*\n")
     (tmp_path / ".env.production").write_text("api_key: rpa_" + "B" * 40 + "\n")
     (tmp_path / ".vault-pass").write_text("rpa_" + "C" * 40 + "\n")
@@ -65,7 +55,6 @@ def test_commit_tree_stages_gitignored_files(tmp_path):
 
 
 def test_commit_tree_stages_self_ignoring_nested_gitignore(tmp_path):
-    """The nested variant needs no change to the root file: `*` ignores itself."""
     (tmp_path / "files").mkdir()
     (tmp_path / "files" / ".gitignore").write_text("*\n")
     (tmp_path / "files" / "creds.yml").write_text("api_key: rpa_" + "D" * 40 + "\n")
@@ -76,7 +65,7 @@ def test_commit_tree_stages_self_ignoring_nested_gitignore(tmp_path):
     assert "files/.gitignore" in tracked
 
 
-# ----------------------------------- #2 / #2b  the redaction backstop's reach
+# --------------------------------------------------------------- PEM redaction
 
 
 @pytest.mark.parametrize("header", [
@@ -91,12 +80,7 @@ def test_commit_tree_stages_self_ignoring_nested_gitignore(tmp_path):
 ])
 @pytest.mark.parametrize("terminated", [True, False])
 def test_redact_collapses_every_pem_label(header, terminated):
-    """The backstop must never be narrower than the scanner rule it backs up.
-
-    The scanner's `private-key` rule has `(?i)` and admits `_`/`-` in the label,
-    and needs a closing anchor. An unterminated hyphen-labelled block was
-    therefore missed by BOTH layers and reached the model vendor in plaintext.
-    """
+    """The backstop is at least as broad as the scanner's `private-key` rule."""
     text = f"{header}\n{PEM_BODY}\n"
     if terminated:
         text += header.replace("BEGIN", "END").replace("Begin", "End") \
@@ -109,13 +93,7 @@ def test_redact_collapses_every_pem_label(header, terminated):
 
 
 def test_redact_collapses_encrypted_pem_body():
-    """RFC 1421 headers inside the block must not terminate the body scan.
-
-    `Proc-Type: 4,ENCRYPTED` and `DEK-Info: …,…` carry `-` and `,`. Excluding
-    those from the body class made the first header line end the block, after
-    which every base64 line was emitted verbatim — with a plain, unremarkable
-    `-----BEGIN RSA PRIVATE KEY-----` header.
-    """
+    """RFC 1421 headers inside the block do not end the body scan."""
     text = (
         "-----BEGIN RSA PRIVATE KEY-----\n"
         "Proc-Type: 4,ENCRYPTED\n"
@@ -131,7 +109,6 @@ def test_redact_collapses_encrypted_pem_body():
 
 
 def test_redact_leaves_public_keys_and_certificates_alone():
-    """The counterpart: over-reach here would redact every committed SSH key."""
     text = ("-----BEGIN PUBLIC KEY-----\n" + PEM_BODY + "\n"
             "-----END PUBLIC KEY-----\n"
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBZrliCqwsmTKp3Ji user@host\n")
@@ -141,13 +118,11 @@ def test_redact_leaves_public_keys_and_certificates_alone():
     assert out == text
 
 
-# ------------------------------------------------ #5  overlapping mask spans
+# ------------------------------------------------------ overlapping mask spans
 
 
 def test_mask_detections_keeps_both_markers_on_overlapping_spans():
-    """`runpod-credential-assignment` overlaps `runpod-api-key` on every
-    real `RUNPOD_*` assignment, so this is the common case, not an exotic one.
-    """
+    """Both rules fire, overlapping, on every `RUNPOD_*` assignment."""
     secret = "rpa_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD"
     line = f'RUNPOD_API_KEY = "{secret}"'.encode()
     at = line.index(secret.encode())
@@ -163,18 +138,9 @@ def test_mask_detections_keeps_both_markers_on_overlapping_spans():
 
 
 def test_mask_detections_never_leaks_a_byte_inside_a_masked_span():
-    """Property check: no byte inside any masked span may survive.
-
-    Right-to-left masking is sound only for disjoint spans. When a label is
-    LONGER than the span it replaces the line grows, `mask_line`'s
-    `end > len(line)` guard stops firing, and the outer span's stale `end`
-    slides its tail slice left, so original bytes from inside the outer span
-    survived into the window. On a `runpod-legacy-uuid-key` match, whose span
-    ENDS with the credential, those bytes are the credential's tail.
-    """
+    """Every overlapping span pair, including labels longer than their span."""
     labels = "«DETECTION-1:r1»«DETECTION-2:r2»".encode()
-    # A line of bytes that cannot appear in either marker, so a byte found in
-    # the output is unambiguously a surviving original.
+    # Bytes absent from both markers, so any found in the output survived.
     alphabet = bytes(c for c in range(0x21, 0x7F) if c not in set(labels))
     line = alphabet[:24]
 
@@ -193,9 +159,6 @@ def test_mask_detections_never_leaks_a_byte_inside_a_masked_span():
 
 
 def test_mask_detections_still_blanks_a_multi_line_block():
-    """The multi-line path registers a full-line span on every continuation
-    line, which overlaps anything else there by construction.
-    """
     lines = [b"-----BEGIN PRIVATE KEY-----", b"SECRETBODYLINE", b"-----END-----"]
 
     out = air.mask_detections(lines, [
@@ -207,13 +170,11 @@ def test_mask_detections_still_blanks_a_multi_line_block():
     assert b"DETECTION-1" in b"\n".join(out)
 
 
-# ------------------------------------- #3  findings inside committed archives
+# ------------------------------------------------------------ archive findings
 
 
 def test_archive_finding_maps_to_the_containing_blob():
-    """betterleaks extracts archives by default and reports the inner path with
-    its `!` separator. Only the archive itself was ever materialised.
-    """
+    """betterleaks reports archive members as `archive!inner`."""
     f = scan_head.to_finding(
         _raw(File="bundle.zip!inner.txt"), {"bundle.zip": "deadbeef"}, "/tmp/w")
 
@@ -224,9 +185,7 @@ def test_archive_finding_maps_to_the_containing_blob():
 
 
 def test_unmappable_path_is_reported_not_raised():
-    """One unmappable path used to raise, which wrote no findings file at all
-    and so discarded every OTHER finding in the scan.
-    """
+    """One unmappable path must not discard the other findings."""
     findings, unmappable = scan_head.merge_findings(
         [_raw(File="bundle.zip!inner.txt"), _raw(File="nowhere.txt")],
         {"bundle.zip": "deadbeef"}, "/tmp/w")
@@ -236,7 +195,6 @@ def test_unmappable_path_is_reported_not_raised():
 
 
 def test_two_files_in_one_archive_do_not_collapse():
-    """Same blob, same span, different inner paths — two distinct findings."""
     findings, _ = scan_head.merge_findings(
         [_raw(File="bundle.zip!one.txt"), _raw(File="bundle.zip!two.txt")],
         {"bundle.zip": "deadbeef"}, "/tmp/w")
@@ -245,9 +203,6 @@ def test_two_files_in_one_archive_do_not_collapse():
 
 
 def test_archive_finding_is_triaged_without_a_window(monkeypatch):
-    """The blob is the binary container, so there are no source lines to show.
-    It must still reach the model rather than redden the gate.
-    """
     def unreachable(*a, **k):
         raise AssertionError("must not fetch the archive blob for a window")
 
@@ -263,20 +218,17 @@ def test_archive_finding_is_triaged_without_a_window(monkeypatch):
     assert evidence[0]["window"] == ""
 
 
-# ------------------------------------------------- #4  path-only scanner rule
+# ---------------------------------------------------------- path-only findings
 
 
-# `pkcs12-file` is the only path-only rule in the default set: no line, no
-# column, no Secret.
+# `pkcs12-file`, the only default path-only rule: no line, column or Secret.
 PKCS12 = {"File": "certstore.p12", "RuleID": "pkcs12-file",
           "StartLine": 0, "EndLine": 0, "StartColumn": 0, "EndColumn": 0,
           "Secret": "", "Description": "Identified a PKCS12 file", "Entropy": 0}
 
 
 def test_path_only_finding_gets_a_file_head_window(monkeypatch):
-    """Line 0 is a real finding about the FILE, not a broken window. It used to
-    trip the "outside the blob" guard and redden the gate, override-only.
-    """
+    """Line 0 means the finding is about the whole file, not a bad location."""
     blob = b"\n".join(f"line {n}".encode() for n in range(1, 60))
     monkeypatch.setattr(air, "fetch_blob", lambda *a, **k: (blob, ""))
     f = scan_head.to_finding(PKCS12, {"certstore.p12": "cafe"}, "/tmp/w")
@@ -290,9 +242,7 @@ def test_path_only_finding_gets_a_file_head_window(monkeypatch):
 
 
 def test_path_only_finding_on_a_binary_blob_shows_no_window(monkeypatch):
-    """A decoded binary blob is not a source window, and its bytes may be the
-    credential. The finding still has to reach the model, without them.
-    """
+    """Binary bytes may be the credential, so none are shown."""
     blob = b"\x00\x01\x02rpa_" + b"E" * 40 + b"\x00binary junk"
     monkeypatch.setattr(air, "fetch_blob", lambda *a, **k: (blob, ""))
     f = scan_head.to_finding(PKCS12, {"certstore.p12": "cafe"}, "/tmp/w")
@@ -306,7 +256,6 @@ def test_path_only_finding_on_a_binary_blob_shows_no_window(monkeypatch):
 
 
 def test_line_beyond_the_blob_is_still_an_error(monkeypatch):
-    """The guard must keep failing closed for a genuinely impossible location."""
     monkeypatch.setattr(air, "fetch_blob", lambda *a, **k: (b"one\ntwo\n", ""))
     f = scan_head.to_finding(
         _raw(File="a.yml", StartLine=900, EndLine=900), {"a.yml": "cafe"}, "/tmp/w")
@@ -318,13 +267,11 @@ def test_line_beyond_the_blob_is_still_an_error(monkeypatch):
     assert len(errors) == 1
 
 
-# --------------------------------------------------------- #6  path-aware dedup
+# ------------------------------------------------------------ path-aware dedup
 
 
 def test_dedup_keeps_both_paths_for_identical_content():
-    """Byte-identical files share a git blob SHA, so a key built on the SHA
-    collapsed them — clearing a fixture path cleared the real path with it.
-    """
+    """Identical files share a blob SHA; clearing one path must not clear both."""
     findings, _ = scan_head.merge_findings(
         [_raw(File="docs/example_key.yml"), _raw(File="ansible/prod.yml")],
         {"docs/example_key.yml": "same", "ansible/prod.yml": "same"}, "/tmp/w")
@@ -334,7 +281,6 @@ def test_dedup_keeps_both_paths_for_identical_content():
 
 
 def test_dedup_still_merges_two_rules_on_one_span():
-    """The intended merge has to survive the key change."""
     findings, _ = scan_head.merge_findings(
         [_raw(RuleID="runpod-api-key"),
          _raw(RuleID="runpod-key-in-allowlisted-path")],
@@ -345,7 +291,7 @@ def test_dedup_still_merges_two_rules_on_one_span():
         "runpod-api-key", "runpod-key-in-allowlisted-path"]
 
 
-# ------------------------------------------------- #7  attributing HTTP 400s
+# ---------------------------------------------- reasoning_effort and HTTP 400s
 
 
 def _stub_submit(monkeypatch, body):
@@ -362,13 +308,10 @@ def _stub_submit(monkeypatch, body):
 
 
 def test_400_without_the_field_name_is_not_blamed_on_reasoning_effort(monkeypatch):
-    """A `temperature` or model 400 must not be reported as this one, nor pay
-    for an identical retry that fails the same way.
-    """
     calls, logs = _stub_submit(
         monkeypatch, "invalid temperature: only 1 is allowed for this model")
 
-    review, _ = air.call_kimi("sys", "user", "key")
+    review = air.call_kimi("sys", "user", "key")
 
     assert review is None
     assert len(calls) == 1, "retried a 400 that was not about reasoning_effort"
@@ -377,7 +320,6 @@ def test_400_without_the_field_name_is_not_blamed_on_reasoning_effort(monkeypatc
 
 
 def test_illegal_reasoning_effort_is_dropped_before_the_request(monkeypatch):
-    """The only case the retry existed for, caught without spending a request."""
     calls, logs = _stub_submit(monkeypatch, "{}")
     monkeypatch.setenv("KIMI_REASONING_EFFORT", "medium")   # there is no medium
 
@@ -396,7 +338,41 @@ def test_legal_reasoning_effort_is_sent(monkeypatch):
         assert f'"reasoning_effort": "{value}"'.encode() in calls[0]
 
 
-# ---------------------------- git must not take instructions from the scan tree
+def _stub_stream(monkeypatch, events):
+    urls = []
+
+    def fake_request(url, *a, **k):
+        urls.append(url)
+        return 200, b"".join(b"data: " + e + b"\n\n" for e in events)
+
+    monkeypatch.setattr(air, "request", fake_request)
+    monkeypatch.setattr(air, "log", lambda m: None)
+    return urls
+
+
+def _delta(content, finish=None):
+    return json.dumps({"choices": [{"delta": {"content": content},
+                                    "finish_reason": finish}]}).encode()
+
+
+def test_streamed_reply_is_reassembled_from_litellm(monkeypatch):
+    urls = _stub_stream(monkeypatch, [
+        json.dumps({"choices": [{"delta": {"reasoning_content": "hmm"}}]}).encode(),
+        _delta('{"verdicts":'), _delta(" []}", "stop"), b"[DONE]"])
+
+    assert air.call_kimi("sys", "user", "key") == '{"verdicts": []}'
+    assert urls == [f"{air.LITELLM_BASE}/v1/chat/completions"]
+
+
+@pytest.mark.parametrize("bad", [b'{"error": {"message": "overloaded"}}',
+                                 b"not json", b"[1]"])
+def test_bad_stream_event_fails_closed(monkeypatch, bad):
+    _stub_stream(monkeypatch, [_delta('{"verdicts": []}'), bad, _delta("", "stop")])
+
+    assert air.call_kimi("sys", "user", "key") is None
+
+
+# --------------------------------------------------- scan tree: .gitattributes
 
 
 @pytest.mark.parametrize("attributes", [
@@ -406,31 +382,25 @@ def test_legal_reasoning_effort_is_sent(monkeypatch):
     "* filter=mangle",
 ])
 def test_commit_tree_neutralises_pr_supplied_gitattributes(tmp_path, attributes):
-    """`.gitattributes` is materialised like any other changed file, and git
-    attributes change how git PRESENTS content to `betterleaks git`. `-diff`
-    alone was a silent, complete bypass: tracked file, zero findings, green gate.
-    """
+    """Attributes such as `-diff` change what `betterleaks git` sees."""
     body = "api_key: rpa_" + "F" * 40 + "\n"
     (tmp_path / "creds.yml").write_text(body)
     (tmp_path / ".gitattributes").write_text(attributes + "\n")
 
     tracked = scan_head.commit_tree(str(tmp_path))
 
-    # The real invariant: what git committed is byte-identical to the content.
+    # Committed bytes match the file.
     true_oid = subprocess.run(
         ("git", "hash-object", "creds.yml"), cwd=tmp_path,
         check=True, capture_output=True, text=True).stdout.strip()
     assert tracked.get("creds.yml") == true_oid
-    # And the content is still visible through the verb the scanner uses.
     patch = subprocess.run(("git", "log", "-p", "--all"), cwd=tmp_path,
                            check=True, capture_output=True, text=True).stdout
     assert "rpa_" in patch, "the scanner reads the tree through `git log -p`"
 
 
 def test_main_reports_a_file_not_committed_byte_identically():
-    """The tripwire compares OIDs, not names: a file altered on the way in is
-    still tracked, so a name-only check could not see it.
-    """
+    """Compares OIDs, not names: an altered file is still tracked."""
     written = [{"path": "a.yml", "rel": "a.yml", "blob_sha": "aaa"},
                {"path": "b.yml", "rel": "b.yml", "blob_sha": "bbb"}]
     tracked = {"a.yml": "aaa", "b.yml": "MANGLED"}
@@ -440,14 +410,11 @@ def test_main_reports_a_file_not_committed_byte_identically():
     assert altered == ["b.yml"]
 
 
-# ------------------------------------- one spelling of "where is this finding"
+# ------------------------------------------------------------- location labels
 
 
 def test_identical_content_at_two_paths_gets_separate_windows(monkeypatch):
-    """Two paths with identical bytes share a blob SHA. Grouping the mask by
-    blob put each one's marker in the other's window, while the prompt tells the
-    model "that marker IS the value you are judging".
-    """
+    """Paths sharing a blob SHA each get a window with only their own marker."""
     secret = "rpa_" + "G" * 40
     monkeypatch.setattr(air, "fetch_blob",
                         lambda *a, **k: (f"api_key: {secret}\n".encode(), ""))
@@ -468,16 +435,12 @@ def test_identical_content_at_two_paths_gets_separate_windows(monkeypatch):
 
 @pytest.mark.parametrize("raw_entry,expected", [
     (_raw(File="a.yml", StartLine=12, EndLine=12), "line 12"),
-    # The path is code-spanned because it is attacker-chosen; see
-    # test_location_label_cannot_escape_its_code_span.
+    # Code-spanned: the path is attacker-chosen.
     (_raw(File="bundle.zip!inner.txt"), "inside the archive, at `inner.txt`"),
     (PKCS12, "whole file (this rule matches the path, not content)"),
 ])
 def test_location_label_is_the_one_spelling(raw_entry, expected):
-    """The prompt, the published comment and the unanswered list all render
-    this. Three independent derivations is how a path-only rule reached a human
-    reviewer as "line 0".
-    """
+    """Shared by the prompt, the published comment and the unanswered list."""
     f = scan_head.to_finding(
         raw_entry, {"a.yml": "x", "bundle.zip": "x", "certstore.p12": "x"}, "/tmp/w")
 
@@ -493,22 +456,17 @@ def test_published_comment_never_says_line_0(monkeypatch):
         '{"findings": [{"id": 1, "verdict": "true_positive", "analysis": "a keystore"}]}',
         evidence)
 
-    body = air.render_comment(review, "success", "", 0.0)
+    body = air.render_comment(review, "success", "")
 
     assert "line 0" not in body
     assert "whole file" in body
     assert "``" not in body, "an empty code span reads as 'we found nothing here'"
 
 
-# ------------------------------ _redact_exact: the stage-1 redaction path
+# --------------------------------------------------------------- _redact_exact
 
 
 def test_redact_exact_redacts_the_union_of_overlapping_secrets():
-    """`sanitize_findings` is the only production caller, and it passes a real
-    mapping, so this path had no coverage at all. The docstring's own case:
-    replacing "AAAABBBB" first consumes the "BBBB" that "BBBBCCCC" needs, and
-    "CCCC" -- half a real credential -- survives.
-    """
     mapping = {"AAAABBBB": "<x>", "BBBBCCCC": "<y>"}
 
     out, count = redaction.redact("prefix AAAABBBBCCCC suffix", mapping)
@@ -526,13 +484,11 @@ def test_redact_exact_handles_repeated_and_adjacent_values():
 
     assert "SEKRIT" not in out
 
-# ------------------- inner_path is untrusted: no markdown injection via a zip
+# ----------------------------------------------- untrusted archive entry names
 
 
-# A zip entry name is chosen by whoever built the archive, and nothing
-# normalises it. Newlines are the dangerous case: they end the list item and let
-# the payload open a block of its own. Each payload carries SENTINEL so the
-# assertions can tell injected text from the comment's own prose.
+# Entry names are attacker-chosen and unnormalised; a newline ends the list
+# item and opens a new block. SENTINEL marks payload text for the assertions.
 SENTINEL = "ZZ-INJECTED-ZZ"
 INJECTION_PAYLOADS = [
     f"a.yml\n\n## \u2705 {SENTINEL} review PASSED\n\nNo secrets.\n\n<!--",
@@ -543,26 +499,19 @@ INJECTION_PAYLOADS = [
     f"a.yml\n\n</div><h2>{SENTINEL}</h2>",
 ]
 
-# Inline code spans, which is where an escaped payload is supposed to end up.
+# Inline code spans, where an escaped payload belongs.
 _CODE_SPAN = re.compile(r"`[^`]*`")
 
 
 @pytest.mark.parametrize("payload", INJECTION_PAYLOADS)
 def test_location_label_cannot_escape_its_code_span(payload):
-    """`inner_path` reaches the published comment, so it must be inert there.
-
-    Rendered raw, an entry named with a newline published its own heading and
-    swallowed every later finding in an unterminated `<!--` — on a PR carrying
-    live keys, via the fail-closed path that needs no model cooperation.
-    """
     f = scan_head.to_finding(
         _raw(File=f"bundle.zip!{payload}"), {"bundle.zip": "dead"}, "/tmp/w")
 
     label = air.location_label(f)
 
     assert "\n" not in label and "\r" not in label, "a newline can open a block"
-    # Exactly two backticks: the ones opening and closing the span. Any other
-    # count means the payload could close it and escape into markdown.
+    # Only the span's own opening and closing backticks.
     assert label.count("`") == 2, f"payload can close the code span: {label!r}"
     assert SENTINEL not in _CODE_SPAN.sub("", label), "payload text is outside the span"
 
@@ -571,9 +520,7 @@ def test_location_label_cannot_escape_its_code_span(payload):
 @pytest.mark.parametrize("answered", [False, True])
 def test_published_comment_survives_a_hostile_archive_entry(monkeypatch, payload,
                                                             answered):
-    """The whole comment, not just the label. Checked on both sinks: a confirmed
-    verdict, and the fail-closed path where the model answers nothing.
-    """
+    """Both sinks: a confirmed verdict, and the fail-closed no-answer path."""
     monkeypatch.setattr(air, "fetch_blob", lambda *a, **k: (b"x", ""))
 
     def finding(inner, fid):
@@ -588,21 +535,18 @@ def test_published_comment_survives_a_hostile_archive_entry(monkeypatch, payload
                 for i in (1, 2)] if answered else []
     review = air.parse_model_json(json.dumps({"verdicts": verdicts}), evidence)
 
-    body = air.render_comment(review, "success", "", 0.0)
+    body = air.render_comment(review, "success", "")
 
-    # The second, unrelated real detection is still named: nothing the payload
-    # wrote commented it out.
+    # The payload did not comment out the other finding.
     assert "real_creds.yml" in body
-    # Every trace of the payload is inside a code span.
     assert SENTINEL in body, "the hostile entry name should still be shown, inertly"
     assert SENTINEL not in _CODE_SPAN.sub("", body), "payload escaped into markdown"
 
 
-# ------------------------------------- team review contacts in the comment
+# ------------------------------------------------------------- review contacts
 
 
 def test_team_contact_links_to_the_team_page(monkeypatch):
-    """`org/team` used to be squashed to `orgteam`: a link to nobody."""
     monkeypatch.setattr(air, "REVIEW_CONTACTS", ("runpod/security", "alice"))
     assert air.contact_links() == (
         "[runpod/security](https://github.com/orgs/runpod/teams/security)"
@@ -618,15 +562,10 @@ def test_contact_links_never_mention_or_escape(monkeypatch, contact):
     assert re.fullmatch(r"(\[[\w./-]+\]\(https://github\.com/[\w./-]+\))?", out)
 
 
-# ------------------------------ the gate must pass its own suppression check
+# ----------------------------------------------------- inline allow annotation
 
 
 def test_gate_files_never_spell_the_inline_allow_annotation():
-    """Stage 1 rejects any ADDED line matching the annotation, prose included.
-
-    Deploying adds every gate file whole, so three comments in the workflow
-    that named the annotation failed stage 1 on every consumer's first PR.
-    """
     from pathlib import Path
 
     github = Path(__file__).resolve().parent.parent
@@ -638,11 +577,10 @@ def test_gate_files_never_spell_the_inline_allow_annotation():
     assert not hits
 
 
-# ------------------------------------------ ignore dir and entropy mask
+# ------------------------------------------------- ignore dir and entropy mask
 
 
 def test_ignore_path_is_a_fresh_empty_directory(monkeypatch, tmp_path):
-    """A fixed, pre-creatable ignore dir let a planted ignore file suppress."""
     seen = {}
 
     def fake_run(args, **kw):
@@ -672,3 +610,16 @@ def test_mask_high_entropy_is_linear():
     t = time.perf_counter()
     air.mask_high_entropy("a" * 20_000)
     assert time.perf_counter() - t < 0.5
+
+
+# --------------------------------------------------------------- workflow YAML
+
+
+def test_every_gate_workflow_is_valid_yaml():
+    import yaml
+    from pathlib import Path
+
+    workflows = Path(__file__).resolve().parent.parent / "workflows"
+    for f in sorted(workflows.glob("*.yml")):
+        doc = yaml.safe_load(f.read_text())
+        assert isinstance(doc, dict) and doc.get("jobs"), f.name

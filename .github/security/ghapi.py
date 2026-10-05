@@ -1,23 +1,11 @@
 #!/usr/bin/env python3
-"""GitHub API access for the privileged stage, pinned to trusted inputs.
+"""GitHub API helpers shared by stage 2's jobs, so both agree on the PR under review.
 
-Split out of ai_security_review.py so the scanner job and the triage job share
-ONE implementation of the trust-critical derivation. Two copies of `resolve_pr`
-is two chances for them to disagree about which pull request is under review,
-and the whole gate rests on that answer.
-
-The only inputs anything here trusts are `workflow_run.head_sha` and
-`workflow_run.head_repository.full_name`, both GitHub-supplied and unforgeable
-by a fork. Everything else — the PR number, the base SHA, the file list, the
-file contents — is derived from those two through this module.
-
-Content is addressed by BLOB SHA rather than by path+ref. The file list hands
-back the blob SHA of every changed file at the head commit, and
-`git/blobs/{sha}` serves it from the base repository's object store, which is
-where a fork PR's objects already live. That sidesteps the question of whether the contents API
-will resolve a fork SHA in the base repo, and it makes the fetch
-content-addressed: the scanner job and the triage job asking for the same blob
-SHA cannot be served different bytes.
+Invariants:
+- Only `workflow_run.head_sha` and `workflow_run.head_repository.full_name`
+  are trusted; the PR number, file list and contents are derived from them.
+- Content is fetched by blob SHA from the base repo (where fork objects live),
+  so both jobs get identical bytes.
 """
 
 from __future__ import annotations
@@ -46,8 +34,7 @@ def request(url: str, headers: dict, data: bytes | None = None,
             body = resp.read()
             return resp.status, (body if raw else json.loads(body or b"{}"))
     except urllib.error.HTTPError as exc:
-        # Deliberately do NOT include the request headers or the exception repr
-        # in any log line — an Authorization value can end up in either.
+        # Never log the headers or exception repr; either can hold the token.
         return exc.code, exc.read()[:400].decode("utf-8", "replace")
     except Exception as exc:  # noqa: BLE001
         log(f"::warning::request to {url.split('?')[0]} failed: {type(exc).__name__}")
@@ -69,17 +56,10 @@ def is_sha(value: str, exact: bool = False) -> bool:
 
 
 def resolve_pr(repo: str, head_sha: str, head_repo: str, token: str) -> dict | None:
-    """Find the PR for a commit, using only values GitHub supplied.
+    """Find the one PR whose head is `head_sha` (from `head_repo`, if given).
 
-    Never reads a PR number from stage 1's artifact. That number would be
-    attacker-influenced, and pointing it at a third party's PR would borrow the
-    triage job's `pull-requests: write` token to post there — an excellent place
-    to plant a convincing "security review passed".
-
-    `head_repo` disambiguates the case where two PRs share a head SHA (the same
-    fork branch opened against two base branches). Both belong to the same author
-    so there is no privilege gain, but filtering removes the ambiguity and stops
-    an attacker re-triggering churn on someone else's PR.
+    Never takes a PR number from stage 1's artifact: it is attacker-controlled
+    and would aim the triage job's write token at another PR.
     """
     if not is_sha(head_sha):
         log("::error::head SHA missing or malformed; refusing to continue")
@@ -89,8 +69,6 @@ def resolve_pr(repo: str, head_sha: str, head_repo: str, token: str) -> dict | N
         f"{GITHUB_API}/repos/{repo}/commits/{head_sha}/pulls", gh_headers(token)
     )
     if status != 200 or not isinstance(body, list):
-        # "Could not verify" is not "verification failed" — say which, loudly,
-        # so a broken pipeline does not read as a repelled attack.
         log(f"::warning title=Could not resolve PR::commit lookup returned {status}")
         return None
 
@@ -111,31 +89,13 @@ def resolve_pr(repo: str, head_sha: str, head_repo: str, token: str) -> dict | N
 
 
 def changed_files(repo: str, pr_number: int, head_sha: str, token: str):
-    """Enumerate the PR's files. Returns (files, truncated).
+    """List the PR's files as {"path", "status", "blob_sha"}. Returns (files, truncated).
 
-    Each file is {"path", "status", "blob_sha"}. `truncated` is True whenever
-    this did not see the whole change, and every caller must treat that as a
-    failure: a partial file list means a partial scan, and a partial scan
-    reporting clean is the failure mode this pipeline exists to prevent.
-
-    USES /pulls/{n}/files, NOT compare. An earlier version paged
-    `compare/{base}...{head}` and inferred the end of the list from a short
-    page. Measured against a real 3,000-file range, compare IGNORES `per_page`,
-    returns exactly 300 files on page 1 and an EMPTY page 2 — so that version
-    saw a 300-file prefix, read the empty page as "no more files", and reported
-    `truncated=False`. A PR large enough could have hidden a credential past
-    file 300 and still gone green. `/pulls/{n}/files` honours `per_page` and
-    pages properly (verified: 25/25/10 for a 60-file PR).
-
-    Truncation is not inferred from page shape at all. It is decided by
-    comparing against `changed_files` on the pull request itself, which is
-    authoritative, so GitHub's 3,000-file ceiling — or any future cap — fails
-    closed without this code having to know the number.
-
-    The head SHA is checked before AND after enumerating. This endpoint tracks
-    the PR's CURRENT head rather than a pinned range, so a push landing
-    mid-enumeration would otherwise blend two commits' file lists; if the head
-    moved, this reports truncated and the run for the new SHA does the work.
+    Callers must treat `truncated` as a failure.
+    - Uses /pulls/{n}/files: compare ignores `per_page` and stops at 300 files.
+    - Completeness is checked against the PR's `changed_files`, not page shape.
+    - The head SHA is checked before and after, since this endpoint follows the
+      PR's current head.
     """
     status, pr = request(f"{GITHUB_API}/repos/{repo}/pulls/{pr_number}",
                          gh_headers(token))
@@ -163,8 +123,7 @@ def changed_files(repo: str, pr_number: int, head_sha: str, token: str):
             out.append({
                 "path": str(f.get("filename") or ""),
                 "status": str(f.get("status") or ""),
-                # Blob SHA at HEAD. Absent for a deleted file, which is correct:
-                # there is nothing at head to scan.
+                # Head blob SHA; empty for a deleted file.
                 "blob_sha": str(f.get("sha") or ""),
             })
         if len(batch) < 100:

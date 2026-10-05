@@ -1,37 +1,11 @@
-# Stage 1 of 2 — UNPRIVILEGED, BLOCKING.
-#
-# Runs on `pull_request`, so for a fork PR it executes with a read-only
-# GITHUB_TOKEN and NO access to secrets. Everything here touches attacker-
-# controlled code, so it must never hold a credential.
-#
-# Keep this workflow in branch protection. Because it needs no secrets it
-# behaves identically for fork and internal PRs — the property a required check
-# must have — and it still enforces the integrity gates below. It is no longer
-# the only required check: stage 2 publishes an `AI secret verdict` commit
-# status, and that is what fails on a real credential.
-#
-# Blocking:  betterleaks ERRORS   -> job fails (a crashed scanner is not a pass)
-#            .gitleaksignore or an inline allow annotation introduced -> job fails
-#            semgrep failing to INSTALL -> job fails (see that step)
-# Advisory:  betterleaks findings -> annotation only. A pattern match is not a
-#                                    leak; the true/false-positive call and the
-#                                    blocking verdict both live in stage 2.
-#            semgrep findings     -> sanitised, uploaded, does not fail
-#
-# READ THIS BEFORE EDITING — the limit of what this workflow can promise:
-# under `pull_request`, GitHub runs the workflow definition from the PR's own
-# merge ref. This file, gitleaks-runpod.toml, and the scripts are all editable by
-# the PR being scanned. A PR that keeps the job name but neuters the scan gets a
-# GREEN required check. Branch protection cannot fix that, because the green
-# check is what it is waiting for. CODEOWNERS review on `.github/**` is the
-# compensating control and is NOT optional. See README.
-#
-# The artifact from this job is HUMAN-FACING ONLY. Stage 2 deliberately does not
-# read it — it re-runs betterleaks itself, over blobs fetched from the GitHub
-# API and pinned to the trusted head SHA — because a hostile stage 1 could
-# otherwise hand it an empty findings list and have the bot post "no secrets" on
-# a PR containing a live key. That duplicated scan is the cost of this file
-# being editable by the PR it scans; do not "de-duplicate" it.
+# Stage 1 of 2. Untrusted: runs the PR's own copy of this file with a read-only
+# token and no secrets.
+# Blocks on: betterleaks errors, added scanner-suppression files or inline allow
+# annotations, semgrep failing to install. Advisory: betterleaks and semgrep
+# findings; the blocking secret verdict is stage 2's `AI secret verdict` status.
+# The PR can edit this file, its config and scripts, so CODEOWNERS review of the
+# gate files is required.
+# The artifact is human-facing only. Stage 2 re-scans and must never consume it.
 
 name: PR Security Scan
 
@@ -43,51 +17,21 @@ permissions:
   contents: read
 
 concurrency:
-  # Includes the head repo so a fork cannot alias another PR's group name.
-  # NOTE: concurrency groups are REPOSITORY-scoped, not workflow-scoped, and a
-  # hostile PR can spell out any string it likes here in its own copy of this
-  # file. So this is friction, not a boundary — a determined author can still
-  # cancel other PRs' in-flight checks. The durable mitigation is the fork-PR
-  # approval setting in repo settings. Documented in the README threat model.
+  # Keyed on the head repo so forks cannot share a group. A PR can rewrite this
+  # in its own copy, so it is friction, not a boundary.
   group: pr-security-scan-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.repo.full_name }}
   cancel-in-progress: true
 
 env:
-  # betterleaks: the gitleaks successor by gitleaks' original author (MIT).
-  # Chosen for RECALL, not speed — token-efficiency scoring replaces Shannon
-  # entropy, and it decodes/unpacks by default, which covers the two bypasses
-  # gitleaks could not: novel key formats and encoded secrets.
-  #
-  # Verified drop-in for this pipeline: identical JSON field names for everything
-  # sanitize_findings.py reads, and --gitleaks-ignore-path /
-  # --ignore-gitleaks-allow keep their names AND cover the .betterleaksignore and
-  # betterleaks-prefixed inline annotation too.
-  #
-  # ONE behavioural difference, found the hard way: with zero findings betterleaks
-  # writes JSON `null`, not `[]` (Go marshals a nil slice as null). The report
-  # parser below handles it. Don't "simplify" that back to a plain
-  # isinstance(list) check — it fails the gate on every clean scan.
-  #
-  # Pinned deliberately, not floated. This project moved 1.1.1 -> 1.8.1 in about
-  # six months, so `latest` would silently change the blocking control under you.
-  # Bump this and BETTERLEAKS_SHA256 together, as one reviewed commit.
+  # Bump together with BETTERLEAKS_SHA256.
   BETTERLEAKS_VERSION: "1.8.1"
-  # Pin the checksum. The binary runs on every PR; a poisoned release would not
-  # steal secrets (this job has none) but it WOULD make the gate lie, which is
-  # the one thing this job exists to prevent.
   BETTERLEAKS_SHA256: "efa407244e1ea8e35f582b8a42becdeac08bdead04f68eb752adda722d583c2a"
-  # VERIFY THE VERSION EXISTS ON PyPI BEFORE COMMITTING A BUMP:
-  #   pip index versions semgrep
-  # 1.98.0 sat here from 925a11b and was never published — PyPI goes 1.97.0 ->
-  # 1.99.0. Every run failed to install it, and until the retry/exit-1 above was
-  # added the job wrote {"results":[]} and reported "0 semgrep findings" for a
-  # scanner that had never started. Not a hypothetical: it is why this pin is
-  # commented.
+  # Must be a version published on PyPI (`pip index versions semgrep`).
   SEMGREP_VERSION: "1.177.0"
 
 jobs:
   scan:
-    # This exact string goes in the branch ruleset. Keep it in sync with README.
+    # Required check name in the branch ruleset; keep in sync with README.
     name: Secret & vulnerability scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -96,9 +40,7 @@ jobs:
       - name: Check out PR merge ref with full history
         uses: actions/checkout@v7
         with:
-          # Full history so we can walk the PR's individual commits. A secret
-          # added in commit 3 and deleted in commit 7 of the same PR is still in
-          # the branch history and still needs rotating.
+          # A secret added and later deleted within the PR is still in history.
           fetch-depth: 0
           persist-credentials: false
 
@@ -120,14 +62,9 @@ jobs:
           echo "head_sha=$HEAD_SHA"    >> "$GITHUB_OUTPUT"
           echo "Scanning range ${MERGE_BASE}..${HEAD_SHA}"
 
-      # ------------------------------------------------- suppression-channel gate
-      # The scanner honours two suppression channels that live OUTSIDE .github/, so
-      # CODEOWNERS review never fires on them:
-      #   * a root `.gitleaksignore` listing finding fingerprints
-      #   * an inline allow annotation comment on the offending line (not spelled
-      #     out here: the check below matches its text in any added line, and
-      #     deploying adds this whole file)
-      # Either one turns a live secret into a green check. Both are blocked here.
+      # Ignore files and the inline allow annotation live outside .github/, so
+      # CODEOWNERS never sees them, and betterleaks reads a .gitleaksignore from
+      # the scan target regardless of --gitleaks-ignore-path. Both are rejected.
       - name: Reject scanner-suppression additions
         env:
           MERGE_BASE: ${{ steps.range.outputs.merge_base }}
@@ -136,15 +73,8 @@ jobs:
           set -euo pipefail
           FAIL=0
 
-          # COUNT, NEVER `grep -q`, IN THESE PIPELINES. `grep -q` exits on its
-          # first match and SIGPIPEs whatever is upstream; under `pipefail` the
-          # pipeline status becomes non-zero, the `if` reads FALSE, and this
-          # gate silently does not fire. It is a race on how much the producer
-          # has written, so the control was a coin flip — observed passing and
-          # failing on the same input in consecutive runs, and reproduced
-          # missing 200/200 on a larger diff. `grep -c` drains its input and
-          # cannot be raced. `|| true` because grep exits 1 on no match, which
-          # is the normal case here and must not kill the step under `set -e`.
+          # `grep -c`, not `grep -q`: -q exits early, SIGPIPEs the producer, and
+          # pipefail then makes the `if` false. `|| true` because no match exits 1.
           IGNORE_FILES="$(git diff --name-only "$MERGE_BASE" "$HEAD_SHA" \
             | grep -cE '(^|/)\.(better)?leaksignore$|(^|/)\.gitleaksignore$' || true)"
           if [ "${IGNORE_FILES:-0}" -gt 0 ]; then
@@ -152,11 +82,8 @@ jobs:
             FAIL=1
           fi
 
-          # Only ADDED lines, so pre-existing allowances in the base don't block.
-          # NOTE this matches the annotation's TEXT wherever it appears, prose
-          # included, so documentation in this repo describes the annotation
-          # rather than spelling it out. A path-based exemption is not an
-          # option: the author picks the paths.
+          # Added lines only. Matches the annotation text anywhere, prose included,
+          # so repo docs describe it rather than spell it out.
           INLINE_ALLOWS="$(git diff --unified=0 "$MERGE_BASE" "$HEAD_SHA" \
             | grep -E '^\+' | grep -ciE '(git|better)leaks[: ]*allow' || true)"
           if [ "${INLINE_ALLOWS:-0}" -gt 0 ]; then
@@ -166,24 +93,12 @@ jobs:
 
           exit $FAIL
 
-      # ------------------------------------------------------------- betterleaks
-      # Step id, report filenames and the config filename keep the `gitleaks`
-      # name on purpose: the config format is backwards compatible and renaming
-      # them would churn three files for no behaviour change.
       - name: Install betterleaks (checksum-pinned)
         run: |
           set -euo pipefail
-          # Asset naming confirmed against the v1.8.1 release:
-          #   betterleaks_<version>_linux_x64.tar.gz
-          # A 404 here fails the job under `set -e`, which is the right direction.
           curl -sSfL --proto '=https' --tlsv1.2 -o /tmp/betterleaks.tar.gz \
             "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
-          # FAIL, do not warn. This was a `::warning` against the literal
-          # placeholder, which meant a version bump that forgot the checksum
-          # ran the gate's own scanner unverified behind a line nobody reads —
-          # the same shape as the semgrep pin that sat broken for months. A
-          # digest test rather than a placeholder test, so empty, truncated,
-          # uppercase and half-pasted values are caught too.
+          # Refuse to run an unverifiable binary.
           if ! printf '%s' "$BETTERLEAKS_SHA256" | grep -qE '^[0-9a-f]{64}$'; then
             echo "::error title=Unpinned binary::BETTERLEAKS_SHA256 is not a sha256 digest, so the scanner binary cannot be verified. Refusing to run it. Set it from the checksums file for v${BETTERLEAKS_VERSION}."
             exit 1
@@ -193,6 +108,7 @@ jobs:
           sudo install -m 0755 /tmp/betterleaks /usr/local/bin/betterleaks
           betterleaks version
 
+      # The `gitleaks` step id and file names stay; betterleaks reads the same config.
       - name: Run betterleaks over the PR commits
         id: gitleaks
         env:
@@ -201,21 +117,11 @@ jobs:
         run: |
           set -uo pipefail
 
-          # Point the ignore-file lookup at an empty directory. The flag takes a
-          # path to a .gitleaksignore OR a folder containing one, and defaults to
-          # "." — i.e. the repo root, which the PR controls. Aiming it at an empty
-          # dir means there is no .gitleaksignore to find, so a PR-supplied one
-          # cannot suppress findings.
-          #
-          # NOTE the flag is --gitleaks-ignore-path (-i), NOT --ignore-path.
-          # There is no --ignore-path; passing it makes gitleaks dump usage and
-          # exit non-zero, which the fail-closed check below correctly turns into
-          # a red gate.
+          # Empty dir, so the ignore-file lookup does not default to the PR-controlled repo root.
           mkdir -p /tmp/gl-noignore
 
-          # --exit-code=0 makes "leaks found" exit 0 so we can distinguish it
-          # from a genuine error, and so the artifact still uploads when there IS
-          # a finding. The gate decision lives in its own step at the end.
+          # --exit-code=0: findings exit 0, so any non-zero exit is a scanner error.
+          # --max-target-megabytes caps decode/archive recursion over PR-supplied bytes.
           set +e
           betterleaks git . \
             --config=.github/security/gitleaks-runpod.toml \
@@ -229,14 +135,8 @@ jobs:
             --no-banner
           GL_RC=$?
           set -e
-          # --max-target-megabytes bounds the new defaults. betterleaks ships
-          # --max-decode-depth=5 and --max-archive-depth=8 ON, which is the
-          # feature (encoded + archived secrets) but is also recursive work over
-          # attacker-supplied bytes. Left enabled, size-capped.
 
-          # FAIL CLOSED. With --exit-code=0, anything non-zero is a real error:
-          # bad config, unreadable range, panic. A crashed scanner and a clean PR
-          # must never look the same to the gate.
+          # Fail closed: a crashed scanner must not look like a clean PR.
           if [ "$GL_RC" -ne 0 ]; then
             echo "::error title=Secret scan errored::betterleaks exited $GL_RC. Treating as FAILURE, not as a pass."
             echo "count=error" >> "$GITHUB_OUTPUT"
@@ -245,14 +145,8 @@ jobs:
 
           [ -f /tmp/gitleaks.raw.json ] || echo '[]' > /tmp/gitleaks.raw.json
 
-          # Assert the report is a LIST before trusting len(): on an object,
-          # len() returns the key count and manufactures a bogus gate result.
-          # betterleaks writes JSON `null` when it finds nothing — Go marshals a
-          # nil slice as null, not []. gitleaks emitted [] here, so the old
-          # isinstance(list) assert rejected a CLEAN scan and failed the gate.
-          # Treat null and a zero-byte file as zero findings; still reject a
-          # genuinely wrong shape (an object, garbage) so the gate stays closed
-          # on a real parse problem.
+          # betterleaks writes `null` for zero findings. Null or empty counts as 0;
+          # any other non-list shape is a parse failure.
           COUNT=""
           COUNT="$(python3 -c 'import json,os,sys; p="/tmp/gitleaks.raw.json"; d=json.load(open(p)) if os.path.getsize(p) else []; d=[] if d is None else d; sys.exit("not a JSON array") if not isinstance(d,list) else print(len(d))')" || true
 
@@ -265,39 +159,22 @@ jobs:
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "betterleaks findings: $COUNT"
 
-      # ---------------------------------------------------------------- semgrep
-      # Advisory. NOTE the scanner has NO exclusion list — it deliberately reads
-      # lockfiles and everything else. Only the AI prompt in stage 2 skips noise
-      # files, and those two lists are kept separate so that "hidden from the
-      # model" can never also mean "hidden from the gate". gitleaks' own default
-      # config allowlists lockfile PATHS, which is why the TOML disables that.
+      # No path exclusions: only the stage-2 prompt skips noise files, so hiding a
+      # file from the model never hides it from a scanner.
       - name: Run semgrep on changed files
-        # NO `continue-on-error`. It was here, and combined with the `exit 0` on
-        # install failure below it meant NOTHING in this step could fail the job
-        # — not even an explicit `exit 1`. SEMGREP_VERSION was pinned to 1.98.0,
-        # which does not exist on PyPI, so the install failed on every run,
-        # `{"results":[]}` was written, and the artifact reported "0 semgrep
-        # findings" for a scanner that never started. A required check reported
-        # clean on work it had not done. Findings are still advisory; semgrep
-        # being UNAVAILABLE is not.
+        # Findings are advisory; a failed install is fatal.
         env:
           MERGE_BASE: ${{ steps.range.outputs.merge_base }}
           HEAD_SHA: ${{ steps.range.outputs.head_sha }}
         run: |
           set -uo pipefail
-          # NUL-delimited so a filename with spaces, or one named like a flag,
-          # cannot be split or reinterpreted as an argument.
+          # NUL-delimited so odd filenames cannot be split or read as flags.
           git diff -z --name-only --diff-filter=ACMR "$MERGE_BASE" "$HEAD_SHA" \
             > /tmp/changed.z || true
 
           python3 -m venv /tmp/sgvenv
 
-          # Retry to separate the two failure modes that used to look identical.
-          # A version that is not on PyPI fails instantly on all three attempts;
-          # a PyPI blip almost always clears. So exhausting the retries means
-          # "this pin is wrong" far more often than "the internet was busy", and
-          # a wrong pin is a repo bug that must be red rather than a warning
-          # nobody reads.
+          # Retry transient PyPI errors; still failing after 3 attempts means a bad pin.
           installed=0
           for attempt in 1 2 3; do
             if /tmp/sgvenv/bin/pip install --quiet "semgrep==${SEMGREP_VERSION}"; then
@@ -319,26 +196,17 @@ jobs:
                 --config=p/secrets --config=p/security-audit --config=p/owasp-top-ten \
                 --json --output=/tmp/semgrep.raw.json \
                 --metrics=off --quiet --timeout=120 -- || true
-            # semgrep writes this file even when it finds nothing, so its ABSENCE
-            # means the scan never completed — the rule packs above are fetched
-            # from the registry at run time, so an unreachable registry lands
-            # here. That is not the same fact as "no findings", and the sentinel
-            # keeps the artifact from claiming it is.
+            # No report means the scan did not complete (e.g. registry unreachable);
+            # mark it as not scanned rather than as zero findings.
             [ -f /tmp/semgrep.raw.json ] \
               || echo '{"results":[],"__not_scanned":"scan did not complete"}' \
                    > /tmp/semgrep.raw.json
           else
-            # Genuinely nothing to scan. An empty result here is honest.
             echo '{"results":[]}' > /tmp/semgrep.raw.json
           fi
 
-      # ------------------------------------------------------- trust boundary --
-      # Raw reports live in /tmp and never leave the runner. Only sanitised
-      # findings reach artifact/. There is deliberately NO DIFF in the artifact:
-      # `git diff BASE HEAD` carries deleted and context lines from the BASE
-      # branch, which gitleaks' commit-range scan never saw, so the redaction map
-      # is empty for exactly that content. A PR that merely deletes a config file
-      # would have leaked base-branch credentials into a world-readable artifact.
+      # Raw reports stay in /tmp; only sanitised findings reach artifact/. No diff is
+      # uploaded: its base-branch deleted and context lines are never redacted.
       - name: Sanitise findings for upload
         if: always()
         env:
@@ -367,21 +235,6 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      # -------------------------------------------------------------- advisory
-      # NOT a gate any more. A pattern match is not a leak — this ruleset flags
-      # published demo credentials and template placeholders too, and failing on
-      # those trained everyone to override the check. The true/false-positive
-      # call is made in stage 2, and the blocking signal is its `AI secret
-      # verdict` commit status.
-      #
-      # This step being advisory does NOT narrow what gets scanned. Stage 2 runs
-      # betterleaks again over every changed file at the head SHA, from a
-      # workflow the PR cannot edit; this run stays because it reports in the
-      # PR's own check list, where the author sees it first.
-      #
-      # The scanner-error and suppression-channel steps above STAY blocking: a
-      # crashed scanner is not a pass, and betterleaks loads a .gitleaksignore
-      # from the scan target regardless of --gitleaks-ignore-path.
       - name: Report secret findings (advisory)
         if: steps.gitleaks.outputs.count != '0'
         env:

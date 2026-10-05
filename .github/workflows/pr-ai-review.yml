@@ -1,52 +1,12 @@
-# Stage 2 of 2 — PRIVILEGED, AND THE BLOCKING SECRET GATE.
-#
-# `workflow_run` fires after PR Security Scan finishes and runs in the BASE
-# repository's context, so it gets KIMI_RUNPOD_API_KEY and a write-capable token
-# even when the PR came from a fork.
-#
-# That privilege is why nothing here executes — or trusts — fork content:
-#
-#   * Neither job checks out the PR head. `actions/checkout` with no `ref` gets
-#     the base repo's default branch: trusted, reviewed code.
-#   * Neither job reads stage 1's artifact. Under `pull_request` GitHub runs the
-#     workflow definition from the PR's own merge ref, so a hostile author
-#     controls every byte stage 1 uploads — its diff, its findings and its
-#     counts alike. Reading any of them let an attacker ship a backdoor while
-#     uploading a two-line README diff, and have this workflow post "risk: none"
-#     as a bot comment on the real PR before any human looked.
-#   * Everything is derived from `workflow_run.head_sha`, which GitHub supplies
-#     and a fork cannot forge. The PR number too, so the write token cannot be
-#     aimed at a third party's PR.
-#
-# WHY THE SCAN RUNS HERE AS WELL AS IN STAGE 1. Stage 1's betterleaks run is
-# advisory precisely because its output is attacker-controlled; a `count=0` next
-# to a live key would otherwise skip the triage call and green the gate. The
-# `head-scan` job below runs the same scanner with the same config from a
-# workflow definition the PR cannot edit. The author still controls the bytes
-# being scanned — that is the point — but no longer the scanner or the report.
-#
-# WHY TWO JOBS. `head-scan` runs a binary over attacker-supplied bytes, so it is
-# kept credential-free: no Runpod key, no write token, read-only permissions. It
-# hands `triage` a findings file containing locations and rule ids and no secret
-# values. A parser bug in the scanner therefore lands in a job with nothing
-# worth stealing and no way to publish.
-#
-# HOW THIS BLOCKS. A `workflow_run` job is not associated with the PR's check
-# list, so this workflow's own conclusion cannot be a required check and its exit
-# code blocks nothing. The gate is a COMMIT STATUS the script posts to
-# `workflow_run.head_sha`, context `AI secret verdict` — require that context in
-# a branch ruleset.
-#
-# It is deliberately fail-closed, so a Runpod outage, an unparseable reply, or a
-# file the scanner could not read goes red rather than green. That is survivable
-# only because of the escape hatch: a maintainer adds the
-# `security-review-override` label to force the status green. Outside
-# collaborators cannot label a PR in the base repo.
-#
-# Supply chain: only GitHub-owned actions, one checksum-pinned scanner binary,
-# and the Python standard library. There is deliberately no `pip install` — an
-# unpinned dependency resolved at run time in a job holding a paid API key and a
-# write token is the sharpest edge a pipeline like this can have.
+# Stage 2 of the secret gate. Runs in the base repo's context, so it holds
+# LITELLM_API_KEY and a write token even for fork PRs. Invariants:
+# - Only workflow_run.head_sha and head_repository are trusted; the rest derives from them.
+# - Nothing from stage 1's artifact is read: the PR controls every byte stage 1 uploads.
+# - head-scan runs a scanner over attacker bytes, so it holds no model key and no write token.
+# - triage never executes PR content; neither job checks out the PR head.
+# - The verdict is the required `AI secret verdict` commit status; a workflow_run job is not a PR check.
+# - Fails closed; the maintainer-only `security-review-override` label forces it green.
+# - Stdlib only, no pip install in the privileged job; betterleaks is pinned with a checksum.
 
 name: PR AI Security Review
 
@@ -59,17 +19,12 @@ permissions:
   contents: read
 
 concurrency:
-  # Keyed on the PR's branch identity with cancel-in-progress, so a push burst
-  # collapses to ONE paid review instead of one per push. Cancelling the loser
-  # also fixes the upsert_comment read-then-write race better than serialising
-  # would: only one writer survives.
+  # One run per PR branch; a new push cancels the old one, leaving a single comment writer.
   group: pr-ai-review-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 env:
-  # Keep in lockstep with pr-security-scan.yml. The two runs are meant to see
-  # the same thing; a version skew between them turns "stage 1 flagged it and
-  # stage 2 did not" into a mystery rather than a signal.
+  # Keep in lockstep with pr-security-scan.yml.
   BETTERLEAKS_VERSION: "1.8.1"
   BETTERLEAKS_SHA256: "efa407244e1ea8e35f582b8a42becdeac08bdead04f68eb752adda722d583c2a"
 
@@ -82,25 +37,16 @@ jobs:
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion != 'cancelled' &&
       contains(github.event.workflow_run.path, 'pr-security-scan.yml')
-    # `contains`, not `==`. `workflow_run.path` is a real field but GitHub does
-    # not document the workflow_run payload at all, and the REST reference shows
-    # this value with an `@ref` suffix. A strict equality that drifts would make
-    # the `if:` false — and a job skipped by a conditional reports SUCCESS, so
-    # stage 2 would stop reviewing every PR in the repo, indefinitely, with
-    # nothing going red. `contains` tolerates a prefix or suffix change.
-    #
-    # Note this is a noise filter, NOT a trust anchor: the PR owns
-    # pr-security-scan.yml, so it can make this match exactly. Safety comes from
-    # not trusting anything stage 1 produced.
+    # `contains`, not `==`: the undocumented path may carry an `@ref` suffix, and a skipped job reports success.
+    # A noise filter, not a trust anchor: the PR controls pr-security-scan.yml.
 
     permissions:
       contents: read
       pull-requests: read   # to resolve the head SHA to its PR and base SHA
-      # Deliberately NOT statuses: write. This job runs a scanner over
-      # attacker-supplied bytes; it must not be able to publish the verdict.
+      # No statuses: write; this job must not be able to publish the verdict.
 
     steps:
-      # No `ref:` — the trusted default branch, NOT the PR head.
+      # No `ref:`, so this is the base default branch, not the PR head.
       - name: Check out trusted base repo
         uses: actions/checkout@v7
         with:
@@ -111,8 +57,6 @@ jobs:
           python-version: "3.12"
 
       - name: Assert the payload shape we depend on
-        # An undocumented field guarding a job that reports SUCCESS when skipped
-        # needs to fail loudly rather than silently stop working.
         env:
           WR_PATH: ${{ github.event.workflow_run.path }}
           WR_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -133,12 +77,6 @@ jobs:
           set -euo pipefail
           curl -sSfL --proto '=https' --tlsv1.2 -o /tmp/betterleaks.tar.gz \
             "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
-          # FAIL, do not warn. This was a `::warning` against the literal
-          # placeholder, which meant a version bump that forgot the checksum
-          # ran the gate's own scanner unverified behind a line nobody reads —
-          # the same shape as the semgrep pin that sat broken for months. A
-          # digest test rather than a placeholder test, so empty, truncated,
-          # uppercase and half-pasted values are caught too.
           if ! printf '%s' "$BETTERLEAKS_SHA256" | grep -qE '^[0-9a-f]{64}$'; then
             echo "::error title=Unpinned binary::BETTERLEAKS_SHA256 is not a sha256 digest, so the scanner binary cannot be verified. Refusing to run it. Set it from the checksums file for v${BETTERLEAKS_VERSION}."
             exit 1
@@ -159,9 +97,7 @@ jobs:
           BETTERLEAKS_CONFIG: .github/security/gitleaks-runpod.toml
         run: python .github/security/scan_head.py
 
-      # No `if: always()`. On any failure the script writes no file, the upload
-      # finds nothing, and the triage job fails closed on its absence — which is
-      # the intended behaviour, not a gap.
+      # No `if: always()`: a failed scan uploads nothing, and triage fails closed on the missing file.
       - name: Upload findings for triage
         uses: actions/upload-artifact@v7
         with:
@@ -175,11 +111,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: head-scan
-    # `always()` so a failed or skipped scan still reaches the script, which
-    # publishes a red status for it. Without this the gate would sit at
-    # `pending` forever on exactly the runs that most need a verdict. The
-    # trigger conditions are repeated because `always()` overrides the implicit
-    # "skip when the dependency was skipped".
+    # `always()` so a failed or skipped scan still gets a red status instead of a stuck `pending`.
+    # The trigger conditions repeat because `always()` overrides skip-when-dependency-skipped.
     if: >-
       always() &&
       github.event.workflow_run.event == 'pull_request' &&
@@ -189,7 +122,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write    # to post the review comment
-      statuses: write         # to publish the gate as a commit status on the head SHA
+      statuses: write         # to publish the verdict commit status
 
     steps:
       - name: Check out trusted base repo
@@ -201,9 +134,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Same run, so no `actions: read` and no run-id plumbing. Allowed to fail:
-      # a missing findings file is a state the script must see and turn red, not
-      # one that should abort the job before it can publish anything.
+      # May fail: the script turns a missing findings file into a red status.
       - name: Download the head scan findings
         continue-on-error: true
         uses: actions/download-artifact@v8
@@ -213,25 +144,16 @@ jobs:
 
       - name: Run Kimi K3 secret triage
         env:
-          # LEFT is the env var the script reads; RIGHT is your GitHub secret's
-          # name. Decoupled on purpose — rename the secret and only this changes.
-          RUNPOD_API_KEY: ${{ secrets.KIMI_RUNPOD_API_KEY }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # The two GitHub-supplied values a fork cannot forge. Everything the
-          # script trusts derives from these.
           TRUSTED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           TRUSTED_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           SCAN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           FINDINGS_PATH: ${{ runner.temp }}/scan/head-findings.json
           OUTPUT_DIR: ${{ runner.temp }}
-          RUNPOD_ENDPOINT_ID: moonshot-kimi
-          RUNPOD_MODEL: kimi-k3
-          # Exactly "low", "high" or "max" — there is no "medium", and a bad
-          # value is a 400 (the script retries without it rather than reddening
-          # the gate). "high" is the endpoint default. Kept at "low" for cost:
-          # reasoning bills as output at $15/1M, so this is the one dial that
-          # matters. Raise it if triage starts clearing real credentials.
+          LITELLM_MODEL: moonshotai/Kimi-K3
+          # low, high or max (no medium). low keeps reasoning latency down; raise it if triage clears real keys.
           KIMI_REASONING_EFFORT: low
         run: python .github/security/ai_security_review.py
 

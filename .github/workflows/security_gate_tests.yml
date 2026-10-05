@@ -1,18 +1,7 @@
 name: Gate regression tests
 
-# Runs the gate's own regression suite whenever the gate changes.
-#
-# These tests exist because the gate had none. Every case pins a defect that
-# reached this repo, and every consumer it had been deployed into, unnoticed —
-# the `.gitignore` bypass in particular could not have surfaced in CI before.
-#
-# Keep this suite hermetic: no network, no gh, no betterleaks binary. The
-# scanner outputs it depends on are recorded fixtures, so it stays fast enough
-# to run on every push and cannot fail for reasons unrelated to the gate. If a
-# test here ever needs a token, it belongs in the live workflow instead.
-#
-# The job below needs `contents: read` for checkout and nothing else. The empty
-# default here applies to any job added later that forgets to declare its own.
+# Hermetic: no network, no tokens, no betterleaks binary; scanner output comes from recorded fixtures.
+# Jobs declare their own permissions; this empty default covers any that do not.
 permissions: {}
 
 on:
@@ -43,10 +32,8 @@ jobs:
           python-version: "3.12"
 
       - name: Install pytest
-        run: pip install --disable-pip-version-check --only-binary :all: pytest==8.4.2
+        run: "pip install --disable-pip-version-check --only-binary :all: pytest==8.4.2 pyyaml==6.0.3"
 
       - name: Run the gate regression suite
         working-directory: .github/security
-        # The directory, not a filename: a second test file added here should
-        # run without anyone remembering to edit this line.
         run: pytest . -v
