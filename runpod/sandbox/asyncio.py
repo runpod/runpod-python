@@ -8,7 +8,11 @@ from datetime import datetime
 from types import TracebackType
 from typing import Any, Literal, Optional, TypeVar
 
-from runpod.api.sandboxes import AsyncSandboxAPI, SandboxConflictError
+from runpod.api.sandboxes import (
+    AsyncSandboxAPI,
+    SandboxConflictError,
+    SandboxCreationError,
+)
 from runpod.apps.registry import resolve_registry_auth
 from runpod.apps.volume import Volume, VolumeResolver, normalize_mounts, validate_mounts
 from runpod.error import QueryError
@@ -333,7 +337,12 @@ class AsyncioSandbox:
                 body["registry"] = await resolve_registry_auth(
                     self._registry_auth, api=self._api
                 )
-            data = await self._api.create(body)
+            try:
+                data = await self._api.create(body)
+            except SandboxCreationError as error:
+                self._sandbox_id = error.sandbox_id
+                self._owned = True
+                raise
             sandbox_id = data["id"]
             if not isinstance(sandbox_id, str) or not sandbox_id:
                 raise ValueError("Create response has no valid sandbox id")
@@ -504,6 +513,8 @@ class AsyncioSandbox:
         *,
         check: bool = False,
         startup_timeout: Optional[float] = None,
+        timeout_seconds: Optional[int] = None,
+        background: bool = False,
     ) -> ExecResult:
         """execute argv, retrying only explicit 409 startup rejections.
 
@@ -513,6 +524,11 @@ class AsyncioSandbox:
         might already have executed. ``check=False`` returns command failures
         in ``ExecResult.error``, matching ``subprocess.run``. use ``check=True``
         to raise ``SandboxExecutionError`` with partial output on failure.
+
+        ``timeout_seconds`` (1–50) requests a command limit; the backend may
+        impose a shorter cap. ``request_timeout`` bounds the client http wait.
+        ``background=True`` returns after starting a detached command, not its
+        completion; redirect its output to a file and poll for results.
         """
         if isinstance(command, (str, bytes)) or not isinstance(command, Sequence):
             raise TypeError(
@@ -520,9 +536,23 @@ class AsyncioSandbox:
             )
         if not command or any(not isinstance(argument, str) for argument in command):
             raise ValueError("command must be a nonempty sequence of strings")
+        if timeout_seconds is not None and (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, int)
+            or not 1 <= timeout_seconds <= 50
+        ):
+            raise ValueError("timeout_seconds must be an integer from 1 to 50")
+        if not isinstance(background, bool):
+            raise TypeError("background must be a bool")
         argv = tuple(command)
         data = await self._ready_operation(
-            lambda: self._api.exec(self.id, argv), startup_timeout
+            lambda: self._api.exec(
+                self.id,
+                argv,
+                timeout_seconds=timeout_seconds,
+                background=background,
+            ),
+            startup_timeout,
         )
         result = ExecResult(
             output=data["output"],

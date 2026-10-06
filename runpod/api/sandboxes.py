@@ -29,6 +29,19 @@ _SANDBOX_PATH = "/v2/sandboxes"
 _LINE_END = re.compile(r"\r\n|\r|\n")
 
 
+class SandboxCreationError(error.QueryError):
+    """a failed creation with a recoverable, potentially billable sandbox id."""
+
+    def __init__(self, sandbox_id: str, cause: error.QueryError) -> None:
+        super().__init__(
+            cause.message,
+            cause.query,
+            status_code=cause.status_code,
+            errors=cause.errors,
+        )
+        self.sandbox_id = sandbox_id
+
+
 class SandboxConflictError(error.QueryError):
     """a structured rejection whose code determines whether startup can be retried."""
 
@@ -60,13 +73,25 @@ async def _raise_response_error(
         payload = {}
     if not isinstance(payload, dict):
         payload = {}
-    if response.status == 409:
+    sandbox_id = (
+        payload.get("sandboxId")
+        if method == "POST" and path == _SANDBOX_PATH
+        else None
+    )
+    if not isinstance(sandbox_id, str) or not sandbox_id:
+        sandbox_id = None
+    if response.status == 409 and sandbox_id is None:
         raise SandboxConflictError(payload, method, path)
     try:
         text = raw.decode(response.charset or "utf-8", errors="replace")
     except LookupError:
         text = raw.decode("utf-8", errors="replace")
-    _raise_for_status(response.status, payload, text, method, path)
+    try:
+        _raise_for_status(response.status, payload, text, method, path)
+    except error.QueryError as cause:
+        if sandbox_id is not None:
+            raise SandboxCreationError(sandbox_id, cause) from cause
+        raise
     # Redirects are deliberately not followed, including on read operations.
     raise error.QueryError(
         text or f"Unexpected HTTP status {response.status}",
@@ -434,9 +459,21 @@ class AsyncSandboxAPI:
     async def terminate(self, sandbox_id: str) -> None:
         await self._request("DELETE", _sandbox_path(sandbox_id))
 
-    async def exec(self, sandbox_id: str, command: Sequence[str]) -> dict[str, Any]:
+    async def exec(
+        self,
+        sandbox_id: str,
+        command: Sequence[str],
+        *,
+        timeout_seconds: int | None = None,
+        background: bool = False,
+    ) -> dict[str, Any]:
         path = f"{_sandbox_path(sandbox_id)}/exec"
-        payload = await self._request("POST", path, body={"command": list(command)})
+        body: dict[str, Any] = {"command": list(command)}
+        if timeout_seconds is not None:
+            body["timeoutSeconds"] = timeout_seconds
+        if background:
+            body["background"] = True
+        payload = await self._request("POST", path, body=body)
         if payload is None or not isinstance(payload.get("output"), str):
             raise error.QueryError(
                 "Sandbox execution response must contain a string 'output'",

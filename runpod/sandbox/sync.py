@@ -16,7 +16,7 @@ from typing import (
 )
 
 from runpod.apps.volume import Volume
-from runpod.sandbox.asyncio import AsyncioSandbox
+from runpod.sandbox.asyncio import AsyncioSandbox, _cleanup
 from .models import (
     ExecResult,
     LogEvent,
@@ -35,7 +35,12 @@ class _LoopRunner:
     def __init__(self) -> None:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._stopping = False
+        self._stopped = threading.Event()
+        self._stopped.set()
+        self._loop_finished = threading.Event()
+        self._tasks: dict[asyncio.Task, bool] = {}
 
     @property
     def started(self) -> bool:
@@ -45,6 +50,7 @@ class _LoopRunner:
         with self._lock:
             if self._loop is None:
                 ready = threading.Event()
+                self._loop_finished.clear()
 
                 def serve() -> None:
                     loop = asyncio.new_event_loop()
@@ -53,9 +59,12 @@ class _LoopRunner:
                     try:
                         loop.run_forever()
                     finally:
-                        loop.run_until_complete(loop.shutdown_asyncgens())
-                        loop.run_until_complete(loop.shutdown_default_executor())
-                        loop.close()
+                        try:
+                            loop.run_until_complete(loop.shutdown_asyncgens())
+                            loop.run_until_complete(loop.shutdown_default_executor())
+                            loop.close()
+                        finally:
+                            self._loop_finished.set()
 
                 self._thread = threading.Thread(
                     target=serve, name="runpod-sandbox", daemon=True
@@ -65,11 +74,13 @@ class _LoopRunner:
             assert self._loop is not None
             return self._loop
 
-    def run(self, coroutine: Coroutine[Any, Any, _T]) -> _T:
+    def run(
+        self, coroutine: Coroutine[Any, Any, _T], *, cleanup: bool = False
+    ) -> _T:
         if threading.current_thread() is self._thread:
             coroutine.close()
             raise RuntimeError("Cannot call the sync sandbox API from its own loop")
-        loop = self._start()
+        loop: asyncio.AbstractEventLoop
         future: Future[_T] = Future()
         finished = threading.Event()
         task: Optional[asyncio.Task[tuple[Optional[_T], Optional[BaseException]]]] = (
@@ -87,6 +98,7 @@ class _LoopRunner:
                 return None, error
 
         def complete(done: asyncio.Task) -> None:
+            self._tasks.pop(done, None)
             try:
                 result, error = done.result()
                 if error is not None:
@@ -104,50 +116,102 @@ class _LoopRunner:
         def submit() -> None:
             nonlocal task
             task = loop.create_task(invoke())
+            self._tasks[task] = cleanup
             task.add_done_callback(complete)
 
         def cancel() -> None:
             if task is not None:
                 task.cancel()
 
-        loop.call_soon_threadsafe(submit)
+        try:
+            while True:
+                with self._lock:
+                    if not self._stopping:
+                        loop = self._start()
+                        loop.call_soon_threadsafe(submit)
+                        break
+                    if not cleanup:
+                        raise RuntimeError("Sandbox loop is shutting down")
+                    stopped = self._stopped
+                while not stopped.is_set():
+                    try:
+                        stopped.wait()
+                    except KeyboardInterrupt:
+                        # owner cleanup must survive repeated interruptions.
+                        continue
+        except BaseException:
+            coroutine.close()
+            raise
         try:
             return future.result()
-        except BaseException:
-            if not future.done():
-                # Cancelling a concurrent Future marks it done before the async
-                # task's finally blocks finish. Wait for the actual task before
-                # stopping its loop, or Ctrl-C can strand a newly created sandbox.
-                loop.call_soon_threadsafe(cancel)
-                while not finished.is_set():
-                    try:
-                        finished.wait()
-                    except KeyboardInterrupt:
-                        # Cleanup is bounded by the async domain's timeouts.
-                        continue
+        except BaseException as original:
+            with self._lock:
+                if not cleanup and not finished.is_set() and not self._stopping:
+                    loop.call_soon_threadsafe(cancel)
+            while not finished.is_set():
+                try:
+                    finished.wait()
+                except KeyboardInterrupt:
+                    # async cleanup owns its child tasks and bounds their lifetime.
+                    continue
+            error = future.exception()
+            if error is not None and error is not original:
+                raise original from error
             raise
 
     def stop(self) -> None:
+        if threading.current_thread() is self._thread:
+            raise RuntimeError("Cannot stop the sync sandbox API from its own loop")
         with self._lock:
-            loop, thread = self._loop, self._thread
-            if loop is None or thread is None:
-                return
+            if self._stopping:
+                stopped = self._stopped
+                shutdown = None
+            else:
+                loop, thread = self._loop, self._thread
+                if loop is None or thread is None:
+                    return
+                self._stopping = True
+                stopped = self._stopped = threading.Event()
 
-            async def drain() -> None:
-                current = asyncio.current_task()
-                tasks = [task for task in asyncio.all_tasks() if task is not current]
-                for task in tasks:
-                    task.cancel()
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                async def drain() -> None:
+                    # cancel invocations, not the protected cleanup tasks they own.
+                    tasks = tuple(self._tasks)
+                    for task in tasks:
+                        if not self._tasks[task]:
+                            task.cancel()
+                    if tasks:
+                        await asyncio.gather(*tasks, return_exceptions=True)
 
+                shutdown = asyncio.run_coroutine_threadsafe(drain(), loop)
+        interrupted = None
+        if shutdown is None:
+            while not stopped.is_set():
+                try:
+                    stopped.wait()
+                except KeyboardInterrupt as error:
+                    interrupted = error
+        else:
             try:
-                asyncio.run_coroutine_threadsafe(drain(), loop).result()
+                while True:
+                    try:
+                        shutdown.result()
+                        break
+                    except KeyboardInterrupt as error:
+                        interrupted = error
             finally:
                 loop.call_soon_threadsafe(loop.stop)
-                thread.join()
-                self._loop = None
-                self._thread = None
+                while not self._loop_finished.is_set():
+                    try:
+                        self._loop_finished.wait()
+                    except KeyboardInterrupt as error:
+                        interrupted = error
+                with self._lock:
+                    self._loop = None
+                    self._thread = None
+                    self._stopping = False
+                    stopped.set()
+        if interrupted is not None:
+            raise interrupted
 
 
 class SandboxLogs(Iterator[LogEvent]):
@@ -239,6 +303,7 @@ class Sandbox:
     ) -> None:
         self._runner = _LoopRunner()
         self._entered = False
+        self._context_lock = threading.Lock()
         self._sandbox = AsyncioSandbox(
             image=image,
             template_id=template_id,
@@ -272,18 +337,27 @@ class Sandbox:
         instance._sandbox = sandbox
         instance._runner = runner if runner is not None else _LoopRunner()
         instance._entered = False
+        instance._context_lock = threading.Lock()
         return instance
 
     @classmethod
     def create(cls, **options: Any) -> "Sandbox":
         """Create immediately; the returned snapshot may still be CREATING."""
         sandbox = cls(**options)
+        completed = False
+
+        async def create() -> AsyncioSandbox:
+            nonlocal completed
+            await sandbox._sandbox._create()
+            completed = True
+            return sandbox._sandbox
+
         try:
-            sandbox._runner.run(sandbox._sandbox._create())
-        except BaseException:
-            sandbox.close()
+            sandbox._runner.run(create())
+            return sandbox
+        except BaseException as original:
+            sandbox._abort_entry(original, completed)
             raise
-        return sandbox
 
     @classmethod
     def get(
@@ -297,20 +371,31 @@ class Sandbox:
     ) -> "Sandbox":
         """Fetch a borrowed handle; closing its context does not terminate it."""
         runner = _LoopRunner()
-        try:
-            sandbox = runner.run(
-                AsyncioSandbox.get(
-                    sandbox_id,
-                    api_key=api_key,
-                    base_url=base_url,
-                    request_timeout=request_timeout,
-                    startup_timeout=startup_timeout,
-                )
+        sandbox = None
+
+        async def get() -> AsyncioSandbox:
+            nonlocal sandbox
+            sandbox = await AsyncioSandbox.get(
+                sandbox_id,
+                api_key=api_key,
+                base_url=base_url,
+                request_timeout=request_timeout,
+                startup_timeout=startup_timeout,
             )
-        except BaseException:
-            runner.stop()
+            return sandbox
+
+        try:
+            result = runner.run(get())
+            return cls._from_async(result, runner)
+        except BaseException as original:
+            if sandbox is not None:
+                cls._from_async(sandbox, runner)._abort_entry(original, True)
+            else:
+                try:
+                    runner.stop()
+                except BaseException as error:
+                    raise original from error
             raise
-        return cls._from_async(sandbox, runner)
 
     @classmethod
     def list(
@@ -388,10 +473,18 @@ class Sandbox:
         *,
         check: bool = False,
         startup_timeout: Optional[float] = None,
+        timeout_seconds: Optional[int] = None,
+        background: bool = False,
     ) -> ExecResult:
         """Execute argv, waiting only for explicit startup rejections."""
         return self._runner.run(
-            self._sandbox.exec(command, check=check, startup_timeout=startup_timeout)
+            self._sandbox.exec(
+                command,
+                check=check,
+                startup_timeout=startup_timeout,
+                timeout_seconds=timeout_seconds,
+                background=background,
+            )
         )
 
     def logs(
@@ -430,21 +523,58 @@ class Sandbox:
             finally:
                 self._runner.stop()
 
-    def __enter__(self) -> "Sandbox":
-        if self._entered:
-            raise RuntimeError("Sandbox context is already entered")
+    def _abort_entry(self, original: BaseException, completed: bool) -> None:
+        async def release() -> None:
+            try:
+                # shutdown may have closed the session's loop before handoff.
+                await _cleanup(self._sandbox.close(), self._sandbox._request_timeout)
+            finally:
+                if completed:
+                    await self._sandbox.__aexit__(
+                        type(original), original, original.__traceback__
+                    )
+
         try:
-            self._runner.run(self._sandbox.__aenter__())
-        except BaseException:
-            self._runner.stop()
+            try:
+                self._runner.run(release(), cleanup=True)
+            finally:
+                self._runner.stop()
+        except BaseException as error:
+            if error is not original:
+                raise original from error
             raise
-        self._entered = True
-        return self
+
+    def __enter__(self) -> "Sandbox":
+        with self._context_lock:
+            if self._entered:
+                raise RuntimeError("Sandbox context is already entered")
+            self._entered = True
+        completed = False
+
+        async def enter() -> AsyncioSandbox:
+            nonlocal completed
+            result = await self._sandbox.__aenter__()
+            completed = True
+            return result
+
+        try:
+            self._runner.run(enter())
+            return self
+        except BaseException as original:
+            try:
+                self._abort_entry(original, completed)
+            finally:
+                with self._context_lock:
+                    self._entered = False
+            raise
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
         try:
             self._runner.run(self._sandbox.__aexit__(exc_type, exc, traceback))
             return False
         finally:
-            self._entered = False
-            self._runner.stop()
+            try:
+                self._runner.stop()
+            finally:
+                with self._context_lock:
+                    self._entered = False

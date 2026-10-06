@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 from collections import deque
+from concurrent.futures import Future
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
@@ -15,6 +16,7 @@ from runpod import AsyncioSandbox, Sandbox
 from runpod.apps.volume import GlobalVolume, NetworkVolume, VolumeError
 from runpod.error import AuthenticationError, QueryError
 from runpod.sandbox import (
+    SandboxCreationError,
     SandboxExecutionError,
     SandboxStartupTimeout,
     SandboxStateError,
@@ -37,6 +39,12 @@ class SandboxService:
         self.global_error = None
         self.registries = []
         self.delete_status = 204
+        self.create_status = 201
+        self.create_error = "container provisioning failed"
+        self.job_started = threading.Event()
+        self.job_completed = threading.Event()
+        self.allow_job = threading.Event()
+        self.jobs = set()
         self.create_started = threading.Event()
         self.allow_create = threading.Event()
         self.allow_create.set()
@@ -147,6 +155,12 @@ def sandbox_peer():
                 record = service.create_record(body)
                 service.create_started.set()
                 await asyncio.to_thread(service.allow_create.wait, 5)
+                if service.create_status != 201:
+                    return web.json_response(
+                        {"detail": service.create_error, "sandboxId": record["id"]},
+                        status=service.create_status,
+                        content_type="application/problem+json",
+                    )
                 return web.json_response(record, status=201)
             state = request.query.get("state")
             labels = [term.split("=", 1) for term in request.query.getall("labels", [])]
@@ -190,6 +204,14 @@ def sandbox_peer():
             record.update(state="TERMINATED", compute=None)
             return web.Response(status=204)
         if operation == "exec":
+            timeout = body.get("timeoutSeconds", 50)
+            background = body.get("background", False)
+            if (
+                type(timeout) is not int
+                or not 1 <= timeout <= 50
+                or type(background) is not bool
+            ):
+                return failure(422, "invalid execution controls")
             status = service.exec_statuses.popleft() if service.exec_statuses else 200
             if status == 409 or record["state"] in ("FAILED", "TERMINATED"):
                 return failure(409, "container not started", service.conflict_code)
@@ -198,6 +220,36 @@ def sandbox_peer():
                 return failure(status, "response lost after command execution")
             if service.exec_responses:
                 return service.exec_responses.popleft()
+            if body["command"] == ["wait-for-release"]:
+                async def run_job():
+                    service.job_started.set()
+                    while not service.allow_job.is_set():
+                        if service.stopping.is_set():
+                            return
+                        await asyncio.sleep(0.01)
+                    service.job_completed.set()
+
+                if background:
+                    task = asyncio.create_task(run_job())
+                    service.jobs.add(task)
+                    task.add_done_callback(service.jobs.discard)
+                    return web.json_response({"output": "started", "exitCode": None})
+                try:
+                    await asyncio.wait_for(run_job(), timeout)
+                except asyncio.TimeoutError:
+                    return web.json_response(
+                        {"output": "started", "error": "execution timed out"}
+                    )
+                return web.json_response({"output": "finished", "exitCode": 0})
+            if body["command"] == ["job-status"]:
+                return web.json_response(
+                    {
+                        "output": (
+                            "completed" if service.job_completed.is_set() else "pending"
+                        ),
+                        "exitCode": 0,
+                    }
+                )
             result = (
                 {"output": "partial output", "error": "command failed"}
                 if body["command"] == ["fail"]
@@ -253,8 +305,20 @@ def sandbox_peer():
             await stopped.wait()
         finally:
             await runner.cleanup()
+            if service.jobs:
+                await asyncio.gather(*service.jobs)
 
-    thread = threading.Thread(target=lambda: asyncio.run(serve()), daemon=True)
+    outcome = Future()
+
+    def run_peer():
+        try:
+            asyncio.run(serve())
+        except BaseException as error:
+            outcome.set_exception(error)
+        else:
+            outcome.set_result(None)
+
+    thread = threading.Thread(target=run_peer, daemon=True)
     thread.start()
     assert ready.wait(5), "local sandbox peer did not start"
     try:
@@ -262,15 +326,331 @@ def sandbox_peer():
     finally:
         service.allow_create.set()
         service.allow_logs.set()
+        service.allow_job.set()
         service.stopping.set()
         service.loop.call_soon_threadsafe(stopped.set)
-        thread.join()
+        thread.join(5)
+        assert not thread.is_alive(), "local sandbox peer did not stop"
+        outcome.result(timeout=0)
 
 
 @pytest.fixture
 def peer():
     with sandbox_peer() as service:
         yield service
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_api", [False, True], ids=["sync", "async"])
+async def test_execution_controls_bound_foreground_and_detach_background(peer, async_api):
+    api = AsyncioSandbox if async_api else Sandbox
+
+    async def invoke(method, *args, **kwargs):
+        if async_api:
+            return await method(*args, **kwargs)
+        return await asyncio.to_thread(method, *args, **kwargs)
+
+    sandbox = await invoke(api.create, image="image", **peer.options)
+    try:
+        for controls in (
+            {"timeout_seconds": 0},
+            {"timeout_seconds": 51},
+            {"timeout_seconds": True},
+            {"timeout_seconds": 1.5},
+            {"background": 1},
+        ):
+            with pytest.raises((TypeError, ValueError)):
+                await invoke(sandbox.exec, ["wait-for-release"], **controls)
+        assert peer.executed == []
+        assert not any(path.endswith("/exec") for _, path, _, _ in peer.requests)
+
+        with pytest.raises(SandboxExecutionError) as expired:
+            await invoke(
+                sandbox.exec, ["wait-for-release"], timeout_seconds=1, check=True
+            )
+        assert expired.value.result.output == "started"
+        assert expired.value.result.error == "execution timed out"
+        assert not peer.job_completed.is_set()
+
+        peer.allow_job.set()
+        completed = await invoke(
+            sandbox.exec, ["wait-for-release"], timeout_seconds=50, check=True
+        )
+        assert completed.output == "finished"
+        assert completed.exit_code == 0
+        assert peer.job_completed.is_set()
+
+        peer.allow_job.clear()
+        peer.job_started.clear()
+        peer.job_completed.clear()
+        launched = await invoke(
+            sandbox.exec,
+            ["wait-for-release"],
+            timeout_seconds=1,
+            background=True,
+            check=True,
+        )
+        assert launched.output == "started"
+        assert await asyncio.to_thread(peer.job_started.wait, 2)
+        assert not peer.job_completed.is_set()
+        assert (await invoke(sandbox.exec, ["job-status"])).output == "pending"
+        peer.allow_job.set()
+        assert await asyncio.to_thread(peer.job_completed.wait, 2)
+        assert (await invoke(sandbox.exec, ["job-status"])).output == "completed"
+    finally:
+        peer.allow_job.set()
+        await invoke(sandbox.terminate)
+
+
+def test_sync_submission_racing_close_settles_and_allows_reuse():
+    script = """
+import asyncio
+import aiohttp
+import threading
+from concurrent.futures import Future
+from runpod import Sandbox
+from runpod.error import QueryError
+from tests.test_sandbox import sandbox_peer
+
+with sandbox_peer() as peer:
+    sandbox = Sandbox.create(image="image", **peer.options)
+    loop = sandbox._runner._loop
+    schedule = loop.call_soon_threadsafe
+    submitting = threading.Event()
+    release_submission = threading.Event()
+    submitted = threading.Event()
+    stopping = threading.Event()
+    release_loop = threading.Event()
+    refreshed = Future()
+    closed = Future()
+
+    def controlled_schedule(callback, *args, **kwargs):
+        if threading.current_thread().name == "racing-refresh":
+            submitting.set()
+            assert release_submission.wait(4), "submission was not released"
+            try:
+                return schedule(callback, *args, **kwargs)
+            finally:
+                submitted.set()
+        if callback == loop.stop:
+            schedule(release_loop.wait, 4)
+            result = schedule(callback, *args, **kwargs)
+            stopping.set()
+            return result
+        return schedule(callback, *args, **kwargs)
+
+    def refresh():
+        try:
+            refreshed.set_result(sandbox.refresh())
+        except BaseException as error:
+            refreshed.set_exception(error)
+
+    def close():
+        try:
+            sandbox.close()
+            closed.set_result(None)
+        except BaseException as error:
+            closed.set_exception(error)
+
+    loop.call_soon_threadsafe = controlled_schedule
+    reader = threading.Thread(target=refresh, name="racing-refresh", daemon=True)
+    closer = threading.Thread(target=close, daemon=True)
+    try:
+        reader.start()
+        assert submitting.wait(2), "refresh never reached submission"
+        closer.start()
+        # admission may exclude shutdown until the submission gate is released.
+        stopping.wait(1)
+        release_submission.set()
+        assert submitted.wait(2), "refresh submission did not resume"
+        release_loop.set()
+        try:
+            assert refreshed.result(timeout=3).state == "RUNNING"
+        except (RuntimeError, QueryError, asyncio.CancelledError, aiohttp.ClientConnectionError):
+            pass
+        closed.result(timeout=3)
+        reader.join(2)
+        closer.join(2)
+        assert not reader.is_alive(), "refresh was abandoned by shutdown"
+        assert not closer.is_alive(), "close did not finish"
+        assert sandbox.refresh().state == "RUNNING"
+    finally:
+        release_submission.set()
+        release_loop.set()
+        loop.call_soon_threadsafe = schedule
+    sandbox.terminate()
+    assert peer.records[sandbox.id]["state"] == "TERMINATED"
+"""
+    process = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=15
+    )
+    assert process.returncode == 0, process.stdout + process.stderr
+
+
+@pytest.mark.parametrize("delete_status", [204, 503])
+def test_sync_failed_creation_preserves_resource_id_and_cleans_up(peer, delete_status):
+    peer.create_status = 502
+    peer.delete_status = delete_status
+    with pytest.raises(SandboxCreationError) as failed:
+        Sandbox.create(image="image", **peer.options)
+    error = failed.value
+    assert isinstance(error, QueryError)
+    assert error.sandbox_id == "sandbox-1"
+    assert error.status_code == 502
+    assert peer.create_error in str(error)
+    assert [method for method, path, _, _ in peer.requests if path == "/v2/sandboxes"] == [
+        "POST"
+    ]
+    assert [
+        method
+        for method, path, _, _ in peer.requests
+        if path == "/v2/sandboxes/sandbox-1"
+    ] == ["DELETE"]
+    if delete_status == 204:
+        assert peer.records[error.sandbox_id]["state"] == "TERMINATED"
+    else:
+        assert isinstance(error.__cause__, QueryError)
+        assert error.__cause__.status_code == 503
+        assert peer.records[error.sandbox_id]["state"] == "RUNNING"
+        peer.delete_status = 204
+        Sandbox.get(error.sandbox_id, **peer.options).terminate()
+        assert peer.records[error.sandbox_id]["state"] == "TERMINATED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delete_status", [204, 503])
+async def test_async_failed_creation_preserves_resource_id_and_cleans_up(
+    peer, delete_status
+):
+    peer.create_status = 502
+    peer.delete_status = delete_status
+    with pytest.raises(SandboxCreationError) as failed:
+        await AsyncioSandbox.create(image="image", **peer.options)
+    error = failed.value
+    assert error.sandbox_id == "sandbox-1"
+    assert error.status_code == 502
+    assert peer.create_error in str(error)
+    assert [method for method, path, _, _ in peer.requests if path == "/v2/sandboxes"] == [
+        "POST"
+    ]
+    assert [
+        method
+        for method, path, _, _ in peer.requests
+        if path == "/v2/sandboxes/sandbox-1"
+    ] == ["DELETE"]
+    if delete_status == 204:
+        assert peer.records[error.sandbox_id]["state"] == "TERMINATED"
+    else:
+        assert isinstance(error.__cause__, QueryError)
+        assert error.__cause__.status_code == 503
+        peer.delete_status = 204
+        recovery = await AsyncioSandbox.get(error.sandbox_id, **peer.options)
+        await recovery.terminate()
+        assert peer.records[error.sandbox_id]["state"] == "TERMINATED"
+
+
+@pytest.mark.parametrize(
+    "operation, delete_status",
+    [
+        ("create", 204),
+        ("enter", 204),
+        ("get", 204),
+        ("borrowed_enter", 204),
+        ("create", 503),
+        ("enter", 503),
+    ],
+)
+def test_sync_interrupt_at_successful_handle_handoff(
+    peer, monkeypatch, operation, delete_status
+):
+    peer.delete_status = delete_status
+    borrowed = operation in ("get", "borrowed_enter")
+    handle = None
+    if borrowed:
+        peer.create_record({"imageName": "image"})
+    if operation == "borrowed_enter":
+        handle = Sandbox.get("sandbox-1", **peer.options)
+    elif operation == "enter":
+        handle = Sandbox(image="image", **peer.options)
+    original_result = Future.result
+    caller = threading.get_ident()
+    interrupt = KeyboardInterrupt("interrupted after remote success")
+    armed = True
+
+    def interrupt_result(future, *args, **kwargs):
+        nonlocal armed
+        result = original_result(future, *args, **kwargs)
+        if armed and threading.get_ident() == caller:
+            armed = False
+            raise interrupt
+        return result
+
+    monkeypatch.setattr(Future, "result", interrupt_result)
+    try:
+        with pytest.raises(KeyboardInterrupt) as failed:
+            if operation == "create":
+                Sandbox.create(image="image", **peer.options)
+            elif operation == "get":
+                Sandbox.get("sandbox-1", **peer.options)
+            else:
+                handle.__enter__()
+        assert failed.value is interrupt
+        assert peer.records["sandbox-1"]["state"] == (
+            "RUNNING" if borrowed or delete_status != 204 else "TERMINATED"
+        )
+        deletes = [path for method, path, _, _ in peer.requests if method == "DELETE"]
+        assert deletes == ([] if borrowed else ["/v2/sandboxes/sandbox-1"])
+        if delete_status != 204:
+            assert isinstance(failed.value.__cause__, QueryError)
+            assert failed.value.__cause__.status_code == 503
+            peer.delete_status = 204
+            Sandbox.get("sandbox-1", **peer.options).terminate()
+            assert peer.records["sandbox-1"]["state"] == "TERMINATED"
+        if operation == "borrowed_enter":
+            with handle:
+                assert handle.refresh().state == "RUNNING"
+    finally:
+        armed = False
+        if handle is not None:
+            handle.close()
+
+
+def test_overlapping_sync_entries_preserve_the_first_owner(peer):
+    sandbox = Sandbox(image="image", **peer.options)
+    peer.allow_create.clear()
+    leave = threading.Event()
+    entered = threading.Event()
+    outcome = Future()
+
+    def own_context():
+        try:
+            with sandbox:
+                entered.set()
+                assert leave.wait(4), "test did not release the first context"
+                assert sandbox.refresh().state == "RUNNING"
+            outcome.set_result(None)
+        except BaseException as error:
+            outcome.set_exception(error)
+
+    worker = threading.Thread(target=own_context, daemon=True)
+    worker.start()
+    try:
+        assert peer.create_started.wait(2)
+        with pytest.raises(RuntimeError):
+            sandbox.__enter__()
+        peer.allow_create.set()
+        assert entered.wait(3), "first context was disrupted by a rejected entry"
+    finally:
+        peer.allow_create.set()
+        leave.set()
+        worker.join(5)
+        assert not worker.is_alive(), "first context did not finish"
+        try:
+            outcome.result(timeout=0)
+        finally:
+            sandbox.close()
+    assert peer.records["sandbox-1"]["state"] == "TERMINATED"
+    assert [method for method, _, _, _ in peer.requests].count("POST") == 1
 
 
 def test_sync_startup_conflict_and_borrowed_context_ownership(peer):

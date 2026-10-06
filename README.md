@@ -130,6 +130,12 @@ The container stops when its main command exits.
 `Sandbox.create(...)` returns an owned handle. `get(...)` and `list(...)` return
 borrowed handles whose contexts only close local connections. `terminate()`
 releases remote compute; `close()` releases local resources and permits reuse.
+Each handle permits one active context; overlapping entry is rejected.
+
+Failed creation triggers bounded cleanup. `SandboxCreationError`, exported from
+`runpod.sandbox`, preserves the backend's `sandbox_id`, HTTP status, and error
+details. If termination also fails, the cleanup error is chained as `__cause__`;
+the ID remains available for explicit recovery with `get(...)` and `terminate()`.
 
 `info`, `state`, `compute`, and `expires_at` are cached snapshots. `refresh()`
 fetches a new snapshot, including mount, port, SSH, and placement metadata.
@@ -146,6 +152,14 @@ backend extension contract accepts an absolute lifetime.
 `SandboxExecutionError` on a reported command failure, retaining the result.
 Only explicit `sandbox_starting` conflicts are retried within `startup_timeout`.
 Other conflicts, malformed responses, and ambiguous transport failures propagate.
+
+`exec(..., timeout_seconds=30)` requests a command timeout from 1 to 50 seconds.
+The backend currently caps foreground execution at about four seconds.
+`request_timeout` separately limits the client HTTP wait.
+For longer work, use `background=True` and poll for completion. A successful
+detached result confirms that the command started, not that it finished; redirect
+output to a file to retrieve it afterward. These options require backend support
+for `timeoutSeconds` and `background`.
 
 `logs(source="container", tail=10)` streams main-process logs; `source="system"`
 selects lifecycle events. Exec output is returned by `exec`. Use `with` and

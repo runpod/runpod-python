@@ -1,5 +1,7 @@
 """Sync and async sandbox lifecycles, execution results, and log streams."""
 
+from runpod.api.sandboxes import SandboxCreationError
+
 from .asyncio import AsyncioSandbox, AsyncSandboxLogStream
 from .models import (
     ExecResult,
@@ -24,6 +26,7 @@ __all__ = [
     "LogSource",
     "SandboxCompute",
     "SandboxExecutionError",
+    "SandboxCreationError",
     "SandboxInfo",
     "SandboxStartupTimeout",
     "SandboxState",
