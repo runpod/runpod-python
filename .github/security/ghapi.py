@@ -24,13 +24,14 @@ def log(msg: str) -> None:
 
 
 def request(url: str, headers: dict, data: bytes | None = None,
-            raw: bool = False, method: str | None = None):
+            raw: bool = False, method: str | None = None,
+            timeout: float = HTTP_TIMEOUT_S):
     """Minimal HTTP helper. Returns (status, body) and never raises on 4xx/5xx."""
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read()
             return resp.status, (body if raw else json.loads(body or b"{}"))
     except urllib.error.HTTPError as exc:

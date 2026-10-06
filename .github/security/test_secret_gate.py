@@ -342,7 +342,7 @@ def _stub_stream(monkeypatch, events):
     urls = []
 
     def fake_request(url, *a, **k):
-        urls.append(url)
+        urls.append((url, k.get("timeout")))
         return 200, b"".join(b"data: " + e + b"\n\n" for e in events)
 
     monkeypatch.setattr(air, "request", fake_request)
@@ -361,7 +361,7 @@ def test_streamed_reply_is_reassembled_from_litellm(monkeypatch):
         _delta('{"verdicts":'), _delta(" []}", "stop"), b"[DONE]"])
 
     assert air.call_kimi("sys", "user", "key") == '{"verdicts": []}'
-    assert urls == [f"{air.LITELLM_BASE}/v1/chat/completions"]
+    assert urls == [(f"{air.LITELLM_BASE}/v1/chat/completions", air.MODEL_TIMEOUT_S)]
 
 
 @pytest.mark.parametrize("bad", [b'{"error": {"message": "overloaded"}}',

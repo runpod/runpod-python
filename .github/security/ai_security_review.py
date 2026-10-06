@@ -58,6 +58,9 @@ OVERRIDE_LABEL = "security-review-override"
 REVIEW_CONTACTS = ("runpod/security",)
 
 MAX_OUTPUT_TOKENS = 8192
+# Socket timeout for the model call. A full prompt on a busy pod can take over
+# a minute to stream its first byte; the pod proxy drops an idle response at ~100s.
+MODEL_TIMEOUT_S = 95
 
 # Context lines either side of a detection.
 WINDOW_LINES = 20
@@ -454,7 +457,8 @@ def call_kimi(prompt_system: str, prompt_user: str, api_key: str) -> str | None:
 
     # `raw` buffers the whole event stream; the proxy stays open while events arrive.
     status, raw = request(f"{LITELLM_BASE}/v1/chat/completions", headers,
-                          data=json.dumps(body).encode(), raw=True)
+                          data=json.dumps(body).encode(), raw=True,
+                          timeout=MODEL_TIMEOUT_S)
     if status == 400:
         # Bounded: the server may echo the request back.
         log(f"::warning::model rejected the request (400): {str(raw)[:200]}")
