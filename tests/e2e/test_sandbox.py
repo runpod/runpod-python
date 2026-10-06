@@ -53,8 +53,10 @@ def test_sandbox_execution_and_borrowed_handles(require_api_key):
             [
                 "python",
                 "-c",
-                "import pathlib, time; time.sleep(6); "
-                "pathlib.Path('/tmp/runpod-sandbox-e2e').write_text('detached complete')",
+                (
+                    "import pathlib, time; time.sleep(6); "
+                    + "pathlib.Path('/tmp/runpod-sandbox-e2e').write_text('detached complete')"
+                ),
             ],
             check=True,
             timeout_seconds=15,
@@ -66,8 +68,10 @@ def test_sandbox_execution_and_borrowed_handles(require_api_key):
                 [
                     "python",
                     "-c",
-                    "import pathlib; path = pathlib.Path('/tmp/runpod-sandbox-e2e'); "
-                    "print(path.read_text() if path.exists() else 'pending')",
+                    (
+                        "import pathlib; path = pathlib.Path('/tmp/runpod-sandbox-e2e'); "
+                        + "print(path.read_text() if path.exists() else 'pending')"
+                    ),
                 ],
                 check=True,
                 timeout_seconds=4,

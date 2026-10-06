@@ -313,7 +313,13 @@ def sandbox_peer():
     def run_peer():
         try:
             asyncio.run(serve())
-        except BaseException as error:
+        except (
+            Exception,
+            asyncio.CancelledError,
+            KeyboardInterrupt,
+            SystemExit,
+        ) as error:
+            # cancellation and interrupts must reach the test thread.
             outcome.set_exception(error)
         else:
             outcome.set_result(None)
@@ -629,7 +635,13 @@ def test_overlapping_sync_entries_preserve_the_first_owner(peer):
                 assert leave.wait(4), "test did not release the first context"
                 assert sandbox.refresh().state == "RUNNING"
             outcome.set_result(None)
-        except BaseException as error:
+        except (
+            Exception,
+            asyncio.CancelledError,
+            KeyboardInterrupt,
+            SystemExit,
+        ) as error:
+            # cancellation and interrupts must reach the test thread.
             outcome.set_exception(error)
 
     worker = threading.Thread(target=own_context, daemon=True)
