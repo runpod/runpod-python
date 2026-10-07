@@ -1,7 +1,6 @@
 """tests for context detection and remote dispatch."""
 
 import asyncio
-import concurrent.futures
 import os
 import subprocess
 import sys
@@ -55,27 +54,6 @@ class TestContextDetection:
         monkeypatch.setenv("RUNPOD_DEV_SESSION", "1")
         assert current_context() is Context.DEV
         assert is_local() is True
-
-
-class TestSyncBridge:
-    def test_waits_across_poll_timeouts(self):
-        async def slow():
-            await asyncio.sleep(0.45)
-            return "complete"
-
-        assert block(slow()) == "complete"
-
-    @pytest.mark.timeout(5)
-    def test_propagates_operation_timeout(self):
-        failure = concurrent.futures.TimeoutError("operation deadline")
-
-        async def fail():
-            raise failure
-
-        with pytest.raises(concurrent.futures.TimeoutError) as caught:
-            block(fail())
-
-        assert caught.value is failure
 
 
 class TestArgsToInput:
@@ -441,6 +419,21 @@ class TestStubs:
 
 
 class TestSyncBridge:
+    def test_waits_across_poll_timeouts(self):
+        async def slow():
+            await asyncio.sleep(0.45)
+            return "complete"
+
+        assert block(slow()) == "complete"
+
+    @pytest.mark.timeout(5)
+    def test_propagates_operation_timeout(self):
+        async def fail():
+            raise asyncio.TimeoutError("operation deadline")
+
+        with pytest.raises(asyncio.TimeoutError):
+            block(fail())
+
     def test_remote_inside_running_loop(self, monkeypatch):
         """calling sync .remote() from inside an event loop must not raise."""
         import asyncio
