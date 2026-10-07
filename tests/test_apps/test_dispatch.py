@@ -428,10 +428,8 @@ class TestSyncBridge:
 
     @pytest.mark.timeout(5)
     def test_propagates_operation_timeout(self):
-        failure = asyncio.TimeoutError("operation deadline")
-
         async def fail():
-            raise failure
+            raise asyncio.TimeoutError("operation deadline")
 
         with pytest.raises(asyncio.TimeoutError):
             block(fail())
@@ -483,7 +481,6 @@ else:
             check=False,
         )
         assert result.returncode == 0, result.stderr
-
     def test_remote_inside_running_loop(self, monkeypatch):
         """calling sync .remote() from inside an event loop must not raise."""
         import asyncio
