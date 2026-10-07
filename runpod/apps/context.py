@@ -1,6 +1,7 @@
 """execution context detection and the sync/async bridge."""
 
 import asyncio
+import concurrent.futures
 import os
 import threading
 from enum import Enum
@@ -73,7 +74,7 @@ class _LoopThread:
             while True:
                 try:
                     return future.result(timeout=0.2)
-                except TimeoutError:
+                except concurrent.futures.TimeoutError:
                     if future.done():
                         raise
         except BaseException:

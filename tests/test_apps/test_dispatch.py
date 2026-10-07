@@ -1,5 +1,7 @@
 """tests for context detection and remote dispatch."""
 
+import asyncio
+import concurrent.futures
 import os
 import subprocess
 import sys
@@ -10,6 +12,7 @@ import pytest
 import runpod
 from runpod.apps import App, Context, current_context, is_local
 from runpod.apps.app import _clear_registry
+from runpod.apps.context import block
 from runpod.apps.errors import (
     EndpointNotFound,
     InvalidResourceError,
@@ -52,6 +55,27 @@ class TestContextDetection:
         monkeypatch.setenv("RUNPOD_DEV_SESSION", "1")
         assert current_context() is Context.DEV
         assert is_local() is True
+
+
+class TestSyncBridge:
+    def test_waits_across_poll_timeouts(self):
+        async def slow():
+            await asyncio.sleep(0.45)
+            return "complete"
+
+        assert block(slow()) == "complete"
+
+    @pytest.mark.timeout(5)
+    def test_propagates_operation_timeout(self):
+        failure = concurrent.futures.TimeoutError("operation deadline")
+
+        async def fail():
+            raise failure
+
+        with pytest.raises(concurrent.futures.TimeoutError) as caught:
+            block(fail())
+
+        assert caught.value is failure
 
 
 class TestArgsToInput:
