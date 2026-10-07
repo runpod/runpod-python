@@ -7,8 +7,8 @@ lifecycle per call:
   3. POST the FunctionRequest to /execute (remote) or /submit (spawn)
   4. collect the response, terminate the pod
 
-the runtime watchdog requests pod deletion at the absolute task deadline,
-including when the client has exited or the function is still running.
+active functions have no runtime lifetime limit. the watchdog only reclaims
+idle pods without active background or inline work.
 """
 
 import asyncio
@@ -17,7 +17,6 @@ import os as _os
 import secrets
 import sys
 import time
-from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -30,8 +29,6 @@ from .spec import ResourceSpec
 log = logging.getLogger(__name__)
 
 TASK_PORT = 8080
-
-DEFAULT_MAX_LIFETIME = timedelta(hours=1)
 
 READY_POLL_INTERVAL = 2.0
 READY_TIMEOUT = 600.0
@@ -76,10 +73,10 @@ async def finish_cleanup(coro) -> None:
 
 def _cleanup_finished(task) -> None:
     _pending_cleanups.discard(task)
+    if task.cancelled():
+        return
     try:
         task.result()
-    except asyncio.CancelledError:
-        pass
     except Exception:
         log.warning("background task pod cleanup failed", exc_info=True)
 
@@ -139,7 +136,6 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
         "RUNPOD_TASK_TOKEN": token,
         "RUNPOD_TASK_PORT": str(TASK_PORT),
         **render_env(spec.env),
-        "RUNPOD_TASK_DEADLINE": str(time.time() + DEFAULT_MAX_LIFETIME.total_seconds()),
     }
 
     from .images import image_for_spec, local_python_version
@@ -282,7 +278,9 @@ class TaskExecution:
             f"task pod {self.pod_id} did not become ready within {timeout}s"
         )
 
-    async def execute(self, request: Dict[str, Any], timeout: float) -> Dict[str, Any]:
+    async def execute(
+        self, request: Dict[str, Any], timeout: Optional[float]
+    ) -> Dict[str, Any]:
         """run to completion: submit, then poll for the result.
 
         the pod proxy caps how long a single request can stay open
@@ -290,9 +288,9 @@ class TaskExecution:
         background slot + short /result polls.
         """
         await self.submit(request)
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + timeout if timeout is not None else None
         while True:
-            if time.monotonic() >= deadline:
+            if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError(
                     f"task on pod {self.pod_id} did not finish in {timeout}s"
                 )

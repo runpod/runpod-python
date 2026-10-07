@@ -141,28 +141,45 @@ class TestPodTargetPayload:
         assert _unb64(payload["args"][0]) == 5
         assert payload["dependencies"] == ["numpy"]
 
-    def test_task_remote_runs_full_lifecycle(self):
+    def test_task_remote_runs_past_one_hour_and_cleans_up(self):
+        from types import SimpleNamespace
+
+        from runpod.apps.tasks import TaskExecution
+
         app = App("a")
 
         @app.task(name="t", cpu="cpu3c-1-2")
         def t(x):
             return x * 2
 
-        with patch("runpod.apps.tasks.TaskExecution") as MockExec:
-            instance = MockExec.return_value
-            instance.start = AsyncMock()
-            instance.wait_ready = AsyncMock()
-            instance.execute = AsyncMock(
-                return_value={"success": True, "result": _b64(10)}
-            )
-            instance.terminate = AsyncMock()
+        clock = [0.0]
+        pods = {"pod-1"}
 
-            result = t.remote(5)
+        async def poll_result():
+            if clock[0] == 0:
+                clock[0] = 7200.0
+                return None
+            return {"success": True, "result": _b64(10)}
 
-        assert result == 10
-        instance.start.assert_awaited_once()
-        instance.wait_ready.assert_awaited_once()
-        instance.terminate.assert_awaited_once()
+        async def delete(pod_id):
+            pods.remove(pod_id)
+
+        execution = TaskExecution(t.spec, api=MagicMock(terminate_pod=delete))
+        execution.pod_id = "pod-1"
+        execution.start = AsyncMock()
+        execution.wait_ready = AsyncMock()
+        execution.submit = AsyncMock()
+        execution.poll_result = poll_result
+        with (
+            patch("runpod.apps.tasks.TaskExecution", return_value=execution),
+            patch(
+                "runpod.apps.tasks.time",
+                SimpleNamespace(monotonic=lambda: clock[0]),
+            ),
+            patch("runpod.apps.tasks.RESULT_POLL_INTERVAL", 0),
+        ):
+            assert t.remote(5) == 10
+        assert not pods
 
     def test_task_terminates_pod_on_failure(self):
         app = App("a")
@@ -626,8 +643,8 @@ class TestCancellationCleanup:
             await deleting.wait()
             task.cancel()
             release_delete.set()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+            await asyncio.wait({task})
+            assert task.cancelled()
         assert not pods
 
     async def test_failed_cleanup_preserves_error_and_recoverable_pod(self):

@@ -806,8 +806,6 @@ class PodTarget(InvocationTarget):
     runner on the pod (see runpod.apps.tasks).
     """
 
-    TASK_TIMEOUT_SECONDS = 3600.0
-
     def __init__(
         self,
         spec: ResourceSpec,
@@ -842,7 +840,7 @@ class PodTarget(InvocationTarget):
         return request.to_input()
 
     async def invoke(
-        self, payload: Dict[str, Any], *, timeout: float = TASK_TIMEOUT_SECONDS
+        self, payload: Dict[str, Any], *, timeout: Optional[float] = None
     ) -> Any:
         import time
 
