@@ -1,13 +1,5 @@
-# Stage 2 of the secret gate. Runs in the base repo's context, so it holds
-# LITELLM_API_KEY and a write token even for fork PRs. Invariants:
-# - Only workflow_run.head_sha and head_repository are trusted; the rest derives from them.
-# - Nothing from stage 1's artifact is read: the PR controls every byte stage 1 uploads.
-# - head-scan runs a scanner over attacker bytes, so it holds no model key and no write token.
-# - triage never executes PR content; neither job checks out the PR head.
-# - The verdict is the required `AI secret verdict` commit status; a workflow_run job is not a PR check.
-# - Fails closed; the maintainer-only `security-review-override` label forces it green.
-# - Stdlib only, no pip install in the privileged job; betterleaks is pinned with a checksum.
-
+# Stage 2 of the secret gate. The jobs live in runpod/secret_detector; see its README.
+# Written by deploy-secret-gate.sh.
 name: PR AI Security Review
 
 on:
@@ -18,152 +10,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  # One run per PR branch; a new push cancels the old one, leaving a single comment writer.
-  group: pr-ai-review-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
-
-env:
-  # Keep in lockstep with pr-security-scan.yml.
-  BETTERLEAKS_VERSION: "1.8.1"
-  BETTERLEAKS_SHA256: "efa407244e1ea8e35f582b8a42becdeac08bdead04f68eb752adda722d583c2a"
-
 jobs:
-  head-scan:
-    name: Head scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: >-
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion != 'cancelled' &&
-      contains(github.event.workflow_run.path, 'pr-security-scan.yml')
-    # `contains`, not `==`: the undocumented path may carry an `@ref` suffix, and a skipped job reports success.
-    # A noise filter, not a trust anchor: the PR controls pr-security-scan.yml.
-
+  review:
+    uses: runpod/secret_detector/.github/workflows/pr-ai-review.yml@main
     permissions:
       contents: read
-      pull-requests: read   # to resolve the head SHA to its PR and base SHA
-      # No statuses: write; this job must not be able to publish the verdict.
-
-    steps:
-      # No `ref:`, so this is the base default branch, not the PR head.
-      - name: Check out trusted base repo
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Assert the payload shape we depend on
-        env:
-          WR_PATH: ${{ github.event.workflow_run.path }}
-          WR_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          set -euo pipefail
-          if [ -z "${WR_PATH}" ]; then
-            echo "::error title=Payload drift::workflow_run.path is empty. The trigger filter is no longer meaningful — review this workflow."
-            exit 1
-          fi
-          if ! printf '%s' "${WR_SHA}" | grep -qE '^[0-9a-f]{7,40}$'; then
-            echo "::error title=Payload drift::workflow_run.head_sha is missing or malformed. Refusing to continue."
-            exit 1
-          fi
-          echo "payload ok: path=${WR_PATH} sha=${WR_SHA}"
-
-      - name: Install betterleaks (checksum-pinned)
-        run: |
-          set -euo pipefail
-          curl -sSfL --proto '=https' --tlsv1.2 -o /tmp/betterleaks.tar.gz \
-            "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
-          if ! printf '%s' "$BETTERLEAKS_SHA256" | grep -qE '^[0-9a-f]{64}$'; then
-            echo "::error title=Unpinned binary::BETTERLEAKS_SHA256 is not a sha256 digest, so the scanner binary cannot be verified. Refusing to run it. Set it from the checksums file for v${BETTERLEAKS_VERSION}."
-            exit 1
-          fi
-          echo "${BETTERLEAKS_SHA256}  /tmp/betterleaks.tar.gz" | sha256sum -c -
-          tar -xzf /tmp/betterleaks.tar.gz -C /tmp betterleaks
-          sudo install -m 0755 /tmp/betterleaks /usr/local/bin/betterleaks
-          betterleaks version
-
-      - name: Scan the head files
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          TRUSTED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          TRUSTED_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
-          FINDINGS_PATH: ${{ runner.temp }}/head-findings.json
-          SCAN_WORKDIR: ${{ runner.temp }}/head-tree
-          BETTERLEAKS_CONFIG: .github/security/gitleaks-runpod.toml
-        run: python .github/security/scan_head.py
-
-      # No `if: always()`: a failed scan uploads nothing, and triage fails closed on the missing file.
-      - name: Upload findings for triage
-        uses: actions/upload-artifact@v7
-        with:
-          name: head-scan-findings
-          path: ${{ runner.temp }}/head-findings.json
-          retention-days: 7
-          if-no-files-found: error
-
-  triage:
-    name: Kimi K3 review
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: head-scan
-    # `always()` so a failed or skipped scan still gets a red status instead of a stuck `pending`.
-    # The trigger conditions repeat because `always()` overrides skip-when-dependency-skipped.
-    if: >-
-      always() &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion != 'cancelled' &&
-      contains(github.event.workflow_run.path, 'pr-security-scan.yml')
-
-    permissions:
-      contents: read
-      pull-requests: write    # to post the review comment
-      statuses: write         # to publish the verdict commit status
-
-    steps:
-      - name: Check out trusted base repo
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      # May fail: the script turns a missing findings file into a red status.
-      - name: Download the head scan findings
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: head-scan-findings
-          path: ${{ runner.temp }}/scan
-
-      - name: Run Kimi K3 secret triage
-        env:
-          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          TRUSTED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          TRUSTED_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
-          SCAN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          FINDINGS_PATH: ${{ runner.temp }}/scan/head-findings.json
-          OUTPUT_DIR: ${{ runner.temp }}
-          LITELLM_MODEL: moonshotai/Kimi-K3
-          # low, high or max (no medium). low keeps reasoning latency down; raise it if triage clears real keys.
-          KIMI_REASONING_EFFORT: low
-        run: python .github/security/ai_security_review.py
-
-      - name: Upload review payload for debugging
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ai-review-output
-          path: |
-            ${{ runner.temp }}/ai-review.json
-            ${{ runner.temp }}/ai-review.md
-          retention-days: 7
-          if-no-files-found: ignore
+      pull-requests: write
+      statuses: write
+    with:
+      review-contacts: "runpod/security"
+    secrets:
+      LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
