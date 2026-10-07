@@ -6,6 +6,10 @@
 
 * Apps expose `NetworkVolume` and `GlobalVolume` resources with explicit path-keyed mounts, lazy create-if-missing provisioning, and execution-bound filesystem access. Global volumes use GraphQL for lookup and creation.
 
+### Bug Fixes
+
+* Wait for task cleanup after interruption, preserve cancellation and task errors, recover in-flight pod creation, and retry transient task deletion failures without cancelling detached work.
+
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
 

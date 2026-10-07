@@ -2,10 +2,16 @@
 
 import asyncio
 import concurrent.futures
+import logging
 import os
 import threading
+import time
 from enum import Enum
 from typing import Any, Coroutine
+
+log = logging.getLogger(__name__)
+CLEANUP_TIMEOUT = 30.0
+BRIDGE_CLEANUP_TIMEOUT = CLEANUP_TIMEOUT + 5.0
 
 
 class Context(Enum):
@@ -69,7 +75,26 @@ class _LoopThread:
     @classmethod
     def run(cls, coro: Coroutine[Any, Any, Any]) -> Any:
         loop = cls._ensure_loop()
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        completed = threading.Event()
+        interrupted = threading.Event()
+        running = []
+
+        async def run():
+            running.append(asyncio.current_task())
+            try:
+                if interrupted.is_set():
+                    coro.close()
+                    raise asyncio.CancelledError()
+                return await coro
+            finally:
+                completed.set()
+
+        def cancel():
+            interrupted.set()
+            if running:
+                running[0].cancel()
+
+        future = asyncio.run_coroutine_threadsafe(run(), loop)
         try:
             while True:
                 try:
@@ -78,7 +103,17 @@ class _LoopThread:
                     if future.done():
                         raise
         except BaseException:
-            future.cancel()
+            loop.call_soon_threadsafe(cancel)
+            deadline = time.monotonic() + BRIDGE_CLEANUP_TIMEOUT
+            while not completed.is_set():
+                try:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        log.warning("interrupted operation cleanup is still pending")
+                        break
+                    completed.wait(min(remaining, 0.2))
+                except BaseException:
+                    continue
             raise
 
 

@@ -847,7 +847,7 @@ class PodTarget(InvocationTarget):
     ) -> Any:
         import time
 
-        from .tasks import TaskExecution, unwrap_task_response
+        from .tasks import TaskExecution, finish_cleanup, unwrap_task_response
 
         name = self.spec.name
         hardware = ",".join(self.spec.cpu or self.spec.gpu or ["any"])
@@ -874,6 +874,7 @@ class PodTarget(InvocationTarget):
             await execution.wait_ready()
             emit(self.events, "worker_ready", name, execution.pod_id or "")
             response = await execution.execute(payload, timeout)
+            result = unwrap_task_response(response)
         except Exception:
             emit(
                 self.events,
@@ -883,12 +884,15 @@ class PodTarget(InvocationTarget):
             )
             raise
         finally:
-            try:
-                if stream is not None:
-                    await stream.stop()
-            finally:
-                await execution.terminate()
-        result = unwrap_task_response(response)
+
+            async def cleanup():
+                try:
+                    if stream is not None:
+                        await stream.stop()
+                finally:
+                    await execution.terminate()
+
+            await finish_cleanup(cleanup())
         emit(
             self.events,
             "request_completed",
@@ -898,7 +902,7 @@ class PodTarget(InvocationTarget):
         return result
 
     async def submit(self, payload: Dict[str, Any]) -> Any:
-        from .tasks import TaskExecution, TaskJob
+        from .tasks import TaskExecution, TaskJob, finish_cleanup
 
         execution = TaskExecution(self.spec, specs=self.specs)
         try:
@@ -906,6 +910,6 @@ class PodTarget(InvocationTarget):
             await execution.wait_ready()
             await execution.submit(payload)
         except BaseException:
-            await execution.terminate()
+            await finish_cleanup(execution.terminate())
             raise
         return TaskJob(execution)

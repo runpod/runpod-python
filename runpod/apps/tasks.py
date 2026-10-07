@@ -15,6 +15,7 @@ import asyncio
 import logging
 import os as _os
 import secrets
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -22,6 +23,7 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 
 from .api import AppsApiClient, is_capacity_error
+from .context import CLEANUP_TIMEOUT
 from .errors import RemoteExecutionError
 from .spec import ResourceSpec
 
@@ -29,12 +31,58 @@ log = logging.getLogger(__name__)
 
 TASK_PORT = 8080
 
-# safety net: pods self-terminate server-side after this long
+# requested server-side deadline for abandoned tasks
 DEFAULT_MAX_LIFETIME = timedelta(hours=1)
 
 READY_POLL_INTERVAL = 2.0
 READY_TIMEOUT = 600.0
 RESULT_POLL_INTERVAL = 2.0
+DELETE_ATTEMPTS = 3
+DELETE_TIMEOUT = 5.0
+_pending_cleanups = set()
+
+
+async def finish_cleanup(coro) -> None:
+    """finish cleanup despite repeated cancellation, without hiding its cause."""
+    original = sys.exc_info()[1]
+    task = asyncio.create_task(coro)
+    deadline = asyncio.get_running_loop().time() + CLEANUP_TIMEOUT
+    cancellation = None
+    try:
+        while not task.done():
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("task pod cleanup is still pending")
+            try:
+                await asyncio.wait({task}, timeout=remaining)
+            except asyncio.CancelledError as exc:
+                if cancellation is None:
+                    cancellation = exc
+        task.result()
+    except Exception:
+        if original is None and cancellation is None:
+            raise
+        log.warning(
+            "task cleanup failed while handling %r",
+            original or cancellation,
+            exc_info=True,
+        )
+    finally:
+        if not task.done():
+            _pending_cleanups.add(task)
+            task.add_done_callback(_cleanup_finished)
+    if original is None and cancellation is not None:
+        raise cancellation
+
+
+def _cleanup_finished(task) -> None:
+    _pending_cleanups.discard(task)
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        log.warning("background task pod cleanup failed", exc_info=True)
 
 
 def _runtime_command() -> str:
@@ -160,6 +208,7 @@ class TaskExecution:
         self.api = api or AppsApiClient()
         self.token = secrets.token_urlsafe(32)
         self.pod_id: Optional[str] = None
+        self._deployment: Optional[asyncio.Task] = None
 
     @property
     def _headers(self) -> Dict[str, str]:
@@ -174,6 +223,10 @@ class TaskExecution:
                 self.spec.registry_auth, api=self.api
             )
         pod = await self._attach_mounts(pod)
+        self._deployment = asyncio.create_task(self._deploy_and_record(pod))
+        await asyncio.shield(self._deployment)
+
+    async def _deploy_and_record(self, pod: Dict[str, Any]) -> None:
         result = await self._deploy_pod(pod)
         self.pod_id = result["id"]
         log.info("task pod %s deployed for %s", self.pod_id, self.spec.name)
@@ -207,9 +260,7 @@ class TaskExecution:
         """resolve storage mounts and apply their placement constraints."""
         from .volume import VolumeResolver, attach_pod_mounts
 
-        await attach_pod_mounts(
-            pod, self.spec, VolumeResolver(self.api), self.specs
-        )
+        await attach_pod_mounts(pod, self.spec, VolumeResolver(self.api), self.specs)
         return pod
 
     async def wait_ready(self, timeout: float = READY_TIMEOUT) -> None:
@@ -305,15 +356,46 @@ class TaskExecution:
         return None
 
     async def terminate(self) -> None:
+        if self._deployment is not None:
+            try:
+                await asyncio.shield(self._deployment)
+            except Exception:
+                if self.pod_id is None:
+                    return
         if self.pod_id is None:
             return
         try:
-            await self.api.terminate_pod(self.pod_id)
+            for attempt in range(DELETE_ATTEMPTS):
+                try:
+                    await asyncio.wait_for(
+                        self.api.terminate_pod(self.pod_id), DELETE_TIMEOUT
+                    )
+                    break
+                except Exception as exc:
+                    status = getattr(exc, "status_code", None) or getattr(
+                        exc, "status", None
+                    )
+                    if status == 404:
+                        break
+                    retryable = (
+                        status == 429
+                        or (status is not None and 500 <= status < 600)
+                        or isinstance(
+                            exc,
+                            (
+                                aiohttp.ClientConnectionError,
+                                asyncio.TimeoutError,
+                                OSError,
+                            ),
+                        )
+                    )
+                    if not retryable or attempt == DELETE_ATTEMPTS - 1:
+                        raise
+                    await asyncio.sleep(0.5 * (2**attempt))
             log.info("task pod %s terminated", self.pod_id)
         except Exception as exc:
             log.warning(
-                "failed to terminate task pod %s (terminateAfter is the "
-                "backstop): %s",
+                "failed to terminate task pod %s; terminate it in the console: %s",
                 self.pod_id,
                 exc,
             )
@@ -362,10 +444,10 @@ class TaskJob:
                     break
                 await asyncio.sleep(RESULT_POLL_INTERVAL)
         finally:
-            await self._execution.terminate()
+            await finish_cleanup(self._execution.terminate())
         return self._result
 
     async def cancel(self) -> None:
         """terminate the pod, abandoning the task."""
-        await self._execution.terminate()
+        await finish_cleanup(self._execution.terminate())
         self._done = True

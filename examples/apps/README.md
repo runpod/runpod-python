@@ -20,6 +20,16 @@ workers pick up the new code automatically. the exhaustive
 feature-by-feature suite lives in [`tests/e2e/examples`](../../tests/e2e/examples).
 
 `await task.spawn.aio(...)` returns a task job that owns its pod.
-`await job.wait(timeout=...)` terminates that pod when waiting finishes, including
-timeout, task failure, or cancellation. use `await job.cancel()` to abandon a
-spawned task explicitly. a failed termination retains `job.pod_id` for cleanup.
+`await job.wait(timeout=...)` attempts to terminate that pod when waiting finishes,
+including timeout, task failure, or cancellation. use `await job.cancel()` to
+abandon a spawned task explicitly. leaving the client without waiting or cancelling
+does not cancel intentional detached work.
+
+cancellation gives cleanup up to 30 seconds to recover an in-flight create response
+and delete the pod; synchronous calls allow up to 35 seconds for the coroutine to
+acknowledge cleanup after ctrl-c. repeated interrupts do not interrupt deletion.
+transient delete failures are retried up to three times. cleanup errors do not
+replace an existing task error or cancellation, and failed deletion retains
+`job.pod_id` for recovery. cleanup that exceeds the grace period continues only
+while the client's event loop remains alive. check the pod in the console after a
+cleanup warning; client process exit alone does not stop billing.
