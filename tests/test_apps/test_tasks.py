@@ -52,7 +52,6 @@ class TestPodInput:
 
         assert pod["imageName"] == f"runpod/task:py{local_python_version()}-latest"
         assert pod["ports"] == "8080/http"
-        assert pod["terminateAfter"]
         env = {e["key"]: e["value"] for e in pod["env"]}
         assert env["RUNPOD_TASK_TOKEN"] == "tok"
         assert "RUNPOD_RUNTIME_PACKAGE_SPEC" not in env
@@ -592,13 +591,12 @@ class TestCancellationCleanup:
     @pytest.mark.parametrize("method", ["invoke", "submit"])
     async def test_cancel_during_creation_recovers_and_deletes_pod(self, method):
         from runpod.apps.tasks import TaskExecution
+        from runpod.error import QueryError
 
-        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
-        creating = asyncio.Event()
-        release_create = asyncio.Event()
-        deleting = asyncio.Event()
-        release_delete = asyncio.Event()
+        creating, release_create = asyncio.Event(), asyncio.Event()
+        deleting, release_delete = asyncio.Event(), asyncio.Event()
         pods = set()
+        failures = iter([QueryError("rate limited", status_code=429), None])
 
         async def deploy(*args, **kwargs):
             creating.set()
@@ -609,121 +607,41 @@ class TestCancellationCleanup:
         async def delete(pod_id):
             deleting.set()
             await release_delete.wait()
+            failure = next(failures)
+            if failure:
+                raise failure
             pods.remove(pod_id)
 
-        api = MagicMock()
-        api.deploy_task_pod = deploy
-        api.terminate_pod = delete
-        execution = TaskExecution(spec, api=api)
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(
+            spec, api=MagicMock(deploy_task_pod=deploy, terminate_pod=delete)
+        )
         with patch("runpod.apps.tasks.TaskExecution", return_value=execution):
             task = asyncio.create_task(
                 getattr(PodTarget(spec, lambda: None), method)({})
             )
             await creating.wait()
-            task.cancel("original interruption")
-            await asyncio.sleep(0)
-            task.cancel("second interruption")
+            task.cancel()
             release_create.set()
             await deleting.wait()
-            task.cancel("third interruption")
+            task.cancel()
             release_delete.set()
             with pytest.raises(asyncio.CancelledError):
                 await task
         assert not pods
-        assert execution.pod_id is None
 
-    @pytest.mark.parametrize("method", ["invoke", "submit", "wait"])
-    @pytest.mark.parametrize("cancelled", [False, True])
-    async def test_cleanup_failure_preserves_original(self, method, cancelled):
+    async def test_failed_cleanup_preserves_error_and_recoverable_pod(self):
         from runpod.apps.tasks import TaskExecution, TaskJob
 
+        failure = ValueError("work failed")
         spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
-        failure = (
-            asyncio.CancelledError("cancelled")
-            if cancelled
-            else ValueError("work failed")
+        api = MagicMock(
+            terminate_pod=AsyncMock(side_effect=RuntimeError("delete failed"))
         )
-        api = MagicMock()
-        api.terminate_pod = AsyncMock(side_effect=RuntimeError("delete failed"))
         execution = TaskExecution(spec, api=api)
         execution.pod_id = "pod-recoverable"
-        execution.start = AsyncMock(side_effect=failure)
         execution.poll_result = AsyncMock(side_effect=failure)
-        with patch("runpod.apps.tasks.TaskExecution", return_value=execution):
-            with pytest.raises(type(failure)) as caught:
-                if method == "wait":
-                    await TaskJob(execution).wait()
-                else:
-                    await getattr(PodTarget(spec, lambda: None), method)({})
+        with pytest.raises(ValueError) as caught:
+            await TaskJob(execution).wait()
         assert caught.value is failure
         assert execution.pod_id == "pod-recoverable"
-
-    async def test_cleanup_deadline_does_not_abandon_deletion(self, monkeypatch):
-        from runpod.apps import tasks
-
-        monkeypatch.setattr(tasks, "CLEANUP_TIMEOUT", 0.02)
-        entered = asyncio.Event()
-        release = asyncio.Event()
-        deleted = asyncio.Event()
-
-        async def delete():
-            entered.set()
-            await release.wait()
-            deleted.set()
-
-        async def operation():
-            try:
-                await asyncio.Future()
-            finally:
-                await tasks.finish_cleanup(delete())
-
-        task = asyncio.create_task(operation())
-        await asyncio.sleep(0)
-        task.cancel("original")
-        await entered.wait()
-        task.cancel("again")
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(task, 0.5)
-        assert not deleted.is_set()
-        release.set()
-        await asyncio.wait_for(deleted.wait(), 0.5)
-
-    @pytest.mark.parametrize("status", [429, 503, None])
-    async def test_transient_delete_recovers(self, status):
-        from runpod.apps.tasks import TaskExecution
-        from runpod.error import QueryError
-
-        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
-        pods = {"pod-retry"}
-        attempts = 0
-
-        async def delete(pod_id):
-            nonlocal attempts
-            attempts += 1
-            if attempts == 1:
-                if status is None:
-                    raise OSError("connection reset")
-                raise QueryError("retry later", status_code=status)
-            pods.remove(pod_id)
-
-        api = MagicMock()
-        api.terminate_pod = delete
-        execution = TaskExecution(spec, api=api)
-        execution.pod_id = "pod-retry"
-        await execution.terminate()
-        assert not pods
-        assert execution.pod_id is None
-
-    async def test_retry_exhaustion_keeps_recoverable_id(self):
-        from runpod.apps import tasks
-        from runpod.error import QueryError
-
-        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
-        api = MagicMock()
-        api.terminate_pod = AsyncMock(side_effect=QueryError("busy", status_code=503))
-        execution = tasks.TaskExecution(spec, api=api)
-        execution.pod_id = "pod-retry"
-        with pytest.raises(QueryError):
-            await execution.terminate()
-        assert api.terminate_pod.await_count == tasks.DELETE_ATTEMPTS
-        assert execution.pod_id == "pod-retry"

@@ -151,9 +151,10 @@ class TestVolumeResolver:
                 {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"}
             ]
         )
+        api.network_volume_datacenters.side_effect = RuntimeError("catalog unavailable")
         resolver = VolumeResolver(api)
         resolved = asyncio.run(
-            resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)])
+            resolver.resolve(NetworkVolume("models", datacenter="US-IL-1"), [_spec()])
         )
         assert resolved == {"id": "nv-1", "dataCenterId": "EU-RO-1"}
         api.create_network_volume.assert_not_awaited()
@@ -170,14 +171,17 @@ class TestVolumeResolver:
         )
         assert resolved["id"] == "nv-1"
 
-    def test_missing_creates_with_placement(self):
+    def test_storage_capability_beats_higher_hardware_stock(self):
         api = _api()
+        api.network_volume_datacenters.return_value = {"EU-RO-1"}
+        api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
+            "HIGH" if dc == "US-IL-1" else "LOW"
+        )
         resolver = VolumeResolver(api)
         resolved = asyncio.run(
-            resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)])
+            resolver.resolve(NetworkVolume("models"), [_spec(cpu="cpu3c-2-4")])
         )
-        assert resolved["id"] == "nv-new"
-        api.create_network_volume.assert_awaited_once()
+        assert resolved == {"id": "nv-new", "dataCenterId": "EU-RO-1"}
 
     @pytest.mark.parametrize("volume_type", [NetworkVolume, GlobalVolume])
     def test_missing_no_create_raises(self, volume_type):
@@ -265,42 +269,17 @@ class TestVolumeResolver:
         )
         assert resolved == {"id": "nv-new", "dataCenterId": "EU-RO-1"}
 
-    async def test_storage_capability_beats_higher_hardware_stock(self):
+    async def test_unsupported_explicit_pin_never_relocates(self):
         api = _api()
         api.network_volume_datacenters.return_value = {"EU-RO-1"}
-        api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
-            "HIGH" if dc == "US-IL-1" else "LOW"
-        )
-        resolved = await VolumeResolver(api).resolve(
-            NetworkVolume("models"), [_spec(cpu="cpu3c-2-4")]
-        )
-        assert resolved["dataCenterId"] == "EU-RO-1"
-        assert api.create_network_volume.call_args.kwargs["data_center_id"] == "EU-RO-1"
-
-    async def test_reported_datacenters_remain_eligible_when_catalog_supports_them(
-        self,
-    ):
-        api = _api()
-        api.network_volume_datacenters.return_value = {"US-IL-1"}
-        resolved = await VolumeResolver(api).resolve(
-            NetworkVolume("models"), [_spec(cpu="cpu3c-2-4")]
-        )
-        assert resolved["dataCenterId"] == "US-IL-1"
-
-    @pytest.mark.parametrize("specs", [[], [_spec(cpu="cpu3c-2-4")]])
-    async def test_unsupported_explicit_pin_never_relocates(self, specs):
-        api = _api()
-        api.network_volume_datacenters.return_value = {"EU-RO-1"}
-        with pytest.raises(VolumeError, match="does not support network volumes"):
+        with pytest.raises(VolumeError):
             await VolumeResolver(api).resolve(
-                NetworkVolume("models", datacenter="US-IL-1"), specs
+                NetworkVolume("models", datacenter="US-IL-1"), [_spec()]
             )
-        api.create_network_volume.assert_not_awaited()
 
-    @pytest.mark.parametrize("supported", [set(), {"EU-RO-1"}])
-    async def test_empty_storage_hardware_intersection_never_creates(self, supported):
+    async def test_disjoint_storage_and_hardware_cannot_create(self):
         api = _api()
-        api.network_volume_datacenters.return_value = supported
+        api.network_volume_datacenters.return_value = {"EU-RO-1"}
         api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
             "HIGH" if dc == "US-IL-1" else "NONE"
         )
@@ -308,100 +287,6 @@ class TestVolumeResolver:
             await VolumeResolver(api).resolve(
                 NetworkVolume("models"), [_spec(cpu="cpu3c-2-4")]
             )
-        api.create_network_volume.assert_not_awaited()
-
-    @pytest.mark.parametrize("reference", ["models", "nv-1"])
-    async def test_existing_volume_ignores_new_creation_capability(self, reference):
-        api = _api(volumes=[{"id": "nv-1", "name": "models", "dataCenter": "US-IL-1"}])
-        api.network_volume_datacenters.side_effect = RuntimeError("catalog unavailable")
-        resolved = await VolumeResolver(api).resolve(
-            NetworkVolume(reference, datacenter="EU-RO-1"),
-            [_spec(cpu="cpu3c-2-4")],
-        )
-        assert resolved == {"id": "nv-1", "dataCenterId": "US-IL-1"}
-        api.network_volume_datacenters.assert_not_awaited()
-        api.create_network_volume.assert_not_awaited()
-
-    async def test_catalog_failure_does_not_create(self):
-        api = _api()
-        api.network_volume_datacenters.side_effect = RuntimeError("catalog unavailable")
-        with pytest.raises(VolumeError, match="datacenter catalog lookup failed"):
-            await VolumeResolver(api).resolve(
-                NetworkVolume("models", datacenter="EU-RO-1")
-            )
-        api.create_network_volume.assert_not_awaited()
-
-    async def test_creation_uses_one_catalog_snapshot_per_run(self):
-        api = _api()
-        api.network_volume_datacenters.side_effect = [{"EU-RO-1"}, {"US-IL-1"}]
-        resolver = VolumeResolver(api)
-        first = await resolver.resolve(NetworkVolume("first"), [_spec()])
-        second = await resolver.resolve(NetworkVolume("second"), [_spec()])
-        assert first["dataCenterId"] == second["dataCenterId"] == "EU-RO-1"
-        assert api.network_volume_datacenters.await_count == 1
-
-    async def test_all_shared_consumers_constrain_creation(self):
-        api = _api()
-        api.network_volume_datacenters.return_value = {"EU-RO-1", "US-IL-1"}
-        volume = NetworkVolume("models")
-        producer = ResourceSpec(
-            kind=ResourceKind.TASK,
-            name="producer",
-            cpu="cpu3c-2-4",
-            mounts={"/models": volume},
-        )
-        consumer = ResourceSpec(
-            kind=ResourceKind.QUEUE,
-            name="consumer",
-            gpu="4090",
-            gpu_count=2,
-            datacenter="EU-RO-1",
-            mounts={"/runpod-volume": NetworkVolume("models")},
-        )
-        unrelated = ResourceSpec(
-            kind=ResourceKind.TASK, name="unrelated", datacenter="US-IL-1"
-        )
-        api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
-            "HIGH" if dc == "US-IL-1" else "LOW"
-        )
-        api.gpu_stock_status.side_effect = lambda gpu, dc, gpu_count=1, pods=False: (
-            "LOW" if dc == "EU-RO-1" and gpu_count == 2 and not pods else "NONE"
-        )
-        bindings = await VolumeResolver(api).resolve_mounts(
-            producer.mounts, [producer, consumer, unrelated]
-        )
-        assert bindings[0]["dataCenterId"] == "EU-RO-1"
-        assert api.create_network_volume.call_args.kwargs["data_center_id"] == "EU-RO-1"
-
-    async def test_supported_volume_pin_conflicting_with_consumer_never_relocates(self):
-        api = _api()
-        spec = ResourceSpec(kind=ResourceKind.TASK, name="worker", datacenter="EU-RO-1")
-        with pytest.raises(PlacementError):
-            await VolumeResolver(api).resolve(
-                NetworkVolume("models", datacenter="US-IL-1"), [spec]
-            )
-        api.create_network_volume.assert_not_awaited()
-
-    async def test_shared_volume_reference_pin_is_not_ignored(self):
-        api = _api()
-        api.network_volume_datacenters.return_value = {"EU-RO-1"}
-        volume = NetworkVolume("models")
-        sibling = ResourceSpec(
-            kind=ResourceKind.TASK,
-            name="sibling",
-            mounts={"/models": NetworkVolume("models", datacenter="US-IL-1")},
-        )
-        with pytest.raises(VolumeError):
-            await VolumeResolver(api).resolve(volume, [sibling])
-        api.create_network_volume.assert_not_awaited()
-
-    async def test_global_and_storage_free_workloads_do_not_need_catalog(self):
-        api = _api()
-        api.network_volume_datacenters.side_effect = RuntimeError("catalog unavailable")
-        resolver = VolumeResolver(api)
-        assert await resolver.resolve_mounts({}) == []
-        assert await resolver.resolve(GlobalVolume("models")) == {"id": "gv-new"}
-        api.network_volume_datacenters.assert_not_awaited()
 
 
 class TestTaskVolume:

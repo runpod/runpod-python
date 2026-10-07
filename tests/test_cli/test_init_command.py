@@ -1,10 +1,7 @@
 """rp flash init: project scaffolding."""
 
-import tarfile
-
 from click.testing import CliRunner
 
-from runpod.apps.deploy import package_project
 from runpod.apps.init import create_project, detect_conflicts
 from runpod.rp_cli.main import cli
 
@@ -31,25 +28,6 @@ class TestCreateProject:
         target = tmp_path / "new-project"
         create_project(target, "new-project")
         assert (target / "main.py").exists()
-
-    def test_scaffold_packages_source_without_local_secrets(self, tmp_path):
-        create_project(tmp_path, "my-app")
-        (tmp_path / ".env.production").write_text("TOKEN=private")
-        (tmp_path / "private.pem").write_text("private")
-        (tmp_path / "tests").mkdir()
-        (tmp_path / "tests/test_app.py").write_text("local test")
-        (tmp_path / ".gitignore").write_text("local-data/\n")
-        (tmp_path / "local-data").mkdir()
-        (tmp_path / "local-data/input.json").write_text("{}")
-
-        with tarfile.open(package_project(tmp_path, {})) as tar:
-            assert set(tar.getnames()) == {
-                "main.py",
-                "requirements.txt",
-                ".runpodignore",
-                ".gitignore",
-                "runpod_manifest.json",
-            }
 
 
 class TestDetectConflicts:

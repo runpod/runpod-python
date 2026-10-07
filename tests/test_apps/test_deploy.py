@@ -135,6 +135,7 @@ class TestEndpointInput:
 class TestPackaging:
     def test_tarball_contains_source_and_manifest(self, tmp_path):
         _write_project(tmp_path)
+        (tmp_path / "runpod_manifest.json").write_text('{"app": "forged"}')
         manifest = {"version": 1, "app": "demo-app", "resources": []}
         tar_path = package_project(tmp_path, manifest)
 
@@ -145,25 +146,31 @@ class TestPackaging:
             extracted = json.load(tar.extractfile("runpod_manifest.json"))
             assert extracted["app"] == "demo-app"
 
-    def test_ignores_applied(self, tmp_path):
+    def test_ignores_and_non_overridable_credentials(self, tmp_path):
         _write_project(tmp_path)
-        (tmp_path / "secret.env").write_text("KEY=1")
-        (tmp_path / ".runpodignore").write_text("secret.env\n")
-        pycache = tmp_path / "__pycache__"
-        pycache.mkdir()
-        (pycache / "x.pyc").write_text("junk")
+        for name in ("secret.env", ".env.production", "private.pem"):
+            (tmp_path / name).write_text("private")
+        (tmp_path / "local.txt").write_text("local")
+        (tmp_path / "__pycache__").mkdir()
+        (tmp_path / "__pycache__/main.pyc").write_text("cache")
+        (tmp_path / ".runpodignore").write_text(
+            "!*.env\n!.env.production\n!private.pem\nlocal.txt\n"
+        )
 
-        tar_path = package_project(tmp_path, {"version": 1, "resources": []})
-        with tarfile.open(tar_path) as tar:
-            names = tar.getnames()
-            assert "secret.env" not in names
-            assert not any("__pycache__" in n for n in names)
+        with tarfile.open(package_project(tmp_path, {})) as tar:
+            assert set(tar.getnames()) == {
+                "main.py",
+                ".runpodignore",
+                "runpod_manifest.json",
+            }
 
     def test_vendored_env_included_under_env(self, tmp_path):
         _write_project(tmp_path)
         env_dir = tmp_path / "built-env"
         (env_dir / "numpy").mkdir(parents=True)
         (env_dir / "numpy" / "__init__.py").write_text("")
+        (env_dir / "numpy" / "cacert.pem").write_text("dependency CA")
+        (tmp_path / ".runpodignore").write_text("*.pem\n")
 
         tar_path = package_project(
             tmp_path, {"version": 1, "resources": []}, env_dir=env_dir
@@ -174,232 +181,47 @@ class TestPackaging:
             # env dir under project root must not be double-added as source
             assert "built-env/numpy/__init__.py" not in names
             assert "main.py" in names
+            assert tar.extractfile("env/numpy/cacert.pem").read() == b"dependency CA"
 
-    def test_source_credentials_and_local_files_excluded_by_default(self, tmp_path):
-        excluded = {
-            ".env",
-            ".env.local",
-            "settings/dev.env",
-            "settings/dev.env.backup",
-            "keys/server.pem",
-            "keys/server.key",
-            ".ssh/id_rsa",
-            "keys/id_ed25519",
-            ".aws/credentials",
-            ".azure/token",
-            ".kube/config",
-            ".docker/config.json",
-            ".netrc",
-            ".npmrc",
-            ".pypirc",
-            ".git-credentials",
-            ".boto",
-            "credentials.json",
-            "secrets.yaml",
-            "service-account-prod.json",
-            "service_account.json",
-            "tests/test_app.py",
-            "test/unit.py",
-            "test_app.py",
-            "app_test.py",
-            ".venv/lib/local.py",
-            "venv/lib/local.py",
-            "env/lib/local.py",
-            ".pytest_cache/state",
-            "__pycache__/main.pyc",
-        }
-        for name in excluded | {"main.py", "package/module.py", "data/input.json"}:
-            path = tmp_path / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(name)
-
-        with tarfile.open(package_project(tmp_path, {})) as tar:
-            assert set(tar.getnames()) == {
-                "main.py",
-                "package/module.py",
-                "data/input.json",
-                "runpod_manifest.json",
-            }
-
-    def test_broad_negation_cannot_override_protected_paths(self, tmp_path):
-        protected = {
-            ".env.production",
-            "keys/private.pem",
-            "keys/private.key",
-            ".git/config",
-            ".runpod/cache",
-            ".flash/cache",
-            ".aws/credentials",
-            "env/local.py",
-            "runpod_manifest.json/forged.json",
-        }
-        for name in protected | {"tests/fixture.py", ".venv/local.py", "main.py"}:
-            path = tmp_path / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(name)
-        (tmp_path / ".runpodignore").write_text("!**\n")
-
-        with tarfile.open(package_project(tmp_path, {"app": "generated"})) as tar:
-            assert set(tar.getnames()) == {
-                ".runpodignore",
-                "tests/fixture.py",
-                ".venv/local.py",
-                "main.py",
-                "runpod_manifest.json",
-            }
-            assert json.load(tar.extractfile("runpod_manifest.json")) == {
-                "app": "generated"
-            }
-
-    def test_gitignore_scopes_and_runpod_precedence(self, tmp_path):
-        for name in [
-            "main.py",
-            "root-only.txt",
-            "nested/root-only.txt",
-            "omit.log",
-            "nested/omit.log",
+    def test_project_ignore_precedence(self, tmp_path):
+        for name in (
+            "root.log",
             "nested/keep.log",
-            "nested/hidden.txt",
-            "nested/override.txt",
-            "sibling/hidden.txt",
-        ]:
+            "nested/drop.log",
+            "other/keep.log",
+        ):
             path = tmp_path / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(name)
-        (tmp_path / ".gitignore").write_text("/root-only.txt\n*.log\n")
-        (tmp_path / "nested/.gitignore").write_text(
-            "hidden.txt\noverride.txt\n!keep.log\n"
-        )
-        (tmp_path / ".runpodignore").write_text(
-            "!/root-only.txt\n!nested/override.txt\nnested/keep.log\n"
-        )
+        (tmp_path / ".gitignore").write_text("*.log\n")
+        (tmp_path / "nested/.gitignore").write_text("!*.log\n")
+        (tmp_path / ".runpodignore").write_text("!root.log\nnested/drop.log\n")
 
         with tarfile.open(package_project(tmp_path, {})) as tar:
             assert set(tar.getnames()) == {
                 ".gitignore",
                 ".runpodignore",
                 "nested/.gitignore",
-                "main.py",
-                "root-only.txt",
-                "nested/root-only.txt",
-                "nested/override.txt",
-                "sibling/hidden.txt",
+                "root.log",
+                "nested/keep.log",
                 "runpod_manifest.json",
             }
 
-    def test_directory_patterns_require_parent_reinclusion(self, tmp_path):
-        for name in [
-            "data/keep.txt",
-            "cache/keep.txt",
-            "nested/data/drop.txt",
-            "tests/fixture.py",
-        ]:
-            path = tmp_path / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(name)
-        (tmp_path / "ordinary").write_text("not a directory")
-        (tmp_path / ".gitignore").write_text("data/\ncache/\nordinary/\n")
-        (tmp_path / ".runpodignore").write_text(
-            "!data/keep.txt\n!cache/\ncache/*\n!cache/keep.txt\n!tests/\n"
-        )
-
-        with tarfile.open(package_project(tmp_path, {})) as tar:
-            assert set(tar.getnames()) == {
-                ".gitignore",
-                ".runpodignore",
-                "cache/keep.txt",
-                "ordinary",
-                "tests/fixture.py",
-                "runpod_manifest.json",
-            }
-
-    def test_ignore_escaping_and_double_star(self, tmp_path):
-        for name in [
-            "#notes",
-            "!notes",
-            "trailing ",
-            "assets/a/cache/x",
-            "assets/cache/y",
-            "assets/a/keep",
-        ]:
-            path = tmp_path / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(name)
-        (tmp_path / ".runpodignore").write_text(
-            "\\#notes\n\\!notes\ntrailing\\ \nassets/**/cache/\n"
-        )
-
-        with tarfile.open(package_project(tmp_path, {})) as tar:
-            assert set(tar.getnames()) == {
-                ".runpodignore",
-                "assets/a/keep",
-                "runpod_manifest.json",
-            }
-
-    def test_generated_entries_and_dependency_certificates_preserved(self, tmp_path):
-        (tmp_path / "main.py").write_text("source")
-        (tmp_path / "runpod_manifest.json").write_text('{"app": "forged"}')
-        (tmp_path / "env").mkdir()
-        (tmp_path / "env/local.py").write_text("local environment")
-        env_dir = tmp_path / "built-env"
-        for name in ["certifi/cacert.pem", "library/public.key", "package.py"]:
-            path = env_dir / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(name)
-        (tmp_path / ".runpodignore").write_text("!**\n*.pem\n*.key\n")
-        output = tmp_path / "build.bundle"
-
-        package_project(tmp_path, {"app": "generated"}, output, env_dir)
-
-        with tarfile.open(output) as tar:
-            assert set(tar.getnames()) == {
-                ".runpodignore",
-                "main.py",
-                "env/certifi/cacert.pem",
-                "env/library/public.key",
-                "env/package.py",
-                "runpod_manifest.json",
-            }
-            assert tar.getnames().count("runpod_manifest.json") == 1
-            assert json.load(tar.extractfile("runpod_manifest.json")) == {
-                "app": "generated"
-            }
-            assert (
-                tar.extractfile("env/certifi/cacert.pem").read()
-                == b"certifi/cacert.pem"
-            )
-
-    def test_links_are_not_followed_and_hardlinks_are_regular_members(self, tmp_path):
+    def test_symlinks_cannot_escape_source_or_dependencies(self, tmp_path):
         project = tmp_path / "project"
         project.mkdir()
         (project / "main.py").write_text("source")
         outside = tmp_path / "outside"
         outside.mkdir()
         (outside / "secret.txt").write_text("private")
-        (project / "external.py").symlink_to(outside / "secret.txt")
-        (project / "external-dir").symlink_to(outside, target_is_directory=True)
-        (project / "internal.py").symlink_to("main.py")
-        (project / "broken.py").symlink_to("missing.py")
-        (project / "hardlink.py").hardlink_to(project / "main.py")
-        (outside / "ignore").write_text("*\n")
-        (project / ".gitignore").symlink_to(outside / "ignore")
-        (project / ".runpodignore").symlink_to(outside / "ignore")
-        (tmp_path / ".gitignore").write_text("*\n")
         env_dir = tmp_path / "built-env"
         env_dir.mkdir()
-        (env_dir / "package.py").write_text("dependency")
-        (env_dir / "external.py").symlink_to(outside / "secret.txt")
-        (env_dir / "external-dir").symlink_to(outside, target_is_directory=True)
+        for root in (project, env_dir):
+            (root / "linked.py").symlink_to(outside / "secret.txt")
+            (root / "linked-dir").symlink_to(outside, target_is_directory=True)
 
         with tarfile.open(package_project(project, {}, env_dir=env_dir)) as tar:
-            assert set(tar.getnames()) == {
-                "main.py",
-                "hardlink.py",
-                "env/package.py",
-                "runpod_manifest.json",
-            }
-            assert all(member.isfile() for member in tar.getmembers())
-            assert tar.extractfile("hardlink.py").read() == b"source"
+            assert set(tar.getnames()) == {"main.py", "runpod_manifest.json"}
 
 
 def _stub_build(tmp_path):

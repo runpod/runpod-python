@@ -25,11 +25,8 @@ including timeout, task failure, or cancellation. use `await job.cancel()` to
 abandon a spawned task explicitly. leaving the client without waiting or cancelling
 does not cancel intentional detached work.
 
-cancellation gives cleanup up to 30 seconds to recover an in-flight create response
-and delete the pod; synchronous calls allow up to 35 seconds for the coroutine to
-acknowledge cleanup after ctrl-c. repeated interrupts do not interrupt deletion.
-transient delete failures are retried up to three times. cleanup errors do not
-replace an existing task error or cancellation, and failed deletion retains
-`job.pod_id` for recovery. cleanup that exceeds the grace period continues only
-while the client's event loop remains alive. check the pod in the console after a
-cleanup warning; client process exit alone does not stop billing.
+cancellation waits for bounded cleanup and retries transient deletion failures.
+failed deletion retains `job.pod_id`; check the console after a cleanup warning.
+each task carries an absolute one-hour deadline that the runtime checks even during
+active work. polling and container restarts do not extend it. pod deletion still
+requires a working control-plane API and pod-scoped credentials.

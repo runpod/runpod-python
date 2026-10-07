@@ -14,46 +14,24 @@ Create a `.runpodignore` file in the root of your project to ignore files and fo
 
 ### Flash deployment artifacts
 
-`rp flash deploy` and `rp flash deploy --build-only` apply git-style patterns to
-source files, using `pathspec`. Precedence, from lowest to highest, is:
+`rp flash deploy` and `rp flash deploy --build-only` apply Git-style ignore
+patterns in this order, with later rules taking precedence:
 
-1. Default local-file exclusions: virtual environments, Python caches, test
-   directories and test modules, `node_modules`, `.DS_Store`, and `*.tar.gz`.
-2. `.gitignore` files within the project, with deeper files overriding parent
-   rules for their subtree.
+1. Default exclusions for local environments, caches, tests, and build archives.
+2. Project `.gitignore` files, with deeper files overriding parents in their subtree.
 3. The project-root `.runpodignore`.
 
-Ancestor and global Git ignore files are not read. Within each ignore file, the
-last matching rule wins. `/` anchors a pattern to that ignore file's directory;
-trailing `/` matches directories; `**`, comments, escaped characters and `!`
-negation follow Git ignore syntax. Excluded directories are not traversed, so
-re-include the parent before its files. For example, to deploy a fixture from
-the otherwise excluded `tests` directory:
+Ancestor and global Git ignores are not read. Negation (`!`) can re-include
+ordinary files, but excluded parent directories must also be re-included.
 
-```gitignore
-!tests/
-tests/*
-!tests/fixture.json
-```
+Negation cannot include `.git`, `.runpod`, `.flash`, the root `env/` or
+`runpod_manifest.json`, or credential-like source paths such as `.env` variants,
+PEM/key files, private SSH keys, cloud credential directories, and credentials,
+secrets, or service-account files. These are filename safeguards, not secret
+scanning; review the build-only artifact and supply credentials through worker
+environment variables or a secret store.
 
-Some safeguards cannot be overridden by negation: `.git`, `.runpod`, `.flash`,
-the root `env/` and `runpod_manifest.json` paths, and credential-like source
-paths. Credential safeguards include `.env` and its variants, `*.env` and its
-variants, `*.pem`, `*.key`, SSH private-key names, `.ssh`, `.aws`, `.azure`,
-`.kube`, `.docker/config.json`, `.netrc`, `.npmrc`, `.pypirc`, `.git-credentials`,
-`.boto`, `credentials`/`credentials.*`, `secrets`/`secrets.*`, and
-`service-account*.json`/`service_account*.json`. Use worker environment variables
-or a secret store for credentials instead of packaging them with source.
-
-These are filename safeguards, not secret scanning: credentials embedded in
-ordinary source or differently named files can still be uploaded. Review the
-build-only artifact before deployment.
-
-The generated manifest and vendored `env/` are added separately and cannot be
-replaced by source files. Source ignore rules, including the PEM/key safeguards,
-do not apply to vendored dependencies, so dependency CA bundles are preserved.
-The output artifact itself and the dependency build directory are never copied
-back into source. Source and dependency symlinks are omitted, including
-project-contained links and linked ignore files; directory links are not
-traversed. Hardlinked regular files are stored as independent regular members,
-so the archive requires no link extraction support.
+The manifest and vendored `env/` are added separately. Source ignore rules do
+not strip dependency CA bundles. Symlinks are omitted from source and
+dependencies; the output artifact and dependency build directory are never
+copied back into source.

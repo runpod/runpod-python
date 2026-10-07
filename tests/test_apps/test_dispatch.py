@@ -481,6 +481,7 @@ else:
             check=False,
         )
         assert result.returncode == 0, result.stderr
+
     def test_remote_inside_running_loop(self, monkeypatch):
         """calling sync .remote() from inside an event loop must not raise."""
         import asyncio

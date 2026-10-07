@@ -806,7 +806,6 @@ class PodTarget(InvocationTarget):
     runner on the pod (see runpod.apps.tasks).
     """
 
-    # tasks default to a long window; the pod's terminateAfter is the backstop
     TASK_TIMEOUT_SECONDS = 3600.0
 
     def __init__(

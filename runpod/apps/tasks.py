@@ -7,8 +7,8 @@ lifecycle per call:
   3. POST the FunctionRequest to /execute (remote) or /submit (spawn)
   4. collect the response, terminate the pod
 
-`terminateAfter` is set at deploy time as a server-side safety net so a
-crashed client cannot leak a running pod indefinitely.
+the runtime watchdog requests pod deletion at the absolute task deadline,
+including when the client has exited or the function is still running.
 """
 
 import asyncio
@@ -17,7 +17,7 @@ import os as _os
 import secrets
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -31,7 +31,6 @@ log = logging.getLogger(__name__)
 
 TASK_PORT = 8080
 
-# requested server-side deadline for abandoned tasks
 DEFAULT_MAX_LIFETIME = timedelta(hours=1)
 
 READY_POLL_INTERVAL = 2.0
@@ -133,7 +132,6 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     start the runtime package via dockerArgs.
     """
     spec.validate()
-    terminate_after = (datetime.now(timezone.utc) + DEFAULT_MAX_LIFETIME).isoformat()
 
     from .secret import render_env
 
@@ -141,6 +139,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
         "RUNPOD_TASK_TOKEN": token,
         "RUNPOD_TASK_PORT": str(TASK_PORT),
         **render_env(spec.env),
+        "RUNPOD_TASK_DEADLINE": str(time.time() + DEFAULT_MAX_LIFETIME.total_seconds()),
     }
 
     from .images import image_for_spec, local_python_version
@@ -150,7 +149,6 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
         "imageName": image_for_spec(spec, python_version=local_python_version()),
         "ports": f"{TASK_PORT}/http",
         "containerDiskInGb": spec.container_disk_gb or (10 if spec.is_cpu else 30),
-        "terminateAfter": terminate_after,
         "supportPublicIp": True,
     }
 
