@@ -135,22 +135,22 @@ def run_betterleaks(work: str, config: str, report: str) -> None:
     `report` must be absolute.
     """
     # Empty per-run dir; the ignore-path flag otherwise defaults to the scan target.
-    noignore = tempfile.mkdtemp(prefix="bl-noignore-")
-    proc = subprocess.run(
-        [
-            "betterleaks", "git", ".",
-            f"--config={config}",
-            f"--gitleaks-ignore-path={noignore}",
-            "--ignore-gitleaks-allow",
-            "--report-format=json",
-            f"--report-path={report}",
-            # Findings exit 0, so any non-zero exit is a scanner error.
-            "--exit-code=0",
-            "--max-target-megabytes=25",
-            "--no-banner",
-        ],
-        cwd=work, capture_output=True, text=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="bl-noignore-") as noignore:
+        proc = subprocess.run(
+            [
+                "betterleaks", "git", ".",
+                f"--config={config}",
+                f"--gitleaks-ignore-path={noignore}",
+                "--ignore-gitleaks-allow",
+                "--report-format=json",
+                f"--report-path={report}",
+                # Findings exit 0, so any non-zero exit is a scanner error.
+                "--exit-code=0",
+                "--max-target-megabytes=25",
+                "--no-banner",
+            ],
+            cwd=work, capture_output=True, text=True,
+        )
     sys.stderr.write(proc.stderr[-4000:])
     if proc.returncode != 0:
         raise RuntimeError(f"betterleaks exited {proc.returncode}")
@@ -299,11 +299,11 @@ def main() -> int:
     if altered:
         log(f"::error title=Files not scanned::{len(altered)} materialised file(s) "
             "did not reach the scan commit byte-identically")
-    report_path = os.path.join(os.path.dirname(out_path) or ".", "betterleaks.raw.json")
-    run_betterleaks(work, config, report_path)
+    raw_report = os.path.join(os.path.dirname(out_path) or ".", "betterleaks.raw.json")
+    run_betterleaks(work, config, raw_report)
 
     blob_by_path = {f["path"]: f["blob_sha"] for f in written}
-    raw = load_report(report_path)
+    raw = load_report(raw_report)
     findings, unmappable = merge_findings(raw, blob_by_path, work)
     skipped.extend(unmappable)
     merged = len(raw) - len(findings) - len(unmappable)
@@ -314,7 +314,7 @@ def main() -> int:
 
     # The raw report holds plaintext secrets.
     try:
-        os.remove(report_path)
+        os.remove(raw_report)
     except FileNotFoundError:
         pass
     except OSError as exc:

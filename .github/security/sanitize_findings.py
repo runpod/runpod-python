@@ -10,21 +10,26 @@ The artifact is human-facing; stage 2 reads nothing from it.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import sys
 
 from redaction import build_redaction_map, redact, safe_rule_name
 
 
-def fingerprint(secret: str) -> str:
-    """Length plus first/last character, so reviewers can correlate findings.
+# Per-run key, never stored, so a digest cannot be brute-forced the way a bare
+# hash of a short secret can.
+_RUN_KEY = secrets.token_bytes(32)
 
-    Not a hash: a hash of a short secret is brute-forceable.
-    """
+
+def fingerprint(secret: str) -> str:
+    """Keyed digest, so reviewers can correlate findings within one report."""
     if not secret:
         return ""
-    return f"len={len(secret)}:{secret[0]}…{secret[-1]}"
+    return hmac.new(_RUN_KEY, secret.encode(), hashlib.sha256).hexdigest()[:12]
 
 
 def sanitize_gitleaks(findings: list) -> list[dict]:

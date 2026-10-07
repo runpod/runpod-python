@@ -312,12 +312,20 @@ def clip(text: str, keep_around: str = "", limit: int = MAX_LINE_CHARS) -> str:
     return text[:limit] + "…"
 
 
-def build_evidence(repo: str, token: str, findings: list[dict]):
+def build_evidence(repo: str, token: str, findings: list[dict],
+                   mask_also: list[dict] = ()):
     """Turn scanner findings into redacted windows. Returns (evidence, errors).
 
-    Any error fails the gate: an unreadable window is an unjudged detection.
+    `mask_also` holds detections past the triage cap: they get no window, but
+    are blanked wherever they fall inside one. Any error fails the gate: an
+    unreadable window is an unjudged detection.
     """
     evidence, errors = [], []
+
+    masks: dict[tuple[str, str], dict[int, dict]] = {}
+    for f in [*findings, *mask_also]:
+        if f["location_kind"] != "archive":
+            masks.setdefault((f["blob_sha"], f["file"]), {})[f["id"]] = f
 
     # Grouped by (blob, path) so identical files each get their own markers;
     # fetched once per blob.
@@ -331,7 +339,7 @@ def build_evidence(repo: str, token: str, findings: list[dict]):
             by_path.setdefault((f["blob_sha"], f["file"]), []).append(f)
 
     blobs: dict[str, tuple[bytes | None, str]] = {}
-    for (blob_sha, _path), group in by_path.items():
+    for (blob_sha, path), group in by_path.items():
         if blob_sha not in blobs:
             blobs[blob_sha] = fetch_blob(repo, blob_sha, token, MAX_BLOB_BYTES)
         raw, reason = blobs[blob_sha]
@@ -343,8 +351,8 @@ def build_evidence(repo: str, token: str, findings: list[dict]):
         # Split on b"\n" only, to match the scanner's line numbers; decode
         # after masking.
         lines = raw.split(b"\n")
-        masked = [m.decode("utf-8", "replace")
-                  for m in mask_detections(lines, group)]
+        in_file = list(masks[(blob_sha, path)].values())
+        masked = [m.decode("utf-8", "replace") for m in mask_detections(lines, in_file)]
 
         for f in group:
             if f["location_kind"] == "path":
@@ -684,7 +692,8 @@ def render_comment(review, scan_conclusion, blocked, note=""):
     findings = review["findings"]
     if not findings:
         # No green tick under a red banner.
-        clean = not (review["injection"] or review["unanswered"] or blocked)
+        clean = not (review["injection"] or review["unanswered"] or blocked
+                     or scan_conclusion == "failure")
         L += ["✅ No secrets in the changed files." if clean
               else "No secrets among the detections that *were* triaged.", ""]
     for f in findings:
@@ -804,7 +813,7 @@ def main() -> int:
         else:
             # Runs even when `blocked`: the status stays red, but reviewers still
             # need verdicts on what was scanned.
-            evidence, errors = build_evidence(repo, gh_token, findings)
+            evidence, errors = build_evidence(repo, gh_token, findings, scan["findings"])
             if errors:
                 blocked = blocked or f"{len(errors)} detection(s) could not be read"
                 for e in errors[:10]:

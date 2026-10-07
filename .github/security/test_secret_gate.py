@@ -16,6 +16,7 @@ import pytest
 
 import ai_security_review as air
 import redaction
+import sanitize_findings
 import scan_head
 
 # --------------------------------------------------------------------- helpers
@@ -593,6 +594,7 @@ def test_ignore_path_is_a_fresh_empty_directory(monkeypatch, tmp_path):
     scan_head.run_betterleaks(str(tmp_path), "cfg.toml", str(tmp_path / "r.json"))
     assert seen["dir"] != "/tmp/bl-noignore"
     assert seen["listing"] == []
+    assert not os.path.exists(seen["dir"]), "left the ignore dir behind"
 
 
 @pytest.mark.parametrize("line, masked", [
@@ -623,3 +625,45 @@ def test_every_gate_workflow_is_valid_yaml():
     for f in sorted(workflows.glob("*.yml")):
         doc = yaml.safe_load(f.read_text())
         assert isinstance(doc, dict) and doc.get("jobs"), f.name
+
+
+# ------------------------------------------------- detections past the cap
+
+
+def test_detection_past_the_cap_is_masked_in_a_kept_window(monkeypatch):
+    """`redact` misses this value, so only the span mask keeps it from the model."""
+    kept, dropped = "kkkkQ7zv", "hunter2-but-longer"
+    lines = [f'first = "{kept}"', f'second = "{dropped}"']
+    monkeypatch.setattr(air, "fetch_blob",
+                        lambda *a, **k: ("\n".join(lines).encode(), ""))
+
+    def det(fid, n, value):
+        at = lines[n - 1].index(value)
+        return {**_finding(fid, "generic-api-key", n, at + 1, at + len(value)),
+                "location_kind": "line", "blob_sha": "cafe", "file": "a.py"}
+
+    first, second = det(1, 1, kept), det(2, 2, dropped)
+    assert dropped in air.build_evidence("o/r", "tok", [first])[0][0]["window"]
+
+    evidence, errors = air.build_evidence("o/r", "tok", [first], [first, second])
+
+    assert errors == [] and len(evidence) == 1
+    assert dropped not in evidence[0]["window"]
+    assert "«DETECTION-2:" in evidence[0]["window"]
+
+
+# ------------------------------------------------- comment and fingerprint
+
+
+def test_no_green_tick_when_stage_1_did_not_finish_cleanly():
+    review = {"findings": [], "false_positives": 0, "unanswered": [],
+              "injection": False}
+    assert "✅" in air.render_comment(review, "success", "")
+    assert "✅" not in air.render_comment(review, "failure", "")
+
+
+def test_fingerprint_correlates_without_revealing_the_secret():
+    a = sanitize_findings.fingerprint("s3cr3t-value")
+    assert a == sanitize_findings.fingerprint("s3cr3t-value")
+    assert a != sanitize_findings.fingerprint("s3cr3t-valuf")
+    assert re.fullmatch(r"[0-9a-f]{12}", a), "carries more than a keyed digest"

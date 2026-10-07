@@ -190,17 +190,23 @@ jobs:
           fi
 
           if [ -s /tmp/changed.z ]; then
-            # Trailing `--` so a file named "--config=evil.py" is a path, not a flag.
-            xargs -0 -a /tmp/changed.z \
+            # xargs splits a long file list into several semgrep runs, so each run
+            # writes its own report and they are merged below. An empty report
+            # means that run did not complete (e.g. registry unreachable); it marks
+            # the whole scan as not scanned rather than as zero findings. Trailing
+            # `--` so a file named "--config=evil.py" is a path, not a flag.
+            # shellcheck disable=SC2016  # the inner sh expands $out and $@
+            xargs -0 -a /tmp/changed.z sh -c '
+              out=$(mktemp /tmp/semgrep.part.XXXXXX)
               /tmp/sgvenv/bin/semgrep scan \
                 --config=p/secrets --config=p/security-audit --config=p/owasp-top-ten \
-                --json --output=/tmp/semgrep.raw.json \
-                --metrics=off --quiet --timeout=120 -- || true
-            # No report means the scan did not complete (e.g. registry unreachable);
-            # mark it as not scanned rather than as zero findings.
-            [ -f /tmp/semgrep.raw.json ] \
-              || echo '{"results":[],"__not_scanned":"scan did not complete"}' \
-                   > /tmp/semgrep.raw.json
+                --json --output="$out" --metrics=off --quiet --timeout=120 -- "$@" || true
+              [ -s "$out" ] || echo "{\"results\":[],\"__not_scanned\":\"scan did not complete\"}" > "$out"
+            ' sh || true
+            jq -s '{results: (map(.results // []) | add)}
+                   + (map(.__not_scanned // empty) | if length > 0 then {__not_scanned: .[0]} else {} end)' \
+              /tmp/semgrep.part.* > /tmp/semgrep.raw.json \
+              || echo '{"results":[],"__not_scanned":"scan did not complete"}' > /tmp/semgrep.raw.json
           else
             echo '{"results":[]}' > /tmp/semgrep.raw.json
           fi
