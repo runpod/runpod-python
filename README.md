@@ -76,8 +76,13 @@ Queue `.remote()` calls request a synchronous result and poll the same job if th
 ## Storage
 
 `NetworkVolume(name_or_id, size=50, datacenter=None, create=True)` references
-datacenter-local storage. Apps resolve names and choose a datacenter compatible
-with every resource sharing the volume. `GlobalVolume(name_or_id, create=True)`
+datacenter-local storage. New volumes use one catalog capability snapshot per
+provisioning run to select a datacenter with network storage support and hardware
+stock for every resource sharing the volume, respecting their datacenter pins.
+An unsupported explicit volume pin fails before creation instead of relocating;
+catalog lookup failures also stop creation. Existing volumes retain their IDs and
+datacenters regardless of new-volume eligibility. Their consumers must still be
+schedulable in that datacenter. `GlobalVolume(name_or_id, create=True)`
 references global storage without a datacenter constraint. Both inherit from
 the abstract `Volume` base, resolve by name or ID, and create missing storage
 when provisioning remote compute. Set `create=False` to require existing storage.

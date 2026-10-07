@@ -400,6 +400,7 @@ class TestTaskExecutionLifecycle:
         )
         api = AsyncMock()
         api.list_network_volumes.return_value = []
+        api.network_volume_datacenters.return_value = {"EU-RO-1", "US-IL-1"}
         api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
             "High" if dc == "US-IL-1" else "Low"
         )

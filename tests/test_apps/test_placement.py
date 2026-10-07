@@ -112,6 +112,7 @@ class TestSolvePlacement:
             ],
             stock,
             volume_name="models",
+            volume_datacenters={dc.value for dc in DataCenter.all()},
         )
         assert dc == "EU-RO-1"
 
@@ -130,6 +131,7 @@ class TestSolvePlacement:
                 ],
                 stock,
                 volume_name="models",
+                volume_datacenters={dc.value for dc in DataCenter.all()},
             )
 
     def test_existing_dc_is_hard_constraint(self):
@@ -139,6 +141,7 @@ class TestSolvePlacement:
             stock,
             volume_name="models",
             existing_dc="EU-RO-1",
+            volume_datacenters={dc.value for dc in DataCenter.all()},
         )
         assert dc == "EU-RO-1"
 
@@ -150,6 +153,7 @@ class TestSolvePlacement:
                 stock,
                 volume_name="models",
                 existing_dc="US-KS-2",
+                volume_datacenters={dc.value for dc in DataCenter.all()},
             )
 
     def test_maximin_prefers_worst_case_stock(self):
@@ -170,6 +174,7 @@ class TestSolvePlacement:
             ],
             stock,
             volume_name="v",
+            volume_datacenters={dc.value for dc in DataCenter.all()},
         )
         assert dc == "US-KS-2"
 
@@ -188,6 +193,7 @@ class TestSolvePlacement:
             ],
             stock,
             volume_name="shared",
+            volume_datacenters={dc.value for dc in DataCenter.all()},
         )
         assert dc == "EU-RO-1"
 
@@ -208,11 +214,31 @@ class TestSolvePlacement:
         await stock.fetch(_hardware_keys(single))
         await stock.fetch(_hardware_keys(pair))
 
-        assert solve_placement([single], stock, volume_name="one") == "EU-RO-1"
-        assert solve_placement([single, pair], stock, volume_name="shared") == "US-KS-2"
+        assert (
+            solve_placement(
+                [single],
+                stock,
+                volume_name="one",
+                volume_datacenters={dc.value for dc in DataCenter.all()},
+            )
+            == "EU-RO-1"
+        )
+        assert (
+            solve_placement(
+                [single, pair],
+                stock,
+                volume_name="shared",
+                volume_datacenters={dc.value for dc in DataCenter.all()},
+            )
+            == "US-KS-2"
+        )
         with pytest.raises(PlacementError):
             solve_placement(
-                [pair], stock, volume_name="fixed", existing_dc="EU-RO-1"
+                [pair],
+                stock,
+                volume_name="fixed",
+                existing_dc="EU-RO-1",
+                volume_datacenters={dc.value for dc in DataCenter.all()},
             )
 
     async def test_cpu_task_and_endpoint_require_shared_product_stock(self):
@@ -228,7 +254,29 @@ class TestSolvePlacement:
         task = ResourceSpec(kind=ResourceKind.TASK, name="task", cpu="cpu5c-2-4")
         await stock.fetch(_hardware_keys(endpoint))
         await stock.fetch(_hardware_keys(task))
-        assert solve_placement([endpoint], stock, volume_name="one") == "EU-RO-1"
-        assert solve_placement([endpoint, task], stock, volume_name="shared") == "US-KS-2"
+        assert (
+            solve_placement(
+                [endpoint],
+                stock,
+                volume_name="one",
+                volume_datacenters={dc.value for dc in DataCenter.all()},
+            )
+            == "EU-RO-1"
+        )
+        assert (
+            solve_placement(
+                [endpoint, task],
+                stock,
+                volume_name="shared",
+                volume_datacenters={dc.value for dc in DataCenter.all()},
+            )
+            == "US-KS-2"
+        )
         with pytest.raises(PlacementError):
-            solve_placement([task], stock, volume_name="fixed", existing_dc="EU-RO-1")
+            solve_placement(
+                [task],
+                stock,
+                volume_name="fixed",
+                existing_dc="EU-RO-1",
+                volume_datacenters={dc.value for dc in DataCenter.all()},
+            )
