@@ -82,9 +82,7 @@ class StockMap:
         gpu_ids = {
             (k[1], k[2])
             for k in keys
-            if k[0] == "gpu"
-            and k[1] != "*"
-            and (k[1], k[2]) not in self._fetched_gpu
+            if k[0] == "gpu" and k[1] != "*" and (k[1], k[2]) not in self._fetched_gpu
         }
         gpu_pod_ids = {
             (k[1], k[2])
@@ -133,7 +131,9 @@ class StockMap:
         try:
             status = await client.cpu_stock_status(instance_id, dc, pods=pods)
         except Exception:  # noqa: BLE001 - stock is advisory
-            log.debug("cpu stock query failed for %s@%s", instance_id, dc, exc_info=True)
+            log.debug(
+                "cpu stock query failed for %s@%s", instance_id, dc, exc_info=True
+            )
             status = None
         self._cpu[(instance_id, dc, pods)] = _score(status)
 
@@ -186,22 +186,22 @@ def solve_placement(
     stock: StockMap,
     *,
     volume_name: str,
+    volume_datacenters: Set[str],
+    volume_dc: Optional[str] = None,
     existing_dc: Optional[str] = None,
 ) -> str:
     """pick the datacenter for one volume given every resource using it.
 
     an existing volume's DC is a hard constraint (verified schedulable);
-    a new volume lands in the intersection of every resource's candidate
-    set, ranked maximin: the DC where the most-constrained resource has
-    the best stock.
+    a new volume lands in the intersection of storage capability, its pin,
+    and every resource's candidate set, ranked maximin: the DC where the
+    most-constrained resource has the best stock.
     """
     per_resource = {spec.name: candidates(spec, stock) for spec in specs}
 
     if existing_dc is not None:
         existing_dc = DataCenter.from_string(existing_dc).value
-        blocked = [
-            name for name, dcs in per_resource.items() if existing_dc not in dcs
-        ]
+        blocked = [name for name, dcs in per_resource.items() if existing_dc not in dcs]
         if blocked:
             raise PlacementError(
                 f"volume '{volume_name}' lives in {existing_dc}, but "
@@ -210,7 +210,9 @@ def solve_placement(
             )
         return existing_dc
 
-    shared = set.intersection(*per_resource.values()) if per_resource else set()
+    shared = volume_datacenters.intersection(*per_resource.values())
+    if volume_dc is not None:
+        shared &= {volume_dc}
     if not shared:
         lines = [
             f"  {name:<12} schedulable in: {', '.join(sorted(dcs)) or '(nowhere)'}"
@@ -218,7 +220,10 @@ def solve_placement(
         ]
         raise PlacementError(
             f"cannot place volume '{volume_name}': no datacenter can host "
-            f"every resource using it\n" + "\n".join(lines) + "\n"
+            f"every resource using it with network volume support"
+            f"{f' in pinned datacenter {volume_dc}' if volume_dc else ''}\n"
+            + "\n".join(lines)
+            + "\n"
             "use separate volumes or compatible hardware"
         )
 

@@ -507,6 +507,46 @@ class TestStock:
         rest.assert_not_awaited()
 
 
+class TestNetworkVolumeCapabilities:
+    async def test_any_supported_tier_is_eligible(self):
+        catalog = {
+            "dataCenters": [
+                {"id": "US-IL-1", "networkVolumeTypes": []},
+                {"id": "EU-RO-1", "networkVolumeTypes": ["STANDARD"]},
+                {"id": "US-KS-2", "networkVolumeTypes": ["PREMIUM"]},
+                {"id": "US-MO-2", "networkVolumeTypes": ["STANDARD", "PREMIUM"]},
+            ]
+        }
+        with patch(
+            "runpod.apps.api.run_rest_request_async",
+            AsyncMock(return_value=catalog),
+        ) as rest:
+            supported = await AppsApiClient(
+                api_key="test-key"
+            ).network_volume_datacenters()
+        assert supported == {"EU-RO-1", "US-KS-2", "US-MO-2"}
+        rest.assert_awaited_once_with(
+            "GET", "/v2/catalog/datacenters", api_key="test-key"
+        )
+
+    @pytest.mark.parametrize(
+        "catalog",
+        [
+            {},
+            {"dataCenters": None},
+            {"dataCenters": [{"id": "EU-RO-1"}]},
+            {"dataCenters": [{"id": "EU-RO-1", "networkVolumeTypes": "STANDARD"}]},
+        ],
+    )
+    async def test_missing_capability_is_not_assumed_available(self, catalog):
+        with patch(
+            "runpod.apps.api.run_rest_request_async",
+            AsyncMock(return_value=catalog),
+        ):
+            with pytest.raises(QueryError):
+                await AppsApiClient().network_volume_datacenters()
+
+
 class TestVolumesRegistrySecrets:
     async def test_secret_crud(self):
         client, patcher = _client_with(

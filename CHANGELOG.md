@@ -9,6 +9,9 @@
 ### Bug Fixes
 
 * Wait for task cleanup after interruption, preserve cancellation and task errors, recover in-flight pod creation, and retry transient task deletion failures without cancelling detached work.
+* Network volume creation intersects catalog storage support with every sharing resource's hardware stock and datacenter constraints. Unsupported explicit pins fail before creation; existing volumes retain their authoritative IDs and datacenters.
+* Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
+* Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
