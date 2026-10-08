@@ -331,10 +331,8 @@ def validate_mounts(mounts: Mapping[str, Volume], kind: str, is_cpu: bool) -> No
     if kind in ("queue", "api") and mounts:
         if len(mounts) != 1 or next(iter(mounts)) != str(ENDPOINT_MOUNT_PATH):
             raise VolumeError("endpoints support one volume mounted at /runpod-volume")
-        if is_cpu and any(
-            isinstance(volume, GlobalVolume) for volume in mounts.values()
-        ):
-            raise VolumeError("global volumes require a gpu endpoint")
+    if is_cpu and any(isinstance(volume, GlobalVolume) for volume in mounts.values()):
+        raise VolumeError("global volumes require gpu compute")
 
 
 def _bind_worker_mounts(

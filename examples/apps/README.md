@@ -48,7 +48,8 @@ Global-volume lookup and creation use GraphQL; network volumes use REST.
 
 Declare attachments with `mounts={"/path": volume}`. Tasks support one network
 and one global volume at distinct, non-overlapping paths. Queue and API resources
-support one volume at `/runpod-volume`; global storage requires a GPU endpoint.
+support one volume at `/runpod-volume`. Global volumes require GPU compute for
+both tasks and endpoints.
 
 Inside worker code, `volume.path` returns the configured mount path. The runtime
 binds declared references and resolved IDs before importing user code. Access

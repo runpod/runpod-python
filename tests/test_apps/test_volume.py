@@ -143,6 +143,16 @@ class TestVolumeRef:
         with pytest.raises(VolumeError):
             normalize_mounts(mounts)
 
+    @pytest.mark.parametrize("kind", list(ResourceKind))
+    def test_global_volume_rejects_cpu_resources(self, kind):
+        with pytest.raises(VolumeError):
+            ResourceSpec(
+                kind=kind,
+                name="cpu",
+                cpu="cpu3c-1-2",
+                mounts={"/runpod-volume": GlobalVolume("models")},
+            )
+
 
 class TestVolumeResolver:
     def test_existing_by_name(self):
@@ -311,7 +321,7 @@ class TestTaskVolume:
         spec = ResourceSpec(
             kind=ResourceKind.TASK,
             name="t",
-            cpu=["cpu3c-1-2"],
+            gpu="4090",
             mounts={"/models": NetworkVolume("models"), "/data": GlobalVolume("gv-1")},
         )
         execution = TaskExecution(spec, api=api)
@@ -336,22 +346,18 @@ class TestTaskVolume:
 
 class TestEndpointMounts:
     @pytest.mark.parametrize(
-        "mounts,cpu",
+        "mounts",
         [
-            ({"/models": NetworkVolume("models")}, None),
-            ({"/runpod-volume": GlobalVolume("global")}, "cpu3c-1-2"),
-            (
-                {
-                    "/runpod-volume": NetworkVolume("models"),
-                    "/data": GlobalVolume("global"),
-                },
-                None,
-            ),
+            {"/models": NetworkVolume("models")},
+            {
+                "/runpod-volume": NetworkVolume("models"),
+                "/data": GlobalVolume("global"),
+            },
         ],
     )
-    def test_unsupported_attachment_rejected_before_provisioning(self, mounts, cpu):
+    def test_unsupported_attachment_rejected_before_provisioning(self, mounts):
         with pytest.raises(VolumeError):
-            ResourceSpec(kind=ResourceKind.QUEUE, name="queue", cpu=cpu, mounts=mounts)
+            ResourceSpec(kind=ResourceKind.QUEUE, name="queue", mounts=mounts)
 
     def test_global_attachment_does_not_pin_datacenter(self):
         from runpod import App
