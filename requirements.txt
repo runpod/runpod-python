@@ -9,6 +9,7 @@ colorama >= 0.4.6, < 0.4.7
 cryptography >= 50.0.1
 fastapi[all] >= 0.141.1
 paramiko >= 5.0.0
+pathspec >= 0.12.1
 prettytable >= 3.18.0
 psutil >= 7.2.2
 py-cpuinfo >= 9.0.0

@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .errors import AppError
 from .utils.client import default_client
@@ -167,6 +167,7 @@ class VolumeResolver:
         self.events = events
         self._resolved: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self._stock = None
+        self._volume_datacenters: Optional[Set[str]] = None
 
     async def _client(self):
         self._api = default_client(self._api)
@@ -213,6 +214,44 @@ class VolumeResolver:
             raise VolumeError(f"volume '{volume.name}' not found and create=False")
 
         dc = record["dataCenter"] if record is not None else volume.datacenter
+        if record is None:
+            from .datacenter import DataCenter
+
+            pins = {
+                DataCenter.from_string(ref.datacenter).value
+                for ref in [volume]
+                + [
+                    ref
+                    for spec in specs
+                    for ref in spec.mounts.values()
+                    if (ref.kind, ref.reference) == key
+                ]
+                if ref.datacenter
+            }
+            if len(pins) > 1:
+                raise VolumeError(
+                    f"volume '{volume.name}' has conflicting datacenter pins: "
+                    + ", ".join(sorted(pins))
+                )
+            dc = next(iter(pins), None)
+            if not specs and not dc:
+                raise VolumeError(
+                    f"creating network volume {volume.name!r} requires a datacenter "
+                    "when no app placement constraints are available"
+                )
+            if self._volume_datacenters is None:
+                try:
+                    self._volume_datacenters = await client.network_volume_datacenters()
+                except Exception as exc:
+                    raise VolumeError(
+                        f"cannot determine network volume support for '{volume.name}': "
+                        f"datacenter catalog lookup failed: {exc}"
+                    ) from exc
+            if dc and dc not in self._volume_datacenters:
+                raise VolumeError(
+                    f"cannot create network volume '{volume.name}' in {dc}: "
+                    "datacenter does not support network volumes"
+                )
         if specs:
             from .placement import StockMap, _hardware_keys, solve_placement
 
@@ -220,12 +259,12 @@ class VolumeResolver:
                 self._stock = StockMap(client)
             await self._stock.fetch([k for spec in specs for k in _hardware_keys(spec)])
             dc = solve_placement(
-                specs, self._stock, volume_name=volume.name, existing_dc=dc
-            )
-        elif not dc:
-            raise VolumeError(
-                f"creating network volume {volume.name!r} requires a datacenter "
-                "when no app placement constraints are available"
+                specs,
+                self._stock,
+                volume_name=volume.name,
+                volume_datacenters=self._volume_datacenters or set(),
+                volume_dc=dc if record is None else None,
+                existing_dc=dc if record is not None else None,
             )
 
         if record is None:
@@ -292,10 +331,8 @@ def validate_mounts(mounts: Mapping[str, Volume], kind: str, is_cpu: bool) -> No
     if kind in ("queue", "api") and mounts:
         if len(mounts) != 1 or next(iter(mounts)) != str(ENDPOINT_MOUNT_PATH):
             raise VolumeError("endpoints support one volume mounted at /runpod-volume")
-        if is_cpu and any(
-            isinstance(volume, GlobalVolume) for volume in mounts.values()
-        ):
-            raise VolumeError("global volumes require a gpu endpoint")
+    if is_cpu and any(isinstance(volume, GlobalVolume) for volume in mounts.values()):
+        raise VolumeError("global volumes require gpu compute")
 
 
 def _bind_worker_mounts(

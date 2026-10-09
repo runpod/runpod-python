@@ -507,6 +507,23 @@ class TestStock:
         rest.assert_not_awaited()
 
 
+class TestNetworkVolumeCapabilities:
+    async def test_any_supported_tier_is_eligible(self):
+        catalog = {
+            "dataCenters": [
+                {"id": "US-IL-1", "networkVolumeTypes": []},
+                {"id": "EU-RO-1", "networkVolumeTypes": ["STANDARD"]},
+                {"id": "US-KS-2", "networkVolumeTypes": ["PREMIUM"]},
+            ]
+        }
+        with patch(
+            "runpod.apps.api.run_rest_request_async",
+            AsyncMock(return_value=catalog),
+        ):
+            supported = await AppsApiClient().network_volume_datacenters()
+        assert supported == {"EU-RO-1", "US-KS-2"}
+
+
 class TestVolumesRegistrySecrets:
     async def test_secret_crud(self):
         client, patcher = _client_with(

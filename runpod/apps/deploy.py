@@ -1,6 +1,5 @@
 """deploy pipeline: discovered apps -> manifest -> artifact -> activated build."""
 
-import fnmatch
 import json
 import logging
 import os
@@ -8,7 +7,9 @@ import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from pathspec import GitIgnoreSpec
 
 import runpod
 
@@ -32,17 +33,61 @@ log = logging.getLogger(__name__)
 MANIFEST_VERSION = 1
 
 DEFAULT_IGNORES = [
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
+    ".venv/",
+    "venv/",
+    "env/",
+    "__pycache__/",
     "*.pyc",
-    ".runpod",
-    ".flash",
-    "node_modules",
+    "node_modules/",
     ".DS_Store",
     "*.tar.gz",
+    "tests/",
+    "test/",
+    "test_*.py",
+    "*_test.py",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    ".ruff_cache/",
+    ".tox/",
+    ".nox/",
 ]
+
+PROTECTED_IGNORES = GitIgnoreSpec.from_lines(
+    [
+        ".git",
+        ".runpod",
+        ".flash",
+        "/env",
+        "/runpod_manifest.json",
+        ".env",
+        ".env.*",
+        "*.env",
+        "*.env.*",
+        "*.pem",
+        "*.key",
+        "id_rsa",
+        "id_rsa.*",
+        "id_dsa",
+        "id_dsa.*",
+        "id_ecdsa",
+        "id_ecdsa.*",
+        "id_ed25519",
+        "id_ed25519.*",
+        ".ssh",
+        ".aws",
+        ".azure",
+        ".kube",
+        ".docker/config.json",
+        "**/.docker/config.json",
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
+        ".git-credentials",
+        ".boto",
+        "service-account*.json",
+        "service_account*.json",
+    ]
+)
 
 
 def _module_path_for(fn, project_root: Path) -> str:
@@ -117,25 +162,19 @@ def build_manifest(
     return manifest
 
 
-def _load_ignores(project_root: Path) -> List[str]:
-    patterns = list(DEFAULT_IGNORES)
-    ignore_file = project_root / ".runpodignore"
-    if ignore_file.exists():
-        for line in ignore_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                patterns.append(line)
-    return patterns
+def _load_ignores(path: Path) -> GitIgnoreSpec:
+    if path.is_symlink() or not path.is_file():
+        return GitIgnoreSpec.from_lines([])
+    return GitIgnoreSpec.from_lines(path.read_text(encoding="utf-8").splitlines())
 
 
-def _is_ignored(rel_path: str, patterns: List[str]) -> bool:
-    parts = rel_path.split("/")
-    for pattern in patterns:
-        if fnmatch.fnmatch(rel_path, pattern):
-            return True
-        if any(fnmatch.fnmatch(part, pattern) for part in parts):
-            return True
-    return False
+def _is_ignored(rel_path: str, patterns: List[Tuple[str, GitIgnoreSpec]]) -> bool:
+    ignored = False
+    for prefix, spec in patterns:
+        result = spec.check_file(rel_path[len(prefix) :])
+        if result.include is not None:
+            ignored = result.include
+    return ignored
 
 
 ENV_DIR_NAME = "env"
@@ -150,35 +189,72 @@ def package_project(
     """tar source + vendored env + manifest into a build artifact.
 
     layout inside the tarball:
-        {source files}          project code, .runpodignore honored
+        {source files}          project code, git-style ignore rules honored
         env/                    vendored site-packages tree
         runpod_manifest.json
     """
     if output is None:
         output = Path(tempfile.mkdtemp()) / "artifact.tar.gz"
 
-    patterns = _load_ignores(project_root)
+    project_root = project_root.resolve()
+    output_resolved = output.resolve()
     env_resolved = env_dir.resolve() if env_dir is not None else None
+    runpod_ignores = _load_ignores(project_root / ".runpodignore")
+    git_ignores = [("", GitIgnoreSpec.from_lines(DEFAULT_IGNORES))]
 
-    with tarfile.open(output, "w:gz") as tar:
-        for path in sorted(project_root.rglob("*")):
-            if not path.is_file():
-                continue
-            if env_resolved is not None and env_resolved in path.resolve().parents:
-                continue
-            rel = path.relative_to(project_root).as_posix()
-            if _is_ignored(rel, patterns):
-                continue
-            if rel == ENV_DIR_NAME or rel.startswith(f"{ENV_DIR_NAME}/"):
-                continue
-            tar.add(path, arcname=rel)
-
-        if env_dir is not None and env_dir.is_dir():
-            for path in sorted(env_dir.rglob("*")):
-                if not path.is_file():
+    with tarfile.open(output, "w:gz", dereference=True) as tar:
+        for directory, dirs, files in os.walk(project_root, followlinks=False):
+            root = Path(directory)
+            relative = root.relative_to(project_root).as_posix()
+            prefix = "" if relative == "." else relative + "/"
+            while not prefix.startswith(git_ignores[-1][0]):
+                git_ignores.pop()
+            git_ignores.append((prefix, _load_ignores(root / ".gitignore")))
+            patterns = [*git_ignores, ("", runpod_ignores)]
+            kept_dirs = []
+            for name in sorted(dirs):
+                path = root / name
+                rel = prefix + name + "/"
+                if (
+                    path.is_symlink()
+                    or path == env_resolved
+                    or PROTECTED_IGNORES.match_file(rel)
+                    or _is_ignored(rel, patterns)
+                ):
+                    log.warning("excluded source path %r from deployment artifact", rel)
                     continue
-                rel = path.relative_to(env_dir).as_posix()
-                tar.add(path, arcname=f"{ENV_DIR_NAME}/{rel}")
+                kept_dirs.append(name)
+            dirs[:] = kept_dirs
+            for name in sorted(files):
+                path = root / name
+                rel = prefix + name
+                if (
+                    path.is_symlink()
+                    or not path.is_file()
+                    or path == output_resolved
+                    or PROTECTED_IGNORES.match_file(rel)
+                    or _is_ignored(rel, patterns)
+                ):
+                    log.warning("excluded source path %r from deployment artifact", rel)
+                    continue
+                tar.add(path, arcname=rel, recursive=False)
+
+        if env_resolved is not None and env_resolved.is_dir():
+            for directory, dirs, files in os.walk(env_resolved, followlinks=False):
+                root = Path(directory)
+                dirs[:] = sorted(
+                    name for name in dirs if not (root / name).is_symlink()
+                )
+                for name in sorted(files):
+                    path = root / name
+                    if (
+                        path.is_symlink()
+                        or not path.is_file()
+                        or path == output_resolved
+                    ):
+                        continue
+                    rel = path.relative_to(env_resolved).as_posix()
+                    tar.add(path, arcname=f"{ENV_DIR_NAME}/{rel}", recursive=False)
 
         manifest_bytes = json.dumps(manifest, indent=2).encode()
         info = tarfile.TarInfo(name="runpod_manifest.json")

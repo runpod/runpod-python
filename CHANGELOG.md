@@ -6,6 +6,14 @@
 
 * Apps expose `NetworkVolume` and `GlobalVolume` resources with explicit path-keyed mounts, lazy create-if-missing provisioning, and execution-bound filesystem access. Global volumes use GraphQL for lookup and creation.
 
+### Bug Fixes
+
+* Task calls support indefinite execution with bounded interruption cleanup. Failed deletion retains the pod ID for recovery.
+* Network volume creation intersects catalog storage support with every sharing resource's hardware stock and datacenter constraints. Unsupported explicit pins fail before creation; existing volumes retain their authoritative IDs and datacenters.
+* Global volume attachments require GPU compute for tasks and endpoints.
+* Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
+* Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
+
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
 
