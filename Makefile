@@ -9,7 +9,7 @@ test:
 	uv run pytest
 
 test-coverage:
-	uv run pytest --cov=runpod --cov-report=term-missing --cov-report=xml
+	uv run pytest --cov=runpod --cov-branch --cov-report=term-missing --cov-report=xml --junitxml=pytest-results.xml
 
 # --- Build ---
 build:
