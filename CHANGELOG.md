@@ -14,6 +14,30 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.0.0](https://github.com/runpod/runpod-python/compare/v1.12.0...v2.0.0) (2026-10-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* apps SDK, decorator-native GPU compute with live dev sessions and a new rp CLI ([#534](https://github.com/runpod/runpod-python/issues/534))
+
+### Features
+
+* apps SDK, decorator-native GPU compute with live dev sessions and a new rp CLI ([#534](https://github.com/runpod/runpod-python/issues/534)) ([31d81e0](https://github.com/runpod/runpod-python/commit/31d81e092e2b64b583e711b9b4bdb6e5cbf05e86))
+* migrate api wrapper to rest v2 ([#584](https://github.com/runpod/runpod-python/issues/584)) ([e80c2f2](https://github.com/runpod/runpod-python/commit/e80c2f237d4b6eb41c50cee7a029a08f2694bc4c))
+* **serverless:** coordinate early health checks once per container ([#578](https://github.com/runpod/runpod-python/issues/578)) ([760aea2](https://github.com/runpod/runpod-python/commit/760aea2cc6c0a8f5739b2a8667f61ae11d49d37b))
+* SLS-497 Add explicit prestart hooks to the runpod-python SDK ([#570](https://github.com/runpod/runpod-python/issues/570)) ([70f2de4](https://github.com/runpod/runpod-python/commit/70f2de42f631d550135776d590c3fc7ee562f77f))
+
+
+### Bug Fixes
+
+* address Apps SDK alpha lifecycle, storage, and packaging reports ([#611](https://github.com/runpod/runpod-python/issues/611)) ([3864d37](https://github.com/runpod/runpod-python/commit/3864d374cba523ecee09f3bc95f073f17a64b970))
+
+
+### Documentation
+
+* focus README on quickstarts ([#610](https://github.com/runpod/runpod-python/issues/610)) ([abc4ee1](https://github.com/runpod/runpod-python/commit/abc4ee1ddc7a119a5db36d594565b2e52d90603e))
+
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
 
