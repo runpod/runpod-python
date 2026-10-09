@@ -164,6 +164,36 @@ class TestPackaging:
                 "runpod_manifest.json",
             }
 
+    def test_credential_like_source_paths_are_included(self, tmp_path):
+        names = (
+            "credentials.py",
+            "secrets.py",
+            "credentials",
+            "secrets",
+            "nested/secrets/config.py",
+            "nested/credentials/config.py",
+        )
+        for name in names:
+            path = tmp_path / "src" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("source")
+        with tarfile.open(package_project(tmp_path, {})) as tar:
+            for name in names:
+                assert f"src/{name}" in tar.getnames()
+
+    def test_excluded_paths_are_logged_without_contents(self, tmp_path, caplog):
+        for name in (".env", "private.key", "private.pem", "local.txt", ".aws/config"):
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("sensitive-file-contents")
+        (tmp_path / ".runpodignore").write_text("!*.key\n!.aws/\nlocal.txt\n")
+
+        with tarfile.open(package_project(tmp_path, {})) as tar:
+            assert set(tar.getnames()) == {".runpodignore", "runpod_manifest.json"}
+        for name in (".env", "private.key", "private.pem", "local.txt", ".aws/"):
+            assert f"excluded source path {name!r} from deployment artifact" in caplog.text
+        assert "sensitive-file-contents" not in caplog.text
+
     def test_vendored_env_included_under_env(self, tmp_path):
         _write_project(tmp_path)
         env_dir = tmp_path / "built-env"

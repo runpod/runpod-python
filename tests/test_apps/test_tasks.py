@@ -477,6 +477,7 @@ class TestTaskExecutionLifecycle:
         with patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()):
             response = await execution.execute({"fn": "t"}, timeout=60)
         assert response == {"success": True, "json_result": 4}
+        execution.submit.assert_awaited_once_with({"fn": "t", "timeout": 60})
 
     async def test_execute_timeout(self):
         from runpod.apps.tasks import TaskExecution
@@ -494,6 +495,46 @@ class TestTaskExecutionLifecycle:
         ):
             with pytest.raises(TimeoutError, match="did not finish"):
                 await execution.execute({"fn": "t"}, timeout=10)
+
+
+class TestTaskTimeoutTransport:
+    @pytest.mark.parametrize("method", ["submit", "set_timeout"])
+    @pytest.mark.parametrize("acknowledged", [False, True])
+    async def test_runtime_must_acknowledge_timeout(self, method, acknowledged):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(
+            ResourceSpec(kind=ResourceKind.TASK, name="t"), api=MagicMock()
+        )
+        execution.pod_id = "pod-9"
+        response = MagicMock(status=200)
+        response.json = AsyncMock(
+            return_value={"timeout": 60} if acknowledged else {"status": "RUNNING"}
+        )
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.post.return_value.__aenter__.return_value = response
+        with patch("runpod.apps.tasks.aiohttp.ClientSession", return_value=session):
+            argument = {"timeout": 60} if method == "submit" else 60
+            if acknowledged:
+                await getattr(execution, method)(argument)
+            else:
+                with pytest.raises(RuntimeError, match="did not acknowledge"):
+                    await getattr(execution, method)(argument)
+        assert session.post.call_args.kwargs["json"] == {"timeout": 60}
+        assert session.post.call_args.kwargs["headers"] == execution._headers
+
+    @pytest.mark.parametrize("timeout", [-1, True, "60", float("nan"), float("inf")])
+    async def test_invalid_timeouts_fail_before_http(self, timeout):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(
+            ResourceSpec(kind=ResourceKind.TASK, name="t"), api=MagicMock()
+        )
+        with patch("runpod.apps.tasks.aiohttp.ClientSession") as session:
+            with pytest.raises(ValueError, match="finite non-negative"):
+                await execution.set_timeout(timeout)
+        session.assert_not_called()
 
 
 class TestTaskJob:
@@ -515,6 +556,23 @@ class TestTaskJob:
         assert result == 9
         execution.terminate.assert_awaited_once()
 
+    async def test_wait_sends_timeout_to_runtime(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(
+            return_value={"success": True, "json_result": 9}
+        )
+        assert await job.wait(timeout=60) == 9
+        execution.set_timeout.assert_awaited_once_with(60)
+        execution.terminate.assert_awaited_once()
+
+    async def test_timeout_configuration_failure_terminates_pod(self):
+        job, execution = self._job()
+        execution.set_timeout = AsyncMock(side_effect=RuntimeError("unsupported"))
+        with pytest.raises(RuntimeError, match="unsupported"):
+            await job.wait(timeout=60)
+        execution.poll_result.assert_not_called()
+        execution.terminate.assert_awaited_once()
+
     async def test_wait_timeout_terminates_pod(self):
         from runpod.apps.tasks import TaskExecution, TaskJob
 
@@ -527,11 +585,13 @@ class TestTaskJob:
             pods.remove(pod_id)
 
         execution.api.terminate_pod = delete
+        execution.set_timeout = AsyncMock()
         job = TaskJob(execution)
         with pytest.raises(TimeoutError):
             await job.wait(timeout=0)
         assert not pods
         assert job.pod_id is None
+        execution.set_timeout.assert_awaited_once_with(0)
 
     @pytest.mark.parametrize(
         "failure",

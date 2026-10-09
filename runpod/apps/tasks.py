@@ -6,13 +6,11 @@ lifecycle per call:
   2. wait for the runner's /ping via the pod http proxy
   3. POST the FunctionRequest to /execute (remote) or /submit (spawn)
   4. collect the response, terminate the pod
-
-active functions have no runtime lifetime limit. the watchdog only reclaims
-idle pods without active background or inline work.
 """
 
 import asyncio
 import logging
+import math
 import os as _os
 import secrets
 import sys
@@ -287,7 +285,7 @@ class TaskExecution:
         (long jobs would 524), so completion always goes through the
         background slot + short /result polls.
         """
-        await self.submit(request)
+        await self.submit({**request, "timeout": timeout})
         deadline = time.monotonic() + timeout if timeout is not None else None
         while True:
             if deadline is not None and time.monotonic() >= deadline:
@@ -307,7 +305,21 @@ class TaskExecution:
         and /ping succeeded), 404s here are propagation races and are
         retried briefly rather than surfaced.
         """
-        url = f"{_proxy_url(self.pod_id)}/submit"
+        await self._post("/submit", request)
+
+    async def set_timeout(self, timeout: float) -> None:
+        await self._post("/timeout", {"timeout": timeout})
+
+    async def _post(self, path: str, request: Dict[str, Any]) -> None:
+        timeout = request.get("timeout")
+        if timeout is not None and (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout < 0
+        ):
+            raise ValueError("task timeout must be a finite non-negative number")
+        url = f"{_proxy_url(self.pod_id)}{path}"
         attempts = 6
         async with aiohttp.ClientSession() as session:
             for attempt in range(attempts):
@@ -321,6 +333,16 @@ class TaskExecution:
                         await asyncio.sleep(2 * (attempt + 1))
                         continue
                     resp.raise_for_status()
+                    if timeout is not None:
+                        response = await resp.json()
+                        if (
+                            not isinstance(response, dict)
+                            or response.get("timeout") != timeout
+                        ):
+                            raise RuntimeError(
+                                "task runtime did not acknowledge the timeout; "
+                                "update the task runtime image"
+                            )
                     return
 
     async def poll_result(self) -> Optional[Dict[str, Any]]:
@@ -426,8 +448,10 @@ class TaskJob:
 
     async def wait(self, timeout: Optional[float] = None) -> Any:
         """wait for the result, terminating the pod on every exit."""
-        deadline = time.monotonic() + timeout if timeout is not None else None
         try:
+            deadline = time.monotonic() + timeout if timeout is not None else None
+            if not self._done and timeout is not None:
+                await self._execution.set_timeout(timeout)
             while not self._done:
                 if deadline is not None and time.monotonic() >= deadline:
                     raise TimeoutError(

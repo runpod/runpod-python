@@ -84,10 +84,6 @@ PROTECTED_IGNORES = GitIgnoreSpec.from_lines(
         ".pypirc",
         ".git-credentials",
         ".boto",
-        "credentials",
-        "credentials.*",
-        "secrets",
-        "secrets.*",
         "service-account*.json",
         "service_account*.json",
     ]
@@ -225,6 +221,7 @@ def package_project(
                     or PROTECTED_IGNORES.match_file(rel)
                     or _is_ignored(rel, patterns)
                 ):
+                    log.warning("excluded source path %r from deployment artifact", rel)
                     continue
                 kept_dirs.append(name)
             dirs[:] = kept_dirs
@@ -238,6 +235,7 @@ def package_project(
                     or PROTECTED_IGNORES.match_file(rel)
                     or _is_ignored(rel, patterns)
                 ):
+                    log.warning("excluded source path %r from deployment artifact", rel)
                     continue
                 tar.add(path, arcname=rel, recursive=False)
 
