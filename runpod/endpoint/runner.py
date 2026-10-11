@@ -46,6 +46,7 @@ class RunPodClient:
         self.rp_session = requests.Session()
         retries = Retry(total=5, backoff_factor=1, status_forcelist=[408, 429])
         self.rp_session.mount("http://", HTTPAdapter(max_retries=retries))
+        self.rp_session.mount("https://", HTTPAdapter(max_retries=retries))
 
         self.headers = {
             "Content-Type": "application/json",
