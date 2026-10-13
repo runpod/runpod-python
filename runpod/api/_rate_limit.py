@@ -1,7 +1,8 @@
 """Shared REST quotas for threads and asynchronous callers."""
 
-import hashlib
+import hmac
 import math
+import os
 import random
 import re
 import threading
@@ -122,6 +123,7 @@ class _Bucket:
 class _RateLimits:
     def __init__(self):
         self.lock = threading.Lock()
+        self.fingerprint_key = os.urandom(32)
         self.buckets: dict[tuple[str, str, bytes], _Bucket] = {}
 
     @contextmanager
@@ -130,7 +132,7 @@ class _RateLimits:
         key = (
             origin.scheme.lower(),
             origin.netloc.lower(),
-            hashlib.sha256(api_key.encode()).digest(),
+            hmac.digest(self.fingerprint_key, api_key.encode(), "sha256"),
         )
         with self.lock:
             now = time.monotonic()

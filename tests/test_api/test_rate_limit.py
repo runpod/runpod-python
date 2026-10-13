@@ -237,6 +237,14 @@ def test_registry_retains_active_cooldowns_and_evicts_idle_state(clock):
         assert limited not in limits.buckets.values()
 
 
+def test_credential_fingerprints_are_private_to_each_registry():
+    first = _rate_limit._RateLimits()
+    second = _rate_limit._RateLimits()
+    with first.bucket("https://example.com", "key"):
+        with second.bucket("https://example.com", "key"):
+            assert next(iter(first.buckets)) != next(iter(second.buckets))
+
+
 @pytest.mark.parametrize("attempt", [0, 1, 5, 1000])
 def test_fallback_is_positive_jittered_and_capped(attempt, clock, monkeypatch):
     monkeypatch.setattr(_rate_limit.random, "uniform", lambda low, high: 0.75)
@@ -267,7 +275,10 @@ def quota_server(monkeypatch):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Content-Type", "application/json")
             for key, value in headers.items():
-                self.send_header(key, value)
+                self.send_header(
+                    key.replace("\r", "").replace("\n", ""),
+                    value.replace("\r", "").replace("\n", ""),
+                )
             self.end_headers()
             self.wfile.write(body)
 
@@ -465,7 +476,7 @@ async def test_cancellation_during_wait_does_not_hold_reservation(
         assert bucket.in_flight == 0
         pending.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await pending
+            await asyncio.wait_for(pending, 1)
         assert bucket.users == 0
         assert bucket.in_flight == 0
         assert bucket.blocked_until > _rate_limit.time.monotonic()
