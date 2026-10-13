@@ -1,6 +1,6 @@
 """unit tests for the apps control-plane client."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import aiohttp
 import pytest
@@ -67,10 +67,134 @@ class TestExecuteRetry:
     async def test_mutation_transport_failure_is_not_retried(self, failure, operation):
         client = AppsApiClient(api_key="test-key")
         transport = AsyncMock(side_effect=failure)
-        with patch("runpod.apps.api.run_graphql_query_async", transport):
+        transport_name = (
+            "run_rest_request_async"
+            if operation == "create_global_volume"
+            else "run_graphql_query_async"
+        )
+        with patch(f"runpod.apps.api.{transport_name}", transport):
             with pytest.raises(type(failure)):
                 await getattr(client, operation)("demo")
         assert transport.await_count == 1
+
+
+class TestGlobalVolumes:
+    @pytest.mark.parametrize("volumes", [[], [{"id": "gsb_abc", "name": "data"}]])
+    async def test_list(self, volumes):
+        rest = AsyncMock(
+            return_value={
+                "globalVolumes": volumes,
+                "pagination": {"hasNextPage": False, "nextCursor": None},
+            }
+        )
+        with (
+            patch("runpod.apps.api.run_rest_request_async", rest),
+            patch("runpod.apps.api.run_graphql_query_async", AsyncMock()) as graphql,
+        ):
+            assert (
+                await AppsApiClient(api_key="test-key").list_global_volumes() == volumes
+            )
+        rest.assert_awaited_once_with(
+            "GET", "/v2/global-volumes", api_key="test-key", params={}
+        )
+        graphql.assert_not_awaited()
+
+    async def test_list_follows_all_cursors(self):
+        volumes = [
+            {"id": f"gsb_{index}", "name": f"data-{index}"} for index in range(3)
+        ]
+        rest = AsyncMock(
+            side_effect=[
+                {
+                    "globalVolumes": [volume],
+                    "pagination": {
+                        "hasNextPage": index < 2,
+                        "nextCursor": f"opaque-{index}" if index < 2 else None,
+                    },
+                }
+                for index, volume in enumerate(volumes)
+            ]
+        )
+        with patch("runpod.apps.api.run_rest_request_async", rest):
+            assert (
+                await AppsApiClient(api_key="test-key").list_global_volumes() == volumes
+            )
+        assert rest.await_args_list == [
+            call("GET", "/v2/global-volumes", api_key="test-key", params=params)
+            for params in ({}, {"cursor": "opaque-0"}, {"cursor": "opaque-1"})
+        ]
+
+    @pytest.mark.parametrize("duplicate", [False, True])
+    async def test_resolver_checks_names_across_pages(self, duplicate):
+        from runpod.apps.volume import GlobalVolume, VolumeError, VolumeResolver
+
+        rest = AsyncMock(
+            side_effect=[
+                {
+                    "globalVolumes": [
+                        {"id": "gsb_first", "name": "data" if duplicate else "other"}
+                    ],
+                    "pagination": {"hasNextPage": True, "nextCursor": "next"},
+                },
+                {
+                    "globalVolumes": [{"id": "gsb_second", "name": "data"}],
+                    "pagination": {"hasNextPage": False, "nextCursor": None},
+                },
+            ]
+        )
+        resolver = VolumeResolver(api=AppsApiClient(api_key="test-key"))
+        with patch("runpod.apps.api.run_rest_request_async", rest):
+            if duplicate:
+                with pytest.raises(VolumeError, match="multiple"):
+                    await resolver.resolve(GlobalVolume("data", create=True))
+            else:
+                assert await resolver.resolve(GlobalVolume("data", create=True)) == {
+                    "id": "gsb_second"
+                }
+        assert [request.args[0] for request in rest.await_args_list] == ["GET", "GET"]
+
+    async def test_create(self):
+        volume = {
+            "id": "gsb_abc",
+            "name": "training-data",
+            "createdAt": "2026-09-24T00:00:00Z",
+            "createdByUserId": "user_123",
+        }
+        rest = AsyncMock(return_value=volume)
+        with (
+            patch("runpod.apps.api.run_rest_request_async", rest),
+            patch("runpod.apps.api.run_graphql_query_async", AsyncMock()) as graphql,
+        ):
+            assert (
+                await AppsApiClient(api_key="test-key").create_global_volume(
+                    "training-data"
+                )
+                == volume
+            )
+        rest.assert_awaited_once_with(
+            "POST",
+            "/v2/global-volumes",
+            api_key="test-key",
+            json={"name": "training-data"},
+        )
+        graphql.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "operation", ["list_global_volumes", "create_global_volume"]
+    )
+    async def test_rest_error_propagates_without_graphql_fallback(self, operation):
+        failure = QueryError("denied", status_code=403)
+        rest = AsyncMock(side_effect=failure)
+        with (
+            patch("runpod.apps.api.run_rest_request_async", rest),
+            patch("runpod.apps.api.run_graphql_query_async", AsyncMock()) as graphql,
+        ):
+            args = ("data",) if operation == "create_global_volume" else ()
+            with pytest.raises(QueryError) as exc:
+                await getattr(AppsApiClient(api_key="test-key"), operation)(*args)
+        assert exc.value is failure
+        assert rest.await_count == 1
+        graphql.assert_not_awaited()
 
 
 class TestEndpoints:

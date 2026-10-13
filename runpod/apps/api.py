@@ -1,7 +1,7 @@
 """control-plane calls for app provisioning.
 
 rest handles equivalent resource operations; graphql handles flash lifecycle,
-auth, secrets, global storage, task provisioning, and endpoint capabilities
+auth, secrets, task provisioning, and endpoint capabilities
 absent from rest. management verbs for the wider sdk stay in runpod.api.ctl_commands.
 """
 
@@ -413,14 +413,25 @@ class AppsApiClient:
         return supported
 
     async def list_global_volumes(self) -> List[Dict[str, Any]]:
-        data = await self._execute(app_queries.QUERY_GLOBAL_VOLUMES, retry=True)
-        return data["myself"]["globalStoreBuckets"]
+        volumes = []
+        params = {}
+        while True:
+            data = await run_rest_request_async(
+                "GET", "/v2/global-volumes", api_key=self._api_key, params=params
+            )
+            volumes.extend(data["globalVolumes"])
+            pagination = data["pagination"]
+            if not pagination["hasNextPage"]:
+                return volumes
+            params = {"cursor": pagination["nextCursor"]}
 
     async def create_global_volume(self, name: str) -> Dict[str, Any]:
-        data = await self._execute(
-            app_mutations.MUTATION_CREATE_GLOBAL_VOLUME, {"input": {"name": name}}
+        return await run_rest_request_async(
+            "POST",
+            "/v2/global-volumes",
+            api_key=self._api_key,
+            json={"name": name},
         )
-        return data["globalStoreBucketCreate"]
 
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
         data = await run_rest_request_async(
