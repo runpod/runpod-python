@@ -433,13 +433,13 @@ def test_copy_file_preserves_mtime_and_mode(tmp_path):
     vc, cache, _vol = _mk_cache_with_volume(tmp_path)
     src = cache / "run.sh"
     src.write_text("#!/bin/sh\n")
-    os.chmod(src, 0o755)
+    os.chmod(src, 0o700)
     os.utime(src, (1_000_000_000, 1_000_000_000))
     dst = cache / "copy.sh"
 
     assert vc._copy_file(str(src), str(dst)) is True
     assert os.stat(dst).st_mtime == 1_000_000_000
-    assert os.stat(dst).st_mode & 0o777 == 0o755
+    assert os.stat(dst).st_mode & 0o777 == 0o700
 
 
 def _deny_metadata_ops(monkeypatch):
