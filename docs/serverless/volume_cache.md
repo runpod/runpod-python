@@ -59,7 +59,9 @@ vc.sync(background=False)           # persist new files back to the volume, inli
 | `namespace` | `RUNPOD_ENDPOINT_ID` | Isolation key for the on-volume mirror. Must be a single safe path component. |
 | `volume_path` | `/runpod-volume` | Network-volume mount point. |
 | `best_effort` | `True` | Swallow and log errors instead of raising. Set `False` while debugging. |
-| `max_workers` | `min(32, (os.cpu_count() or 4) * 4)` | Thread count for parallel copy of large files (I/O-bound). |
+| `max_workers` | `min(32, (os.cpu_count() or 4) * 4)` | Thread count for parallel copy of large files on sync (I/O-bound). |
+| `hydrate_workers` | `64` | Concurrent range reads when hydrating large files. |
+| `hydrate_chunk_size` | `8 MiB` | Bytes per hydrate range. Peak hydrate memory is about `hydrate_workers * hydrate_chunk_size` (512 MiB by default). |
 
 ## How it works
 
@@ -77,9 +79,21 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   files are skipped. The `small.tar` archive is re-packed as a whole whenever
   any small file has changed, since unpacking and re-diffing many tiny files
   individually is slower than the network volume's per-file overhead.
-- **Parallel copy.** Large-file transfers run across a thread pool sized by
-  `max_workers` (default `min(32, (os.cpu_count() or 4) * 4)`), since the
-  work is I/O-bound.
+- **Parallel copy.** On sync, large files are copied whole across a thread
+  pool sized by `max_workers` (default `min(32, (os.cpu_count() or 4) * 4)`),
+  since the work is I/O-bound.
+- **Range-parallel hydrate.** On hydrate, every large file is split into
+  `hydrate_chunk_size` ranges, and one pool of `hydrate_workers` threads reads
+  the ranges of all files at once, each on its own file descriptor.
+  Object-store mounts such as Global Store serve one sequential stream at
+  roughly 140 MiB/s, and reading several whole files at once doesn't add up,
+  but independent range reads scale to the host's network (~1.1 GiB/s
+  measured). Transient `ENOMEM`/`EIO`/`EAGAIN` errors, which such mounts
+  return under load, are retried with backoff. A file is assembled in a temp
+  file and renamed into place only when every range has copied, so a failed
+  file leaves any existing local copy untouched and is simply not restored.
+  Keep `hydrate_workers * hydrate_chunk_size` near the default: past ~1 GiB in
+  flight, Global Store starts failing reads with `ENOMEM`.
 - **Packing/extraction.** Packing the small-file archive uses the `tar`
   binary when available (falling back to the stdlib `tarfile` module
   otherwise). Extraction always goes through `tarfile`, validating every

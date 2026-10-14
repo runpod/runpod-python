@@ -1088,3 +1088,182 @@ def test_copy_parallel_copies_needed_only(tmp_path):
 def test_copy_parallel_empty_is_zero(tmp_path):
     vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
     assert vc._copy_parallel([]) == (set(), set())
+
+
+# --------------------------------------------------------------------------- #
+# range-parallel hydrate
+# --------------------------------------------------------------------------- #
+
+_CHUNK = 64 * 1024
+
+
+def _synced_big_files(tmp_path, monkeypatch, names, size=None):
+    """Sync big files to the volume, delete them locally; return (cache, vol, payloads)."""
+    monkeypatch.setattr(vcmod, "_RANGE_RETRY_BASE_SECONDS", 0)
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    size = size or vcmod._SMALL_FILE_THRESHOLD * 3 + 123  # not a multiple of the chunk
+    payloads = {}
+    for name in names:
+        payloads[name] = os.urandom(size)
+        (cache / name).write_bytes(payloads[name])
+    vc.sync(background=False)
+    for name in names:
+        (cache / name).unlink()
+    return cache, vol, payloads
+
+
+def _hydrating_cache(cache, vol, **kwargs):
+    kwargs.setdefault("hydrate_chunk_size", _CHUNK)
+    return VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol), **kwargs)
+
+
+def _fail_pread_on(monkeypatch, marker, err, times=None):
+    """Make os.pread raise OSError(err) for fds of files whose path contains marker."""
+    real_open, real_pread = os.open, os.pread
+    marked, calls = set(), []
+
+    def tracking_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if marker in str(path) and not flags & os.O_WRONLY:
+            marked.add(fd)
+        else:
+            marked.discard(fd)
+        return fd
+
+    def flaky_pread(fd, n, off):
+        if fd in marked and (times is None or len(calls) < times):
+            calls.append(off)
+            raise OSError(err, os.strerror(err))
+        return real_pread(fd, n, off)
+
+    monkeypatch.setattr(os, "open", tracking_open)
+    monkeypatch.setattr(os, "pread", flaky_pread)
+    return calls
+
+
+def test_hydrate_copies_big_file_in_ranges(tmp_path, monkeypatch):
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    ranges = []
+    real_copy_range = vcmod._copy_range
+    monkeypatch.setattr(
+        vcmod, "_copy_range", lambda *a: ranges.append(a[2:]) or real_copy_range(*a)
+    )
+
+    restored = _hydrating_cache(cache, vol).hydrate()
+
+    size = len(payloads["model.safetensors"])
+    assert restored == 1
+    assert (cache / "model.safetensors").read_bytes() == payloads["model.safetensors"]
+    assert sorted(ranges) == [(off, min(_CHUNK, size - off)) for off in range(0, size, _CHUNK)]
+
+
+def test_hydrate_interleaves_ranges_across_files(tmp_path, monkeypatch):
+    # Concurrent readers must spread over every file: on an object-store mount,
+    # parallel reads of one sequential stream don't add up.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    order = []
+    real_copy_range = vcmod._copy_range
+    monkeypatch.setattr(
+        vcmod,
+        "_copy_range",
+        lambda src, *a: order.append(os.path.basename(src)) or real_copy_range(src, *a),
+    )
+
+    _hydrating_cache(cache, vol, hydrate_workers=1).hydrate()
+
+    assert order[:4] == ["a.bin", "b.bin", "a.bin", "b.bin"]
+
+
+def test_hydrate_retries_transient_range_errors(tmp_path, monkeypatch):
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    failures = _fail_pread_on(monkeypatch, "/big/", errno.ENOMEM, times=3)
+
+    restored = _hydrating_cache(cache, vol).hydrate()
+
+    assert len(failures) == 3
+    assert restored == 1
+    assert (cache / "model.safetensors").read_bytes() == payloads["model.safetensors"]
+
+
+def test_hydrate_does_not_retry_non_transient_errors(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    failures = _fail_pread_on(monkeypatch, "/big/", errno.EACCES)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=1).hydrate()
+
+    assert restored == 0
+    assert len(failures) == 1  # first failure aborts the file; its other ranges are skipped
+
+
+def test_hydrate_skips_only_the_failing_file(tmp_path, monkeypatch):
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["bad.bin", "good.bin"])
+    _fail_pread_on(monkeypatch, "bad.bin", errno.EIO)
+
+    restored = _hydrating_cache(cache, vol).hydrate()
+
+    assert restored == 1
+    assert (cache / "good.bin").read_bytes() == payloads["good.bin"]
+    assert not (cache / "bad.bin").exists()
+    assert [p for p in os.listdir(cache) if p.endswith(".rpvc.tmp")] == []
+
+
+def test_hydrate_failure_leaves_existing_local_file_untouched(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    stale = cache / "model.safetensors"
+    stale.write_bytes(b"older local bytes")
+    _set_mtime(stale, 1_000_000_000)
+    _fail_pread_on(monkeypatch, "/big/", errno.EIO)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 0
+    assert stale.read_bytes() == b"older local bytes"
+
+
+def test_hydrate_treats_short_read_as_failure(tmp_path, monkeypatch):
+    # A mirror file truncated after the manifest was written must not be
+    # restored as a zero-padded copy of the expected size.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(cache / "model.safetensors"), "/")
+    with open(mirrored, "r+b") as fh:
+        fh.truncate(_CHUNK + 1)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 0
+    assert not (cache / "model.safetensors").exists()
+
+
+@pytest.mark.parametrize("arg", ["hydrate_workers", "hydrate_chunk_size"])
+@pytest.mark.parametrize("bad", [0, -1])
+def test_hydrate_tuning_rejects_non_positive(tmp_path, arg, bad):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    with pytest.raises(ValueError):
+        VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), **{arg: bad})
+
+
+def test_hydrate_tuning_defaults(tmp_path):
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    assert vc._hydrate_workers == 64
+    assert vc._hydrate_chunk_size == 8 * 1024 * 1024
+
+
+def test_hydrate_skips_file_when_local_temp_cannot_be_created(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+
+    def no_space(*_args, **_kwargs):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(os, "makedirs", no_space)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 0
+    assert os.listdir(cache) == []
+
+
+def test_hydrate_cleans_temp_when_rename_fails(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+
+    def busy(*_args, **_kwargs):
+        raise OSError(errno.EBUSY, "Device or resource busy")
+
+    monkeypatch.setattr(os, "replace", busy)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 0
+    assert os.listdir(cache) == []
