@@ -1,3 +1,4 @@
+import errno
 import json
 import os
 import shutil
@@ -404,12 +405,79 @@ def test_copy_file_returns_false_and_cleans_tmp_on_failure(tmp_path, monkeypatch
     src.write_text("data")
     dst = cache / "dst.bin"
 
-    def flaky_copy2(_src, _dst):
+    def flaky_copyfile(_src, _dst, **_kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(shutil, "copy2", flaky_copy2)
+    monkeypatch.setattr(shutil, "copyfile", flaky_copyfile)
     assert vc._copy_file(str(src), str(dst)) is False
     assert not os.path.exists(str(dst) + ".rpvc.tmp")
+
+
+def test_copy_failure_is_logged_as_warning(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    src = cache / "f.bin"
+    src.write_text("data")
+    warnings = []
+
+    def flaky_copyfile(_src, _dst, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(shutil, "copyfile", flaky_copyfile)
+    monkeypatch.setattr(vcmod.log, "warn", lambda msg, *_a, **_kw: warnings.append(msg))
+    vc._copy_file(str(src), str(cache / "dst.bin"))
+
+    assert any("f.bin" in w and "disk full" in w for w in warnings)
+
+
+def test_copy_file_preserves_mtime_and_mode(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    src = cache / "run.sh"
+    src.write_text("#!/bin/sh\n")
+    os.chmod(src, 0o755)
+    os.utime(src, (1_000_000_000, 1_000_000_000))
+    dst = cache / "copy.sh"
+
+    assert vc._copy_file(str(src), str(dst)) is True
+    assert os.stat(dst).st_mtime == 1_000_000_000
+    assert os.stat(dst).st_mode & 0o777 == 0o755
+
+
+def _deny_metadata_ops(monkeypatch):
+    """Simulate a FUSE object store (such as Global Store) that rejects chmod/utime."""
+
+    def deny(*_args, **_kwargs):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "chmod", deny)
+    monkeypatch.setattr(os, "utime", deny)
+
+
+def test_big_file_round_trips_when_volume_rejects_metadata_ops(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    payload = os.urandom(vcmod._SMALL_FILE_THRESHOLD + 1)
+    (cache / "model.safetensors").write_bytes(payload)
+    _deny_metadata_ops(monkeypatch)
+
+    vc.sync(background=False)
+    (cache / "model.safetensors").unlink()
+    restored = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol)).hydrate()
+
+    assert restored == 1
+    assert (cache / "model.safetensors").read_bytes() == payload
+
+
+def test_sync_converges_when_volume_rejects_metadata_ops(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    (cache / "model.safetensors").write_bytes(os.urandom(vcmod._SMALL_FILE_THRESHOLD + 1))
+    _deny_metadata_ops(monkeypatch)
+    vc.sync(background=False)
+
+    copies = []
+    real_copy = vc._copy_file
+    monkeypatch.setattr(vc, "_copy_file", lambda src, dst: copies.append(src) or real_copy(src, dst))
+    vc.sync(background=False)
+
+    assert copies == []
 
 
 def test_join_pending_syncs_swallows_join_exception():

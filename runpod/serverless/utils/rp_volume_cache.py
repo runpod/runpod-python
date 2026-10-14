@@ -227,11 +227,12 @@ class VolumeCache:
         tmp = f"{dst}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, tmp)  # preserves mtime so future diffs converge
+            shutil.copyfile(src, tmp)
+            _copy_metadata(src, tmp)
             os.replace(tmp, dst)  # atomic; last-writer-wins under concurrency
             return True
         except OSError as exc:
-            log.debug(f"VolumeCache: skip {src} -> {dst}: {exc}")
+            log.warn(f"VolumeCache: failed to copy {src} -> {dst}: {exc}")
             try:
                 if os.path.exists(tmp):
                     os.remove(tmp)
@@ -250,7 +251,7 @@ class VolumeCache:
         Their union is the set of sources the destination now holds a current
         copy of; a source in neither failed to copy. Callers that record a
         "mirror complete" manifest MUST include only sources in that union, or
-        a failed copy would be marked present and later served stale. copy2 +
+        a failed copy would be marked present and later served stale. copyfile +
         atomic os.replace means a source in ``copied`` matches its destination
         at that instant, so no re-stat is needed to confirm it.
         """
@@ -483,6 +484,25 @@ class VolumeCache:
 # ----------------------------------------------------------------------- #
 # utilities
 # ----------------------------------------------------------------------- #
+
+
+def _copy_metadata(src, dst):
+    """Carry src's mtime and permission bits onto dst, each best-effort.
+
+    Some volume filesystems (FUSE object stores such as Global Store) reject
+    utime and chmod with EPERM. The copy is still valid then: dst keeps the
+    copy-time mtime, which is never older than src, so both diff directions
+    treat it as current. Only the permission bits are lost on such a volume.
+    """
+    try:
+        st = os.stat(src)
+        os.utime(dst, ns=(st.st_atime_ns, st.st_mtime_ns))
+    except OSError as exc:
+        log.debug(f"VolumeCache: kept copy-time mtime on {dst}: {exc}")
+    try:
+        shutil.copymode(src, dst)
+    except OSError as exc:
+        log.debug(f"VolumeCache: kept default mode on {dst}: {exc}")
 
 
 def _silent_remove(path):
