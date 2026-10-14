@@ -452,6 +452,103 @@ def _deny_metadata_ops(monkeypatch):
     monkeypatch.setattr(os, "utime", deny)
 
 
+def _deny_metadata_ops_under(monkeypatch, root):
+    """Like _deny_metadata_ops, but only for paths on the volume; local disk behaves normally."""
+    root = str(root)
+    real_chmod, real_utime = os.chmod, os.utime
+
+    def guarded(real):
+        def call(path, *args, **kwargs):
+            if str(path).startswith(root):
+                raise PermissionError(errno.EPERM, "Operation not permitted")
+            return real(path, *args, **kwargs)
+
+        return call
+
+    monkeypatch.setattr(os, "chmod", guarded(real_chmod))
+    monkeypatch.setattr(os, "utime", guarded(real_utime))
+
+
+def _big_payload(fill):
+    return bytes([fill]) * (vcmod._SMALL_FILE_THRESHOLD + 1)
+
+
+def _set_mtime(path, mtime):
+    os.utime(path, (mtime, mtime))
+
+
+def test_sync_recopies_same_size_update_when_volume_rejects_utime(tmp_path, monkeypatch):
+    # The mirror copy carries its copy time, not the source's mtime. A same-size
+    # update with an mtime between the original and that copy time must still
+    # be detected, via the manifest's recorded source metadata.
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "model.safetensors"
+    now = time.time()
+    f.write_bytes(_big_payload(1))
+    _set_mtime(f, now - 1000)
+    _deny_metadata_ops_under(monkeypatch, vol)
+    vc.sync(background=False)
+
+    f.write_bytes(_big_payload(2))
+    _set_mtime(f, now - 500)
+    vc.sync(background=False)
+    f.unlink()
+    VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol)).hydrate()
+
+    assert f.read_bytes() == _big_payload(2)
+
+
+def test_hydrate_keeps_newer_local_file_when_volume_rejects_utime(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "model.safetensors"
+    now = time.time()
+    f.write_bytes(_big_payload(1))
+    _set_mtime(f, now - 1000)
+    _deny_metadata_ops_under(monkeypatch, vol)
+    vc.sync(background=False)
+
+    # Newer than the synced source, older than the mirror's copy-time mtime.
+    f.write_bytes(_big_payload(2))
+    _set_mtime(f, now - 500)
+    VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol)).hydrate()
+
+    assert f.read_bytes() == _big_payload(2)
+
+
+def test_hydrate_restores_source_mtime_so_next_sync_is_noop(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "model.safetensors"
+    f.write_bytes(_big_payload(1))
+    _set_mtime(f, time.time() - 1000)
+    source_mtime = os.stat(f).st_mtime
+    _deny_metadata_ops_under(monkeypatch, vol)
+    vc.sync(background=False)
+    f.unlink()
+
+    fresh = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    assert fresh.hydrate() == 1
+    assert abs(os.stat(f).st_mtime - source_mtime) < 1e-3
+
+    copies = []
+    real_copy = fresh._copy_file
+    monkeypatch.setattr(fresh, "_copy_file", lambda src, dst, **kw: copies.append(src) or real_copy(src, dst, **kw))
+    fresh.sync(background=False)
+    assert copies == []
+
+
+def test_sync_recopies_when_mirror_file_is_missing(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "model.safetensors"
+    f.write_bytes(_big_payload(1))
+    vc.sync(background=False)
+    mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(f), "/")
+    mirrored.unlink()
+
+    vc.sync(background=False)
+
+    assert mirrored.read_bytes() == _big_payload(1)
+
+
 def test_big_file_round_trips_when_volume_rejects_metadata_ops(tmp_path, monkeypatch):
     vc, cache, vol = _mk_cache_with_volume(tmp_path)
     payload = os.urandom(vcmod._SMALL_FILE_THRESHOLD + 1)
@@ -474,7 +571,7 @@ def test_sync_converges_when_volume_rejects_metadata_ops(tmp_path, monkeypatch):
 
     copies = []
     real_copy = vc._copy_file
-    monkeypatch.setattr(vc, "_copy_file", lambda src, dst: copies.append(src) or real_copy(src, dst))
+    monkeypatch.setattr(vc, "_copy_file", lambda src, dst, **kw: copies.append(src) or real_copy(src, dst, **kw))
     vc.sync(background=False)
 
     assert copies == []
@@ -752,10 +849,10 @@ def test_sync_omits_big_file_from_manifest_when_copy_fails(tmp_path, monkeypatch
     bad.write_bytes(b"new-v2" + big + b"-and-then-some-extra-bytes")
     real_copy_file = vc._copy_file
 
-    def flaky_copy(src, dst):
+    def flaky_copy(src, dst, **kwargs):
         if src == str(bad):
             return False  # simulate a failed overwrite (leaves stale v1 on volume)
-        return real_copy_file(src, dst)
+        return real_copy_file(src, dst, **kwargs)
 
     monkeypatch.setattr(vc, "_copy_file", flaky_copy)
     vc._do_sync()
