@@ -92,7 +92,11 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   return under load, are retried with backoff. A file is assembled in a temp
   file and renamed into place only when every range has copied, so a failed
   file leaves any existing local copy untouched and is simply not restored.
-  Keep `hydrate_workers * hydrate_chunk_size` near the default: past ~1 GiB in
+  A mirror file whose size differs from the manifest, or whose size or mtime
+  changes between ranges because a concurrent `sync()` replaced it, is
+  likewise not restored. This is a best-effort check: an object-store mount
+  can serve a replacement that lands in the middle of a single range read
+  without it being visible. Keep `hydrate_workers * hydrate_chunk_size` near the default: past ~1 GiB in
   flight, Global Store starts failing reads with `ENOMEM`.
 - **Packing/extraction.** Packing the small-file archive uses the `tar`
   binary when available (falling back to the stdlib `tarfile` module

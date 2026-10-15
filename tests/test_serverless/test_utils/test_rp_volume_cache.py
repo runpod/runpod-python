@@ -1146,7 +1146,7 @@ def test_hydrate_copies_big_file_in_ranges(tmp_path, monkeypatch):
     ranges = []
     real_copy_range = vcmod._copy_range
     monkeypatch.setattr(
-        vcmod, "_copy_range", lambda *a: ranges.append(a[2:]) or real_copy_range(*a)
+        vcmod, "_copy_range", lambda *a: ranges.append(a[2:4]) or real_copy_range(*a)
     )
 
     restored = _hydrating_cache(cache, vol).hydrate()
@@ -1237,6 +1237,98 @@ def test_hydrate_tuning_rejects_non_positive(tmp_path, arg, bad):
     vol.mkdir()
     with pytest.raises(ValueError):
         VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), **{arg: bad})
+
+
+@pytest.mark.parametrize("arg", ["max_workers", "hydrate_workers", "hydrate_chunk_size"])
+@pytest.mark.parametrize("bad", [8388608.0, 2.5, True, "64"])
+def test_tuning_rejects_non_integer(tmp_path, arg, bad):
+    # A float chunk passes a `< 1` check but fails in range() mid-hydrate, after
+    # temp files exist; reject it at construction instead.
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    with pytest.raises(ValueError):
+        VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), **{arg: bad})
+
+
+def test_hydrate_rejects_source_replaced_between_ranges(tmp_path, monkeypatch):
+    # A concurrent sync() atomically replaces the mirror file. Ranges read from
+    # two generations would assemble a mixed file of the right size; hydrate must
+    # give that file up instead of publishing it.
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(cache / "model.safetensors"), "/")
+    replacement = mirrored.with_name("replacement")
+    replacement.write_bytes(os.urandom(len(payloads["model.safetensors"])))
+    real_copy_range = vcmod._copy_range
+    calls = []
+
+    def copy_then_replace(*args):
+        real_copy_range(*args)
+        calls.append(args)
+        if len(calls) == 1:
+            os.replace(replacement, mirrored)
+
+    monkeypatch.setattr(vcmod, "_copy_range", copy_then_replace)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=1).hydrate()
+
+    assert restored == 0
+    assert not (cache / "model.safetensors").exists()
+    assert [p for p in os.listdir(cache) if p.endswith(".rpvc.tmp")] == []
+
+
+def test_hydrate_rejects_source_whose_size_differs_from_manifest(tmp_path, monkeypatch):
+    # A sync that replaced the mirror file after hydrate read the manifest would
+    # otherwise have only the manifest's (older, shorter) length copied out of
+    # the newer file, publishing a truncated model with no error.
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(cache / "model.safetensors"), "/")
+    mirrored.write_bytes(os.urandom(len(payloads["model.safetensors"]) + _CHUNK))
+
+    restored = _hydrating_cache(cache, vol).hydrate()
+
+    assert restored == 0
+    assert not (cache / "model.safetensors").exists()
+    assert [p for p in os.listdir(cache) if p.endswith(".rpvc.tmp")] == []
+
+
+def test_hydrate_unexpected_error_stops_ranges_and_cleans_temps(tmp_path, monkeypatch):
+    # A non-OSError escaping a range (e.g. MemoryError) aborts the hydrate; the
+    # remaining ranges must not keep running, and no full-size temp may linger.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    calls = []
+
+    def boom(*args):
+        calls.append(args)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(vcmod, "_copy_range", boom)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=2).hydrate()
+
+    assert restored == 0
+    assert len(calls) <= 2
+    assert [p for p in os.listdir(cache) if p.endswith(".rpvc.tmp")] == []
+
+
+def test_hydrate_bounds_outstanding_range_tasks(tmp_path, monkeypatch):
+    # Scheduling must stay O(workers), not O(total bytes / chunk): a large
+    # tree with a small chunk would otherwise queue millions of futures.
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    submitted = []
+
+    class CountingPool(vcmod.ThreadPoolExecutor):
+        def submit(self, *args, **kwargs):
+            submitted.append(args)
+            return super().submit(*args, **kwargs)
+
+    monkeypatch.setattr(vcmod, "ThreadPoolExecutor", CountingPool)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=2).hydrate()
+
+    assert restored == 2
+    assert len(submitted) <= 2
+    for name, payload in payloads.items():
+        assert (cache / name).read_bytes() == payload
 
 
 def test_hydrate_tuning_defaults(tmp_path):
