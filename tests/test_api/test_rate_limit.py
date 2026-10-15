@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from email.utils import format_datetime
@@ -11,6 +13,7 @@ from unittest.mock import Mock
 
 import pytest
 import requests
+from multidict import CIMultiDict
 
 from runpod.api import _rate_limit, rest
 from runpod.error import QueryError, RateLimitError
@@ -54,6 +57,121 @@ def test_retry_after_http_date(monkeypatch):
     past = format_datetime(datetime.fromtimestamp(90, timezone.utc), usegmt=True)
     assert _rate_limit._retry_after(future) == 5
     assert _rate_limit._retry_after(past) == 0
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="requires time.tzset")
+@pytest.mark.parametrize("zone", ["EST5", "JST-9"])
+@pytest.mark.parametrize(
+    "value", ["Thu Jan  1 00:01:45 1970", "Thu, 01 Jan 1970 00:01:45 -0000"]
+)
+def test_naive_retry_dates_are_utc(monkeypatch, zone, value):
+    previous = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = zone
+        time.tzset()
+        monkeypatch.setattr(_rate_limit.time, "time", lambda: 100)
+        assert _rate_limit._retry_after(value) == 5
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        time.tzset()
+
+
+@pytest.mark.parametrize("remaining", [(1, 2), (2, 1)])
+def test_concurrent_snapshots_preserve_available_quota(clock, remaining):
+    bucket = _rate_limit._Bucket()
+    bucket.update(200, {"RateLimit": '"minute";r=3;t=60'}, 0)
+    assert bucket.acquire() == 0
+    assert bucket.acquire() == 0
+    for value in remaining:
+        bucket.update(200, {"RateLimit": f'"minute";r={value};t=60'}, 0)
+        bucket.release()
+    assert bucket.windows['"minute"'][0] == 1
+    assert bucket.acquire() == 0
+    assert bucket.acquire() == 60
+    bucket.release()
+
+
+def test_reservations_between_snapshots_remain_spent(clock):
+    bucket = _rate_limit._Bucket()
+    bucket.update(200, {"RateLimit": '"minute";r=4;t=60'}, 0)
+    assert bucket.acquire() == 0
+    assert bucket.acquire() == 0
+    bucket.update(200, {"RateLimit": '"minute";r=3;t=60'}, 0)
+    bucket.release()
+    assert bucket.acquire() == 0
+    bucket.update(200, {"RateLimit": '"minute";r=2;t=60'}, 0)
+    bucket.release()
+    bucket.update(200, {"RateLimit": '"minute";r=1;t=60'}, 0)
+    bucket.release()
+    assert bucket.windows['"minute"'][0] == 1
+
+
+@pytest.mark.parametrize("window, period", [("minute", 60), ("day", 86400)])
+def test_verified_rollover_refreshes_quota_before_local_deadline(clock, window, period):
+    bucket = _rate_limit._Bucket()
+    bucket.update(200, {"RateLimit": f'"{window}";r=1;t=1'}, 0)
+    clock.sleep(0.5)
+    assert bucket.acquire() == 0
+    bucket.update(
+        200,
+        {"RateLimit": f'"{window}";r=59;t={period}'},
+        0,
+        started_at=clock.now,
+    )
+    bucket.release()
+    assert bucket.windows[f'"{window}"'] == (59, clock.now + period)
+    assert bucket.acquire() == 0
+    bucket.release()
+
+
+def test_delayed_snapshot_cannot_impersonate_rollover(clock):
+    bucket = _rate_limit._Bucket()
+    started_at = clock.now
+    bucket.update(200, {"RateLimit": '"minute";r=3;t=60'}, 0)
+    assert bucket.acquire() == 0
+    assert bucket.acquire() == 0
+    clock.sleep(5)
+    bucket.update(200, {"RateLimit": '"minute";r=1;t=55'}, 0, started_at=started_at)
+    bucket.release()
+    bucket.update(200, {"RateLimit": '"minute";r=2;t=60'}, 0, started_at=started_at)
+    bucket.release()
+    assert bucket.windows['"minute"'] == (1, 160)
+
+
+def test_previous_window_snapshot_cannot_overwrite_verified_rollover(clock):
+    bucket = _rate_limit._Bucket()
+    bucket.update(200, {"RateLimit": '"minute";r=2;t=1'}, 0)
+    assert bucket.acquire() == 0
+    assert bucket.acquire() == 0
+    bucket.update(200, {"RateLimit": '"minute";r=59;t=60'}, 0, started_at=clock.now)
+    bucket.release()
+    bucket.update(200, {"RateLimit": '"minute";r=0;t=1'}, 0, started_at=clock.now)
+    bucket.release()
+    assert bucket.windows['"minute"'] == (59, 160)
+
+
+def test_repeated_ratelimit_headers_preserve_all_windows(clock):
+    bucket = _rate_limit._Bucket()
+    bucket.update(
+        200,
+        CIMultiDict(
+            [("RateLimit", '"minute";r=0;t=30'), ("ratelimit", '"day";r=500;t=80000')]
+        ),
+        0,
+    )
+    assert set(bucket.windows) == {'"minute"', '"day"'}
+    assert bucket.acquire() == 30
+
+
+def test_retry_delay_includes_shared_cooldown(clock):
+    bucket = _rate_limit._Bucket()
+    assert bucket.update(429, {"Retry-After": "60"}, 0) == 60
+    clock.sleep(1)
+    assert bucket.update(429, {"Retry-After": "1"}, 0) == 59
+    assert bucket.acquire() == 59
 
 
 def test_parse_runpod_windows():
@@ -413,6 +531,47 @@ def test_successful_last_token_blocks_other_routes(quota_server, request_rest):
     assert request_rest("GET", "/v2/templates", api_key="other") == {"id": "pod-1"}
 
 
+def test_repeated_headers_block_exhausted_window_in_both_transports(
+    quota_server, request_rest
+):
+    quota_server["responses"] = [
+        (
+            200,
+            CIMultiDict(
+                [
+                    ("RateLimit", '"minute";r=0;t=30'),
+                    ("RateLimit", '"day";r=500;t=80000'),
+                ]
+            ),
+            {"id": "pod-1"},
+        )
+    ]
+    assert request_rest("GET", "/v2/pods", api_key="key") == {"id": "pod-1"}
+    with pytest.raises(RateLimitError) as raised:
+        request_rest("GET", "/v2/templates", api_key="key", max_rate_limit_wait=0)
+    assert 0 < raised.value.retry_after <= 30
+    assert len(quota_server["requests"]) == 1
+
+
+def test_retry_error_reports_effective_shared_cooldown(
+    quota_server, request_rest, monkeypatch, clock
+):
+    quota_server["responses"] = [(429, {"Retry-After": "1"}, {"detail": "quota"})]
+    with rest.rate_limits.bucket(rest._build_url("/v2/pods"), "key") as bucket:
+        update = bucket.update
+
+        def overlapping_update(*args, **kwargs):
+            update(429, {"Retry-After": "60"}, 0)
+            clock.sleep(1)
+            return update(*args, **kwargs)
+
+        monkeypatch.setattr(bucket, "update", overlapping_update)
+        with pytest.raises(RateLimitError) as raised:
+            request_rest("GET", "/v2/pods", api_key="key", max_retries=0)
+        assert raised.value.retry_after == 59
+        assert len(quota_server["requests"]) == 1
+
+
 def test_sync_and_async_share_cooldown(quota_server):
     quota_server["responses"] = [(429, {"Retry-After": "60"}, {"detail": "quota"})]
     with pytest.raises(RateLimitError):
@@ -450,6 +609,64 @@ def test_other_errors_are_not_retried(quota_server, request_rest, status):
 def test_invalid_retry_options_fail_before_network(request_rest, options):
     with pytest.raises(ValueError):
         request_rest("GET", "/v2/pods", api_key="key", **options)
+
+
+@pytest.mark.parametrize("value", [None, True, False, "60", [], {}])
+def test_invalid_wait_types_raise_value_error(request_rest, value):
+    with pytest.raises(ValueError, match="max_rate_limit_wait"):
+        request_rest("GET", "/v2/pods", api_key="key", max_rate_limit_wait=value)
+
+
+@pytest.mark.parametrize("state", ["discovery", "window", "cooldown"])
+def test_coordination_waits_do_not_consume_budget(
+    quota_server, request_rest, monkeypatch, clock, state
+):
+    with rest.rate_limits.bucket(rest._build_url("/v2/pods"), "key") as bucket:
+        if state == "window":
+            bucket.update(200, {"RateLimit": '"minute";r=0;t=1'}, 0)
+        elif state == "cooldown":
+            bucket.update(429, {"Retry-After": "1"}, 0)
+        clock.sleep(1)
+        assert bucket.acquire() == 0
+        sleeps = []
+
+        def sleep(delay):
+            sleeps.append(delay)
+            bucket.update(200, {}, 0)
+            bucket.release()
+            clock.sleep(delay)
+
+        async def async_sleep(delay):
+            sleep(delay)
+
+        monkeypatch.setattr(rest.time, "sleep", sleep)
+        monkeypatch.setattr(rest.asyncio, "sleep", async_sleep)
+        assert request_rest(
+            "GET", "/v2/pods", api_key="key", max_rate_limit_wait=0
+        ) == {"id": "pod-1"}
+        assert sleeps == [0.05]
+        assert bucket.in_flight == 0
+        assert len(quota_server["requests"]) == 1
+
+
+def test_failed_request_keeps_its_quota_reservation(clock):
+    bucket = _rate_limit._Bucket()
+    bucket.update(200, {"RateLimit": '"minute";r=1;t=60'}, 0)
+    assert bucket.acquire() == 0
+    bucket.release()
+    assert bucket.acquire() == 60
+
+
+def test_registry_cleanup_is_periodic(clock):
+    limits = _rate_limit._RateLimits()
+    with limits.bucket("https://example.com", "key"):
+        deadline = limits.next_cleanup
+    clock.sleep(1)
+    with limits.bucket("https://example.com", "other"):
+        assert limits.next_cleanup == deadline
+    clock.sleep(60)
+    with limits.bucket("https://example.com", "key"):
+        assert limits.next_cleanup > deadline
 
 
 @pytest.mark.asyncio

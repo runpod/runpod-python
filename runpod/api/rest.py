@@ -12,7 +12,7 @@ import requests
 from runpod import error
 from runpod.user_agent import USER_AGENT
 
-from ._rate_limit import _validate_retry_options, rate_limits
+from ._rate_limit import _RetryBudget, _validate_retry_options, rate_limits
 
 HTTP_STATUS_NO_CONTENT = 204
 HTTP_STATUS_BAD_REQUEST = 400
@@ -21,9 +21,9 @@ HTTP_STATUS_NOT_FOUND = 404
 
 
 def _resolve_api_key(api_key: Optional[str]) -> str:
-    from runpod import (
+    from runpod import (  # pylint: disable=import-outside-toplevel,cyclic-import
         api_key as global_api_key,
-    )  # pylint: disable=import-outside-toplevel,cyclic-import
+    )
 
     effective_api_key = api_key or global_api_key
     if not effective_api_key:
@@ -107,18 +107,13 @@ def run_rest_request(
     key = _resolve_api_key(api_key)
     url = _build_url(path)
     headers = _build_headers(key)
+    budget = _RetryBudget(max_retries, max_rate_limit_wait, f"{method.upper()} {path}")
     with rate_limits.bucket(url, key) as bucket:
         for attempt in range(max_retries + 1):
-            while delay := bucket.acquire():
-                if delay > max_rate_limit_wait:
-                    raise error.RateLimitError(
-                        "Rate limit wait budget exceeded",
-                        f"{method.upper()} {path}",
-                        retry_after=delay,
-                    )
+            while delay := bucket.acquire(budget):
                 time.sleep(delay)
-                max_rate_limit_wait -= delay
             try:
+                started_at = time.monotonic()
                 response = requests.request(
                     method,
                     url,
@@ -129,13 +124,12 @@ def run_rest_request(
                 )
                 try:
                     retry_after = bucket.update(
-                        response.status_code, response.headers, attempt
+                        response.status_code,
+                        response.headers,
+                        attempt,
+                        started_at=started_at,
                     )
-                    if (
-                        response.status_code == 429
-                        and attempt < max_retries
-                        and retry_after <= max_rate_limit_wait
-                    ):
+                    if budget.can_retry(attempt, retry_after):
                         continue
                     if response.status_code >= HTTP_STATUS_BAD_REQUEST:
                         _raise_for_error(
@@ -178,33 +172,27 @@ async def run_rest_request_async(
     key = _resolve_api_key(api_key)
     url = _build_url(path)
     headers = _build_headers(key)
+    budget = _RetryBudget(max_retries, max_rate_limit_wait, f"{method.upper()} {path}")
     client_timeout = aiohttp.ClientTimeout(total=timeout)
     async with aiohttp.ClientSession(timeout=client_timeout) as session:
         # aiohttp otherwise replays put/delete requests after an ambiguous disconnect.
         session._retry_connection = False  # pylint: disable=protected-access
         with rate_limits.bucket(url, key) as bucket:
             for attempt in range(max_retries + 1):
-                while delay := bucket.acquire():
-                    if delay > max_rate_limit_wait:
-                        raise error.RateLimitError(
-                            "Rate limit wait budget exceeded",
-                            f"{method.upper()} {path}",
-                            retry_after=delay,
-                        )
+                while delay := bucket.acquire(budget):
                     await asyncio.sleep(delay)
-                    max_rate_limit_wait -= delay
                 try:
+                    started_at = time.monotonic()
                     async with session.request(
                         method, url, headers=headers, params=params, json=json
                     ) as response:
                         retry_after = bucket.update(
-                            response.status, response.headers, attempt
+                            response.status,
+                            response.headers,
+                            attempt,
+                            started_at=started_at,
                         )
-                        if (
-                            response.status == 429
-                            and attempt < max_retries
-                            and retry_after <= max_rate_limit_wait
-                        ):
+                        if budget.can_retry(attempt, retry_after):
                             continue
                         if response.status >= HTTP_STATUS_BAD_REQUEST:
                             text = (

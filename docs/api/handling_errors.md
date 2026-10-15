@@ -35,6 +35,12 @@ reserve the remaining budget advertised by the `RateLimit` response header and
 wait when a window is exhausted. Separate processes and different API keys for the
 same account cannot coordinate their local budgets.
 
+Quota estimates account for outstanding requests separately from response
+snapshots. A window refreshes when the response timing establishes a later reset;
+out-of-order snapshots within a window cannot restore spent quota. Discovery and
+reset probes coordinate concurrent callers without consuming their rate-limit
+wait budgets.
+
 HTTP 429 responses honor `Retry-After` in seconds or HTTP-date format. Missing or
 invalid retry hints use capped exponential backoff with jitter. By default, a call
 allows three retries and at most 60 seconds of cumulative rate-limit sleeps.
