@@ -56,7 +56,7 @@ _RANGE_RETRY_ERRNOS = frozenset({errno.ENOMEM, errno.EIO, errno.EAGAIN})
 _RANGE_MAX_ATTEMPTS = 8
 _RANGE_RETRY_BASE_SECONDS = 0.05
 
-_RangedFile = collections.namedtuple("_RangedFile", "src dst tmp size mtime")
+_RangedFile = collections.namedtuple("_RangedFile", "src dst tmp size mtime identity")
 
 
 class VolumeCache:
@@ -337,19 +337,35 @@ class VolumeCache:
         ``hydrate_workers`` threads copies the ranges of all files, each range on
         its own descriptors. An object-store mount serves one sequential stream
         at ~140 MiB/s however many whole files are read at once, but independent
-        range reads scale to the host NIC. A file is written to a temp file and
+        range reads scale to the host NIC. Each source's size and mtime are pinned
+        (and checked against the manifest) before its first range, and every
+        range rejects a source that a concurrent sync() visibly replaced since.
+        A file is written to a temp file and
         renamed into place only once every range copied, stamped with the
         manifest's source mtime, so a failure leaves the local file untouched.
 
         Returns the set of sources restored.
         """
         files = [f for f in (self._prepare_ranged(*e) for e in entries) if f]
-        failed = self._copy_ranges(files)
+        try:
+            failed = self._copy_ranges(files)
+        except BaseException:
+            # Temps are pre-sized to the full file and named per pid, so a
+            # later run never reuses them; leaking them can fill the disk.
+            for f in files:
+                _silent_remove(f.tmp)
+            raise
         return {f.src for i, f in enumerate(files) if self._finish_ranged(f, i in failed)}
 
     def _prepare_ranged(self, src, dst, entry):
         tmp = _tmp_path(dst)
         try:
+            st = os.stat(src)
+            if st.st_size != entry["size"]:
+                # A sync replaced the mirror file after the manifest was read;
+                # copying entry["size"] bytes of it would publish a truncated file.
+                raise OSError(f"mirror size {st.st_size} != manifest size {entry['size']}")
+            identity = _file_identity(st)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             with open(tmp, "wb") as fh:
                 fh.truncate(entry["size"])
@@ -357,16 +373,10 @@ class VolumeCache:
             log.warn(f"VolumeCache: failed to hydrate {src} -> {dst}: {exc}")
             _silent_remove(tmp)
             return None
-        return _RangedFile(src, dst, tmp, entry["size"], entry["mtime"])
+        return _RangedFile(src, dst, tmp, entry["size"], entry["mtime"], identity)
 
     def _copy_ranges(self, files):
         """Copy every range of ``files`` into their temp files; return indexes that failed."""
-        chunk = self._hydrate_chunk_size
-        work = [
-            (off, i, min(chunk, f.size - off)) for i, f in enumerate(files) for off in range(0, f.size, chunk)
-        ]
-        # Offset-major order spreads concurrent readers across every file.
-        work.sort(key=lambda w: (w[0], files[w[1]].src))
         failed = set()
 
         def run(item):
@@ -375,14 +385,12 @@ class VolumeCache:
                 return
             f = files[i]
             try:
-                _with_range_retry(_copy_range, f.src, f.tmp, off, length)
+                _with_range_retry(_copy_range, f.src, f.tmp, off, length, f.identity)
             except OSError as exc:
                 failed.add(i)
                 log.warn(f"VolumeCache: failed to hydrate {f.src} at offset {off}: {exc}")
 
-        if work:
-            with ThreadPoolExecutor(max_workers=self._hydrate_workers) as pool:
-                list(pool.map(run, work))
+        _run_bounded(_iter_ranges(files, self._hydrate_chunk_size), run, self._hydrate_workers)
         return failed
 
     @staticmethod
@@ -653,15 +661,64 @@ def _copy_metadata(src, dst, mtime=None):
 
 
 def _positive_or_default(name, value, default):
-    # A non-positive pool size or chunk is a caller bug that best-effort mode
-    # would otherwise swallow mid-operation, silently disabling the cache.
-    if value is not None and value < 1:
+    # A non-positive or non-integer pool size or chunk is a caller bug that
+    # best-effort mode would otherwise swallow mid-operation (range() and
+    # ThreadPoolExecutor reject floats), silently disabling the cache. bool is
+    # an int subclass, so it is rejected explicitly.
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{name} must be a positive integer, got {value!r}")
-    return value or default
+    return value
 
 
 def _tmp_path(path):
     return f"{path}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
+
+
+def _iter_ranges(files, chunk):
+    """Lazily yield ``(offset, index, length)`` for every range of ``files``.
+
+    Offset-major order spreads concurrent readers across every file. Files
+    drop out once exhausted, so the cost is O(ranges + files) and nothing is
+    materialized up front.
+    """
+    active = sorted((i for i, f in enumerate(files) if f.size > 0), key=lambda i: files[i].src)
+    offset = 0
+    while active:
+        for i in active:
+            yield offset, i, min(chunk, files[i].size - offset)
+        offset += chunk
+        active = [i for i in active if offset < files[i].size]
+
+
+def _run_bounded(items, fn, workers):
+    """Call fn on each of ``items`` across ``workers`` threads.
+
+    Each thread pulls the next item from the shared iterator, so outstanding
+    work stays O(workers) however many items there are; ``pool.map`` would
+    submit a future per item up front. An exception escaping fn stops every
+    thread from taking further items and propagates once the pool shuts down.
+    """
+    items = iter(items)
+    lock = threading.Lock()  # generators are not thread-safe
+    stop = threading.Event()
+
+    def drain():
+        while not stop.is_set():
+            with lock:
+                item = next(items, None)
+            if item is None:
+                return
+            try:
+                fn(item)
+            except BaseException:
+                stop.set()
+                raise
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for future in [pool.submit(drain) for _ in range(workers)]:
+            future.result()
 
 
 def _with_range_retry(fn, *args):
@@ -675,16 +732,33 @@ def _with_range_retry(fn, *args):
             time.sleep(_RANGE_RETRY_BASE_SECONDS * 2**attempt)
 
 
-def _copy_range(src, dst, offset, length):
+def _file_identity(st):
+    """The generation of a file: changes when sync() replaces it.
+
+    Size and mtime only. Inode numbers on a FUSE object-store mount are
+    assigned by the filesystem and can change for an unchanged object (e.g.
+    after eviction), which would reject valid files, while a cross-host
+    replacement there keeps the inode and changes size or mtime instead.
+    """
+    return (st.st_size, st.st_mtime_ns)
+
+
+def _copy_range(src, dst, offset, length, identity):
     """Copy ``length`` bytes at ``offset`` of src to the same offset of dst.
 
     Each call opens its own descriptors so an object-store mount serves the
-    range as an independent read. A short read means the mirror file is
-    smaller than the manifest says; it raises without an errno, so it is not
-    retried.
+    range as an independent read. The opened source must still match the
+    ``identity`` pinned before the first range, so a replacement by a
+    concurrent sync() seen between ranges fails the file instead of splicing
+    two generations together. An object-store mount resolves reads by key, so
+    a replacement landing mid-read is detected only by later ranges. A
+    short read means the mirror file is smaller than the manifest says. Both
+    raise without an errno, so they are not retried.
     """
     src_fd = os.open(src, os.O_RDONLY)
     try:
+        if _file_identity(os.fstat(src_fd)) != identity:
+            raise OSError(f"source replaced during hydrate at offset {offset}")
         dst_fd = os.open(dst, os.O_WRONLY)
         try:
             done = 0
