@@ -219,19 +219,49 @@ class VolumeCache:
             return True
         return s.st_size != d.st_size or s.st_mtime > d.st_mtime + _MTIME_TOLERANCE
 
+    @staticmethod
+    def _sync_needs_copy(src_path, dst_path, prior):
+        """Container -> mirror: does dst need a fresh copy of src?
+
+        ``prior`` is src's entry in the previous manifest. It records the
+        source metadata the mirror copy was made from, which stays reliable
+        when the volume can't carry mtimes (the mirror then holds copy-time
+        mtimes). Without a prior entry, only an exact size+mtime match counts
+        as current.
+        """
+        try:
+            s = os.stat(src_path)
+        except OSError:
+            return False
+        try:
+            d = os.stat(dst_path)
+        except OSError:
+            return True
+        if s.st_size != d.st_size:
+            return True
+        if prior is None:
+            return abs(s.st_mtime - d.st_mtime) > _MTIME_TOLERANCE
+        # Only recopy when the source is NEWER than the metadata the mirror was
+        # made from. A source older than the manifest entry is a stale worker or
+        # a sibling that downloaded identical bytes at a different time; recopying
+        # there churns every big file across workers and can overwrite newer
+        # mirror bytes with older ones.
+        return prior["size"] != s.st_size or s.st_mtime > prior["mtime"] + _MTIME_TOLERANCE
+
     def _is_safe_dest(self, dst_abs):
         target = os.path.realpath(dst_abs)
         return any(target == d or target.startswith(d + os.sep) for d in self._dirs)
 
-    def _copy_file(self, src, dst):
+    def _copy_file(self, src, dst, mtime=None):
         tmp = f"{dst}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, tmp)  # preserves mtime so future diffs converge
+            shutil.copyfile(src, tmp)
+            _copy_metadata(src, tmp, mtime)
             os.replace(tmp, dst)  # atomic; last-writer-wins under concurrency
             return True
         except OSError as exc:
-            log.debug(f"VolumeCache: skip {src} -> {dst}: {exc}")
+            log.warn(f"VolumeCache: failed to copy {src} -> {dst}: {exc}")
             try:
                 if os.path.exists(tmp):
                     os.remove(tmp)
@@ -240,8 +270,12 @@ class VolumeCache:
                 pass
             return False
 
-    def _copy_parallel(self, pairs):
+    def _copy_parallel(self, pairs, needs_copy=None, mtime_of=None):
         """Copy every (src, dst) that needs it, in parallel.
+
+        ``needs_copy(src, dst)`` decides which pairs to copy (default: compare
+        the two files). ``mtime_of(src)`` gives the mtime to stamp on dst
+        (default: src's own).
 
         Returns ``(copied, current)`` sets of source paths:
         - ``copied``  -- sources transferred successfully this call.
@@ -250,11 +284,13 @@ class VolumeCache:
         Their union is the set of sources the destination now holds a current
         copy of; a source in neither failed to copy. Callers that record a
         "mirror complete" manifest MUST include only sources in that union, or
-        a failed copy would be marked present and later served stale. copy2 +
+        a failed copy would be marked present and later served stale. copyfile +
         atomic os.replace means a source in ``copied`` matches its destination
         at that instant, so no re-stat is needed to confirm it.
         """
-        todo = [(s, d) for s, d in pairs if self._needs_copy(s, d)]
+        needs_copy = needs_copy or self._needs_copy
+        mtime_of = mtime_of or (lambda _src: None)
+        todo = [(s, d) for s, d in pairs if needs_copy(s, d)]
         current = {s for s, _ in pairs} - {s for s, _ in todo}
         if not todo:
             return set(), current
@@ -262,7 +298,7 @@ class VolumeCache:
             # pool.map preserves input order, so zip pairs each result with its
             # source. This holds one path per copied file (unavoidable: per-file
             # identity is required to keep failed copies out of the manifest).
-            results = pool.map(lambda sd: self._copy_file(sd[0], sd[1]), todo)
+            results = pool.map(lambda sd: self._copy_file(sd[0], sd[1], mtime=mtime_of(sd[0])), todo)
             copied = {s for (s, _), ok in zip(todo, results) if ok}
         return copied, current
 
@@ -383,6 +419,7 @@ class VolumeCache:
         if manifest.get("small"):
             restored += self._extract_small()
         big_pairs = []
+        entries = {}
         for entry in manifest.get("big", []):
             rel = os.path.relpath(entry["path"], "/")
             dst = os.path.join("/", rel)
@@ -392,7 +429,15 @@ class VolumeCache:
             # big/ so a malicious entry can't read outside the mirror.
             if self._is_safe_dest(dst) and self._within(self._big_root, src):
                 big_pairs.append((src, dst))
-        copied, _current = self._copy_parallel(big_pairs)
+                entries[src] = entry
+        # Compare the container against the manifest's source metadata, not
+        # the mirror file's own mtime, and stamp that source mtime on restore.
+        copied, _current = self._copy_parallel(
+            big_pairs,
+            needs_copy=lambda src, _dst: os.path.isfile(src)
+            and not self._meta_satisfied_by_local(entries[src]),
+            mtime_of=lambda src: entries[src]["mtime"],
+        )
         restored += len(copied)
         if restored:
             log.info(f"VolumeCache: hydrated {restored} file(s) from {self._mirror_root}")
@@ -450,7 +495,11 @@ class VolumeCache:
             _silent_remove(self._small_archive_path)
 
         big_pairs = [(f, os.path.join(self._big_root, os.path.relpath(f, "/"))) for f in big_files]
-        copied, current = self._copy_parallel(big_pairs)
+        prior_big = {e["path"]: e for e in (manifest.get("big", []) if manifest else [])}
+        copied, current = self._copy_parallel(
+            big_pairs,
+            needs_copy=lambda src, dst: self._sync_needs_copy(src, dst, prior_big.get(src)),
+        )
         # Record only sources the volume actually holds a current copy of.
         # A big file whose copy failed is in neither set, so it is omitted and
         # the manifest never claims it present -- hydrate then skips it rather
@@ -483,6 +532,30 @@ class VolumeCache:
 # ----------------------------------------------------------------------- #
 # utilities
 # ----------------------------------------------------------------------- #
+
+
+def _copy_metadata(src, dst, mtime=None):
+    """Stamp dst with an mtime and src's permission bits, each best-effort.
+
+    The mtime is ``mtime`` when given (hydrate passes the manifest's source
+    mtime), else src's own. Some volume filesystems (FUSE object stores such
+    as Global Store) reject utime and chmod with EPERM. The copy is still
+    valid then: reconciliation compares against the manifest's recorded
+    source metadata, not the mirror file's copy-time mtime. Only the
+    permission bits are lost on such a volume.
+    """
+    try:
+        if mtime is None:
+            st = os.stat(src)
+            os.utime(dst, ns=(st.st_atime_ns, st.st_mtime_ns))
+        else:
+            os.utime(dst, (mtime, mtime))
+    except OSError as exc:
+        log.debug(f"VolumeCache: kept copy-time mtime on {dst}: {exc}")
+    try:
+        shutil.copymode(src, dst)
+    except OSError as exc:
+        log.debug(f"VolumeCache: kept default mode on {dst}: {exc}")
 
 
 def _silent_remove(path):
