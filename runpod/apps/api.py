@@ -13,7 +13,7 @@ from ..api.ctl_commands import _cpu_config, _path_segment, _split_values
 from ..api.graphql import run_graphql_query_async
 from ..api.mutations import apps as app_mutations
 from ..api.queries import apps as app_queries
-from ..api.rest import run_rest_request_async
+from ..api.rest import run_rest_paginated_request_async, run_rest_request_async
 from ..error import QueryError
 
 _TRANSPORT_RETRIES = 4
@@ -413,31 +413,36 @@ class AppsApiClient:
         return supported
 
     async def list_global_volumes(self) -> List[Dict[str, Any]]:
-        volumes = []
-        params = {}
-        while True:
-            data = await run_rest_request_async(
-                "GET", "/v2/global-volumes", api_key=self._api_key, params=params
-            )
-            volumes.extend(data["globalVolumes"])
-            pagination = data["pagination"]
-            if not pagination["hasNextPage"]:
-                return volumes
-            params = {"cursor": pagination["nextCursor"]}
+        """list every rest page, retrying transient read failures with backoff."""
+        return await run_rest_paginated_request_async(
+            "/v2/global-volumes", "globalVolumes", api_key=self._api_key
+        )
 
     async def create_global_volume(self, name: str) -> Dict[str, Any]:
-        return await run_rest_request_async(
+        """create once via rest and require a usable volume id in the response."""
+        data = await run_rest_request_async(
             "POST",
             "/v2/global-volumes",
             api_key=self._api_key,
             json={"name": name},
         )
+        if (
+            not isinstance(data, dict)
+            or not isinstance(data.get("id"), str)
+            or not data["id"]
+        ):
+            raise QueryError(
+                "global volume creation returned an invalid response; "
+                "the volume may have been created, check existing volumes before retrying",
+                "POST /v2/global-volumes",
+            )
+        return data
 
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
-        data = await run_rest_request_async(
-            "GET", "/v2/network-volumes", api_key=self._api_key
+        """list every rest page, retrying transient read failures with backoff."""
+        return await run_rest_paginated_request_async(
+            "/v2/network-volumes", "networkVolumes", api_key=self._api_key
         )
-        return data["networkVolumes"]
 
     async def create_network_volume(
         self, name: str, size: int, data_center_id: str
