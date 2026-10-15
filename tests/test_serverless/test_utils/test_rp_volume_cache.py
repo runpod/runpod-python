@@ -515,6 +515,31 @@ def test_hydrate_keeps_newer_local_file_when_volume_rejects_utime(tmp_path, monk
     assert f.read_bytes() == _big_payload(2)
 
 
+def test_sync_needs_copy_ignores_source_older_than_manifest(tmp_path):
+    # Container -> mirror sync must only recopy when the source is NEWER than the
+    # metadata the mirror was last made from. A source whose mtime is older than
+    # the manifest entry (a stale worker, or a sibling that downloaded identical
+    # bytes at a different time) must not trigger a rewrite: recopying there
+    # churns every big file across workers and can clobber newer mirror bytes.
+    src = tmp_path / "src.bin"
+    dst = tmp_path / "dst.bin"
+    payload = b"x" * 1024
+    src.write_bytes(payload)
+    dst.write_bytes(payload)  # same size, so the size early-return does not fire
+    mid = time.time() - 1000
+    prior = {"size": len(payload), "mtime": mid}
+
+    _set_mtime(src, mid - 100)  # source older than the manifest record
+    assert VolumeCache._sync_needs_copy(str(src), str(dst), prior) is False
+
+    _set_mtime(src, mid + 100)  # source newer: a genuine update still copies
+    assert VolumeCache._sync_needs_copy(str(src), str(dst), prior) is True
+
+    # A size change relative to the manifest always recopies, regardless of mtime.
+    _set_mtime(src, mid - 100)
+    assert VolumeCache._sync_needs_copy(str(src), str(dst), {"size": len(payload) + 1, "mtime": mid}) is True
+
+
 def test_hydrate_restores_source_mtime_so_next_sync_is_noop(tmp_path, monkeypatch):
     vc, cache, vol = _mk_cache_with_volume(tmp_path)
     f = cache / "model.safetensors"

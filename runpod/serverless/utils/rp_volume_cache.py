@@ -241,7 +241,12 @@ class VolumeCache:
             return True
         if prior is None:
             return abs(s.st_mtime - d.st_mtime) > _MTIME_TOLERANCE
-        return prior["size"] != s.st_size or abs(s.st_mtime - prior["mtime"]) > _MTIME_TOLERANCE
+        # Only recopy when the source is NEWER than the metadata the mirror was
+        # made from. A source older than the manifest entry is a stale worker or
+        # a sibling that downloaded identical bytes at a different time; recopying
+        # there churns every big file across workers and can overwrite newer
+        # mirror bytes with older ones.
+        return prior["size"] != s.st_size or s.st_mtime > prior["mtime"] + _MTIME_TOLERANCE
 
     def _is_safe_dest(self, dst_abs):
         target = os.path.realpath(dst_abs)
