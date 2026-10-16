@@ -88,16 +88,21 @@ def requirement_name(requirement: str) -> str:
     return (match.group(1) if match else requirement).lower().replace("_", "-")
 
 
-def collect_requirements(project_root: Path, app) -> List[str]:
-    """project requirements.txt plus per-resource dependencies, deduped."""
+def _requirements_txt(project_root: Path) -> List[str]:
+    """requirement lines from the project's requirements.txt."""
     requirements: List[str] = []
-
     req_file = project_root / "requirements.txt"
     if req_file.exists():
         for line in req_file.read_text().splitlines():
             line = line.strip()
             if line and not line.startswith("#") and not line.startswith("-"):
                 requirements.append(line)
+    return requirements
+
+
+def collect_requirements(project_root: Path, app) -> List[str]:
+    """project requirements.txt plus per-resource dependencies, deduped."""
+    requirements = _requirements_txt(project_root)
 
     for handle in app.resources.values():
         for dep in handle.spec.dependencies or []:
@@ -210,6 +215,29 @@ def _read_requires(dist_info: Path) -> Optional[set]:
             return None
         deps.add(dep)
     return deps
+
+
+def installed_closure(env_dir: Path, roots: List[str]) -> set:
+    """canonical names of installed distributions the roots pull in,
+    roots included. unreadable metadata counts every installed
+    distribution as pulled in."""
+    requires = {
+        _canonical_name(_dist_info_name(d.name)): _read_requires(d)
+        for d in env_dir.glob("*.dist-info")
+        if d.is_dir()
+    }
+    names = {_strict_requirement_name(r) for r in roots}
+    if "" in names or any(v is None for v in requires.values()):
+        return set(requires) | (names - {""})
+    seen = set()
+    stack = list(names)
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(requires.get(node) or ())
+    return seen
 
 
 def prune_excluded(
@@ -567,6 +595,19 @@ def build_environment(
     prune_names = {requirement_name(e) for e in (exclude or [])}
     if auto_exclude:
         prune_names |= SIZE_PROHIBITIVE_PACKAGES
+    # workers install manifest-excluded packages their image lacks at
+    # cold start. the gpu images have the torch family, so in a mixed app
+    # only the cpu resources act on it: record it only if they need it
+    cpu_needs = None
+    if auto_exclude and any(not h.spec.gpu for h in resources):
+        cpu_roots = _requirements_txt(project_root)
+        cpu_roots += [
+            dep
+            for h in resources
+            if not h.spec.gpu
+            for dep in h.spec.dependencies or []
+        ]
+        cpu_needs = installed_closure(env_dir, cpu_roots)
     pruned = prune_excluded(
         env_dir,
         sorted(prune_names),
@@ -583,6 +624,21 @@ def build_environment(
         excluded = sorted(
             set(excluded) | ({_canonical_name(n) for n in prune_names} & set(pruned))
         )
+    if cpu_needs is not None:
+        user_excluded = {_canonical_name(requirement_name(e)) for e in exclude or []}
+        excluded = [
+            name
+            for name in excluded
+            if name in user_excluded
+            or name not in SIZE_PROHIBITIVE_PACKAGES
+            or name in cpu_needs
+        ]
+        for name in sorted(set(excluded) & SIZE_PROHIBITIVE_PACKAGES):
+            log.warning(
+                "cpu resources need %s, which is not bundled; their workers "
+                "install it at cold start, so give them container disk for it",
+                name,
+            )
 
     if not package_spec:
         sync_running_package(env_dir)
