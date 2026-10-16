@@ -1195,6 +1195,16 @@ def test_hydrate_does_not_retry_non_transient_errors(tmp_path, monkeypatch):
     assert len(failures) == 1  # first failure aborts the file; its other ranges are skipped
 
 
+def test_hydrate_gives_up_after_max_range_attempts(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    failures = _fail_pread_on(monkeypatch, "/big/", errno.EIO)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=1).hydrate()
+
+    assert restored == 0
+    assert len(failures) == vcmod._RANGE_MAX_ATTEMPTS
+
+
 def test_hydrate_skips_only_the_failing_file(tmp_path, monkeypatch):
     cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["bad.bin", "good.bin"])
     _fail_pread_on(monkeypatch, "bad.bin", errno.EIO)
