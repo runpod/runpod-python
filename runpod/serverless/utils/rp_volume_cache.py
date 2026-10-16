@@ -725,12 +725,13 @@ def _with_range_retry(fn, *args):
     """Call fn, retrying transient FUSE errors with exponential backoff."""
     for attempt in range(_RANGE_MAX_ATTEMPTS - 1):
         try:
-            return fn(*args)
+            fn(*args)
+            return
         except OSError as exc:
             if exc.errno not in _RANGE_RETRY_ERRNOS:
                 raise
             time.sleep(_RANGE_RETRY_BASE_SECONDS * 2**attempt)
-    return fn(*args)  # final attempt: any error propagates
+    fn(*args)  # final attempt: any error propagates
 
 
 def _file_identity(st):
