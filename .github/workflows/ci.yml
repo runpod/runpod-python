@@ -84,6 +84,8 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_SDK_GIT_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # runpod-flash >=1.21 emits a sunset FutureWarning on import, which pytest treats as an error
+          RUNPOD_FLASH_SILENCE_DEPRECATION: "1"
 
   codeql:
     if: github.event_name == 'schedule' || github.event_name == 'pull_request'
