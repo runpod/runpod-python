@@ -13,6 +13,7 @@ from runpod.apps.build import (
     SIZE_PROHIBITIVE_PACKAGES,
     BuildError,
     collect_requirements,
+    prune_excluded,
     requirement_name,
     runpod_requirement,
     split_exclusions,
@@ -253,3 +254,199 @@ class TestVendor:
                 process.wait()
         assert not expired.is_set()
         assert seen == [(1, "numpy")]
+
+
+def _wheel(env, name, version="1.0", requires=(), files=(), record=True, metadata=True):
+    """fake a pip --target install of one wheel into env."""
+    dist_info = env / f"{name.replace('-', '_')}-{version}.dist-info"
+    dist_info.mkdir(parents=True)
+    if metadata:
+        lines = [f"Name: {name}", f"Version: {version}"]
+        lines += [f"Requires-Dist: {r}" for r in requires]
+        (dist_info / "METADATA").write_text("\n".join(lines) + "\n")
+    rel_files = list(files) or [f"{name.replace('-', '_')}/__init__.py"]
+    for rel in rel_files:
+        target = env / (rel[len("../../"):] if rel.startswith("../../") else rel)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("")
+    if record:
+        rows = rel_files + [f"{dist_info.name}/METADATA", f"{dist_info.name}/RECORD"]
+        (dist_info / "RECORD").write_text("".join(f"{r},,\n" for r in rows))
+
+
+def _installed(env):
+    return sorted(d.name.split("-")[0] for d in env.glob("*.dist-info"))
+
+
+TORCH = sorted(SIZE_PROHIBITIVE_PACKAGES)
+
+
+class TestPruneExcluded:
+    def _peft_env(self, env):
+        _wheel(env, "peft", requires=["torch>=1.13", "numpy"])
+        _wheel(env, "numpy")
+        _wheel(
+            env,
+            "torch",
+            requires=[
+                "sympy",
+                "numpy",
+                'nvidia-cublas-cu12==12.8; platform_system == "Linux"',
+            ],
+            files=[
+                "torch/__init__.py",
+                "torch/__pycache__/__init__.cpython-312.pyc",
+                "functorch/__init__.py",
+                "torchgen/__init__.py",
+                "../../bin/torchrun",
+            ],
+        )
+        _wheel(env, "sympy", requires=["mpmath"])
+        _wheel(env, "mpmath")
+        _wheel(
+            env,
+            "nvidia-cublas-cu12",
+            files=["nvidia/cublas/lib/libcublas.so", "nvidia/__init__.py"],
+        )
+        _wheel(
+            env,
+            "nvidia-cudnn-cu12",
+            files=["nvidia/cudnn/lib/libcudnn.so", "nvidia/__init__.py"],
+        )
+
+    def test_transitive_torch_and_its_tree_removed(self, tmp_path):
+        self._peft_env(tmp_path)
+        _wheel(tmp_path, "faster-whisper", requires=["nvidia-cudnn-cu12"])
+
+        dropped = prune_excluded(
+            tmp_path, TORCH, ["peft", "faster-whisper"], TORCH
+        )
+
+        assert dropped == ["mpmath", "nvidia-cublas-cu12", "sympy", "torch"]
+        assert _installed(tmp_path) == [
+            "faster_whisper",
+            "numpy",
+            "nvidia_cudnn_cu12",
+            "peft",
+        ]
+        for gone in ("torch", "functorch", "torchgen", "sympy", "bin/torchrun"):
+            assert not (tmp_path / gone).exists(), gone
+        # shared namespace dir keeps the files a kept wheel installed
+        assert (tmp_path / "nvidia/cudnn/lib/libcudnn.so").is_file()
+        assert (tmp_path / "nvidia/__init__.py").is_file()
+        assert not (tmp_path / "nvidia/cublas").exists()
+
+    def test_root_requirement_is_kept(self, tmp_path):
+        self._peft_env(tmp_path)
+        prune_excluded(tmp_path, TORCH, ["peft", "sympy==1.14"], TORCH)
+        assert "sympy" in _installed(tmp_path)
+        assert "mpmath" in _installed(tmp_path)
+
+    def test_nothing_excluded_installed_is_noop(self, tmp_path):
+        _wheel(tmp_path, "numpy")
+        assert prune_excluded(tmp_path, TORCH, ["numpy"], TORCH) == []
+        assert _installed(tmp_path) == ["numpy"]
+
+    def test_missing_record_fails_closed(self, tmp_path):
+        self._peft_env(tmp_path)
+        _wheel(tmp_path, "oddball", record=False)
+        dropped = prune_excluded(tmp_path, TORCH, ["peft", "oddball"], TORCH)
+        # only the excluded package itself goes
+        assert dropped == ["torch"]
+        assert not (tmp_path / "torch").exists()
+        assert "sympy" in _installed(tmp_path)
+
+    def test_missing_record_on_excluded_falls_back_to_dir(self, tmp_path):
+        _wheel(tmp_path, "peft", requires=["torch"])
+        _wheel(tmp_path, "torch", record=False)
+        assert prune_excluded(tmp_path, TORCH, ["peft"], TORCH) == ["torch"]
+        assert not (tmp_path / "torch").exists()
+
+    def test_unnamed_root_fails_closed(self, tmp_path):
+        self._peft_env(tmp_path)
+        dropped = prune_excluded(
+            tmp_path, TORCH, ["peft", "https://example.com/pkg.tar.gz"], TORCH
+        )
+        assert dropped == ["torch"]
+
+    def test_unreadable_requires_dist_fails_closed(self, tmp_path):
+        self._peft_env(tmp_path)
+        _wheel(tmp_path, "weird", requires=["https://example.com/x.whl"])
+        dropped = prune_excluded(tmp_path, TORCH, ["peft", "weird"], TORCH)
+        assert dropped == ["torch"]
+
+    def test_user_exclude_keeps_its_dependencies(self, tmp_path):
+        self._peft_env(tmp_path)
+        _wheel(tmp_path, "bigpkg", requires=["sympy"])
+        dropped = prune_excluded(
+            tmp_path, TORCH + ["bigpkg"], ["peft", "bigpkg"], TORCH
+        )
+        assert "bigpkg" in dropped
+        # sympy is torch-only except that bigpkg needs it
+        assert "sympy" in _installed(tmp_path)
+
+    def test_no_image_provided_removes_only_named(self, tmp_path):
+        # custom image: a user --exclude of torch drops torch, not its tree
+        self._peft_env(tmp_path)
+        assert prune_excluded(tmp_path, ["torch"], ["peft"], []) == ["torch"]
+        assert "sympy" in _installed(tmp_path)
+
+
+class TestBuildEnvironmentPrunes:
+    def _app(self, **kwargs):
+        app = App("a")
+
+        @app.queue(name="q", dependencies=["peft"], **kwargs)
+        def q():
+            pass
+
+        return app
+
+    def _fake_vendor(self, env_dir, requirements, python_version, **kwargs):
+        if "peft" in requirements:
+            _wheel(env_dir, "peft", requires=["torch"])
+            _wheel(env_dir, "torch", requires=["sympy"])
+            _wheel(env_dir, "sympy")
+
+    def test_gpu_builtin_image_prunes_transitive_torch(self, tmp_path):
+        from runpod.apps.build import build_environment
+
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(
+                self._app(gpu="AMPERE_16"), tmp_path, scratch_dir=tmp_path / "s"
+            )
+        assert result.excluded == ["torch"]
+        assert _installed(result.env_dir) == ["peft"]
+
+    def test_mixed_cpu_gpu_app_prunes_transitive_torch(self, tmp_path):
+        from runpod.apps.build import build_environment
+
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["pandas"])
+        def prep():
+            pass
+
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == ["torch"]
+        assert _installed(result.env_dir) == ["peft"]
+
+    def test_custom_image_keeps_transitive_torch(self, tmp_path):
+        from runpod.apps.build import build_environment
+
+        app = self._app(gpu="AMPERE_16", image="me/custom:1")
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == []
+        assert _installed(result.env_dir) == ["peft", "sympy", "torch"]
+
+    def test_cpu_keeps_transitive_torch(self, tmp_path):
+        from runpod.apps.build import build_environment
+
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(
+                self._app(cpu="cpu3c-1-2"), tmp_path, scratch_dir=tmp_path / "s"
+            )
+        assert result.excluded == []
+        assert _installed(result.env_dir) == ["peft", "sympy", "torch"]

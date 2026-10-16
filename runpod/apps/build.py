@@ -1,7 +1,9 @@
 """deploy-time environment build: vendor dependencies into the artifact."""
 
+import csv
 import logging
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -9,6 +11,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from collections import deque
+from email.parser import HeaderParser
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -58,6 +61,12 @@ API_RUNTIME_REQUIREMENTS = ("fastapi[standard]", "uvicorn>=0.30")
 MAX_ARTIFACT_MB = 1500
 
 _REQ_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+# a name only when followed by extras, a specifier, a marker, a direct
+# reference, or the end (not a url, path, or archive filename)
+_STRICT_REQ_NAME_RE = re.compile(
+    r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:$|[<>=!~;@(])"
+)
 
 
 class BuildError(AppError):
@@ -133,6 +142,185 @@ def split_exclusions(
     # not the user listed them, so the manifest always records the auto
     # set that user requirements referenced
     return kept, sorted(set(excluded))
+
+
+def _canonical_name(name: str) -> str:
+    """pep 503 normalized distribution name."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _strict_requirement_name(requirement: str) -> str:
+    """canonical name of a requirement or Requires-Dist line, or "" when
+    the line does not start with a name (url, path, archive filename)."""
+    match = _STRICT_REQ_NAME_RE.match(requirement)
+    if not match:
+        return ""
+    if requirement.strip() == match.group(1) and re.search(
+        r"\.(whl|zip|tar\.gz|tgz)$", match.group(1), re.I
+    ):
+        return ""
+    return _canonical_name(match.group(1))
+
+
+def _dist_info_name(dist_info_dir: str) -> str:
+    """distribution name from a "name-version.dist-info" directory name."""
+    stem = dist_info_dir[: -len(".dist-info")]
+    match = re.search(r"-\d", stem)
+    return stem[: match.start()] if match else stem
+
+
+def _read_record(dist_info: Path) -> Optional[set]:
+    """paths a wheel installed, relative to the install dir, or None.
+
+    pip --target records scripts and data files relative to its staging
+    lib/python dir ("../../bin/torchrun") and then moves them to the top
+    of the target, so one leading "../../" maps onto the target.
+    """
+    record = dist_info / "RECORD"
+    if not record.is_file():
+        return None
+    paths = set()
+    with record.open(newline="", encoding="utf-8", errors="replace") as f:
+        for row in csv.reader(f):
+            if not row:
+                continue
+            path = posixpath.normpath(row[0].replace("\\", "/"))
+            if path.startswith("../../"):
+                path = path[len("../../") :]
+            if not path.startswith("../") and path not in (".", ".."):
+                paths.add(path)
+    return paths
+
+
+def _read_requires(dist_info: Path) -> Optional[set]:
+    """canonical names a wheel depends on, or None when unreadable.
+
+    markers and extras are ignored, which can only keep more wheels.
+    """
+    metadata = dist_info / "METADATA"
+    if not metadata.is_file():
+        return None
+    headers = HeaderParser().parsestr(
+        metadata.read_text(encoding="utf-8", errors="replace")
+    )
+    deps = set()
+    for line in headers.get_all("Requires-Dist") or []:
+        dep = _strict_requirement_name(line)
+        if not dep:
+            return None
+        deps.add(dep)
+    return deps
+
+
+def prune_excluded(
+    env_dir: Path,
+    excluded: List[str],
+    roots: List[str],
+    image_provided: List[str],
+) -> List[str]:
+    """remove excluded distributions that pip installed as dependencies.
+
+    split_exclusions only drops excluded packages the user listed. a
+    listed package that depends on one (peft -> torch) still installs it,
+    and on the worker the vendored copy shadows the image's build. this
+    removes every installed excluded distribution, plus the wheels that
+    only image_provided packages depend on (torch's nvidia/cuda, sympy,
+    networkx), since the image installs those alongside its own torch.
+
+    fails closed: without METADATA and RECORD for every wheel, or with a
+    root requirement that has no name (url, path), only the excluded
+    distributions themselves are removed. roots and their dependencies
+    are never removed unless excluded.
+
+    returns the canonical names of removed distributions.
+    """
+    dist_infos = {
+        _canonical_name(_dist_info_name(d.name)): d
+        for d in env_dir.glob("*.dist-info")
+        if d.is_dir()
+    }
+    excluded_set = {_canonical_name(n) for n in excluded}
+    targets = set(dist_infos) & excluded_set
+    if not targets:
+        return []
+
+    records = {name: _read_record(d) for name, d in dist_infos.items()}
+    requires = {name: _read_requires(d) for name, d in dist_infos.items()}
+    root_names = {_strict_requirement_name(r) for r in roots}
+    complete = all(v is not None for v in records.values()) and all(
+        v is not None for v in requires.values()
+    )
+
+    dropped = set(targets)
+    if complete and "" not in root_names:
+        provided = {_canonical_name(n) for n in image_provided}
+        installed = set(dist_infos)
+
+        def closure(start, stop):
+            seen = set()
+            stack = [n for n in start if n in installed]
+            while stack:
+                node = stack.pop()
+                if node in seen:
+                    continue
+                seen.add(node)
+                stack.extend(
+                    d for d in requires[node] if d in installed and d not in stop
+                )
+            return seen
+
+        # a user exclusion removes only the named package, so its
+        # dependencies are protected like the roots
+        pulled = closure(installed & provided, stop=set())
+        seed = (installed - pulled) | (installed & root_names)
+        seed |= installed & (excluded_set - provided)
+        kept = closure(seed - provided, stop=provided)
+        dropped |= installed - kept
+
+    kept_files = set()
+    dropped_files = set()
+    for name, paths in records.items():
+        if paths is None:
+            continue
+        (dropped_files if name in dropped else kept_files).update(paths)
+    dropped_files -= kept_files
+
+    root = env_dir.resolve()
+    touched_tops = set()
+    for rel in dropped_files:
+        path = env_dir / rel
+        try:
+            path.resolve().relative_to(root)
+        except ValueError:
+            continue
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+            touched_tops.add(rel.split("/", 1)[0])
+
+    for name in dropped:
+        shutil.rmtree(dist_infos[name], ignore_errors=True)
+        # wheels without a RECORD: fall back to the import-name directory
+        if records[name] is None:
+            top = env_dir / name.replace("-", "_")
+            if top.is_dir() and not top.is_symlink():
+                shutil.rmtree(top, ignore_errors=True)
+
+    # drop directories the removal emptied
+    for top in touched_tops:
+        top_path = env_dir / top
+        if not top_path.is_dir() or top_path.is_symlink():
+            continue
+        for directory in sorted(
+            (p for p in top_path.rglob("*") if p.is_dir() and not p.is_symlink()),
+            key=lambda p: len(p.parts),
+            reverse=True,
+        ):
+            if not any(directory.iterdir()):
+                directory.rmdir()
+        if not any(top_path.iterdir()):
+            top_path.rmdir()
+
+    return sorted(dropped)
 
 
 def _is_pinnable_name(spec: str) -> bool:
@@ -326,11 +514,16 @@ def build_environment(
 
     user_requirements = collect_requirements(project_root, app)
     # size-prohibitive packages come preinstalled only on the builtin
-    # gpu images. custom images carry no guarantee, and builtin cpu
-    # images ship without them, so every resource must be gpu-on-builtin
-    # for auto-exclusion to be sound (the artifact is shared app-wide)
-    auto_exclude = all(
-        h.spec.gpu and not h.spec.image for h in app.resources.values()
+    # gpu images, and custom images carry no guarantee. builtin cpu
+    # images ship without them, but a vendored pypi torch cannot serve
+    # them either: built off linux it lacks the nvidia libraries and
+    # fails to import, and on linux those libraries exceed the artifact
+    # limit. it would still shadow the gpu image's torch, so an app with
+    # any builtin gpu resource excludes them app-wide (the artifact is
+    # shared), as runpod-flash did
+    resources = list(app.resources.values())
+    auto_exclude = not any(h.spec.image for h in resources) and any(
+        h.spec.gpu for h in resources
     )
     vendored, excluded = split_exclusions(
         user_requirements, exclude, auto_exclude=auto_exclude
@@ -367,6 +560,29 @@ def build_environment(
         ", ".join(excluded) or "none",
     )
     vendor(env_dir, all_requirements, python_version, progress=progress)
+
+    # dependencies of vendored packages can pull excluded packages back
+    # in (peft -> torch). a vendored torch shadows the image's build on
+    # the worker and fails its cuda check, so remove them here
+    prune_names = {requirement_name(e) for e in (exclude or [])}
+    if auto_exclude:
+        prune_names |= SIZE_PROHIBITIVE_PACKAGES
+    pruned = prune_excluded(
+        env_dir,
+        sorted(prune_names),
+        all_requirements,
+        sorted(SIZE_PROHIBITIVE_PACKAGES) if auto_exclude else [],
+    )
+    if pruned:
+        log.info(
+            "removed %d dependency packages provided by the worker image "
+            "or excluded: %s",
+            len(pruned),
+            ", ".join(pruned),
+        )
+        excluded = sorted(
+            set(excluded) | ({_canonical_name(n) for n in prune_names} & set(pruned))
+        )
 
     if not package_spec:
         sync_running_package(env_dir)
