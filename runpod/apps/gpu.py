@@ -5,8 +5,13 @@ display names. either (or plain strings) are accepted anywhere a gpu is
 configured. CpuInstanceType values are backend cpu flavor ids.
 """
 
+import functools
+import logging
+import os
 from enum import Enum
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Set, Union
+
+log = logging.getLogger(__name__)
 
 
 class GpuGroup(Enum):
@@ -208,24 +213,85 @@ def resolve_gpu_string(value: str) -> List[str]:
     )
 
 
+CATALOG_URL = "https://api.runpod.io/v2/catalog/gpus"
+
+
+@functools.lru_cache(maxsize=1)
+def live_pool_members() -> Optional[Dict[str, Set[str]]]:
+    """pool id -> device ids, from the platform's gpu catalog.
+
+    the static POOLS_TO_TYPES table lags the platform (pools gain mig
+    slices and new skus), so exact-device pinning reads the live
+    membership. returns None when the catalog is unreachable.
+    """
+    import requests
+
+    from .utils.network import api_key
+
+    url = os.environ.get("RUNPOD_GPU_CATALOG_URL", CATALOG_URL)
+    try:
+        resp = requests.get(
+            url, headers={"Authorization": f"Bearer {api_key()}"}, timeout=10
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        gpus = data.get("gpus", []) if isinstance(data, dict) else data
+        members: Dict[str, Set[str]] = {}
+        for gpu in gpus:
+            if gpu.get("pool") and gpu.get("id"):
+                members.setdefault(gpu["pool"], set()).add(gpu["id"])
+        return members or None
+    except Exception as exc:  # any failure falls back to the static table
+        log.debug("gpu catalog unavailable (%s); using the static pool table", exc)
+        return None
+
+
+def _pool_members(pool: str) -> Set[str]:
+    live = live_pool_members()
+    if live is not None and pool in live:
+        return live[pool]
+    try:
+        return {t.value for t in POOLS_TO_TYPES.get(GpuGroup(pool), [])}
+    except ValueError:
+        return set()
+
+
 def gpu_ids_value(gpu: Optional[List[str]]) -> str:
     """the gpuIds string for an endpoint payload.
 
     "any gpu" (no selection, or the ANY sentinel) means every pool id:
-    the api has no wildcard and rejects "any". device names map back
-    to their pool (endpoints select by pool, not device).
+    the api has no wildcard and rejects "any". endpoints select by
+    pool, so device names map to their pool, and every other device in
+    that pool is excluded with a "-<device id>" token so workers only
+    land on the requested devices. pools named directly allow all of
+    their devices.
     """
     if not gpu or any(str(g).lower() == "any" for g in gpu):
         return ",".join(g.value for g in GpuGroup.all())
     pools: List[str] = []
+    named_pools: Set[str] = set()
+    devices: Set[str] = set()
+    device_pools: List[str] = []
     for entry in gpu:
         value = str(entry)
         try:
             pool = pool_for_gpu_type(GpuType(value))
-            value = pool.value if pool is not None else value
         except ValueError:
-            # not a known GpuType: pass the raw pool/id string through
-            pass
+            # not a known GpuType: a pool id or raw id passes through
+            named_pools.add(value)
+        else:
+            if pool is not None:
+                devices.add(value)
+                if pool.value not in device_pools:
+                    device_pools.append(pool.value)
+                value = pool.value
         if value not in pools:
             pools.append(value)
-    return ",".join(pools)
+    exclusions = sorted(
+        member
+        for pool in device_pools
+        if pool not in named_pools
+        for member in _pool_members(pool)
+        if member not in devices
+    )
+    return ",".join(pools + [f"-{m}" for m in exclusions])
