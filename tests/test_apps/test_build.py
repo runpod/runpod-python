@@ -429,8 +429,41 @@ class TestBuildEnvironmentPrunes:
 
         with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
             result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
-        assert result.excluded == ["torch"]
+        # torch comes from the gpu image; the cpu stage never needs it,
+        # so its workers must not install it at cold start
+        assert result.excluded == []
         assert _installed(result.env_dir) == ["peft"]
+
+    def test_mixed_app_records_torch_only_when_cpu_needs_it(self, tmp_path):
+        from runpod.apps.build import build_environment
+
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["peft"])
+        def prep():
+            pass
+
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        # the cpu workers install torch at cold start, so it stays listed
+        assert result.excluded == ["torch"]
+
+    def test_mixed_app_direct_gpu_torch_not_recorded(self, tmp_path):
+        from runpod.apps.build import build_environment
+
+        app = App("a")
+
+        @app.queue(name="g", gpu="AMPERE_16", dependencies=["torch"])
+        def g():
+            pass
+
+        @app.queue(name="c", cpu="cpu3c-1-2", dependencies=["pandas"])
+        def c():
+            pass
+
+        with patch("runpod.apps.build.vendor"):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == []
 
     def test_custom_image_keeps_transitive_torch(self, tmp_path):
         from runpod.apps.build import build_environment
