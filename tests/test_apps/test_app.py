@@ -1,11 +1,14 @@
 """tests for the App registry and decorators."""
 
+from unittest.mock import patch
+
 import pytest
 
 import runpod
 from runpod.apps import App, ApiHandle, FunctionHandle, ResourceKind
 from runpod.apps.app import _REGISTRY, _clear_registry
 from runpod.apps.errors import InvalidResourceError
+from runpod.apps.gpu import live_pool_members as _real_live_pool_members
 from runpod.apps.markers import get, init, post
 
 
@@ -381,6 +384,66 @@ class TestGpuStringResolution:
 
         with pytest.raises(InvalidResourceError, match="unknown gpu 'B300'"):
             normalize_gpu("B300")
+
+    def test_gpu_ids_excludes_other_live_pool_members(self, monkeypatch):
+        from runpod.apps import gpu as gpu_mod
+
+        live = {
+            "ADA_24": {"NVIDIA GeForce RTX 4090"},
+            "AMPERE_24": {
+                "NVIDIA GeForce RTX 3090",
+                "NVIDIA L4",
+                "NVIDIA RTX A5000",
+                "NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb",
+            },
+        }
+        monkeypatch.setattr(gpu_mod, "live_pool_members", lambda: live)
+        value = gpu_mod.gpu_ids_value(
+            ["NVIDIA GeForce RTX 4090", "NVIDIA L4", "NVIDIA RTX A5000"]
+        )
+        assert value == (
+            "ADA_24,AMPERE_24,-NVIDIA GeForce RTX 3090,"
+            "-NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"
+        )
+
+    def test_gpu_ids_named_pool_allows_all_members(self, monkeypatch):
+        from runpod.apps import gpu as gpu_mod
+
+        monkeypatch.setattr(
+            gpu_mod,
+            "live_pool_members",
+            lambda: {"AMPERE_24": {"NVIDIA L4", "NVIDIA GeForce RTX 3090"}},
+        )
+        assert gpu_mod.gpu_ids_value(["NVIDIA L4", "AMPERE_24"]) == "AMPERE_24"
+
+    def test_gpu_ids_falls_back_to_static_pools(self, monkeypatch):
+        from runpod.apps import gpu as gpu_mod
+
+        monkeypatch.setattr(gpu_mod, "live_pool_members", lambda: None)
+        assert gpu_mod.gpu_ids_value(["NVIDIA L4"]) == (
+            "AMPERE_24,-NVIDIA GeForce RTX 3090,-NVIDIA RTX A5000"
+        )
+
+    def test_live_pool_members_parses_catalog_and_fails_soft(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        monkeypatch.setenv("RUNPOD_API_KEY", "k")
+        resp = MagicMock()
+        resp.json.return_value = {
+            "gpus": [
+                {"id": "NVIDIA L4", "pool": "AMPERE_24"},
+                {"id": "NVIDIA A100-SXM4-40GB", "pool": None},
+            ]
+        }
+        fetch = _real_live_pool_members
+        fetch.cache_clear()
+        with patch("requests.get", return_value=resp) as get:
+            assert fetch() == {"AMPERE_24": {"NVIDIA L4"}}
+            assert get.call_args.kwargs["headers"]["Authorization"] == "Bearer k"
+        fetch.cache_clear()
+        with patch("requests.get", side_effect=OSError("offline")):
+            assert fetch() is None
+        fetch.cache_clear()
 
     def test_gpu_ids_maps_devices_to_pools(self):
         from runpod.apps.gpu import gpu_ids_value
