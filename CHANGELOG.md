@@ -14,6 +14,18 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.0.1](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.0.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **serverless:** VolumeCache copies files on volumes that reject utime/chmod ([#620](https://github.com/runpod/runpod-python/issues/620)) ([1d7ae99](https://github.com/runpod/runpod-python/commit/1d7ae99f4e478fa932ec616b0ac7fe18998a78c6))
+
+
+### Documentation
+
+* point agents to the Runpod agent setup page ([#612](https://github.com/runpod/runpod-python/issues/612)) ([983b412](https://github.com/runpod/runpod-python/commit/983b41233ead04f01a35b798fdfedcf681cb9e9a))
+
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
 
