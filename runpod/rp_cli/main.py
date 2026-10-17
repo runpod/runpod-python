@@ -8,6 +8,7 @@ output, never for help rendering.
 
 import asyncio
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -405,11 +406,16 @@ def dev(module, once):
                     pass
             await asyncio.sleep(0.5)
 
+    # set once a second stop signal arrives: teardown stops waiting for
+    # a running entrypoint
+    force_stop: "list[asyncio.Event]" = []
+
     async def _run_entrypoint_cancellable(fn) -> None:
         """run user code without blocking the event loop.
 
         cancellation waits for the entrypoint to finish so its remote
-        calls cannot race with session teardown.
+        calls cannot race with session teardown, unless a second stop
+        signal forces teardown first.
         """
         loop = asyncio.get_running_loop()
         done: asyncio.Future[None] = loop.create_future()
@@ -422,6 +428,13 @@ def dev(module, once):
             else:
                 done.set_exception(exc)
 
+        def _report(exc: "BaseException | None") -> None:
+            try:
+                loop.call_soon_threadsafe(_finish, exc)
+            except RuntimeError:
+                # a forced stop closed the loop while this entrypoint ran
+                pass
+
         def _runner() -> None:
             try:
                 run_entrypoint(fn)
@@ -430,16 +443,55 @@ def dev(module, once):
             except (Exception, KeyboardInterrupt, SystemExit) as exc:
                 # bind the exception now: `as exc` is unbound once the
                 # except block exits, before the loop callback runs
-                loop.call_soon_threadsafe(_finish, exc)
+                _report(exc)
             else:
-                loop.call_soon_threadsafe(_finish, None)
+                _report(None)
 
-        threading.Thread(target=_runner).start()
+        # daemon: a forced stop must not leave process exit waiting on
+        # a long remote call
+        threading.Thread(target=_runner, daemon=True).start()
         try:
             return await asyncio.shield(done)
         except asyncio.CancelledError:
-            await done
+            if force_stop and not done.done():
+                forced = asyncio.ensure_future(force_stop[0].wait())
+                await asyncio.wait({done, forced}, return_when=asyncio.FIRST_COMPLETED)
+                forced.cancel()
+                # an abandoned entrypoint's error is not retrieved
+                done.add_done_callback(lambda f: f.cancelled() or f.exception())
+            else:
+                await done
             raise
+
+    def _install_stop_signals() -> None:
+        """stop cleanly on sigint and sigterm.
+
+        python only turns sigint into KeyboardInterrupt when it was not
+        ignored at startup, and shells start background jobs with sigint
+        ignored; sigterm has no handler at all. without these a stopped
+        session would leave its endpoints running. the first signal
+        cancels the session (teardown deletes the endpoints), the second
+        stops waiting for a running entrypoint.
+        """
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        force_stop.append(asyncio.Event())
+        seen = []
+
+        def _on_signal() -> None:
+            seen.append(True)
+            if len(seen) == 1:
+                task.cancel()
+            else:
+                force_stop[0].set()
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, _on_signal)
+            except (NotImplementedError, RuntimeError, ValueError):
+                # windows event loops have no signal handlers; ctrl-c
+                # still raises KeyboardInterrupt there
+                pass
 
     async def _session() -> int:
         nonlocal apps, entrypoint
@@ -448,6 +500,7 @@ def dev(module, once):
         watcher = FileWatcher([module.parent])
 
         ui.dev_banner([a.name for a in apps], str(module.name))
+        _install_stop_signals()
         try:
             await session.start()
             ui.resources_table(_table_rows(session))
