@@ -107,6 +107,13 @@ def _cpu_locations(instance_ids: List[str]) -> str:
 GENERATION_ENV = "RUNPOD_DEV_GENERATION"
 
 
+def _needs_api_key(app: App, spec: ResourceSpec) -> bool:
+    from .remote_calls import makes_remote_calls
+
+    handle = app.resources.get(spec.name)
+    return handle is None or makes_remote_calls(app, handle)
+
+
 def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
     """build a live endpoint payload with an atomically bound container config."""
 
@@ -133,10 +140,11 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
                 {"key": GENERATION_ENV, "value": str(generation)},
                 # nested .remote() calls from inside a dev worker need
                 # credentials and the dev-session marker to resolve
-                # sibling dev endpoints by name
+                # sibling dev endpoints by name. only resources that may
+                # make one get the key (the analysis fails open)
                 *(
                     [{"key": "RUNPOD_API_KEY", "value": key}]
-                    if (key := _client_api_key())
+                    if _needs_api_key(app, spec) and (key := _client_api_key())
                     else []
                 ),
                 {"key": "RUNPOD_DEV_APP", "value": app.name},
