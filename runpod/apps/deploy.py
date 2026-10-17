@@ -308,10 +308,17 @@ def _deployed_endpoint_input(
     }
 
     # cross-resource calls from inside a worker go through the sentinel,
-    # which authenticates with the account api key; without it any
-    # .remote() from worker code would fail
+    # which authenticates with the account api key. only resources that
+    # may make such a call get it (the analysis fails open)
+    from .remote_calls import makes_remote_calls
+
     api_key = runpod.api_key
-    if api_key and "RUNPOD_API_KEY" not in template_env:
+    handle = app.resources.get(spec.name)
+    if (
+        api_key
+        and "RUNPOD_API_KEY" not in template_env
+        and (handle is None or makes_remote_calls(app, handle))
+    ):
         template_env["RUNPOD_API_KEY"] = api_key
 
     # nested tasks use the same runtime and sdk channels as the endpoint
