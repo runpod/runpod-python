@@ -111,7 +111,10 @@ RELEASES = {
             "source": "MANUAL",
             "workerCount": 2,
             "createdAt": "2026-07-12T00:00:00Z",
-            "diff": [{"field": "template.imageName", "old": "a", "new": "b"}],
+            "diff": [
+                {"field": "template.imageName", "old": "a", "new": "b"},
+                {"field": "template.ports", "old": None, "new": ""},
+            ],
         },
         {
             "id": "rel2",
@@ -735,8 +738,16 @@ def test_workers_watch(api, monkeypatch):
 def test_releases(api):
     out = ok("releases", "ep1")
     assert "v3 live, 2/2 workers on latest" in out
-    for text in ("rel3", "rel2", "manual", "git build", "template.imageName"):
+    for text in (
+        "rel3",
+        "rel2",
+        "manual",
+        "git build",
+        "imageName",
+        "2026-07-12 00:00",
+    ):
         assert text in out
+    assert "template." not in out and "ports" not in out
     data = json.loads(ok("releases", "ep1", "--json"))
     assert data["endpointVersion"] == 3 and len(data["releases"]) == 2
 
@@ -969,6 +980,18 @@ def test_run_stream(api, client):
     assert 'hello\n{"done": true}' in out
 
 
+def test_run_stream_prints_output_of_non_streaming_handler(api, client):
+    client.post.return_value = {"id": "job1"}
+    client.get.side_effect = [
+        requests.exceptions.ReadTimeout(),
+        {"status": "IN_QUEUE", "stream": []},
+        {"status": "COMPLETED", "stream": []},
+        {"id": "job1", "status": "COMPLETED", "output": "streamed"},
+    ]
+    assert ok("run", "ep1", "--data", "{}", "--stream").splitlines()[-1] == "streamed"
+    client.get.assert_called_with("ep1/status/job1")
+
+
 def test_run_stream_failure_and_json(api, client):
     client.post.return_value = {"id": "job1"}
     client.get.side_effect = [
@@ -1056,9 +1079,13 @@ def test_job_get(api, client):
 def test_job_wait_and_stream(api, client):
     client.get.return_value = {"id": "job1", "status": "COMPLETED", "output": "done"}
     assert ok("job", "wait", "ep1", "job1", "--timeout", "30").strip() == "done"
-    client.get.return_value = {"status": "COMPLETED", "stream": []}
-    ok("job", "stream", "ep1", "job1")
-    client.get.assert_called_with("ep1/stream/job1")
+    client.get.return_value = None
+    client.get.side_effect = [
+        {"status": "COMPLETED", "stream": [{"output": "chunk"}]},
+        {"status": "COMPLETED", "stream": []},
+    ]
+    assert ok("job", "stream", "ep1", "job1").strip() == "chunk"
+    client.get.assert_called_with("ep1/stream/job1", timeout=ep.STREAM_POLL_SECONDS)
 
 
 def test_job_stream_interrupt(api, client):

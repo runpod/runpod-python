@@ -45,6 +45,7 @@ TYPES = {"queue": "QUEUE", "load-balancer": "LOAD_BALANCER"}
 FLASHBOOT = {"off": "OFF", "standard": "FLASHBOOT", "priority": "PRIORITY_FLASHBOOT"}
 DEFAULT_QUEUE_DELAY = 4
 WORKER_POLL_SECONDS = 5.0
+STREAM_POLL_SECONDS = 60
 
 MUTABLE_FIELDS = {
     "name": (str,),
@@ -224,7 +225,6 @@ _LIST_COLUMNS = [
     ("COMPUTE", lambda e: _compute(e, compact=True)),
     ("WORKERS", _workers),
     ("SCALING", lambda e: _scaling(e, compact=True)),
-    ("FLASHBOOT", _flashboot),
     ("CREATED", lambda e: (e.get("createdAt") or "")[:10]),
 ]
 
@@ -879,15 +879,12 @@ _WORKER_COLUMNS = [
     (
         "GPU",
         lambda w: (
-            f"{w['gpuTypeId']} x{w.get('gpuCount') or 1}"
-            if w.get("gpuTypeId")
-            else None
+            f"{w.get('gpuTypeId')} x{w['gpuCount']}" if w.get("gpuCount") else None
         ),
     ),
     ("DATA CENTER", lambda w: w.get("dataCenterId")),
     ("VERSION", _worker_version),
     ("UPTIME", lambda w: _uptime(w.get("uptimeSeconds"))),
-    ("IMAGE", lambda w: w.get("image")),
 ]
 
 
@@ -1057,12 +1054,21 @@ def _print_job(job: dict, as_json: bool) -> None:
 
 
 def _stream_job(client, endpoint_id: str, job_id: str, as_json: bool) -> None:
+    """print streamed chunks, or the final output when the handler streams nothing."""
     open_line = False
+    streamed = False
     try:
         while True:
             with _data_plane_errors():
-                partial = client.get(_job_path(endpoint_id, "stream", job_id))
+                try:
+                    partial = client.get(
+                        _job_path(endpoint_id, "stream", job_id),
+                        timeout=STREAM_POLL_SECONDS,
+                    )
+                except requests.exceptions.ReadTimeout:
+                    continue
             chunks = partial.get("stream") or []
+            streamed = streamed or bool(chunks)
             for chunk in chunks:
                 output = chunk.get("output")
                 if as_json:
@@ -1088,9 +1094,11 @@ def _stream_job(client, endpoint_id: str, job_id: str, as_json: bool) -> None:
         raise click.Abort() from None
     if open_line:
         click.echo()
-    if partial.get("status") != "COMPLETED":
-        with _data_plane_errors():
-            raise _job_failure(client.get(_job_path(endpoint_id, "status", job_id)))
+    if streamed and partial.get("status") == "COMPLETED":
+        return
+    with _data_plane_errors():
+        final = client.get(_job_path(endpoint_id, "status", job_id))
+    _print_job(final, as_json)
 
 
 def _request_body(input_file, data: Optional[str]) -> Optional[Any]:
@@ -1405,6 +1413,15 @@ def list_workers(endpoint_id, watch, interval, as_json):
         pass
 
 
+def _release_changes(release: dict) -> list[str]:
+    """changed field names, skipping entries whose old and new values are both empty."""
+    return [
+        entry["field"].removeprefix("template.")
+        for entry in release.get("diff") or []
+        if entry.get("field") and (entry.get("old") or entry.get("new"))
+    ]
+
+
 @endpoint.command(name="releases")
 @endpoint_argument()
 @json_option
@@ -1437,11 +1454,8 @@ def list_releases(endpoint_id, as_json):
             ("SOURCE", lambda r: (r.get("source") or "").lower().replace("_", " ")),
             ("BUILD", lambda r: r.get("buildId")),
             ("WORKERS", lambda r: r.get("workerCount")),
-            ("CREATED", lambda r: r.get("createdAt")),
-            (
-                "CHANGES",
-                lambda r: [entry.get("field") for entry in r.get("diff") or []],
-            ),
+            ("CREATED", lambda r: (r.get("createdAt") or "")[:16].replace("T", " ")),
+            ("CHANGES", _release_changes),
         ],
         "no releases",
     )
