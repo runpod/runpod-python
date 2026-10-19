@@ -15,16 +15,20 @@ import aiohttp
 from runpod.api.rest import _build_url
 from runpod.user_agent import USER_AGENT
 
+import aiohttp
+
+from ..error import QueryError
 from .api import AppsApiClient
 from .errors import AppError
 
 CONSOLE_URL = os.environ.get("RUNPOD_CONSOLE_URL", "https://console.runpod.io")
 
-POLL_INTERVAL_SECONDS = 2.0
-DEFAULT_TIMEOUT_SECONDS = 600.0
+MAX_KEY_ATTEMPTS = 3
 
-_APPROVED_STATUSES = frozenset({"APPROVED", "CONSUMED"})
-_FAILED_STATUSES = frozenset({"DENIED", "EXPIRED"})
+_CLOSED_REASONS = {
+    "DENIED": "login was denied in the browser",
+    "EXPIRED": "login request expired",
+}
 
 
 class LoginError(AppError):
@@ -142,16 +146,29 @@ def auth_url(request_id: str) -> str:
     return f"{CONSOLE_URL}/flash/login?request={request_id}"
 
 
+async def _closed_reason(client: AppsApiClient, request_id: str) -> Optional[str]:
+    """why the request can no longer produce a key, or None to keep prompting."""
+    try:
+        request = await client.get_auth_request_status(request_id)
+    except (QueryError, aiohttp.ClientError, OSError, asyncio.TimeoutError):
+        return None
+    return _CLOSED_REASONS.get(request.get("status"))
+
+
 async def browser_login(
     *,
-    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    prompt_key: Callable[[], str],
     on_url: Optional[Callable[[str], None]] = None,
+    on_rejected: Optional[Callable[[str], None]] = None,
     api: Optional[AppsApiClient] = None,
+    max_attempts: int = MAX_KEY_ATTEMPTS,
 ) -> str:
-    """run the browser-approval flow and return the granted api key.
+    """run the browser-approval flow and return the pasted api key.
 
     on_url is called with the approval url as soon as the request is
-    created (the caller renders/opens it).
+    created (the caller renders/opens it). the console shows the new key
+    only to the signed-in approver, so the user pastes it via prompt_key.
+    on_rejected is called with a reason before each re-prompt.
     """
     client = api or AppsApiClient()
     request: Dict[str, Any] = await client.create_auth_request()
@@ -163,23 +180,19 @@ async def browser_login(
     if on_url is not None:
         on_url(auth_url(request_id))
 
-    deadline = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=timeout_seconds)
-    expires_at = _parse_expires_at(request.get("expiresAt"))
-    if expires_at and expires_at < deadline:
-        deadline = expires_at
-
-    while True:
-        status_payload = await client.get_auth_request_status(request_id)
-        status = status_payload.get("status")
-        api_key = status_payload.get("apiKey")
-
-        if api_key and status in _APPROVED_STATUSES:
+    reason = "no api key entered"
+    for attempt in range(max_attempts):
+        api_key = (prompt_key() or "").strip()
+        if not api_key:
+            reason = "no api key entered"
+        elif await client.verify_api_key(api_key):
             return api_key
-        if status in _FAILED_STATUSES:
-            raise LoginError(f"login {status.lower()}")
-        if status == "CONSUMED":
-            raise LoginError("login request was already used")
-        if dt.datetime.now(dt.timezone.utc) >= deadline:
-            raise LoginError("login timed out")
+        else:
+            reason = "api key was rejected"
+        closed = await _closed_reason(client, request_id)
+        if closed:
+            raise LoginError(f"{closed}; run login again")
+        if on_rejected is not None and attempt < max_attempts - 1:
+            on_rejected(reason)
 
-        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+    raise LoginError(f"{reason}; run login again")
