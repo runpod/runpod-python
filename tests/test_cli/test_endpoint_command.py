@@ -1,5 +1,3 @@
-"""tests for rp endpoint."""
-
 import copy
 import json
 from unittest.mock import MagicMock
@@ -170,7 +168,6 @@ WORKERS = {
 
 
 class FakeApi:
-    """routes rest calls by (method, path) and records them."""
 
     def __init__(self, routes):
         self.routes = routes

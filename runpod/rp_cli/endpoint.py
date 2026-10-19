@@ -1,10 +1,3 @@
-"""`rp endpoint`: create, inspect, scale, observe, and call serverless endpoints.
-
-configuration goes through the rest v2 control plane (/v2/serverless).
-jobs go through the serverless data plane (runpod.endpoint_url_base),
-which has no rest v2 equivalent.
-"""
-
 import contextlib
 import fnmatch
 import json
@@ -67,7 +60,6 @@ complete_datacenter = completer(
 
 
 def complete_worker(ctx, param, incomplete):
-    """worker ids of the endpoint named earlier on the command line."""
     endpoint_id = ctx.params.get("endpoint_id")
     if not endpoint_id:
         return []
@@ -236,7 +228,6 @@ def _scale_options(func):
 
 
 def _config_options(creating: bool):
-    """the flags shared by create and update, one per api field."""
     head = [click.option("--name", required=creating, help="Endpoint name.")]
     if creating:
         head.append(
@@ -363,7 +354,6 @@ def _follow_rollout(
     timeout: float,
     interval: float = 2.0,
 ) -> None:
-    """poll releases until the new version runs on every worker."""
     started = time.monotonic()
     last = None
     try:
@@ -424,7 +414,6 @@ def _apply(
 
 
 def _edit_document(before: dict) -> Optional[dict]:
-    """open the document in $EDITOR until it validates or the user gives up."""
     text = json.dumps(before, indent=2) + "\n"
     while True:
         edited = click.edit(text, extension=".json")
@@ -492,7 +481,6 @@ def _workers_view(data: dict):
 
 @contextlib.contextmanager
 def _data_plane_errors() -> Iterator[None]:
-    """surface serverless data-plane failures as clean cli errors."""
     try:
         yield
     except requests.HTTPError as exc:
@@ -881,7 +869,6 @@ def list_workers(endpoint_id, watch, interval, as_json):
 
 
 def _release_changes(release: dict) -> list[str]:
-    """changed field names, skipping entries whose old and new values are both empty."""
     return [
         entry["field"].removeprefix("template.")
         for entry in release.get("diff") or []

@@ -1,5 +1,3 @@
-"""endpoint request configuration and editable JSON documents."""
-
 import json
 import shlex
 from typing import Any, Optional
@@ -142,7 +140,6 @@ def scale_patch(options: dict, current: dict) -> dict:
 
 
 def config_body(options: dict, current: Optional[dict] = None) -> dict:
-    """map flags to a create or partial update, preserving untouched configuration."""
     updating = current is not None
     current = current if updating else {"type": options["endpoint_type"]}
     body = {}
@@ -215,7 +212,6 @@ def config_body(options: dict, current: Optional[dict] = None) -> dict:
 
 
 def mutable(endpoint: dict) -> dict:
-    """the endpoint's configuration as UpdateEndpointRequest fields."""
     doc: dict[str, Any] = {}
     for key in ("name", "image", "args", "env", "disk", "ports"):
         if endpoint.get(key) is not None:
@@ -256,7 +252,6 @@ def _kind(kind: type) -> str:
 
 
 def validate(text: str, before: dict) -> dict:
-    """parse an edited document, raising ClickException on any problem."""
     try:
         doc = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -295,7 +290,6 @@ def validate(text: str, before: dict) -> dict:
 
 
 def patch(before: dict, after: dict) -> dict:
-    """top-level fields that changed, with gpu narrowed to its changed keys."""
     patch = {}
     for key, value in after.items():
         if before.get(key) == value:
