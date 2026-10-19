@@ -100,8 +100,8 @@ def _endpoint_input(
 ) -> Dict:
     """build a live endpoint payload with an atomically bound container config.
 
-    app_key is referenced as RUNPOD_API_KEY only for resources that
-    declare remote_calls; every other worker boots without credentials.
+    app_key is referenced as RUNPOD_API_KEY unless the resource's env
+    sets its own.
     """
 
     spec.validate()
@@ -231,8 +231,7 @@ class DevSession:
         await attach_endpoint_volumes(payload, spec, self._volume_resolver, app)
 
     async def _app_key_for(self, app: App, spec: ResourceSpec) -> Optional[Secret]:
-        """the app's dev key secret, resolved once per session and only
-        when a resource declares remote_calls."""
+        """the app's dev key secret, resolved once per session."""
         if not needs_app_key(spec):
             return None
         if app.name not in self._app_keys:

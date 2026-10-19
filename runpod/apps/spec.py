@@ -190,7 +190,6 @@ class ResourceSpec:
     container_disk_gb: Optional[int] = None
     routes: List[RouteSpec] = field(default_factory=list)
     asgi_factory: Optional[str] = None
-    remote_calls: bool = False
 
     def __post_init__(self) -> None:
         self.validate()

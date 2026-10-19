@@ -25,14 +25,6 @@ query getFlashAppByName($flashAppName: String!) {
 }
 """
 
-QUERY_SECRETS = """
-query mySecrets {
-    myself {
-        secrets { id name description createdAt }
-    }
-}
-"""
-
 QUERY_API_KEYS = """
 query myApiKeys {
     myself {

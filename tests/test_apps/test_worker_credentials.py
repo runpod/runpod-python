@@ -1,6 +1,5 @@
-"""worker credentials: only resources that declare remote_calls get an api
-key, minted per app environment, and templates only ever carry a secret
-reference to it."""
+"""worker credentials: workers get an api key minted per app environment,
+and templates only ever carry a secret reference to it."""
 
 import json
 from unittest.mock import AsyncMock
@@ -12,11 +11,9 @@ from runpod.apps import App
 from runpod.apps.app import _clear_registry
 from runpod.apps.app_key import (
     APP_KEY_SCOPES,
-    AppKeyError,
     app_key_name,
     delete_app_key,
     ensure_app_key,
-    rotate_app_key,
 )
 from runpod.apps.deploy import _deployed_endpoint_input, reconcile_endpoints
 from runpod.apps.dev import DevSession, _endpoint_input
@@ -26,8 +23,8 @@ from runpod.error import QueryError
 
 ACCOUNT_KEY = "rpa_fakeaccountkey0000000000000000"
 APP_KEY = "rpa_fakeappkey00000000000000000000"
-PROD_SECRET = "runpod-app-key.pipe.prod"
-DEV_SECRET = "runpod-dev-key.pipe"
+PROD_SECRET = "flash-app-key.pipe.prod"
+DEV_SECRET = "flash-dev-key.pipe"
 
 
 def _reference(name):
@@ -65,7 +62,7 @@ def _pipeline_app():
     def leaf(x: int):
         return x + 1
 
-    @app.queue(name="root", cpu="cpu3c-1-2", remote_calls=True)
+    @app.queue(name="root", cpu="cpu3c-1-2")
     def root(x: int):
         return leaf.remote(x)
 
@@ -142,23 +139,6 @@ class TestEnsureAppKey:
         api.create_secret.assert_not_awaited()
 
 
-class TestRotateAppKey:
-    async def test_new_key_replaces_secret_value_then_old_keys_are_revoked(self):
-        api = _api(
-            [{"id": "s1", "name": PROD_SECRET}],
-            [{"id": "key-old", "name": PROD_SECRET}, {"id": "other", "name": "mine"}],
-        )
-        await rotate_app_key(api, "pipe", "prod")
-        api.update_secret_value.assert_awaited_once_with("s1", APP_KEY)
-        api.delete_api_key.assert_awaited_once_with("key-old")
-
-    async def test_missing_secret_is_an_error(self):
-        api = _api()
-        with pytest.raises(AppKeyError):
-            await rotate_app_key(api, "pipe", "prod")
-        api.create_api_key.assert_not_awaited()
-
-
 class TestDeleteAppKey:
     async def test_removes_secret_and_every_key_with_its_name(self):
         api = _api(
@@ -206,16 +186,14 @@ class TestDeleteAppKey:
 
 
 class TestDeployedEndpoints:
-    def test_undeclared_resource_gets_no_key(self, logged_in, monkeypatch):
+    def test_account_key_never_lands_in_payload(self, logged_in, monkeypatch):
         monkeypatch.setattr(runpod, "api_key", ACCOUNT_KEY)
         app, leaf, _ = _pipeline_app()
-        payload = _deployed_endpoint_input(
-            app, leaf.spec, "env-1", "build-1", "3.12", app_key=Secret(PROD_SECRET)
-        )
+        payload = _deployed_endpoint_input(app, leaf.spec, "env-1", "build-1", "3.12")
         assert "RUNPOD_API_KEY" not in _env(payload)
         assert _no_key_values(payload)
 
-    async def test_declared_resource_references_environment_key(self, logged_in):
+    async def test_every_resource_references_environment_key(self, logged_in):
         app, _, _ = _pipeline_app()
         api = _api()
         await reconcile_endpoints(
@@ -223,7 +201,7 @@ class TestDeployedEndpoints:
         )
         saved = _saved(api)
         assert _env(saved["root"])["RUNPOD_API_KEY"] == _reference(PROD_SECRET)
-        assert "RUNPOD_API_KEY" not in _env(saved["leaf"])
+        assert _env(saved["leaf"])["RUNPOD_API_KEY"] == _reference(PROD_SECRET)
         assert _no_key_values(*saved.values())
         api.create_api_key.assert_awaited_once()
 
@@ -236,28 +214,12 @@ class TestDeployedEndpoints:
         assert _env(_saved(api)["root"])["RUNPOD_API_KEY"] == _reference(PROD_SECRET)
         api.create_api_key.assert_not_awaited()
 
-    async def test_no_declared_resource_never_touches_keys(self, logged_in):
-        app = App("solo")
-
-        @app.queue(name="only", cpu="cpu3c-1-2")
-        def only():
-            pass
-
-        api = _api()
-        await reconcile_endpoints(
-            api, app, {"id": "env-1", "name": "default"}, "build-1", "3.12"
-        )
-        assert "RUNPOD_API_KEY" not in _env(_saved(api)["only"])
-        api.list_secrets.assert_not_awaited()
-        api.create_api_key.assert_not_awaited()
-
     async def test_explicit_env_credentials_win(self, logged_in):
         app = App("own")
 
         @app.queue(
             name="caller",
             cpu="cpu3c-1-2",
-            remote_calls=True,
             env={"RUNPOD_API_KEY": Secret("my-scoped-key")},
         )
         def caller():
@@ -269,6 +231,7 @@ class TestDeployedEndpoints:
         )
         env = _env(_saved(api)["caller"])
         assert env["RUNPOD_API_KEY"] == _reference("my-scoped-key")
+        api.list_secrets.assert_not_awaited()
         api.create_api_key.assert_not_awaited()
 
 
@@ -279,7 +242,7 @@ class TestDevEndpoints:
         app, _, root = _pipeline_app()
         assert "RUNPOD_API_KEY" not in _env(_endpoint_input(app, root.spec))
 
-    async def test_session_references_dev_key_only_for_declared(self, logged_in):
+    async def test_session_references_dev_key(self, logged_in):
         app, _, _ = _pipeline_app()
         api = _api()
         session = DevSession([app], api=api)
@@ -290,25 +253,13 @@ class TestDevEndpoints:
             for call in api.save_endpoint.await_args_list
         }
         assert _env(saved["root"])["RUNPOD_API_KEY"] == _reference(DEV_SECRET)
-        assert "RUNPOD_API_KEY" not in _env(saved["leaf"])
+        assert _env(saved["leaf"])["RUNPOD_API_KEY"] == _reference(DEV_SECRET)
         assert _no_key_values([c.args for c in api.save_endpoint.await_args_list])
         api.create_api_key.assert_awaited_once()
 
-    async def test_session_without_declared_never_touches_keys(self, logged_in):
-        app = App("solo")
-
-        @app.queue(name="only", cpu="cpu3c-1-2")
-        def only():
-            pass
-
-        api = _api()
-        await DevSession([app], api=api).start()
-        api.list_secrets.assert_not_awaited()
-        api.create_api_key.assert_not_awaited()
-
 
 class TestNestedCallsInWorker:
-    async def test_declared_worker_authenticates_with_substituted_key(
+    async def test_worker_authenticates_with_substituted_key(
         self, logged_in, monkeypatch
     ):
         app, leaf, _ = _pipeline_app()
@@ -328,13 +279,3 @@ class TestNestedCallsInWorker:
         assert headers["Authorization"] == f"Bearer {APP_KEY}"
         assert headers["X-Flash-Endpoint"] == "leaf"
         assert headers["X-Flash-Environment"] == "prod"
-
-    async def test_undeclared_worker_fails_with_declaration_hint(self, monkeypatch):
-        monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
-        monkeypatch.delenv("RUNPOD_DEV_APP", raising=False)
-        monkeypatch.setattr(runpod, "api_key", None)
-        monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-leaf")
-        app, leaf, _ = _pipeline_app()
-        target = await app._resolve(leaf.spec)
-        with pytest.raises(RuntimeError, match="remote_calls=True"):
-            target._sentinel_headers()

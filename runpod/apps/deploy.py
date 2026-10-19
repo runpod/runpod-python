@@ -294,8 +294,8 @@ def _deployed_endpoint_input(
     the environment. binding via flashEnvironmentId is also what makes
     hosts deliver the build artifact to this endpoint's workers.
 
-    app_key is referenced as RUNPOD_API_KEY only for resources that
-    declare remote_calls; every other worker boots without credentials.
+    app_key is referenced as RUNPOD_API_KEY unless the resource's env
+    sets its own.
     """
     from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
     from .images import image_for_spec

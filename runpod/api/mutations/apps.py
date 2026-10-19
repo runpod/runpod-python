@@ -42,24 +42,6 @@ mutation createFlashEnvironment($input: CreateFlashEnvironmentInput!) {
 }
 """
 
-MUTATION_CREATE_SECRET = """
-mutation secretCreate($input: SecretCreateInput!) {
-    secretCreate(input: $input) { id name }
-}
-"""
-
-MUTATION_DELETE_SECRET = """
-mutation secretDelete($id: ID!) {
-    secretDelete(id: $id)
-}
-"""
-
-MUTATION_UPDATE_SECRET_VALUE = """
-mutation secretValueUpdate($input: SecretValueUpdateInput!) {
-    secretValueUpdate(input: $input) { id }
-}
-"""
-
 MUTATION_CREATE_API_KEY = """
 mutation createApiKeyNew($input: CreateApiKeyInput!) {
     createApiKeyNew(input: $input) { id rawKey }

@@ -1,7 +1,7 @@
-"""per-app api keys for workers that make outbound calls.
+"""per-app api keys for workers.
 
-a resource that declares remote_calls gets RUNPOD_API_KEY from a platform
-secret holding an api key minted for its app and environment. the key
+every resource gets RUNPOD_API_KEY from a platform secret holding an api
+key minted for its app and environment, unless its env sets one. the key
 value travels only from key creation into the secret; templates carry the
 secret reference and the platform decrypts it when a worker boots.
 
@@ -14,7 +14,6 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ..error import QueryError
-from .errors import AppError
 from .secret import Secret
 
 APP_KEY_ENV = "RUNPOD_API_KEY"
@@ -37,17 +36,13 @@ _MAX_NAME = 64
 _UNSAFE = re.compile(r"[^A-Za-z0-9_.-]")
 
 
-class AppKeyError(AppError):
-    pass
-
-
 def app_key_name(app_name: str, env_name: Optional[str] = None) -> str:
     """secret and api key name for an app environment, or for the app's
     dev sessions when env_name is None."""
     if env_name is None:
-        raw = f"runpod-dev-key.{app_name}"
+        raw = f"flash-dev-key.{app_name}"
     else:
-        raw = f"runpod-app-key.{app_name}.{env_name}"
+        raw = f"flash-app-key.{app_name}.{env_name}"
     name = _UNSAFE.sub("-", raw)
     if len(name) <= _MAX_NAME:
         return name
@@ -56,13 +51,12 @@ def app_key_name(app_name: str, env_name: Optional[str] = None) -> str:
 
 
 def needs_app_key(spec) -> bool:
-    """true when a resource makes outbound calls and does not supply its
-    own credentials through env."""
-    return spec.remote_calls and APP_KEY_ENV not in (spec.env or {})
+    """true when a resource does not supply its own credentials through env."""
+    return APP_KEY_ENV not in (spec.env or {})
 
 
 async def _find_secret(api, name: str) -> Optional[Dict[str, Any]]:
-    for secret in await api.list_secrets():
+    for secret in await api.list_secrets(name=name):
         if secret.get("name") == name:
             return secret
     return None
@@ -90,23 +84,6 @@ async def ensure_app_key(api, app_name: str, env_name: Optional[str] = None) -> 
         if not await _find_secret(api, name):
             raise
     return Secret(name)
-
-
-async def rotate_app_key(api, app_name: str, env_name: Optional[str] = None) -> None:
-    """mint a new key into the existing secret and revoke the old ones.
-
-    workers read the secret when they boot, so running workers keep the
-    revoked key until they restart.
-    """
-    name = app_key_name(app_name, env_name)
-    secret = await _find_secret(api, name)
-    if secret is None:
-        raise AppKeyError(f"no app key '{name}' to rotate")
-    stale = await _key_ids(api, name)
-    key = await api.create_api_key(name, APP_KEY_SCOPES)
-    await api.update_secret_value(secret["id"], key["rawKey"])
-    for key_id in stale:
-        await api.delete_api_key(key_id)
 
 
 async def delete_app_key(api, app_name: str, env_name: Optional[str] = None) -> bool:

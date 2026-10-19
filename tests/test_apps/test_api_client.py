@@ -704,17 +704,27 @@ class TestNetworkVolumeCapabilities:
 
 class TestVolumesRegistrySecrets:
     async def test_secret_crud(self):
-        client, patcher = _client_with(
-            {
-                "myself": {"secrets": [{"id": "s1"}]},
-                "secretCreate": {"id": "s1", "name": "tok"},
-                "secretDelete": True,
-            }
+        client = AppsApiClient(api_key="test-key")
+        rest = AsyncMock(
+            side_effect=[
+                {"secrets": [{"id": "s1"}]},
+                {"secrets": [{"id": "s1", "name": "tok"}]},
+                {"id": "s1", "name": "tok"},
+                None,
+            ]
         )
-        with patcher:
+        with patch("runpod.apps.api.run_rest_request_async", rest):
             assert await client.list_secrets() == [{"id": "s1"}]
+            assert await client.list_secrets(name="tok") == [{"id": "s1", "name": "tok"}]
             assert (await client.create_secret("tok", "v"))["id"] == "s1"
             assert await client.delete_secret("s1") is True
+        calls = [(c.args, c.kwargs.get("params"), c.kwargs.get("json")) for c in rest.await_args_list]
+        assert calls == [
+            (("GET", "/v2/account/secrets"), None, None),
+            (("GET", "/v2/account/secrets"), {"name": "tok"}, None),
+            (("POST", "/v2/account/secrets"), None, {"name": "tok", "value": "v"}),
+            (("DELETE", "/v2/account/secrets/s1"), None, None),
+        ]
 
 
 class TestAuthRequests:

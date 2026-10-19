@@ -478,35 +478,33 @@ class AppsApiClient:
         )
         return True
 
-    async def list_secrets(self) -> List[Dict[str, Any]]:
-        query = app_queries.QUERY_SECRETS
-        data = await self._execute(query, retry=True)
-        return data["myself"].get("secrets") or []
+    async def list_secrets(self, name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """account secrets, or only the one matching name (case-insensitive)."""
+        data = await run_rest_request_async(
+            "GET",
+            "/v2/account/secrets",
+            api_key=self._api_key,
+            params={"name": name} if name else None,
+        )
+        return data["secrets"]
 
     async def create_secret(
         self, name: str, value: str, description: str = ""
     ) -> Dict[str, Any]:
-        mutation = app_mutations.MUTATION_CREATE_SECRET
-        data = await self._execute(
-            mutation,
-            {
-                "input": {
-                    "name": name,
-                    "value": value,
-                    "description": description,
-                }
-            },
+        body = {"name": name, "value": value}
+        if description:
+            body["description"] = description
+        return await run_rest_request_async(
+            "POST", "/v2/account/secrets", api_key=self._api_key, json=body
         )
-        return data["secretCreate"]
 
     async def delete_secret(self, secret_id: str) -> bool:
-        mutation = app_mutations.MUTATION_DELETE_SECRET
-        data = await self._execute(mutation, {"id": secret_id})
-        return bool(data.get("secretDelete"))
-
-    async def update_secret_value(self, secret_id: str, value: str) -> None:
-        mutation = app_mutations.MUTATION_UPDATE_SECRET_VALUE
-        await self._execute(mutation, {"input": {"id": secret_id, "value": value}})
+        await run_rest_request_async(
+            "DELETE",
+            f"/v2/account/secrets/{_path_segment(secret_id)}",
+            api_key=self._api_key,
+        )
+        return True
 
     async def list_api_keys(self) -> List[Dict[str, Any]]:
         query = app_queries.QUERY_API_KEYS

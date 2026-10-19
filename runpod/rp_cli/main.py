@@ -673,28 +673,6 @@ def app_delete(app_name, yes):
     )
 
 
-@app.command(name="rotate-key")
-@click.argument("app_name")
-@click.option("--env", "-e", "env_name", default="default", show_default=True)
-@click.option("--dev", is_flag=True, help="Rotate the key for dev sessions.")
-def app_rotate_key(app_name, env_name, dev):
-    """Rotate the api key that an app's workers use for outbound calls.
-
-    Running workers keep the revoked key until they restart.
-    """
-    from runpod.apps.api import AppsApiClient
-    from runpod.apps.app_key import rotate_app_key
-    from runpod.rp_cli import console as ui
-
-    target_env = None if dev else env_name
-    try:
-        asyncio.run(rotate_app_key(AppsApiClient(), app_name, target_env))
-    except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
-        raise click.ClickException(str(exc)) from exc
-    label = f"{app_name} dev sessions" if dev else f"{app_name}/{env_name}"
-    ui.success(f"rotated the api key for [white]{label}[/white]")
-
-
 @cli.group()
 def registry():
     """Manage container registry credentials (private images)."""

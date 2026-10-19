@@ -76,7 +76,7 @@ class TestEndpointInput:
         assert "FLASH_RESOURCE_NAME" not in env
         assert "RUNPOD_RESOURCE_NAME" not in env
 
-    def test_api_key_not_forwarded_without_remote_calls(self, monkeypatch):
+    def test_account_api_key_never_forwarded(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_API_KEY", "rpa_test123")
         app = App("keyed")
 
