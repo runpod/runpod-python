@@ -39,6 +39,7 @@ from runpod.rp_cli.output import (
     pick,
     print_fields,
     print_json,
+    print_table,
 )
 
 TYPES = {"queue": "QUEUE", "load-balancer": "LOAD_BALANCER"}
@@ -259,22 +260,16 @@ def _escape(text: Any) -> str:
 
 
 def _table(rows: list[dict], columns: list):
-    """an aligned table whose first column, the id, never wraps or truncates."""
+    """the table print_table renders, for views that embed it."""
     from rich.markup import escape
     from rich.table import Table
 
     table = Table(box=None, header_style="dim", pad_edge=False)
     for index, (header, _) in enumerate(columns):
-        table.add_column(header, no_wrap=index == 0)
+        table.add_column(header, no_wrap=index == 0, overflow="fold")
     for row in rows:
         table.add_row(*(escape(cell(value(row))) for _, value in columns))
     return table
-
-
-def _print_table(rows: list[dict], columns: list, empty: str) -> None:
-    from runpod.rp_cli import console as ui
-
-    ui.console.print(_table(rows, columns) if rows else f"[dim]{empty}[/dim]")
 
 
 # ------------------------------------------------------------ request body
@@ -1188,7 +1183,7 @@ def list_endpoints(name, endpoint_type, as_json):
     if as_json:
         print_json(endpoints)
         return
-    _print_table(endpoints, _LIST_COLUMNS, "no endpoints match")
+    print_table(endpoints, _LIST_COLUMNS, "no endpoints match")
 
 
 @endpoint.command(name="get")
@@ -1443,7 +1438,7 @@ def list_releases(endpoint_id, as_json):
         return
     if state.get("endpointVersion") is not None:
         ui.console.print(f"[dim]{_rollout_line(state)}[/dim]")
-    _print_table(
+    print_table(
         releases,
         [
             ("RELEASE", lambda r: r["id"]),
