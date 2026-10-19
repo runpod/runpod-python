@@ -5,11 +5,8 @@ from typing import Optional
 import click
 
 from runpod.rp_cli import compute
-from runpod.rp_cli.output import api_errors, json_option, print_json, print_table
-
-
-def _price(value: Optional[float], count: int) -> Optional[float]:
-    return round(value * count, 4) if value else None
+from runpod.rp_cli.api import api_errors
+from runpod.rp_cli.output import json_option, print_json, print_table
 
 
 def _money(value: Optional[float]) -> str:
@@ -25,28 +22,27 @@ def _stock(entries: list[dict]) -> str:
     )
 
 
-def _in_regions(record: dict, allowed: Optional[set[str]]) -> dict:
-    """the record with stock narrowed to the allowed data centers."""
-    if allowed is None:
-        return dict(record)
-    datacenters = [dc for dc in record.get("dataCenters") or [] if dc["id"] in allowed]
-    return dict(
-        record,
-        dataCenters=datacenters,
-        availability=compute.best_availability(
-            dc.get("availability") for dc in datacenters
-        ),
+def _filter_stock(records: list[dict], regions: tuple[str, ...], available: bool):
+    allowed = (
+        set(compute.resolve_regions(regions, compute.list_datacenters()))
+        if regions
+        else None
     )
-
-
-def _allowed(regions: tuple[str, ...]) -> Optional[set[str]]:
-    if not regions:
-        return None
-    return set(compute.resolve_regions(regions, compute.list_datacenters()))
+    for record in records:
+        row = dict(record)
+        if allowed is not None:
+            row["dataCenters"] = [
+                dc for dc in record["dataCenters"] if dc["id"] in allowed
+            ]
+            row["availability"] = compute.best_availability(
+                dc["availability"] for dc in row["dataCenters"]
+            )
+        if not available or compute.availability_rank(row["availability"]) > 0:
+            yield row
 
 
 def _unit_price(gpu: dict, product: str, cloud: Optional[str]) -> Optional[float]:
-    price = gpu.get("price") or {}
+    price = gpu["price"]
     if product == "SERVERLESS":
         return price.get("serverless") or None
     if cloud:
@@ -72,21 +68,17 @@ def _gpu_rows(
         gpus = compute.resolve_gpus(query, gpus)
     if product == "SERVERLESS":
         gpus = [gpu for gpu in gpus if gpu.get("pool")]
-    allowed = _allowed(regions)
     rows = []
-    for gpu in gpus:
-        row = _in_regions(gpu, allowed)
+    for row in _filter_stock(gpus, regions, available):
         unit = _unit_price(row, product, cloud)
         if min_vram and (row.get("memory") or 0) < min_vram:
             continue
         if max_price is not None and (unit is None or unit > max_price):
             continue
-        if available and row.get("availability") in (None, "NONE"):
-            continue
-        price = row.get("price") or {}
         row["count"] = count
         row["totalPrice"] = {
-            tier: _price(value, count) for tier, value in price.items()
+            tier: round(value * count, 4) if value else None
+            for tier, value in row["price"].items()
         }
         rows.append(row)
     rows.sort(
@@ -135,12 +127,10 @@ def _cpu_rows(query, product, vcpu, regions, available) -> list[dict]:
         cpus = compute.match_cpus(query, cpus)
         if not cpus:
             raise compute.ResolutionError(f"unknown cpu '{query}'")
-    allowed = _allowed(regions)
-    rows = [_in_regions(cpu, allowed) for cpu in cpus]
-    if available:
-        rows = [row for row in rows if row.get("availability") not in (None, "NONE")]
-    rows.sort(key=lambda row: -compute.availability_rank(row.get("availability")))
-    return rows
+    return sorted(
+        _filter_stock(cpus, regions, available),
+        key=lambda row: -compute.availability_rank(row["availability"]),
+    )
 
 
 def _cpu_columns(product: str):
