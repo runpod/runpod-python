@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from contextlib import suppress
 from datetime import datetime, timezone
 
 import aiohttp
@@ -53,24 +54,21 @@ async def _show_logs(
                 on_event_id=remember,
             )
             try:
-                while True:
-                    event = await asyncio.wait_for(
-                        anext(stream),
-                        timeout=None if follow else SNAPSHOT_IDLE_SECONDS,
-                    )
-                    if follow:
-                        emit(worker, event)
-                    elif (
-                        datetime.fromisoformat(event["ts"].replace("Z", "+00:00"))
-                        >= started
-                    ):
-                        return
-                    else:
-                        records.append((worker, event))
-            except StopAsyncIteration:
-                pass
-            except asyncio.TimeoutError:
-                pass
+                with suppress(StopAsyncIteration, asyncio.TimeoutError):
+                    while True:
+                        event = await asyncio.wait_for(
+                            anext(stream),
+                            timeout=None if follow else SNAPSHOT_IDLE_SECONDS,
+                        )
+                        if follow:
+                            emit(worker, event)
+                        elif (
+                            datetime.fromisoformat(event["ts"].replace("Z", "+00:00"))
+                            >= started
+                        ):
+                            return
+                        else:
+                            records.append((worker, event))
             except aiohttp.ClientResponseError as exc:
                 if not endpoint_id or exc.status != 404:
                     raise
@@ -158,6 +156,6 @@ def show_logs(
                 )
             )
     except KeyboardInterrupt:
-        pass
+        return
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
         raise click.ClickException(str(exc)) from exc
