@@ -1,5 +1,3 @@
-"""`rp volume`: network and global volume management."""
-
 import re
 
 import click
@@ -105,7 +103,6 @@ def _data_center(regions, volume_type):
 
 
 def _growth(volume_id, size, expand=False):
-    """resolve and validate a size against the current network volume."""
     text = str(size).strip()
     if not re.fullmatch(r"\+?\d+", text):
         raise click.BadParameter(
