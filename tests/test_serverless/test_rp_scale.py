@@ -414,6 +414,95 @@ async def test_monitor_stop_signals_disabled_without_stop_url(job_scaler: PatchS
         await asyncio.wait_for(scaler.monitor_stop_signals(AsyncMock()), timeout=1)
 
 
+# Well under the old 100ms dispatch poll, so a polling loop fails these tests.
+DISPATCH_DEADLINE = 0.05  # seconds
+
+
+def _gated_fetcher(release: asyncio.Event, job_ids: list[str]):
+    """Fetcher that hands out the given jobs once `release` is set, then none."""
+    pending = list(job_ids)
+
+    async def fetcher(_session, jobs_needed):
+        await release.wait()
+        taken, pending[:] = pending[:jobs_needed], pending[jobs_needed:]
+        if not taken:
+            await asyncio.sleep(1)
+        return [generate_job(job_id) for job_id in taken]
+
+    return fetcher
+
+
+@pytest.mark.asyncio
+async def test_idle_dispatcher_starts_fetched_job_immediately(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    release = asyncio.Event()
+    handler_called = asyncio.Event()
+
+    async def handler(_session, _config, _job):
+        handler_called.set()
+
+    scaler.jobs_handler = handler
+    scaler.jobs_fetcher = _gated_fetcher(release, ["job-0"])
+    get_task = asyncio.create_task(scaler.get_jobs(AsyncMock()))
+    run_task = asyncio.create_task(scaler.run_jobs(None))
+    await asyncio.sleep(0.01)  # dispatcher is now idle
+
+    release.set()
+
+    await asyncio.wait_for(handler_called.wait(), timeout=DISPATCH_DEADLINE)
+    scaler.kill_worker()
+    get_task.cancel()
+    await asyncio.wait_for(run_task, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_busy_dispatcher_starts_second_job_immediately(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    release_second = asyncio.Event()
+    finish_first = asyncio.Event()
+    started = {}
+
+    async def handler(_session, _config, job):
+        started[job["id"]] = True
+        if job["id"] == "job-0":
+            await finish_first.wait()
+
+    scaler.jobs_handler = handler
+    scaler.current_concurrency = 2
+    scaler.jobs_queue = asyncio.Queue(maxsize=2)
+    await scaler.jobs_queue.put(generate_job("job-0"))
+    job_scaler.progress.add(None)
+    run_task = asyncio.create_task(scaler.run_jobs(None))
+    await asyncio.sleep(0.01)  # job-0 running, dispatcher waiting on it
+    assert started == {"job-0": True}
+
+    scaler.jobs_fetcher = _gated_fetcher(release_second, ["job-1"])
+    get_task = asyncio.create_task(scaler.get_jobs(AsyncMock()))
+    await asyncio.sleep(0)
+    release_second.set()
+
+    async def second_started():
+        while "job-1" not in started:
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(second_started(), timeout=DISPATCH_DEADLINE)
+    finish_first.set()
+    scaler.kill_worker()
+    get_task.cancel()
+    await asyncio.wait_for(run_task, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_idle_dispatcher_exits_promptly_on_shutdown(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    run_task = asyncio.create_task(scaler.run_jobs(None))
+    await asyncio.sleep(0.01)  # dispatcher is now idle
+
+    scaler.kill_worker()
+
+    await asyncio.wait_for(run_task, timeout=DISPATCH_DEADLINE)
+
+
 @pytest.mark.asyncio
 async def test_get_jobs_feeds_workers_end_to_end(job_scaler: PatchScaler):
     scaler = job_scaler.scaler
