@@ -77,6 +77,43 @@ class _FakeContent:
 
 
 class TestStreamPodLogs:
+    @pytest.mark.parametrize("endpoint_id", [None, "ep1"])
+    async def test_combined_rest_stream_resumes_delivered_events(
+        self, monkeypatch, endpoint_id
+    ):
+        monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+        response = MagicMock()
+        response.content = _FakeContent(
+            [
+                b"id: cursor2\n",
+                b'data: {"source":"system","line":"ready","ts":"t2"}\n',
+            ]
+        )
+        session_cm, session = _mock_session(response)
+        cursors = []
+        with patch("aiohttp.ClientSession", return_value=session_cm):
+            entries = [
+                entry
+                async for entry in stream_pod_logs(
+                    "pod1",
+                    endpoint_id=endpoint_id,
+                    log_type=None,
+                    last_event_id="cursor1",
+                    on_event_id=cursors.append,
+                )
+            ]
+        url = session.get.call_args.args[0]
+        suffix = (
+            "/v2/serverless/ep1/workers/pod1/logs"
+            if endpoint_id
+            else "/v2/pods/pod1/logs"
+        )
+        assert url.endswith(suffix)
+        assert session.get.call_args.kwargs["params"] == {"tail": "100"}
+        assert session.get.call_args.kwargs["headers"]["Last-Event-ID"] == "cursor1"
+        assert cursors == ["cursor2"]
+        assert entries == [{"source": "system", "line": "ready", "ts": "t2"}]
+
     async def test_parses_sse_frames(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
         frames = [
