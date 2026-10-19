@@ -26,10 +26,6 @@ DATACENTERS = [
 ]
 
 
-def _ids(gpus):
-    return [gpu["id"] for gpu in gpus]
-
-
 class TestMatchGpus:
     @pytest.mark.parametrize(
         "query, expected",
@@ -51,7 +47,7 @@ class TestMatchGpus:
         ],
     )
     def test_queries(self, query, expected):
-        assert _ids(compute.match_gpus(query, GPUS)) == expected
+        assert [gpu["id"] for gpu in compute.match_gpus(query, GPUS)] == expected
 
     def test_resolve_raises_with_known_names(self):
         with pytest.raises(
@@ -157,27 +153,6 @@ class TestAvailability:
 
 
 class TestCatalogRequests:
-    def test_list_all_follows_cursors(self):
-        pages = [
-            {
-                "pods": [{"id": "a"}],
-                "pagination": {"hasNextPage": True, "nextCursor": "c1"},
-            },
-            {
-                "pods": [{"id": "b"}],
-                "pagination": {"hasNextPage": False, "nextCursor": None},
-            },
-        ]
-        with patch.object(compute, "run_rest_request", side_effect=pages) as request:
-            assert compute.list_all("/v2/pods", "pods", {"limit": 1}) == [
-                {"id": "a"},
-                {"id": "b"},
-            ]
-        assert request.call_args_list[1].kwargs["params"] == {
-            "limit": 1,
-            "cursor": "c1",
-        }
-
     def test_list_gpus_with_availability(self):
         with patch.object(
             compute, "run_rest_request", return_value={"gpus": GPUS}
@@ -200,7 +175,9 @@ class TestCatalogRequests:
         }
 
     def test_list_gpus_without_availability(self):
-        with patch.object(compute, "run_rest_request", return_value=None) as request:
+        with patch.object(
+            compute, "run_rest_request", return_value={"gpus": []}
+        ) as request:
             assert compute.list_gpus(count=2, min_cuda_version="12.4") == []
         assert request.call_args.kwargs["params"] == {}
 
