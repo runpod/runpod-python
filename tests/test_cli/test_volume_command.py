@@ -1,5 +1,3 @@
-"""tests for the rp volume command group."""
-
 import json
 from unittest.mock import call, patch
 
