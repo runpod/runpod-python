@@ -1,7 +1,8 @@
 """gpu, cpu, and region resolution against the rest v2 catalog."""
 
 import re
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any, Optional
 
 from runpod.api.rest import run_rest_request
 
@@ -29,31 +30,12 @@ class ResolutionError(ValueError):
     """a user-supplied gpu, cpu, or region that does not resolve."""
 
 
-def list_all(
-    path: str, collection: str, params: Optional[dict[str, Any]] = None
-) -> list[dict]:
-    """every record of a cursor-paginated list endpoint."""
-    query = dict(params or {})
-    records: list[dict] = []
-    while True:
-        page = run_rest_request("GET", path, params=query) or {}
-        records.extend(page.get(collection) or [])
-        pagination = page.get("pagination") or {}
-        cursor = pagination.get("nextCursor")
-        if not pagination.get("hasNextPage") or not cursor:
-            return records
-        query["cursor"] = cursor
-
-
 def _query_params(**values: Any) -> dict[str, Any]:
-    params = {}
-    for key, value in values.items():
-        if value is None or value == []:
-            continue
-        if isinstance(value, (list, tuple)):
-            value = ",".join(str(item) for item in value)
-        params[key] = value
-    return params
+    return {
+        key: ",".join(value) if isinstance(value, (list, tuple)) else value
+        for key, value in values.items()
+        if value is not None and value != []
+    }
 
 
 def list_gpus(
@@ -72,8 +54,7 @@ def list_gpus(
         cudaVersions=cuda_versions if product else None,
         minCudaVersion=min_cuda_version if product else None,
     )
-    response = run_rest_request("GET", "/v2/catalog/gpus", params=params) or {}
-    return response.get("gpus") or []
+    return run_rest_request("GET", "/v2/catalog/gpus", params=params)["gpus"]
 
 
 def list_cpus(
@@ -85,19 +66,14 @@ def list_cpus(
         product=product,
         vcpuCount=vcpu_count if product else None,
     )
-    response = run_rest_request("GET", "/v2/catalog/cpus", params=params) or {}
-    return response.get("cpus") or []
+    return run_rest_request("GET", "/v2/catalog/cpus", params=params)["cpus"]
 
 
 def list_datacenters(include: Optional[list[str]] = None) -> list[dict]:
     """every data center in the catalog."""
-    response = (
-        run_rest_request(
-            "GET", "/v2/catalog/datacenters", params=_query_params(include=include)
-        )
-        or {}
-    )
-    return response.get("dataCenters") or []
+    return run_rest_request(
+        "GET", "/v2/catalog/datacenters", params=_query_params(include=include)
+    )["dataCenters"]
 
 
 def _tokens(text: str) -> list[str]:
@@ -109,13 +85,7 @@ def _compact(text: str) -> str:
 
 
 def match_gpus(query: str, gpus: Iterable[dict]) -> list[dict]:
-    """gpu types a human-readable query names.
-
-    an exact id, short name, or serverless pool id wins. otherwise every
-    query token must appear in the type's id or name, so "4090" matches
-    the rtx 4090, "h100" matches every h100 variant, and "l4" does not
-    match the l40.
-    """
+    """prefer exact ids, names, and pools, then match hardware-name tokens."""
     gpus = list(gpus)
     text = query.strip().lower()
     exact = [
@@ -198,10 +168,7 @@ def endpoint_gpu_selection(
 ) -> tuple[list[str], list[str]]:
     """serverless (pools, excludedTypes) that select exactly the matched types."""
     matches = list(matches)
-    pools: list[str] = []
-    for gpu in matches:
-        if gpu.get("pool") and gpu["pool"] not in pools:
-            pools.append(gpu["pool"])
+    pools = list(dict.fromkeys(gpu["pool"] for gpu in matches if gpu.get("pool")))
     if not pools:
         names = ", ".join(gpu.get("name") or gpu["id"] for gpu in matches)
         raise ResolutionError(f"{names} is not offered on serverless")
