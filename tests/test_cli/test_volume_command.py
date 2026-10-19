@@ -88,10 +88,18 @@ class TestList:
         listing.assert_called_once_with("/v2/global-volumes", "globalVolumes")
         assert json.loads(result.output) == [GLOBAL_VOLUME]
 
-    def test_global_table(self, listing):
-        listing.return_value = [GLOBAL_VOLUME]
+    def test_global_table_keeps_long_ids_whole(self, listing):
+        listing.return_value = [
+            dict(
+                GLOBAL_VOLUME,
+                id="cmvfsn771000007jp15tn8esm",
+                name="capy-test-global-renamed",
+            )
+        ]
         result = invoke("list", "--global")
-        assert "gsb_abc" in result.output and "user_123" in result.output
+        assert "cmvfsn771000007jp15tn8esm" in result.output
+        assert "2026-09-24" in result.output
+        assert "user_123" not in result.output
 
     def test_empty(self, listing):
         listing.return_value = []
@@ -114,6 +122,13 @@ class TestGet:
         rest.assert_called_once_with("GET", "/v2/network-volumes/vol1")
         assert "data center" in result.output and "EU-RO-1" in result.output
         assert "standard" in result.output
+
+    def test_global_fields(self, rest):
+        rest.return_value = GLOBAL_VOLUME
+        result = invoke("get", "gsb_abc", "--global")
+        assert result.exit_code == 0, result.output
+        assert "2026-09-24T00:00:00Z" in result.output
+        assert "created by" in result.output and "user_123" in result.output
 
     def test_global_json(self, rest):
         rest.return_value = GLOBAL_VOLUME
