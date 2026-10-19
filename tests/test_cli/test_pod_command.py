@@ -1,6 +1,5 @@
-"""tests for rp pod."""
-
 import json
+import shlex
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -85,7 +84,7 @@ POD = {
     "args": "",
     "disk": 50,
     "ports": ["8888/http", "22/tcp"],
-    "env": {"HF_TOKEN": "secret", "MODEL": "llama"},
+    "env": {"PRIVATE_SETTING": "redacted-test-value", "MODEL": "llama"},
     "mounts": {"network": [{"volumeId": "vol1", "path": "/data"}]},
     "gpu": {"id": "NVIDIA H100 80GB HBM3", "count": 2, "vcpuCount": 32, "memory": 250},
     "cloud": "SECURE",
@@ -121,19 +120,24 @@ STOPPED = {
 
 
 class FakeApi:
-    """routes rest calls by method and path, recording each one."""
-
     def __init__(self, routes=None):
         self.calls = []
         self.routes = {
-            ("GET", "/v2/pods"): {"pods": [POD, STOPPED]},
+            ("GET", "/v2/pods"): {
+                "pods": [POD, STOPPED],
+                "pagination": {"hasNextPage": False, "nextCursor": None},
+            },
             ("GET", "/v2/pods/pod123"): POD,
-            ("GET", "/v2/account/ssh-keys"): {"keys": ["ssh-ed25519 AAAA me"]},
-            ("GET", "/v2/registries"): {"registries": [{"id": "reg1", "name": "ghcr"}]},
+            ("GET", "/v2/account/ssh-keys"): {"keys": ["redacted-test-key"]},
+            ("GET", "/v2/registries"): {
+                "registries": [{"id": "reg1", "name": "ghcr"}],
+                "pagination": {"hasNextPage": False, "nextCursor": None},
+            },
             ("GET", "/v2/network-volumes"): {
                 "networkVolumes": [
                     {"id": "vol1", "name": "data", "dataCenter": "EU-RO-1"}
-                ]
+                ],
+                "pagination": {"hasNextPage": False, "nextCursor": None},
             },
             ("GET", "/v2/network-volumes/vol1"): {
                 "id": "vol1",
@@ -164,22 +168,22 @@ class FakeApi:
 
 
 @pytest.fixture(autouse=True)
-def wide_console(monkeypatch):
+def cli_environment(monkeypatch):
     from runpod.rp_cli import console as ui
 
     monkeypatch.setattr(ui.console, "_width", 200)
-
-
-@pytest.fixture(autouse=True)
-def no_sleep(monkeypatch):
     monkeypatch.setattr(pod_module.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        "requests.request",
+        MagicMock(side_effect=AssertionError("unexpected HTTP request")),
+    )
 
 
 def _invoke(args, api=None, gpus=GPUS, interactive=False, input=None):
     api = api or FakeApi()
     with (
         patch("runpod.rp_cli.pod.run_rest_request", api),
-        patch("runpod.rp_cli.compute.run_rest_request", api),
+        patch("runpod.rp_cli.api.run_rest_request", api),
         patch("runpod.rp_cli.compute.list_gpus", return_value=gpus) as list_gpus,
         patch("runpod.rp_cli.compute.list_cpus", return_value=CPUS) as list_cpus,
         patch("runpod.rp_cli.compute.list_datacenters", return_value=DATACENTERS),
@@ -214,7 +218,14 @@ class TestList:
         assert [p["id"] for p in json.loads(result.stdout)] == ["pod123"]
 
     def test_cluster_pods_and_empty(self):
-        api = FakeApi({("GET", "/v2/pods"): {"pods": []}})
+        api = FakeApi(
+            {
+                ("GET", "/v2/pods"): {
+                    "pods": [],
+                    "pagination": {"hasNextPage": False, "nextCursor": None},
+                }
+            }
+        )
         result = _invoke(["list", "--include-cluster-pods"], api=api)
         assert "no pods" in result.output
         assert api.calls[0][2] == {"includeClusterPods": "true"}
@@ -238,8 +249,8 @@ class TestGet:
         assert "network vol1 at /data" in output
         assert "pod123.runpod.internal" in output
         assert "32 vcpu, 250GB ram" in output
-        assert "HF_TOKEN, MODEL" in output
-        assert "secret" not in output
+        assert "MODEL, PRIVATE_SETTING" in output
+        assert "redacted-test-value" not in output
         assert "1h 2m" in output
 
     @pytest.mark.parametrize(
@@ -271,7 +282,7 @@ class TestGet:
 
     def test_json(self):
         result = _invoke(["get", "pod123", "--json"])
-        assert json.loads(result.stdout)["env"]["HF_TOKEN"] == "secret"
+        assert json.loads(result.stdout) == POD
 
     def test_missing_id_without_tty(self):
         result = _invoke(["get"])
@@ -321,18 +332,17 @@ class TestCreateGpu:
             "min_cuda_version": None,
         }
 
-    def test_prefers_stock_then_price(self):
-        _, body = _create(["a", "--gpu", "h100", "--image", "x"])
-        assert body["gpu"]["id"] == "NVIDIA H100 NVL"
-        _, body = _create(["a", "--gpu", "h100", "--gpu-count", "2", "--image", "x"])
-        assert body["gpu"]["id"] == "NVIDIA H100 PCIe"
-
-    def test_stock_in_requested_data_centers(self):
-        _, body = _create(
-            ["a", "--gpu", "h100", "--data-center", "EU-RO-1", "--image", "x"]
-        )
-        assert body["gpu"]["id"] == "NVIDIA H100 80GB HBM3"
-        assert body["dataCenterIds"] == ["EU-RO-1"]
+    @pytest.mark.parametrize(
+        "options, expected",
+        [
+            ([], "NVIDIA H100 NVL"),
+            (["--gpu-count", "2"], "NVIDIA H100 PCIe"),
+            (["--data-center", "EU-RO-1"], "NVIDIA H100 80GB HBM3"),
+        ],
+    )
+    def test_selects_stock_then_price_within_placement(self, options, expected):
+        _, body = _create(["a", "--gpu", "h100", "--image", "x", *options])
+        assert body["gpu"]["id"] == expected
 
     def test_unique_match_used_directly(self):
         result, body = _create(["a", "--gpu", "4090", "--image", "x", "--json"])
@@ -377,23 +387,6 @@ class TestCreateGpu:
         assert body["gpu"]["allowedCudaVersions"] == ["12.4", "12.8"]
         assert result.list_gpus.call_args.kwargs["cuda_versions"] == ["12.4", "12.8"]
 
-    def test_no_type_offers_count(self):
-        result = _invoke(["create", "a", "--gpu", "h100:9", "--image", "x"])
-        assert result.exit_code == 1
-        assert "offers 9 per pod on secure cloud" in result.output
-
-    def test_count_conflict(self):
-        result = _invoke(
-            ["create", "a", "--gpu", "h100:2", "--gpu-count", "3", "--image", "x"]
-        )
-        assert result.exit_code == 2
-        assert "conflicts" in result.output
-
-    def test_unknown_gpu(self):
-        result = _invoke(["create", "a", "--gpu", "b9000", "--image", "x"])
-        assert result.exit_code == 1
-        assert "unknown gpu 'b9000'" in result.output
-
     def test_ssh_without_keys_warns(self):
         api = FakeApi({("GET", "/v2/account/ssh-keys"): {"keys": []}})
         result, body = _create(["a", "--gpu", "4090", "--image", "x", "--ssh"], api=api)
@@ -402,57 +395,31 @@ class TestCreateGpu:
 
 
 class TestCreateCpu:
-    def test_default_vcpu(self):
-        result, body = _create(["box", "--cpu", "cpu5g", "--image", "ubuntu"])
-        assert body["cpu"] == {"id": "cpu5g", "vcpuCount": 4}
+    @pytest.mark.parametrize(
+        "flavor, options, requested, expected",
+        [("cpu5g", [], None, 4), ("cpu3c", ["--vcpu", "8"], 8, 8)],
+    )
+    def test_vcpu_resolution(self, flavor, options, requested, expected):
+        result, body = _create(["box", "--cpu", flavor, "--image", "ubuntu", *options])
+        assert body["cpu"] == {"id": flavor, "vcpuCount": expected}
         assert result.list_cpus.call_args.kwargs == {
             "product": "POD",
-            "vcpu_count": None,
+            "vcpu_count": requested,
         }
-
-    def test_explicit_vcpu(self):
-        _, body = _create(["box", "--cpu", "cpu3c", "--vcpu", "8", "--image", "ubuntu"])
-        assert body["cpu"] == {"id": "cpu3c", "vcpuCount": 8}
 
 
 class TestCreateContainer:
     def test_every_container_field(self):
         _, body = _create(
-            [
-                "a",
-                "--gpu",
-                "4090",
-                "--template",
-                "tpl1",
-                "--image",
-                "img",
-                "-e",
-                "A=1",
-                "--env",
-                "B=x=y",
-                "-p",
-                "8888/http",
-                "--port",
-                "22/tcp",
-                "--disk",
-                "40",
-                "--args",
-                "bash start.sh",
-                "--cmd",
-                "python -m train --lr '1e-4'",
-                "--entrypoint",
-                "/bin/sh -c",
-                "--registry",
-                "ghcr",
-                "--global-networking",
-                "--jupyter",
-                "--persistent-volume",
-                "100",
-            ]
+            shlex.split(
+                """a --gpu 4090 --template tpl1 -e A=1 --env B=x=y
+                -p 8888/http --port 22/tcp --disk 40 --args 'bash start.sh'
+                --cmd "python -m train --lr '1e-4'" --entrypoint '/bin/sh -c'
+                --registry ghcr --global-networking --jupyter --persistent-volume 100"""
+            )
         )
         assert body == {
             "name": "a",
-            "image": "img",
             "templateId": "tpl1",
             "args": "bash start.sh",
             "cmd": ["python", "-m", "train", "--lr", "1e-4"],
@@ -509,36 +476,21 @@ class TestCreateContainer:
         assert body["dataCenterIds"] == ["EU-RO-1", "US-TX-3"]
         assert body["mounts"]["network"] == [{"volumeId": "vol1", "path": "/data"}]
 
-    def test_template_without_image(self):
-        _, body = _create(["a", "--gpu", "4090", "--template", "tpl1"])
-        assert body["templateId"] == "tpl1"
-        assert "image" not in body
-
-    @pytest.mark.parametrize(
-        "args, message",
-        [
-            (["--env", "NOPE"], "is not KEY=VALUE"),
-            (["--persistent-volume", "big"], "size is in GB"),
-            (["--network-volume", "vol1:"], "VALUE[:PATH]"),
-        ],
-    )
-    def test_bad_values(self, args, message):
-        result = _invoke(["create", "a", "--gpu", "4090", "--image", "x", *args])
-        assert result.exit_code == 2
-        assert message in result.output
-
-    def test_unknown_registry(self):
-        result = _invoke(
-            ["create", "a", "--gpu", "4090", "--image", "x", "--registry", "nope"]
-        )
-        assert result.exit_code == 1
-        assert "unknown registry credential 'nope'" in result.output
-
 
 class TestCreateValidation:
     @pytest.mark.parametrize(
         "args, message",
         [
+            (["a", "--gpu", "h100:2", "--gpu-count", "3", "--image", "x"], "conflicts"),
+            (["a", "--gpu", "4090", "--image", "x", "--env", "NOPE"], "use KEY=VALUE"),
+            (
+                ["a", "--gpu", "4090", "--image", "x", "--persistent-volume", "big"],
+                "size is in GB",
+            ),
+            (
+                ["a", "--gpu", "4090", "--image", "x", "--network-volume", "vol1:"],
+                "VALUE[:PATH]",
+            ),
             (
                 ["a", "--gpu", "4090", "--cpu", "cpu3c", "--image", "x"],
                 "either --gpu or --cpu",
@@ -556,6 +508,23 @@ class TestCreateValidation:
     def test_usage_errors(self, args, message):
         result = _invoke(["create", *args])
         assert result.exit_code == 2
+        assert message in result.output
+        assert not result.api.made("POST", "/v2/pods")
+
+    @pytest.mark.parametrize(
+        "options, message",
+        [
+            (["--gpu", "h100:9"], "offers 9 per pod on secure cloud"),
+            (["--gpu", "b9000"], "unknown gpu 'b9000'"),
+            (
+                ["--gpu", "4090", "--registry", "nope"],
+                "unknown registry credential 'nope'",
+            ),
+        ],
+    )
+    def test_resolution_errors(self, options, message):
+        result = _invoke(["create", "a", "--image", "x", *options])
+        assert result.exit_code == 1
         assert message in result.output
         assert not result.api.made("POST", "/v2/pods")
 
@@ -612,24 +581,8 @@ class TestUpdate:
 
     def test_simple_fields_skip_the_read(self):
         result = _invoke(
-            [
-                "update",
-                "pod123",
-                "--name",
-                "renamed",
-                "--lock",
-                "--no-global-networking",
-                "--image",
-                "img:2",
-                "--registry",
-                "",
-                "--port",
-                "8000/http",
-                "--disk",
-                "80",
-                "--cmd",
-                "",
-            ]
+            shlex.split("""update pod123 --name renamed --lock --no-global-networking
+                --image img:2 --registry '' --port 8000/http --disk 80 --cmd ''""")
         )
         assert result.exit_code == 0, result.output
         assert result.api.body("PATCH", "/v2/pods/pod123") == {
@@ -655,7 +608,7 @@ class TestUpdate:
                 "-e",
                 "NEW=1",
                 "--unset-env",
-                "HF_TOKEN",
+                "PRIVATE_SETTING",
                 "--unlock",
             ]
         )
@@ -760,12 +713,52 @@ class TestConnect:
         assert result.exit_code == 0
 
 
+@pytest.mark.parametrize(
+    "args, expected",
+    [
+        ([], dict(follow=False, tail=100, source=None, since=None, as_json=False)),
+        (
+            [
+                "--follow",
+                "--tail",
+                "5",
+                "--source",
+                "container",
+                "--since",
+                "2026-10-19T00:00:00Z",
+                "--json",
+            ],
+            dict(
+                follow=True,
+                tail=5,
+                source="container",
+                since="2026-10-19T00:00:00Z",
+                as_json=True,
+            ),
+        ),
+    ],
+)
+def test_logs_forward_options(args, expected):
+    with patch("runpod.rp_cli.logs.show_logs") as show_logs:
+        result = _invoke(["logs", "pod123", *args])
+    assert result.exit_code == 0, result.output
+    show_logs.assert_called_once_with("pod123", **expected)
+
+
+def test_logs_reject_tail_above_api_limit():
+    with patch("runpod.rp_cli.logs.show_logs") as show_logs:
+        result = _invoke(["logs", "pod123", "--tail", "5001"])
+    assert result.exit_code == 2
+    assert "5000" in result.output
+    show_logs.assert_not_called()
+
+
 class TestCompletion:
     def test_completers(self):
         api = FakeApi()
         with (
             patch("runpod.rp_cli.pod.run_rest_request", api),
-            patch("runpod.rp_cli.compute.run_rest_request", api),
+            patch("runpod.rp_cli.api.run_rest_request", api),
             patch("runpod.rp_cli.compute.list_datacenters", return_value=DATACENTERS),
         ):
             pods = pod_module._complete_pods(None, None, "pod1")
