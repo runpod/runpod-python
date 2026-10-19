@@ -28,6 +28,13 @@ FALLBACK_TIMEOUT_SECONDS = 10
 MAX_ERROR_MESSAGES = 10
 
 
+class GpuAllocationError(RuntimeError):
+    """gpu_test reached the GPUs and a device failed its allocation test.
+
+    The nvidia-smi fallback only lists GPUs, so it must not override this.
+    """
+
+
 def configure() -> None:
     """Read current fitness settings; setup errors are handled by the runner."""
     global TIMEOUT_SECONDS, MAX_ERROR_MESSAGES
@@ -161,6 +168,10 @@ async def _run_gpu_test_binary() -> dict[str, Any]:
             error_msg = "GPU memory allocation test failed"
             if result["errors"]:
                 error_msg += f": {'; '.join(result['errors'][:MAX_ERROR_MESSAGES])}"
+            # Without "Found N GPUs" the binary never reached the devices
+            # (NVML or loader failure), so nvidia-smi may still decide.
+            if result["found_gpus"]:
+                raise GpuAllocationError(error_msg)
             raise RuntimeError(error_msg)
 
         log.info(
@@ -176,9 +187,7 @@ async def _run_gpu_test_binary() -> dict[str, Any]:
         raise RuntimeError(
             f"GPU test binary timed out after {TIMEOUT_SECONDS}s"
         ) from None
-    except FileNotFoundError:
-        raise
-    except PermissionError:
+    except (FileNotFoundError, PermissionError, GpuAllocationError):
         raise
     except Exception as exc:
         raise RuntimeError(f"GPU test binary execution failed: {exc}") from exc
@@ -238,8 +247,9 @@ async def _check_gpu_health() -> None:
 
     Execution strategy:
     1. Try binary test if available
-    2. Fall back to Python check if binary fails/missing
-    3. Raise RuntimeError if all methods fail
+    2. Fail if the binary reports a GPU allocation failure
+    3. Otherwise fall back to Python check if binary fails/missing
+    4. Raise RuntimeError if all methods fail
 
     Raises:
         RuntimeError: If GPU health check fails
@@ -251,6 +261,8 @@ async def _check_gpu_health() -> None:
     try:
         await _run_gpu_test_binary()
         return  # Success!
+    except GpuAllocationError:
+        raise
     except FileNotFoundError as exc:
         log.debug(f"GPU binary not found: {exc}")
         binary_error = exc
