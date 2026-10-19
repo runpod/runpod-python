@@ -43,8 +43,8 @@ def print_table(rows: Sequence[dict], columns: Sequence[Column], empty: str) -> 
         ui.console.print(f"[dim]{empty}[/dim]")
         return
     table = Table(box=None, header_style="dim", pad_edge=False)
-    for header, _ in columns:
-        table.add_column(header)
+    for index, (header, _) in enumerate(columns):
+        table.add_column(header, no_wrap=index == 0, overflow="fold")
     for row in rows:
         table.add_row(*(escape(cell(value(row))) for _, value in columns))
     ui.console.print(table)
