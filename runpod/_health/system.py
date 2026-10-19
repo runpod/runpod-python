@@ -382,7 +382,7 @@ async def _check_cuda_initialization() -> None:
     if not _handler_loaded_gpu_framework():
         log.debug(
             "Handler has not loaded PyTorch or CuPy, skipping CUDA initialization "
-            "check (gpu_test binary already verified device init)"
+            "check (the gpu_test binary covers device allocation)"
         )
         return
 
