@@ -134,8 +134,7 @@ def match_gpus(query: str, gpus: Iterable[dict]) -> list[dict]:
     hits = [
         gpu
         for gpu in gpus
-        if set(wanted)
-        <= set(_tokens(gpu["id"])) | set(_tokens(gpu.get("name") or ""))
+        if set(wanted) <= set(_tokens(gpu["id"])) | set(_tokens(gpu.get("name") or ""))
     ]
     if hits:
         return hits
@@ -188,7 +187,9 @@ def parse_cuda(values: Iterable[str]) -> tuple[Optional[str], list[str]]:
             else:
                 exact.append(version)
     if minimum and exact:
-        raise ResolutionError("use either a cuda floor (>=) or exact versions, not both")
+        raise ResolutionError(
+            "use either a cuda floor (>=) or exact versions, not both"
+        )
     return minimum, exact
 
 
