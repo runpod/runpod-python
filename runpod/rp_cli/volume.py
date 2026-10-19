@@ -49,8 +49,7 @@ def _columns(kind: Kind):
         return [
             ("ID", lambda row: row["id"]),
             ("NAME", lambda row: row.get("name")),
-            ("CREATED", lambda row: row.get("createdAt")),
-            ("CREATED BY", lambda row: row.get("createdByUserId")),
+            ("CREATED", lambda row: (row.get("createdAt") or "")[:10] or None),
         ]
     return [
         ("ID", lambda row: row["id"]),
@@ -89,7 +88,13 @@ def _show(kind: Kind, record: dict, as_json: bool) -> None:
     if as_json:
         print_json(record)
         return
-    print_fields(record, [(header.lower(), fn) for header, fn in _columns(kind)])
+    fields = [(header.lower(), fn) for header, fn in _columns(kind)]
+    if kind is GLOBAL:
+        fields[2:] = [
+            ("created", lambda row: row.get("createdAt")),
+            ("created by", lambda row: row.get("createdByUserId")),
+        ]
+    print_fields(record, fields)
 
 
 def _data_center(
