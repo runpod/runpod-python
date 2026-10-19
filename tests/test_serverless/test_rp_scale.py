@@ -1,4 +1,8 @@
 import asyncio
+import os
+import signal
+import threading
+import time
 from unittest.mock import AsyncMock, Mock, patch
 from dataclasses import dataclass
 
@@ -501,6 +505,59 @@ async def test_idle_dispatcher_exits_promptly_on_shutdown(job_scaler: PatchScale
     scaler.kill_worker()
 
     await asyncio.wait_for(run_task, timeout=DISPATCH_DEADLINE)
+
+
+@pytest.mark.asyncio
+async def test_idle_dispatcher_exits_when_shutdown_follows_loop_check(
+    job_scaler: PatchScaler,
+):
+    scaler = job_scaler.scaler
+    real_is_alive = scaler.is_alive
+    checks = 0
+
+    def is_alive_then_signalled():
+        # A signal handler can run between run_jobs' loop check and its wait.
+        nonlocal checks
+        checks += 1
+        alive = real_is_alive()
+        if checks == 1:
+            scaler.kill_worker()
+        return alive
+
+    scaler.is_alive = is_alive_then_signalled
+
+    await asyncio.wait_for(scaler.run_jobs(None), timeout=DISPATCH_DEADLINE)
+
+
+SIGNAL_DELAY = 0.1  # seconds
+SIGNAL_WAKE_TIMEOUT = 2  # seconds; the only timer that would wake a stalled loop
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGUSR1"), reason="needs POSIX signals")
+def test_idle_dispatcher_exits_promptly_on_os_signal(job_scaler: PatchScaler):
+    scaler = job_scaler.scaler
+    signalled_at = []
+
+    def handler(signum, frame):
+        signalled_at.append(time.monotonic())
+        scaler.handle_shutdown(signum, frame)
+
+    async def run_until_signalled():
+        run_task = asyncio.create_task(scaler.run_jobs(None))
+        # Deliver the signal once the loop is blocked in the selector.
+        threading.Timer(
+            SIGNAL_DELAY, os.kill, (os.getpid(), signal.SIGUSR1)
+        ).start()
+        await asyncio.wait_for(run_task, timeout=SIGNAL_WAKE_TIMEOUT)
+        return time.monotonic()
+
+    previous = signal.signal(signal.SIGUSR1, handler)
+    try:
+        finished_at = asyncio.run(run_until_signalled())
+    finally:
+        signal.signal(signal.SIGUSR1, previous)
+
+    assert finished_at - signalled_at[0] < DISPATCH_DEADLINE
 
 
 @pytest.mark.asyncio

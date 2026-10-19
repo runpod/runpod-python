@@ -159,7 +159,14 @@ class JobScaler:
             frame: The current stack frame.
         """
         log.debug(f"Received shutdown signal: {signum}.")
-        self.kill_worker()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.kill_worker()
+            return
+        # A signal.signal handler does not wake a loop blocked in its selector;
+        # call_soon_threadsafe writes to the loop's self-pipe so it does.
+        loop.call_soon_threadsafe(self.kill_worker)
 
     async def run(self):
         """Run prestart and the three persistent request loops concurrently."""
@@ -416,8 +423,14 @@ class JobScaler:
 
         Returns the job tasks that finished.
         """
+        # Snapshot once: a signal handler can stop the worker at any bytecode.
+        alive = self.is_alive()
+        if not alive and not tasks:
+            # Intake has stopped, so nothing would ever set _jobs_available.
+            return set()
+
         waiters = {asyncio.create_task(self._jobs_available.wait())}
-        if self.is_alive():
+        if alive:
             # Once shutting down, the set event would wake this loop instantly.
             waiters.add(asyncio.create_task(self._shutdown_event.wait()))
         try:
