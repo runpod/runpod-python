@@ -29,9 +29,7 @@ def _in_regions(record: dict, allowed: Optional[set[str]]) -> dict:
     """the record with stock narrowed to the allowed data centers."""
     if allowed is None:
         return dict(record)
-    datacenters = [
-        dc for dc in record.get("dataCenters") or [] if dc["id"] in allowed
-    ]
+    datacenters = [dc for dc in record.get("dataCenters") or [] if dc["id"] in allowed]
     return dict(
         record,
         dataCenters=datacenters,
@@ -53,7 +51,9 @@ def _unit_price(gpu: dict, product: str, cloud: Optional[str]) -> Optional[float
         return price.get("serverless") or None
     if cloud:
         return price.get(cloud) or None
-    offered = [value for value in (price.get("secure"), price.get("community")) if value]
+    offered = [
+        value for value in (price.get("secure"), price.get("community")) if value
+    ]
     return min(offered, default=None)
 
 
@@ -151,9 +151,16 @@ def _cpu_columns(product: str):
         ("GROUP", lambda row: row.get("group")),
         (
             "VCPU",
-            lambda row: "{min}-{max}".format(**row["vcpu"]) if row.get("vcpu") else None,
+            lambda row: (
+                "{min}-{max}".format(**row["vcpu"]) if row.get("vcpu") else None
+            ),
         ),
-        ("RAM/VCPU", lambda row: f"{row['ramGbPerVcpu']:g}GB" if row.get("ramGbPerVcpu") else None),
+        (
+            "RAM/VCPU",
+            lambda row: (
+                f"{row['ramGbPerVcpu']:g}GB" if row.get("ramGbPerVcpu") else None
+            ),
+        ),
         ("$/VCPU-HR", lambda row: _money((row.get("price") or {}).get(tier))),
         ("STOCK", lambda row: (row.get("availability") or "NONE").lower()),
         ("DATA CENTERS", lambda row: _stock(row.get("dataCenters") or [])),
@@ -187,8 +194,12 @@ _DATACENTER_COLUMNS = [
     flag_value="SERVERLESS",
     help="Serverless pricing, pools, and stock.",
 )
-@click.option("--cpu", "cpu_mode", is_flag=True, help="Search CPU flavors instead of GPUs.")
-@click.option("--datacenters", is_flag=True, help="List data centers and their regions.")
+@click.option(
+    "--cpu", "cpu_mode", is_flag=True, help="Search CPU flavors instead of GPUs."
+)
+@click.option(
+    "--datacenters", is_flag=True, help="List data centers and their regions."
+)
 @click.option(
     "--count",
     type=click.IntRange(min=1),
@@ -197,7 +208,10 @@ _DATACENTER_COLUMNS = [
     help="GPUs per pod or worker; prices and stock account for it.",
 )
 @click.option(
-    "--vcpu", type=click.IntRange(min=2), default=None, help="vCPUs per pod or worker (with --cpu)."
+    "--vcpu",
+    type=click.IntRange(min=2),
+    default=None,
+    help="vCPUs per pod or worker (with --cpu).",
 )
 @click.option(
     "--region",
@@ -217,9 +231,7 @@ _DATACENTER_COLUMNS = [
     help="CUDA filter: '>=12.4' for a floor, 12.4 or 12.4,12.8 for exact versions.",
 )
 @click.option("--min-vram", type=int, default=None, help="Minimum VRAM per GPU in GB.")
-@click.option(
-    "--max-price", type=float, default=None, help="Maximum USD per GPU-hour."
-)
+@click.option("--max-price", type=float, default=None, help="Maximum USD per GPU-hour.")
 @click.option("--available", is_flag=True, help="Only show hardware that is in stock.")
 @json_option
 def catalog(
@@ -267,7 +279,15 @@ def catalog(
             columns, empty = _cpu_columns(product), "no cpu flavors match"
         else:
             rows = _gpu_rows(
-                query, product, count, regions, cloud, cuda, min_vram, max_price, available
+                query,
+                product,
+                count,
+                regions,
+                cloud,
+                cuda,
+                min_vram,
+                max_price,
+                available,
             )
             columns, empty = _gpu_columns(product, count, cloud), "no gpus match"
 
