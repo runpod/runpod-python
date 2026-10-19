@@ -6,22 +6,41 @@ A collection of functions to help with debugging.
 
 import datetime
 from datetime import timezone
+import functools
 import platform
 import time
-
-import cpuinfo
 
 # ---------------------------------------------------------------------------- #
 #                                  System Info                                 #
 # ---------------------------------------------------------------------------- #
 OS_INFO = f"{platform.system()} {platform.release()}"
 
-try:
-    PROCESSOR = cpuinfo.get_cpu_info()["brand_raw"]
-except KeyError:
-    PROCESSOR = "Unable to get processor info."
-
 PYTHON_VERSION = platform.python_version()
+
+
+@functools.lru_cache(maxsize=1)
+def _get_processor() -> str:
+    """
+    Return the CPU brand string, probed on first use.
+
+    py-cpuinfo is slow on x86: it measures clock speed in a child process
+    around a fixed sleep(1). The worker imports this module on every start,
+    so probing here instead of at import keeps that second off cold starts
+    when the debugger is not enabled.
+    """
+    import cpuinfo  # pylint: disable=import-outside-toplevel
+
+    try:
+        return cpuinfo.get_cpu_info()["brand_raw"]
+    except KeyError:
+        return "Unable to get processor info."
+
+
+def __getattr__(name: str):
+    """Resolve PROCESSOR lazily for callers that read the module attribute."""
+    if name == "PROCESSOR":
+        return _get_processor()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class Checkpoints:
@@ -192,7 +211,7 @@ def get_debugger_output():
 
     system_info = {
         "os": OS_INFO,
-        "processor": PROCESSOR,
+        "processor": _get_processor(),
         "python_version": PYTHON_VERSION,
         "runpod": runpod.__version__,
     }

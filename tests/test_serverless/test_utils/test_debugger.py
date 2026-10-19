@@ -3,6 +3,8 @@ Unit tests for the debugger utility functions.
 """
 
 import importlib
+import subprocess
+import sys
 import time
 import unittest
 from unittest.mock import patch
@@ -23,18 +25,82 @@ class TestDebugger(unittest.TestCase):
     def setUp(self):
         self.checkpoints = Checkpoints()
         self.checkpoints.clear()
+        rp_debugger._get_processor.cache_clear()
 
-    @patch("runpod.serverless.utils.rp_debugger.cpuinfo.get_cpu_info")
+    def tearDown(self):
+        rp_debugger._get_processor.cache_clear()
+
+    @patch("cpuinfo.get_cpu_info")
+    def test_import_does_not_probe_cpu(self, mock_get_cpu_info):
+        """
+        Importing the module must not run py-cpuinfo; on x86 it sleeps 1s.
+        """
+        importlib.reload(rp_debugger)
+
+        mock_get_cpu_info.assert_not_called()
+
+    def test_import_does_not_load_cpuinfo(self):
+        """
+        Importing the module must not import py-cpuinfo, which spawns a subprocess at import.
+        """
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; import runpod.serverless.utils.rp_debugger; "
+                "print('cpuinfo' in sys.modules)",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        self.assertEqual(result.stdout.strip(), "False")
+
+    @patch("cpuinfo.get_cpu_info")
+    def test_debugger_output_reports_processor(self, mock_get_cpu_info):
+        """
+        The processor is looked up when debugger output is built.
+        """
+        mock_get_cpu_info.return_value = {"brand_raw": "Test CPU"}
+
+        output = get_debugger_output()
+
+        self.assertEqual(output["system_info"]["processor"], "Test CPU")
+
+    @patch("cpuinfo.get_cpu_info")
+    def test_processor_lookup_is_cached(self, mock_get_cpu_info):
+        """
+        The processor is probed once per process, not once per job.
+        """
+        mock_get_cpu_info.return_value = {"brand_raw": "Test CPU"}
+
+        get_debugger_output()
+        get_debugger_output()
+
+        mock_get_cpu_info.assert_called_once()
+
+    @patch("cpuinfo.get_cpu_info")
     def test_key_error(self, mock_get_cpu_info):
         """
-        Test that a KeyError is raised when an invalid key is used.
+        A missing brand string falls back to a placeholder.
         """
         mock_get_cpu_info.side_effect = KeyError("Test Error")
 
-        importlib.reload(rp_debugger)
+        output = get_debugger_output()
 
-        assert mock_get_cpu_info.called
-        self.assertEqual(rp_debugger.PROCESSOR, "Unable to get processor info.")
+        self.assertEqual(
+            output["system_info"]["processor"], "Unable to get processor info."
+        )
+
+    @patch("cpuinfo.get_cpu_info")
+    def test_processor_attribute_is_lazy(self, mock_get_cpu_info):
+        """
+        The PROCESSOR module attribute still resolves for existing callers.
+        """
+        mock_get_cpu_info.return_value = {"brand_raw": "Test CPU"}
+
+        self.assertEqual(rp_debugger.PROCESSOR, "Test CPU")
 
     def test_checkpoints(self):
         """
