@@ -15,11 +15,9 @@ def _money(value: Optional[float]) -> str:
 
 def _stock(entries: list[dict]) -> str:
     ranked = sorted(
-        entries, key=lambda dc: -compute.availability_rank(dc.get("availability"))
+        entries, key=lambda dc: -compute.availability_rank(dc["availability"])
     )
-    return ", ".join(
-        f"{dc['id']} {(dc.get('availability') or 'NONE').lower()}" for dc in ranked
-    )
+    return ", ".join(f"{dc['id']} {dc['availability'].lower()}" for dc in ranked)
 
 
 def _filter_stock(records: list[dict], regions: tuple[str, ...], available: bool):
@@ -32,12 +30,12 @@ def _filter_stock(records: list[dict], regions: tuple[str, ...], available: bool
         row = dict(record)
         if allowed is not None:
             row["dataCenters"] = [
-                dc for dc in record["dataCenters"] if dc["id"] in allowed
+                dc for dc in record.get("dataCenters", []) if dc["id"] in allowed
             ]
             row["availability"] = compute.best_availability(
                 dc["availability"] for dc in row["dataCenters"]
             )
-        if not available or compute.availability_rank(row["availability"]) > 0:
+        if not available or compute.availability_rank(row.get("availability")) > 0:
             yield row
 
 
@@ -71,7 +69,7 @@ def _gpu_rows(
     rows = []
     for row in _filter_stock(gpus, regions, available):
         unit = _unit_price(row, product, cloud)
-        if min_vram and (row.get("memory") or 0) < min_vram:
+        if min_vram and row["memory"] < min_vram:
             continue
         if max_price is not None and (unit is None or unit > max_price):
             continue
@@ -85,7 +83,7 @@ def _gpu_rows(
         key=lambda row: (
             -compute.availability_rank(row.get("availability")),
             _unit_price(row, product, cloud) or float("inf"),
-            row.get("name") or row["id"],
+            row["name"],
         )
     )
     return rows
@@ -94,12 +92,12 @@ def _gpu_rows(
 def _gpu_columns(product: str, count: int, cloud: Optional[str]):
     suffix = f" x{count}" if count > 1 else ""
     columns = [
-        ("GPU", lambda row: row.get("name") or row["id"]),
-        ("VRAM", lambda row: f"{row['memory']}GB" if row.get("memory") else None),
+        ("GPU", lambda row: row["name"]),
+        ("VRAM", lambda row: f"{row['memory']}GB"),
     ]
     if product == "SERVERLESS":
         columns += [
-            ("POOL", lambda row: row.get("pool")),
+            ("POOL", lambda row: row["pool"]),
             (f"$/HR{suffix}", lambda row: _money(row["totalPrice"].get("serverless"))),
         ]
     else:
@@ -111,9 +109,7 @@ def _gpu_columns(product: str, count: int, cloud: Optional[str]):
                     lambda row, tier=tier: _money(row["totalPrice"].get(tier)),
                 )
             )
-        columns.append(
-            ("MAX", lambda row: max((row.get("maxCount") or {}).values(), default=None))
-        )
+        columns.append(("MAX", lambda row: max(row["maxCount"].values(), default=None)))
     columns += [
         ("STOCK", lambda row: (row.get("availability") or "NONE").lower()),
         ("DATA CENTERS", lambda row: _stock(row.get("dataCenters") or [])),
@@ -129,7 +125,7 @@ def _cpu_rows(query, product, vcpu, regions, available) -> list[dict]:
             raise compute.ResolutionError(f"unknown cpu '{query}'")
     return sorted(
         _filter_stock(cpus, regions, available),
-        key=lambda row: -compute.availability_rank(row["availability"]),
+        key=lambda row: -compute.availability_rank(row.get("availability")),
     )
 
 
@@ -137,21 +133,11 @@ def _cpu_columns(product: str):
     tier = "serverlessPerVcpu" if product == "SERVERLESS" else "securePerVcpu"
     return [
         ("CPU", lambda row: row["id"]),
-        ("NAME", lambda row: row.get("name")),
-        ("GROUP", lambda row: row.get("group")),
-        (
-            "VCPU",
-            lambda row: (
-                "{min}-{max}".format(**row["vcpu"]) if row.get("vcpu") else None
-            ),
-        ),
-        (
-            "RAM/VCPU",
-            lambda row: (
-                f"{row['ramGbPerVcpu']:g}GB" if row.get("ramGbPerVcpu") else None
-            ),
-        ),
-        ("$/VCPU-HR", lambda row: _money((row.get("price") or {}).get(tier))),
+        ("NAME", lambda row: row["name"]),
+        ("GROUP", lambda row: row["group"]),
+        ("VCPU", lambda row: "{min}-{max}".format(**row["vcpu"])),
+        ("RAM/VCPU", lambda row: f"{row['ramGbPerVcpu']:g}GB"),
+        ("$/VCPU-HR", lambda row: _money(row["price"].get(tier))),
         ("STOCK", lambda row: (row.get("availability") or "NONE").lower()),
         ("DATA CENTERS", lambda row: _stock(row.get("dataCenters") or [])),
     ]
@@ -159,13 +145,13 @@ def _cpu_columns(product: str):
 
 _DATACENTER_COLUMNS = [
     ("DATA CENTER", lambda row: row["id"]),
-    ("REGION", lambda row: (row.get("region") or "").lower().replace("_", " ")),
+    ("REGION", lambda row: row["region"].lower().replace("_", " ")),
     (
         "VOLUME TYPES",
-        lambda row: [kind.lower() for kind in row.get("networkVolumeTypes") or []],
+        lambda row: [kind.lower() for kind in row["networkVolumeTypes"]],
     ),
-    ("GLOBAL NETWORK", lambda row: row.get("globalNetwork")),
-    ("COMPLIANCE", lambda row: row.get("compliance")),
+    ("GLOBAL NETWORK", lambda row: row["globalNetwork"]),
+    ("COMPLIANCE", lambda row: row["compliance"]),
 ]
 
 
