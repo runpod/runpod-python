@@ -140,6 +140,26 @@ def _global_network(pod: dict) -> object:
     return networking.get("internalDns") or networking.get("ip") or True
 
 
+def _status(pod: dict) -> str:
+    status = (pod.get("status") or "").lower()
+    if status == "running" and not (pod.get("runtime") or {}).get("uptime"):
+        return "starting"
+    return status
+
+
+def _uptime(pod: dict) -> Optional[str]:
+    seconds = (pod.get("runtime") or {}).get("uptime")
+    if not seconds:
+        return None
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
 def _resources(pod: dict) -> Optional[str]:
     hardware = pod.get("gpu") or pod.get("cpu") or {}
     parts = []
@@ -153,7 +173,7 @@ def _resources(pod: dict) -> Optional[str]:
 _LIST_COLUMNS = [
     ("ID", lambda pod: pod["id"]),
     ("NAME", lambda pod: pod.get("name")),
-    ("STATUS", lambda pod: (pod.get("status") or "").lower()),
+    ("STATUS", _status),
     ("HARDWARE", _hardware),
     ("DATA CENTER", lambda pod: pod.get("dataCenterId")),
     ("COST", _cost),
@@ -163,7 +183,7 @@ _LIST_COLUMNS = [
 _FIELDS = [
     ("id", lambda pod: pod["id"]),
     ("name", lambda pod: pod.get("name")),
-    ("status", lambda pod: (pod.get("status") or "").lower()),
+    ("status", _status),
     ("image", lambda pod: pod.get("image")),
     ("hardware", _hardware),
     ("resources", _resources),
@@ -181,6 +201,7 @@ _FIELDS = [
     ("cluster", lambda pod: (pod.get("cluster") or {}).get("id")),
     ("created", lambda pod: pod.get("createdAt")),
     ("started", lambda pod: pod.get("startedAt")),
+    ("uptime", _uptime),
     ("actions", lambda pod: pod.get("actions")),
     ("ssh", lambda pod: ((pod.get("ssh") or {}).get("proxy") or {}).get("command")),
     (
@@ -199,23 +220,24 @@ def _show(pod: dict, as_json: bool) -> None:
     print_fields(pod, _FIELDS)
 
 
-def _wait_running(pod_id: str) -> dict:
-    """poll a pod until it is running."""
+def _wait_running(pod_id: str, since: float) -> dict:
+    """poll a pod until a container started after `since` is up."""
     from runpod.rp_cli import console as ui
 
     deadline = time.monotonic() + WAIT_TIMEOUT
     with ui.console.status(f"[dim]waiting for {pod_id} to start ...[/dim]"):
         while True:
             pod = _get_pod(pod_id)
-            status = pod.get("status")
-            if status == "RUNNING":
+            status = _status(pod)
+            uptime = pod["runtime"]["uptime"] if status == "running" else 0
+            # a longer uptime is a stale report from the container before the action
+            if status == "running" and uptime <= time.monotonic() - since + 1:
                 return pod
-            if status in ("ERROR", "TERMINATED"):
-                raise click.ClickException(f"pod {pod_id} is {status.lower()}")
+            if status in ("error", "terminated"):
+                raise click.ClickException(f"pod {pod_id} is {status}")
             if time.monotonic() >= deadline:
                 raise click.ClickException(
-                    f"pod {pod_id} is still {(status or 'unknown').lower()} "
-                    f"after {WAIT_TIMEOUT}s"
+                    f"pod {pod_id} is still {status or 'unknown'} after {WAIT_TIMEOUT}s"
                 )
             time.sleep(WAIT_INTERVAL)
 
@@ -686,10 +708,11 @@ def create(
         if jupyter:
             body["startJupyter"] = True
 
+        since = time.monotonic()
         created = run_rest_request("POST", "/v2/pods", json=body) or {}
         _say(f"created pod {created.get('name')} ({created.get('id')})", as_json)
         if wait:
-            created = _wait_running(created["id"])
+            created = _wait_running(created["id"], since)
     _show(created, as_json)
 
 
@@ -752,12 +775,13 @@ def _act(
 ):
     pod_id = _resolve_pod_id(pod_id, action)
     with api_errors():
+        since = time.monotonic()
         result = run_rest_request(
             "POST", f"/v2/pods/{pod_id}/action", json={"action": action}
         )
         _say(f"{done} pod {pod_id}", as_json)
         if wait:
-            result = _wait_running(pod_id)
+            result = _wait_running(pod_id, since)
     _show(result or {}, as_json)
 
 

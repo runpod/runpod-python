@@ -102,7 +102,8 @@ POD = {
         "ports": [
             {"private": 22, "public": 40022, "type": "tcp", "ip": "1.2.3.4"},
             {"private": 8888, "public": None, "type": "http", "ip": None},
-        ]
+        ],
+        "uptime": 3725,
     },
     "createdAt": "2026-10-19T20:00:00Z",
     "startedAt": "2026-10-19T20:01:00Z",
@@ -239,6 +240,19 @@ class TestGet:
         assert "32 vcpu, 250GB ram" in output
         assert "HF_TOKEN, MODEL" in output
         assert "secret" not in output
+        assert "1h 2m" in output
+
+    @pytest.mark.parametrize(
+        "runtime, status, uptime",
+        [(None, "starting", None), ({"uptime": 0}, "starting", None)]
+        + [({"uptime": 65}, "running", "1m 5s"), ({"uptime": 9}, "running", "9s")],
+    )
+    def test_status_follows_container(self, runtime, status, uptime):
+        api = FakeApi({("GET", "/v2/pods/pod123"): {**POD, "runtime": runtime}})
+        result = _invoke(["get", "pod123"], api=api)
+        assert f"status          {status}" in result.output
+        if uptime:
+            assert f"uptime          {uptime}" in result.output
 
     def test_other_shapes(self):
         pod = {
@@ -562,7 +576,9 @@ class TestWait:
                 ("GET", "/v2/pods/pod123"): [
                     {**POD, "status": "PROVISIONING"},
                     {**POD, "status": "STARTING"},
-                    POD,
+                    {**POD, "runtime": None},
+                    {**POD, "runtime": {"uptime": 0}},
+                    {**POD, "runtime": {"uptime": 1}},
                 ]
             }
         )
@@ -572,7 +588,7 @@ class TestWait:
         )
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout)["status"] == "RUNNING"
-        assert sum(call[:2] == ("GET", "/v2/pods/pod123") for call in api.calls) == 3
+        assert sum(call[:2] == ("GET", "/v2/pods/pod123") for call in api.calls) == 5
 
     def test_error_status_fails(self):
         api = FakeApi({("GET", "/v2/pods/pod456"): {**STOPPED, "status": "ERROR"}})
@@ -670,13 +686,14 @@ class TestActions:
             {
                 ("GET", "/v2/pods/pod456"): [
                     {**STOPPED, "status": "STARTING"},
-                    {**STOPPED, "status": "RUNNING"},
+                    {**STOPPED, "status": "RUNNING", "runtime": {"uptime": 46}},
+                    {**STOPPED, "status": "RUNNING", "runtime": {"uptime": 1}},
                 ]
             }
         )
         result = _invoke(["start", "pod456", "--wait", "--json"], api=api)
         assert result.exit_code == 0, result.output
-        assert json.loads(result.stdout)["status"] == "RUNNING"
+        assert json.loads(result.stdout)["runtime"] == {"uptime": 1}
         assert "started pod pod456" in result.stderr
 
     def test_picker_offers_pods_that_allow_the_action(self):
