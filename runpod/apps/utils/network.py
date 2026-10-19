@@ -13,6 +13,13 @@ def api_key() -> str:
 
         key = runpod.api_key
     if not key:
+        from ..context import Context, current_context
+
+        if current_context() is Context.WORKER:
+            raise RuntimeError(
+                "no api key in this worker. declare remote_calls=True on the "
+                "resource that makes .remote() calls."
+            )
         raise RuntimeError(
             "no api key configured. run `rp login` or set RUNPOD_API_KEY."
         )

@@ -98,8 +98,13 @@ class App:
         min_cuda_version: Optional[str] = None,
         accelerate_downloads: bool = True,
         container_disk_gb: Optional[int] = None,
+        remote_calls: bool = False,
     ) -> Callable[[Callable], FunctionHandle]:
-        """declare a queue-based serverless endpoint from a function."""
+        """declare a queue-based serverless endpoint from a function.
+
+        set remote_calls=True when the function calls other resources with
+        .remote(); only then do its workers receive api credentials.
+        """
 
         def decorator(fn: Callable) -> FunctionHandle:
             spec = ResourceSpec(
@@ -126,6 +131,7 @@ class App:
                 min_cuda_version=min_cuda_version,
                 accelerate_downloads=accelerate_downloads,
                 container_disk_gb=container_disk_gb,
+                remote_calls=remote_calls,
             )
             handle = FunctionHandle(self, fn, spec)
             self._register(spec.name, handle)
@@ -201,6 +207,7 @@ class App:
         min_cuda_version: Optional[str] = None,
         accelerate_downloads: bool = True,
         container_disk_gb: Optional[int] = None,
+        remote_calls: bool = False,
     ) -> Callable[[Any], ApiHandle]:
         """declare a load-balanced serverless endpoint.
 
@@ -222,6 +229,9 @@ class App:
                 server = FastAPI()
                 ...
                 return server
+
+        set remote_calls=True when the service calls other resources with
+        .remote(); only then do its workers receive api credentials.
         """
 
         def decorator(target: Any) -> ApiHandle:
@@ -248,6 +258,7 @@ class App:
                 min_cuda_version=min_cuda_version,
                 accelerate_downloads=accelerate_downloads,
                 container_disk_gb=container_disk_gb,
+                remote_calls=remote_calls,
             )
             handle = ApiHandle(self, target, spec)
             self._register(spec.name, handle)

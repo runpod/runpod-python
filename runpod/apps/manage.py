@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from .api import AppsApiClient
+from .app_key import delete_app_key
 from .errors import AppError
 from .utils.events import emit
 
@@ -75,7 +76,8 @@ async def undeploy_environment(
     delete_env: bool = True,
     events: Optional[object] = None,
 ) -> UndeployResult:
-    """tear down an environment: endpoints first, then the environment.
+    """tear down an environment: endpoints first, then the environment
+    and its app key.
 
     events, when given, receives cleanup_started(total), deleting(name),
     deleted(name), delete_failed(name).
@@ -106,6 +108,12 @@ async def undeploy_environment(
         except Exception as exc:  # noqa: BLE001 - collected for the caller
             result.failures.append(f"environment {env_name}: {exc}")
 
+    if result.environment_deleted:
+        try:
+            await delete_app_key(client, app_name, env_name)
+        except Exception as exc:  # noqa: BLE001 - collected for the caller
+            result.failures.append(f"app key for {env_name}: {exc}")
+
     return result
 
 
@@ -115,7 +123,8 @@ async def delete_app(
     api: Optional[AppsApiClient] = None,
     events: Optional[object] = None,
 ) -> UndeployResult:
-    """delete an app after undeploying every environment in it."""
+    """delete an app after undeploying every environment in it, then its
+    dev key."""
     client = api or AppsApiClient()
     app = await get_app(app_name, api=client)
 
@@ -134,5 +143,11 @@ async def delete_app(
             log.info("deleted app %s (%s)", app_name, app["id"])
         except Exception as exc:  # noqa: BLE001 - collected for the caller
             result.failures.append(f"app {app_name}: {exc}")
+
+    if result.app_deleted:
+        try:
+            await delete_app_key(client, app_name)
+        except Exception as exc:  # noqa: BLE001 - collected for the caller
+            result.failures.append(f"dev key for {app_name}: {exc}")
 
     return result

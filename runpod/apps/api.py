@@ -504,6 +504,27 @@ class AppsApiClient:
         data = await self._execute(mutation, {"id": secret_id})
         return bool(data.get("secretDelete"))
 
+    async def update_secret_value(self, secret_id: str, value: str) -> None:
+        mutation = app_mutations.MUTATION_UPDATE_SECRET_VALUE
+        await self._execute(mutation, {"input": {"id": secret_id, "value": value}})
+
+    async def list_api_keys(self) -> List[Dict[str, Any]]:
+        query = app_queries.QUERY_API_KEYS
+        data = await self._execute(query, retry=True)
+        return data["myself"].get("apiKeys") or []
+
+    async def create_api_key(self, name: str, scopes: List[str]) -> Dict[str, Any]:
+        """create a scoped api key; the result carries rawKey, shown once."""
+        mutation = app_mutations.MUTATION_CREATE_API_KEY
+        data = await self._execute(
+            mutation, {"input": {"name": name, "scopes": scopes}}
+        )
+        return data["createApiKeyNew"]
+
+    async def delete_api_key(self, key_id: str) -> None:
+        mutation = app_mutations.MUTATION_DELETE_API_KEY
+        await self._execute(mutation, {"input": {"id": key_id}})
+
     async def list_apps(self) -> List[Dict[str, Any]]:
         """all flash apps with their environments and builds."""
         query = app_queries.QUERY_FLASH_APPS

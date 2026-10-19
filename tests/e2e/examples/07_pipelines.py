@@ -20,7 +20,7 @@ def count(tokens: list):
     return len(tokens)
 
 
-@app.queue(cpu="cpu3c-1-2")
+@app.queue(cpu="cpu3c-1-2", remote_calls=True)
 def pipeline(text: str):
     # nested .remote() calls run on the sibling resources
     tokens = tokenize.remote(text)

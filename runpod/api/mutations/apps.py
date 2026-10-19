@@ -54,6 +54,24 @@ mutation secretDelete($id: ID!) {
 }
 """
 
+MUTATION_UPDATE_SECRET_VALUE = """
+mutation secretValueUpdate($input: SecretValueUpdateInput!) {
+    secretValueUpdate(input: $input) { id }
+}
+"""
+
+MUTATION_CREATE_API_KEY = """
+mutation createApiKeyNew($input: CreateApiKeyInput!) {
+    createApiKeyNew(input: $input) { id rawKey }
+}
+"""
+
+MUTATION_DELETE_API_KEY = """
+mutation deleteApiKey($input: DeleteApiKeyInput!) {
+    deleteApiKey(input: $input) { count }
+}
+"""
+
 MUTATION_DELETE_FLASH_APP = """
 mutation deleteFlashApp($flashAppId: String!) {
     deleteFlashApp(flashAppId: $flashAppId)

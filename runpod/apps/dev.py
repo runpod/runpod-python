@@ -12,8 +12,10 @@ from typing import Dict, List, Optional, Union
 
 from .api import AppsApiClient
 from .app import App
+from .app_key import APP_KEY_ENV, ensure_app_key, needs_app_key
 from .errors import AppError
 from .handles import ApiHandle, FunctionHandle
+from .secret import Secret, render_env
 from .shim import runtime_launcher
 from .spec import ResourceKind, ResourceSpec
 from .targets import LiveTarget
@@ -73,23 +75,6 @@ def _image_for(spec: ResourceSpec) -> str:
     return image_for_spec(spec, python_version=local_python_version())
 
 
-def _render_env(env):
-    from .secret import render_env
-
-    return render_env(env)
-
-
-def _client_api_key() -> str:
-    from .utils.network import api_key
-
-    try:
-        return api_key()
-    except RuntimeError:
-        # payload construction must not require credentials (tests,
-        # dry runs); the session itself fails loudly on its first call
-        return ""
-
-
 def _cpu_locations(instance_ids: List[str]) -> str:
     """locations covering every requested cpu flavor's stock, limited to
     datacenters with storage and S3 support. the flash images are
@@ -107,11 +92,20 @@ def _cpu_locations(instance_ids: List[str]) -> str:
 GENERATION_ENV = "RUNPOD_DEV_GENERATION"
 
 
-def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
-    """build a live endpoint payload with an atomically bound container config."""
+def _endpoint_input(
+    app: App,
+    spec: ResourceSpec,
+    generation: int = 1,
+    app_key: Optional[Secret] = None,
+) -> Dict:
+    """build a live endpoint payload with an atomically bound container config.
+
+    app_key is referenced as RUNPOD_API_KEY only for resources that
+    declare remote_calls; every other worker boots without credentials.
+    """
 
     spec.validate()
-    resource_env = _render_env(spec.env)
+    resource_env = render_env(spec.env)
     resource_env["RUNPOD_DEV_RESOURCE"] = spec.name
     if spec.kind is ResourceKind.API:
         resource_env["PORT"] = "80"
@@ -131,15 +125,14 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
             "dockerArgs": "",
             "env": [
                 {"key": GENERATION_ENV, "value": str(generation)},
-                # nested .remote() calls from inside a dev worker need
-                # credentials and the dev-session marker to resolve
-                # sibling dev endpoints by name
+                # nested .remote() calls resolve sibling dev endpoints
+                # by name through the dev-session marker
+                {"key": "RUNPOD_DEV_APP", "value": app.name},
                 *(
-                    [{"key": "RUNPOD_API_KEY", "value": key}]
-                    if (key := _client_api_key())
+                    [{"key": APP_KEY_ENV, "value": app_key.reference}]
+                    if app_key is not None and needs_app_key(spec)
                     else []
                 ),
-                {"key": "RUNPOD_DEV_APP", "value": app.name},
                 *(
                     [
                         {
@@ -215,6 +208,7 @@ class DevSession:
         self._payloads: Dict[str, Dict] = {}
         # volumes resolve once per session (placement is stable)
         self._volume_resolver = None
+        self._app_keys: Dict[str, Secret] = {}
 
     def _emit(self, event: str, *args) -> None:
         emit(self.events, event, *args)
@@ -235,6 +229,15 @@ class DevSession:
         if self._volume_resolver is None:
             self._volume_resolver = VolumeResolver(self.api, events=self.events)
         await attach_endpoint_volumes(payload, spec, self._volume_resolver, app)
+
+    async def _app_key_for(self, app: App, spec: ResourceSpec) -> Optional[Secret]:
+        """the app's dev key secret, resolved once per session and only
+        when a resource declares remote_calls."""
+        if not needs_app_key(spec):
+            return None
+        if app.name not in self._app_keys:
+            self._app_keys[app.name] = await ensure_app_key(self.api, app.name)
+        return self._app_keys[app.name]
 
     @property
     def _endpoint_ids(self) -> List[str]:
@@ -274,7 +277,9 @@ class DevSession:
                 if found:
                     self._endpoints[name] = found["id"]
                     self._resource_names[name] = spec.name
-                payload = _endpoint_input(app, spec, self.generation)
+                payload = _endpoint_input(
+                    app, spec, self.generation, await self._app_key_for(app, spec)
+                )
                 await self._attach_volumes(payload, spec, app)
 
                 hardware = ",".join(spec.cpu or spec.gpu or ["any"])
@@ -351,7 +356,12 @@ class DevSession:
 
         # update survivors (config + generation bump) and create additions
         for name, (app, handle) in desired.items():
-            payload = _endpoint_input(app, handle.spec, self.generation)
+            payload = _endpoint_input(
+                app,
+                handle.spec,
+                self.generation,
+                await self._app_key_for(app, handle.spec),
+            )
             await self._attach_volumes(payload, handle.spec, app)
 
             existing_id = self._endpoints.get(name)

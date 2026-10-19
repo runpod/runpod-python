@@ -76,7 +76,7 @@ class TestEndpointInput:
         assert "FLASH_RESOURCE_NAME" not in env
         assert "RUNPOD_RESOURCE_NAME" not in env
 
-    def test_api_key_forwarded_when_configured(self, monkeypatch):
+    def test_api_key_not_forwarded_without_remote_calls(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_API_KEY", "rpa_test123")
         app = App("keyed")
 
@@ -86,7 +86,8 @@ class TestEndpointInput:
 
         payload = _endpoint_input(app, q.spec)
         env = {e["key"]: e["value"] for e in payload["template"]["env"]}
-        assert env["RUNPOD_API_KEY"] == "rpa_test123"
+        assert "RUNPOD_API_KEY" not in env
+        assert "rpa_test123" not in str(payload)
         assert "gpuIds" not in payload
 
     def test_gpu_queue_payload(self):

@@ -33,6 +33,14 @@ query mySecrets {
 }
 """
 
+QUERY_API_KEYS = """
+query myApiKeys {
+    myself {
+        apiKeys { id name }
+    }
+}
+"""
+
 QUERY_FLASH_APPS = """
 query getFlashApps {
     myself {
