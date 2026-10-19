@@ -231,6 +231,24 @@ class TestOutputHelpers:
         assert output.cell(["a", "b"]) == "a, b"
         assert output.cell(3) == "3"
 
+    def test_print_table_keeps_ids_and_values_whole(self, monkeypatch, capsys):
+        from runpod.rp_cli import console as ui
+
+        monkeypatch.setattr(ui.console, "_width", 40)
+        rows = [{"id": "cmvfsn771000007jp15tn8esm", "type": "high_performance"}]
+        output.print_table(
+            rows,
+            [
+                ("ID", lambda r: r["id"]),
+                ("TYPE", lambda r: r["type"]),
+                ("PAD", lambda r: "x" * 30),
+            ],
+            "none",
+        )
+        out = capsys.readouterr().out
+        assert "cmvfsn771000007jp15tn8esm" in out
+        assert "…" not in out
+
     def test_print_fields(self, capsys):
         output.print_fields(
             {"id": "abc", "tags": []},
