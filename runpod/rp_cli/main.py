@@ -16,7 +16,7 @@ import click
 
 # commands whose output would be polluted by (or that manage) the
 # update notice
-_UPDATE_CHECK_EXCLUDED = frozenset({"flash", "update"})
+_UPDATE_CHECK_EXCLUDED = frozenset({"completion", "flash", "update"})
 _FLASH_UPDATE_CHECK_EXCLUDED = frozenset({"dev"})
 
 
@@ -484,6 +484,23 @@ def dev(module, once):
         ui.console.print()
     except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
         raise click.ClickException(str(exc)) from exc
+
+
+# ------------------------------------------------------------ completion
+
+
+@cli.command()
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
+def completion(shell):
+    """Print the shell completion script for SHELL.
+
+    Completes commands, flags, and resource IDs. Add this to your shell
+    profile: eval "$(rp completion zsh)"
+    """
+    from click.shell_completion import get_completion_class
+
+    complete = get_completion_class(shell)(cli, {}, "rp", "_RP_COMPLETE")
+    click.echo(complete.source())
 
 
 # ------------------------------------------------------------------ logs
@@ -1021,8 +1038,9 @@ def undeploy(app_name, env_name, yes):
 def _mount_groups() -> None:
     from runpod.cli.groups.pod.commands import pod_cli
     from runpod.cli.groups.ssh.commands import ssh_cli
+    from runpod.rp_cli.catalog import catalog
 
-    for command in (ssh_cli, pod_cli):
+    for command in (ssh_cli, pod_cli, catalog):
         cli.add_command(command)
 
 
