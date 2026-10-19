@@ -6,6 +6,9 @@ and GPU compute benchmarking with various system scenarios.
 """
 
 import asyncio
+import builtins
+import contextlib
+import sys
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
@@ -33,6 +36,27 @@ def _make_async_process(returncode=0, stdout="", stderr=""):
         return_value=(stdout.encode(), stderr.encode())
     )
     return mock_process
+
+
+@contextlib.contextmanager
+def _no_gpu_framework_loaded():
+    """Simulate a handler that has not imported torch or CuPy.
+
+    Yields the set of top-level module names the code under test tries to
+    import, so a test can assert the check did not import torch itself.
+    """
+    attempted_imports = set()
+    real_import = builtins.__import__
+
+    def recording_import(name, *args, **kwargs):
+        attempted_imports.add(name.split(".")[0])
+        return real_import(name, *args, **kwargs)
+
+    with patch.dict("sys.modules"):
+        sys.modules.pop("torch", None)
+        sys.modules.pop("cupy", None)
+        with patch("builtins.__import__", side_effect=recording_import):
+            yield attempted_imports
 
 
 # ============================================================================
@@ -446,6 +470,21 @@ class TestCudaInitialization:
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_skips_when_handler_has_not_loaded_torch(
+        self, mock_gpu_available
+    ):
+        """The check must not import torch itself; that import costs ~1.5s on a cold worker."""
+        mock_gpu_available.return_value = True
+
+        with _no_gpu_framework_loaded() as attempted_imports:
+            await _check_cuda_initialization()
+
+        assert "torch" not in attempted_imports
+        assert "cupy" not in attempted_imports
+        mock_gpu_available.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
     async def test_cuda_init_no_libraries(self, mock_gpu_available):
         """Test CUDA initialization skips gracefully when no libraries available."""
         mock_gpu_available.return_value = True
@@ -493,6 +532,36 @@ class TestGpuComputeBenchmark:
             # Reimport the module to pick up the mock
             # The function should complete without raising
             await _check_gpu_compute_benchmark()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_gpu_benchmark_skips_when_handler_has_not_loaded_torch(
+        self, mock_gpu_available
+    ):
+        """The benchmark must not import torch itself either."""
+        mock_gpu_available.return_value = True
+
+        with _no_gpu_framework_loaded() as attempted_imports:
+            await _check_gpu_compute_benchmark()
+
+        assert "torch" not in attempted_imports
+        assert "cupy" not in attempted_imports
+        mock_gpu_available.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_gpu_benchmark_uses_cupy_when_handler_loaded_it(
+        self, mock_gpu_available
+    ):
+        """A handler that loaded CuPy but not torch still gets the benchmark."""
+        mock_gpu_available.return_value = True
+        mock_cupy = MagicMock()
+
+        with patch.dict("sys.modules", {"cupy": mock_cupy}):
+            sys.modules.pop("torch", None)
+            await _check_gpu_compute_benchmark()
+
+        mock_cupy.matmul.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
