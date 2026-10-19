@@ -104,6 +104,16 @@ def _invoke(args, gpus=GPUS, cpus=CPUS, datacenters=DATACENTERS):
 
 
 class TestGpuCatalog:
+    def test_unavailable_gpu_omits_stock_fields(self):
+        gpu = {
+            key: value
+            for key, value in GPUS[0].items()
+            if key not in ("dataCenters", "availability")
+        }
+        result, _, _ = _invoke(["--region", "eu", "--available", "--json"], gpus=[gpu])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == []
+
     def test_pod_table_sorted_by_stock_then_price(self):
         result, list_gpus, _ = _invoke(["h100", "--count", "2"])
         assert result.exit_code == 0, result.output

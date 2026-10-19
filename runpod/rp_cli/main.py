@@ -486,9 +486,6 @@ def dev(module, once):
         raise click.ClickException(str(exc)) from exc
 
 
-# ------------------------------------------------------------ completion
-
-
 @cli.command()
 @click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
 def completion(shell):
