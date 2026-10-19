@@ -2,8 +2,6 @@
 
 import copy
 import json
-import threading
-import queue
 from unittest.mock import MagicMock
 
 import click
@@ -13,9 +11,11 @@ from click.testing import CliRunner
 
 from runpod import error
 from runpod.endpoint import runner
-from runpod.rp_cli import compute, output
+from runpod.rp_cli import api as cli_api, compute, endpoint_config as config, output
 from runpod.rp_cli import endpoint as ep
 from runpod.rp_cli.main import cli
+
+PAGE = {"hasNextPage": False, "nextCursor": None}
 
 GPUS = [
     {"id": "NVIDIA H100 80GB HBM3", "name": "H100 SXM", "pool": "ADA_80_PRO"},
@@ -158,7 +158,13 @@ WORKERS = {
             "gpuCount": 1,
             "uptimeSeconds": 125,
         },
-        {"id": "w3", "status": "INITIALIZING", "isStale": True, "gpuCount": 0},
+        {
+            "id": "w3",
+            "status": "INITIALIZING",
+            "isStale": True,
+            "gpuCount": 0,
+            "gpuTypeId": "unknown",
+        },
     ],
 }
 
@@ -172,7 +178,7 @@ class FakeApi:
 
     def __call__(self, method, path, params=None, json=None, **_):
         self.calls.append((method, path, params, json))
-        value = self.routes.get((method, path))
+        value = self.routes[(method, path)]
         if callable(value):
             value = value(params, json)
         if isinstance(value, Exception):
@@ -184,7 +190,11 @@ class FakeApi:
 
 
 @pytest.fixture(autouse=True)
-def wide_console(monkeypatch):
+def cli_environment(monkeypatch):
+    def no_network(*args, **kwargs):
+        pytest.fail("endpoint tests must not make real network requests")
+
+    monkeypatch.setattr(requests.sessions.Session, "request", no_network)
     from runpod.rp_cli import console as ui
 
     monkeypatch.setattr(ui.console, "_width", 200)
@@ -193,9 +203,12 @@ def wide_console(monkeypatch):
 @pytest.fixture
 def api(monkeypatch):
     routes = {
-        ("GET", "/v2/catalog/gpus"): {"gpus": GPUS},
-        ("GET", "/v2/catalog/cpus"): {"cpus": CPUS},
-        ("GET", "/v2/catalog/datacenters"): {"dataCenters": DATACENTERS},
+        ("GET", "/v2/catalog/gpus"): {"gpus": GPUS, "pagination": PAGE},
+        ("GET", "/v2/catalog/cpus"): {"cpus": CPUS, "pagination": PAGE},
+        ("GET", "/v2/catalog/datacenters"): {
+            "dataCenters": DATACENTERS,
+            "pagination": PAGE,
+        },
         ("GET", "/v2/serverless"): {
             "endpoints": [GPU_ENDPOINT, CPU_ENDPOINT, LB_ENDPOINT],
             "pagination": {"hasNextPage": False, "nextCursor": None},
@@ -218,6 +231,7 @@ def api(monkeypatch):
     fake = FakeApi(routes)
     monkeypatch.setattr(ep, "run_rest_request", fake)
     monkeypatch.setattr(compute, "run_rest_request", fake)
+    monkeypatch.setattr(cli_api, "run_rest_request", fake)
     monkeypatch.setattr(ep.time, "sleep", lambda seconds: None)
     return fake
 
@@ -243,9 +257,6 @@ def fails(*args, input=None):
     result = invoke(*args, input=input)
     assert result.exit_code != 0, result.output
     return result.output
-
-
-# ---------------------------------------------------------------- list/get
 
 
 def test_list_shows_ids_and_summaries(api):
@@ -298,9 +309,6 @@ def test_get_without_id_picks_interactively(api, monkeypatch):
 def test_api_errors_are_clean(api):
     api.routes[("GET", "/v2/serverless/ep1")] = error.QueryError("endpoint not found")
     assert "endpoint not found" in fails("get", "ep1")
-
-
-# ------------------------------------------------------------------ create
 
 
 def test_create_queue_endpoint_from_ticket(api):
@@ -450,7 +458,7 @@ def test_create_exact_cuda_and_cpu_vcpu_suffix(api):
         (["--name", "x", "--type", "queue", "--image", "i", "--cpu", "cpu3c:x"], "invalid --cpu"),
         (["--name", "x", "--type", "queue", "--image", "i", "--vcpu-count", "4"], "pass --cpu"),
         (["--name", "x", "--type", "queue", "--image", "i", "--cpu", "cpu3c:4", "--cuda", "12.4"],
-         "--cuda applies to GPU"),
+         "apply to GPU"),
         (["--name", "x", "--type", "queue", "--image", "i", "--gpu", "b200"], "unknown gpu"),
         (["--name", "x", "--type", "queue", "--image", "i", "--region", "mars"], "unknown region"),
     ],
@@ -458,9 +466,6 @@ def test_create_exact_cuda_and_cpu_vcpu_suffix(api):
 def test_create_rejects_bad_flags(api, args, message):
     assert message in fails("create", *args)
     assert not api.bodies("POST")
-
-
-# ------------------------------------------------------------------ update
 
 
 def test_update_merges_env_and_workers(api):
@@ -504,7 +509,8 @@ def test_update_cpu_vcpus_and_mounts(api):
         (["ep1", "--unset-env", "MISSING"], "no such variable"),
         (["ep1", "--cpu", "cpu3c:4"], "cannot switch to CPUs"),
         (["ep2", "--gpu", "h100"], "cannot switch to GPUs"),
-        (["ep2", "--cuda", "12.4"], "--cuda applies to GPU"),
+        (["ep2", "--cuda", "12.4"], "apply to GPU"),
+        (["ep2", "--gpu-count", "1"], "apply to GPU"),
         (["lb1", "--queue-delay-seconds", "3"], "scale on --requests-per-worker"),
     ],
 )
@@ -533,25 +539,24 @@ def test_update_json_and_wait_follows_rollout(api):
     assert json.loads(out)["name"] == "renamed"
 
 
-# -------------------------------------------------------------------- edit
-
-
 def _doc(**changes):
-    doc = ep._mutable(GPU_ENDPOINT)
+    doc = config.mutable(GPU_ENDPOINT)
     doc.update(changes)
     return json.dumps(doc)
 
 
 def test_mutable_document_holds_update_fields_only():
-    doc = ep._mutable(GPU_ENDPOINT)
-    assert set(doc) <= set(ep.MUTABLE_FIELDS)
+    doc = config.mutable(GPU_ENDPOINT)
+    assert set(doc) <= set(config.MUTABLE_FIELDS)
     assert "networkVolumes" not in doc and "id" not in doc and "requestUrls" not in doc
-    assert ep._mutable(CPU_ENDPOINT)["cpu"] == [{"id": "cpu3c", "vcpuCount": 4}]
+    assert config.mutable(CPU_ENDPOINT)["cpu"] == [{"id": "cpu3c", "vcpuCount": 4}]
 
 
 def test_edit_file_shows_patch_and_applies(api, tmp_path):
     path = tmp_path / "doc.json"
-    gpu = dict(ep._mutable(GPU_ENDPOINT)["gpu"], excludedTypes=[], minCudaVersion=None)
+    gpu = dict(
+        config.mutable(GPU_ENDPOINT)["gpu"], excludedTypes=[], minCudaVersion=None
+    )
     path.write_text(
         _doc(image="img:2", workers={"min": 1, "max": 3, "idleTimeout": 5}, gpu=gpu)
     )
@@ -567,11 +572,11 @@ def test_edit_file_shows_patch_and_applies(api, tmp_path):
 
 
 def test_edit_clears_cuda_floor_with_empty_string():
-    before = ep._mutable(LB_ENDPOINT)
+    before = config.mutable(LB_ENDPOINT)
     after = copy.deepcopy(before)
     after["gpu"]["minCudaVersion"] = None
     after["gpu"]["count"] = 1
-    assert ep._patch(before, after) == {"gpu": {"count": 1, "minCudaVersion": ""}}
+    assert config.patch(before, after) == {"gpu": {"count": 1, "minCudaVersion": ""}}
 
 
 def test_edit_without_changes(api, tmp_path):
@@ -612,9 +617,12 @@ def test_edit_needs_terminal_or_file(api):
 )
 def test_edit_validation(text, message):
     with pytest.raises(click.ClickException, match=message):
-        ep._validate(text, ep._mutable(GPU_ENDPOINT))
+        config.validate(text, config.mutable(GPU_ENDPOINT))
+
+
+def test_edit_rejects_switching_cpu_to_gpu():
     with pytest.raises(click.ClickException, match="cannot switch to GPUs"):
-        ep._validate(json.dumps({"gpu": {}}), ep._mutable(CPU_ENDPOINT))
+        config.validate('{"gpu": {}}', config.mutable(CPU_ENDPOINT))
 
 
 def test_edit_in_editor_reopens_on_error_then_follows(api, monkeypatch):
@@ -667,9 +675,6 @@ def test_follow_rollout_times_out_and_detaches(api, monkeypatch, capsys):
     assert "detached" in capsys.readouterr().out
 
 
-# ------------------------------------------------------------ scale/delete
-
-
 def test_scale_sends_workers_and_scaler(api):
     out = ok("scale", "ep1", "--min-workers", "1", "--requests-per-worker", "3")
     (patch,) = api.bodies("PATCH")
@@ -700,11 +705,9 @@ def test_delete_confirms(api, monkeypatch):
     assert len([c for c in api.calls if c[0] == "DELETE"]) == 2
 
 
-# ------------------------------------------------------- workers/releases
-
-
 def test_workers_table_and_json(api):
     out = ok("workers", "ep1")
+    assert "unknown" not in out
     assert "3 workers: 1 running, 1 idle, 1 initializing" in out
     for text in ("w1", "w2", "w3", "1h02m", "2m05s", "v2 (stale)", "stale"):
         assert text in out
@@ -715,7 +718,10 @@ def test_workers_empty_and_uptime():
     assert ep._uptime(None) is None
     assert ep._uptime(42) == "42s"
     assert ep._worker_version({"version": None}) is None
-    assert "0 workers" in str(ep._workers_view({"summary": {}}))
+    empty = copy.deepcopy(WORKERS)
+    empty["summary"] = dict.fromkeys(WORKERS["summary"], 0)
+    empty["workers"] = []
+    assert "0 workers" in str(ep._workers_view(empty))
 
 
 def test_workers_watch(api, monkeypatch):
@@ -752,159 +758,36 @@ def test_releases(api):
     assert data["endpointVersion"] == 3 and len(data["releases"]) == 2
 
 
-# -------------------------------------------------------------------- logs
+def test_logs_routes_options_to_shared_streamer(api, monkeypatch):
+    from runpod.rp_cli import logs
 
-
-class FakeStream:
-    def __init__(self, lines, status=200, text=""):
-        self.lines = lines
-        self.status_code = status
-        self.text = text
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def iter_lines(self, decode_unicode=True):
-        for line in self.lines:
-            if isinstance(line, Exception):
-                raise line
-            yield line
-
-
-def _event(ts, line, source="container"):
-    return [
-        f"id: {ts}",
-        "data: " + json.dumps({"source": source, "line": line, "ts": ts}),
-        "",
-    ]
-
-
-@pytest.fixture
-def streams(monkeypatch):
-    calls = []
-    by_worker = {}
-
-    def fake_get(url, params=None, headers=None, stream=None, timeout=None):
-        worker = url.split("/workers/")[1].split("/")[0]
-        calls.append({"worker": worker, "params": params, "headers": headers})
-        return by_worker[worker]
-
-    monkeypatch.setattr(ep.requests, "get", fake_get)
-    monkeypatch.setattr(ep, "_resolve_api_key", lambda key: "key")
-    by_worker["calls"] = calls
-    return by_worker
-
-
-def test_logs_snapshot_multiplexes_sorted_and_stops_at_live_lines(api, streams):
-    streams["w1"] = FakeStream(
-        _event("2026-01-01T00:00:02Z", "w1 second")
-        + ["data: {broken", ": heartbeat"]
-        + _event("2999-01-01T00:00:00Z", "live line")
+    show = MagicMock()
+    monkeypatch.setattr(logs, "show_logs", show)
+    ok(
+        "logs",
+        "ep1",
+        "--worker",
+        "w1",
+        "--worker",
+        "w2",
+        "--follow",
+        "--source",
+        "system",
+        "--tail",
+        "20",
+        "--since",
+        "2026-01-01T00:00:00Z",
+        "--json",
     )
-    streams["w2"] = FakeStream(_event("2026-01-01T00:00:01Z", "w2 first", "system"))
-    streams["w3"] = FakeStream([], status=404, text='{"title": "worker gone"}')
-    out = ok("logs", "ep1", "--source", "system", "--tail", "200")
-    lines = out.splitlines()
-    assert lines == ["w2 [system] w2 first", "w1 [container] w1 second"]
-    params = streams["calls"][0]["params"]
-    assert params == {"tail": 200, "source": "system"}
-
-
-def test_logs_filters_workers_and_prints_json(api, streams):
-    streams["w2"] = FakeStream(_event("2026-01-01T00:00:01Z", "hello"))
-    out = ok(
-        "logs", "ep1", "--worker", "w2", "--since", "2026-01-01T00:00:00Z", "--json"
+    show.assert_called_once_with(
+        endpoint_id="ep1",
+        worker_ids=("w1", "w2"),
+        follow=True,
+        source="system",
+        tail=20,
+        since="2026-01-01T00:00:00Z",
+        as_json=True,
     )
-    assert json.loads(out) == {
-        "worker": "w2",
-        "source": "container",
-        "line": "hello",
-        "ts": "2026-01-01T00:00:01Z",
-    }
-    assert [call["worker"] for call in streams["calls"]] == ["w2"]
-    assert streams["calls"][0]["params"]["since"] == "2026-01-01T00:00:00Z"
-
-
-def test_logs_without_workers(api):
-    api.routes[("GET", "/v2/serverless/ep1/workers")] = {"workers": []}
-    assert "no workers" in ok("logs", "ep1")
-
-
-def test_logs_auth_error_fails(api, streams):
-    for worker in ("w1", "w2", "w3"):
-        streams[worker] = FakeStream([], status=401)
-    assert "Unauthorized" in fails("logs", "ep1")
-
-
-def test_logs_follow_attaches_new_workers_and_resumes(api, streams, monkeypatch):
-    monkeypatch.setattr(ep, "WORKER_POLL_SECONDS", 0)
-    listings = iter(
-        [
-            {"workers": [{"id": "w1"}]},
-            {"workers": [{"id": "w1"}, {"id": "w2"}]},
-        ]
-    )
-
-    def list_workers(params, body):
-        try:
-            return next(listings)
-        except StopIteration:
-            raise KeyboardInterrupt from None
-
-    api.routes[("GET", "/v2/serverless/ep1/workers")] = list_workers
-    streams["w1"] = FakeStream(_event("2026-01-01T00:00:01Z", "one"))
-    streams["w2"] = FakeStream(
-        _event("2026-01-01T00:00:02Z", "two") + [requests.exceptions.ReadTimeout()]
-    )
-    out = invoke("logs", "ep1", "--follow").output
-    assert "w1 [container] one" in out
-
-
-def test_logs_follow_waits_for_workers(api, monkeypatch):
-    monkeypatch.setattr(ep, "WORKER_POLL_SECONDS", 0)
-    listings = iter([{"workers": []}])
-
-    def list_workers(params, body):
-        try:
-            return next(listings)
-        except StopIteration:
-            raise KeyboardInterrupt from None
-
-    api.routes[("GET", "/v2/serverless/ep1/workers")] = list_workers
-    assert "waiting for workers" in ok("logs", "ep1", "-f")
-
-
-def test_log_stream_sends_resume_cursor(monkeypatch):
-    seen = {}
-
-    def fake_get(url, params=None, headers=None, stream=None, timeout=None):
-        seen["headers"] = headers
-        return FakeStream(_event("2026-01-01T00:00:01Z", "x"))
-
-    monkeypatch.setattr(ep.requests, "get", fake_get)
-    monkeypatch.setattr(ep, "_resolve_api_key", lambda key: "key")
-    events = queue.Queue()
-    stop = threading.Event()
-    ep._log_stream("ep1", "w1", {}, "2026-01-01T00:00:00Z", events, stop, 1)
-    assert seen["headers"]["Last-Event-ID"] == "2026-01-01T00:00:00Z"
-    assert events.get()[0] == "line" and events.get()[0] == "done"
-    stop.set()
-    ep._log_stream("ep1", "w1", {}, None, events, stop, 1)
-    assert events.get()[0] == "done"
-
-
-def test_is_live_handles_odd_timestamps():
-    from datetime import datetime, timezone
-
-    started = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    assert not ep._is_live({"ts": "garbage"}, started)
-    assert ep._is_live({"ts": "2026-02-01T00:00:00"}, started)
-
-
-# --------------------------------------------------------------------- run
 
 
 def test_run_waits_for_output(api, client):
@@ -1046,7 +929,7 @@ def test_run_load_balancer(api, monkeypatch):
         return next(responses)
 
     monkeypatch.setattr(ep.requests, "request", fake_request)
-    monkeypatch.setattr(ep, "_resolve_api_key", lambda key: "key")
+    monkeypatch.setattr(ep, "api_key", lambda: "test-key")
     assert json.loads(ok("run", "lb1", "--path", "/v1/chat", "--data", '{"m": 1}')) == {
         "data": [1]
     }
@@ -1056,9 +939,6 @@ def test_run_load_balancer(api, monkeypatch):
     assert calls[0] == ("POST", "https://lb1.api.runpod.ai/v1/chat", {"m": 1}, 600)
     assert calls[1][:2] == ("GET", "https://lb1.api.runpod.ai/ping")
     assert calls[2][0] == "PUT" and calls[2][3] == 5.0
-
-
-# -------------------------------------------------------------------- jobs
 
 
 def test_job_get(api, client):
@@ -1085,7 +965,7 @@ def test_job_wait_and_stream(api, client):
         {"status": "COMPLETED", "stream": []},
     ]
     assert ok("job", "stream", "ep1", "job1").strip() == "chunk"
-    client.get.assert_called_with("ep1/stream/job1", timeout=ep.STREAM_POLL_SECONDS)
+    client.get.assert_called_with("ep1/stream/job1", timeout=60)
 
 
 def test_job_stream_interrupt(api, client):
@@ -1124,15 +1004,14 @@ def test_data_plane_errors(api, client, monkeypatch):
     assert "404 job not found" in fails("job", "get", "ep1", "job1")
     client.get.side_effect = requests.HTTPError("no response")
     assert "no response" in fails("job", "get", "ep1", "job1")
+    client.get.side_effect = requests.ReadTimeout("status request timed out")
+    assert "status request timed out" in fails("job", "wait", "ep1", "job1")
 
     def no_key():
         raise RuntimeError("api key not set")
 
     monkeypatch.setattr(runner, "RunPodClient", no_key)
     assert "api key not set" in fails("job", "get", "ep1", "job1")
-
-
-# -------------------------------------------------------------- completion
 
 
 def test_completion_inserts_ids(api):
