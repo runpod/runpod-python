@@ -292,8 +292,6 @@ class TestDev:
         assert events == ["cancelled", "finished", "deleted"]
 
     def _signal_session(self, tmp_path, monkeypatch, entrypoint):
-        import asyncio
-
         module = tmp_path / "main.py"
         module.write_text(ENTRYPOINT_SOURCE)
         monkeypatch.chdir(tmp_path)

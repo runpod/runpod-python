@@ -406,11 +406,11 @@ def dev(module, once):
                     pass
             await asyncio.sleep(0.5)
 
-    # set once a second stop signal arrives: teardown stops waiting for
-    # a running entrypoint
-    force_stop: "list[asyncio.Event]" = []
-    # set when teardown starts: signals then leave it to finish
-    tearing_down: "list[bool]" = []
+    # set by a second stop signal: teardown stops waiting for a running
+    # entrypoint
+    force_stop = asyncio.Event()
+    # once teardown starts, signals leave it to finish
+    tearing_down = False
 
     async def _run_entrypoint_cancellable(fn) -> None:
         """run user code without blocking the event loop.
@@ -429,6 +429,12 @@ def dev(module, once):
                 done.set_result(None)
             else:
                 done.set_exception(exc)
+
+        def _discard_result(future: "asyncio.Future[None]") -> None:
+            # an abandoned entrypoint's error would otherwise be logged
+            # as never retrieved
+            if not future.cancelled():
+                future.exception()
 
         def _report(exc: "BaseException | None") -> None:
             try:
@@ -455,14 +461,13 @@ def dev(module, once):
         try:
             return await asyncio.shield(done)
         except asyncio.CancelledError:
-            if force_stop and not done.done():
-                forced = asyncio.ensure_future(force_stop[0].wait())
+            if done.done():
+                await done
+            else:
+                forced = asyncio.ensure_future(force_stop.wait())
                 await asyncio.wait({done, forced}, return_when=asyncio.FIRST_COMPLETED)
                 forced.cancel()
-                # an abandoned entrypoint's error is not retrieved
-                done.add_done_callback(lambda f: f.cancelled() or f.exception())
-            else:
-                await done
+                done.add_done_callback(_discard_result)
             raise
 
     def _install_stop_signals() -> None:
@@ -478,18 +483,18 @@ def dev(module, once):
         """
         loop = asyncio.get_running_loop()
         task = asyncio.current_task()
-        force_stop.append(asyncio.Event())
-        seen = []
+        stopping = False
 
         def _on_signal() -> None:
-            seen.append(True)
+            nonlocal stopping
             if tearing_down:
                 # cancelling teardown would skip the remaining deletes
                 return
-            if len(seen) == 1:
-                task.cancel()
+            if stopping:
+                force_stop.set()
             else:
-                force_stop[0].set()
+                stopping = True
+                task.cancel()
 
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
@@ -500,7 +505,7 @@ def dev(module, once):
                 pass
 
     async def _session() -> int:
-        nonlocal apps, entrypoint
+        nonlocal apps, entrypoint, tearing_down
         ui.set_name_width(_all_resource_names(apps))
         session = DevSession(apps, events=ui.DevEvents())
         watcher = FileWatcher([module.parent])
@@ -531,7 +536,7 @@ def dev(module, once):
                     ui.set_name_width(_all_resource_names(apps))
                     await session.refresh(apps)
         finally:
-            tearing_down.append(True)
+            tearing_down = True
             events = ui.CleanupEvents()
             try:
                 await session.stop(events=events)
