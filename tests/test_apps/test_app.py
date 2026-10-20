@@ -427,6 +427,8 @@ class TestGpuStringResolution:
     def test_live_pool_members_parses_catalog_and_fails_soft(self, monkeypatch):
         from unittest.mock import MagicMock
 
+        from runpod.apps import gpu as gpu_mod
+
         monkeypatch.setenv("RUNPOD_API_KEY", "k")
         resp = MagicMock()
         resp.json.return_value = {
@@ -441,8 +443,15 @@ class TestGpuStringResolution:
             assert fetch() == {"AMPERE_24": {"NVIDIA L4"}}
             assert get.call_args.kwargs["headers"]["Authorization"] == "Bearer k"
         fetch.cache_clear()
-        with patch("requests.get", side_effect=OSError("offline")):
+        with patch("requests.get", side_effect=OSError("offline")) as get:
             assert fetch() is None
+            # a failure is not retried on every lookup
+            assert fetch() is None
+            assert get.call_count == 1
+        # it is retried once the window passes
+        gpu_mod._catalog["failed_at"] -= gpu_mod._CATALOG_RETRY_SECONDS
+        with patch("requests.get", return_value=resp):
+            assert fetch() == {"AMPERE_24": {"NVIDIA L4"}}
         fetch.cache_clear()
 
     def test_gpu_ids_maps_devices_to_pools(self):

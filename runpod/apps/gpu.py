@@ -5,11 +5,11 @@ display names. either (or plain strings) are accepted anywhere a gpu is
 configured. CpuInstanceType values are backend cpu flavor ids.
 """
 
-import functools
 import logging
 import os
+import time
 from enum import Enum
-from typing import Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 log = logging.getLogger(__name__)
 
@@ -216,17 +216,28 @@ def resolve_gpu_string(value: str) -> List[str]:
 CATALOG_URL = "https://api.runpod.io/v2/catalog/gpus"
 
 
-@functools.lru_cache(maxsize=1)
+# live catalog result, or when it last failed
+_catalog: Dict[str, Any] = {}
+_CATALOG_RETRY_SECONDS = 60.0
+
+
 def live_pool_members() -> Optional[Dict[str, Set[str]]]:
     """pool id -> device ids, from the platform's gpu catalog.
 
     the static POOLS_TO_TYPES table lags the platform (pools gain mig
     slices and new skus), so exact-device pinning reads the live
-    membership. returns None when the catalog is unreachable.
+    membership. returns None when the catalog is unreachable. a result
+    is kept for the process; a failure is retried after a minute.
     """
     import requests
 
     from .utils.network import api_key
+
+    if _catalog.get("members") is not None:
+        return _catalog["members"]
+    failed_at = _catalog.get("failed_at")
+    if failed_at is not None and time.monotonic() - failed_at < _CATALOG_RETRY_SECONDS:
+        return None
 
     url = os.environ.get("RUNPOD_GPU_CATALOG_URL", CATALOG_URL)
     try:
@@ -240,10 +251,21 @@ def live_pool_members() -> Optional[Dict[str, Set[str]]]:
         for gpu in gpus:
             if gpu.get("pool") and gpu.get("id"):
                 members.setdefault(gpu["pool"], set()).add(gpu["id"])
-        return members or None
+        if not members:
+            raise ValueError("catalog lists no pools")
+        _catalog["members"] = members
+        return members
     except Exception as exc:  # any failure falls back to the static table
-        log.debug("gpu catalog unavailable (%s); using the static pool table", exc)
+        _catalog["failed_at"] = time.monotonic()
+        log.warning(
+            "gpu catalog unavailable (%s); device pins use the static pool "
+            "table, which can miss newer devices in a pool",
+            exc,
+        )
         return None
+
+
+live_pool_members.cache_clear = _catalog.clear  # type: ignore[attr-defined]
 
 
 def _pool_members(pool: str) -> Set[str]:
