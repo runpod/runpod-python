@@ -1,5 +1,6 @@
 import json
 import shlex
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -773,3 +774,35 @@ class TestCompletion:
             ("vol1", "data EU-RO-1")
         ]
         assert [item.value for item in registries] == ["ghcr"]
+
+
+def test_sync_checks_account_keys_over_rest_only():
+    source, destination = MagicMock(), MagicMock()
+    source.__enter__.return_value = source
+    destination.__enter__.return_value = destination
+    source.ssh.exec_command.side_effect = [
+        (None, BytesIO(value), None) for value in (b"1", b"exists", b"created", b"1K")
+    ]
+    destination.ssh.exec_command.return_value = (None, BytesIO(b"1"), None)
+    with (
+        patch(
+            "runpod.cli.groups.ssh.functions.run_rest_request",
+            return_value={"keys": ["ssh-ed25519 dGVzdC1rZXk= test-fixture"]},
+        ) as rest,
+        patch(
+            "runpod.api.ctl_commands.run_graphql_query",
+            side_effect=AssertionError("GraphQL forbidden"),
+        ) as graphql,
+        patch(
+            "runpod.cli.utils.ssh_cmd.SSHConnection",
+            side_effect=[source, destination],
+        ),
+    ):
+        result = _invoke(["sync", "source-pod", "destination-pod"])
+    assert result.exit_code == 0, result.output
+    assert "Found 1 SSH key(s)" in result.output
+    assert "Sync completed successfully" in result.output
+    rest.assert_called_once_with("GET", "/v2/account/ssh-keys")
+    graphql.assert_not_called()
+    source.get_file.assert_called_once()
+    destination.put_file.assert_called_once()
