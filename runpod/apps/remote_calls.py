@@ -18,11 +18,12 @@ import sys
 import sysconfig
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 log = logging.getLogger(__name__)
 
 _REMOTE_ATTRS = frozenset({"remote", "spawn"})
+_DEF_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
 def resource_target(handle):
@@ -94,7 +95,7 @@ class _BodyNames(ast.NodeVisitor):
 
 def _body_names(node: ast.AST) -> _BodyNames:
     visitor = _BodyNames()
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    if isinstance(node, _DEF_NODES):
         visitor.visit(node)
     else:
         visitor.generic_visit(node)
@@ -131,23 +132,21 @@ def _is_installed(path: str) -> bool:
     return any(resolved.is_relative_to(d) for d in _installed_dirs())
 
 
-def _is_local(module_name: str, project_dirs: Tuple[Path, ...]) -> bool:
-    """true unless the module is the stdlib or an installed distribution.
+def _in_project(top: str, project_dirs: Tuple[Path, ...]) -> bool:
+    return any((d / f"{top}.py").is_file() or (d / top).is_dir() for d in project_dirs)
 
-    project modules, and modules that resolve outside the installed
-    locations, count as local: the analysis does not follow them. a
-    module found nowhere (torch imported inside a gpu function, absent
-    from the client) is a third-party package, not project code.
-    """
-    top = _top_module(module_name)
-    if not top:
-        return True
-    if any((d / f"{top}.py").is_file() or (d / top).is_dir() for d in project_dirs):
-        return True
-    if top in sys.builtin_module_names or top in getattr(
+
+def _is_stdlib(top: str) -> bool:
+    return top in sys.builtin_module_names or top in getattr(
         sys, "stdlib_module_names", ()
-    ):
-        return False
+    )
+
+
+def _resolves_outside_installed(top: str) -> bool:
+    """true when the module resolves outside the stdlib and installed
+    distributions, or fails to resolve. a module found nowhere (torch
+    imported inside a gpu function, absent from the client) is a
+    third-party package, so it does not count."""
     try:
         spec = importlib.util.find_spec(top)
     except (ImportError, ValueError):
@@ -157,6 +156,15 @@ def _is_local(module_name: str, project_dirs: Tuple[Path, ...]) -> bool:
     locations = [spec.origin] if spec.origin and spec.has_location else []
     locations += list(spec.submodule_search_locations or [])
     return not all(_is_installed(loc) for loc in locations)
+
+
+def _is_local(module_name: str, project_dirs: Tuple[Path, ...]) -> bool:
+    """true unless the module is the stdlib or an installed distribution.
+    local modules are not followed, so a resource using one gets the key."""
+    top = _top_module(module_name)
+    if not top or _in_project(top, project_dirs):
+        return True
+    return not _is_stdlib(top) and _resolves_outside_installed(top)
 
 
 def _resource_names(target, app, handle) -> Set[str]:
@@ -199,24 +207,36 @@ class _ModuleIndex:
         )
 
     def add(self, node: ast.stmt) -> None:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(node, _DEF_NODES):
             self.defs[node.name] = node
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                for n in ast.walk(target):
-                    if isinstance(n, ast.Name):
-                        self.assigns[n.id] = node
-        elif isinstance(node, ast.Import):
-            self.call_capable.update(
+            self.assigns.update(dict.fromkeys(_assigned_names(node), node))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            self.call_capable.update(self._call_capable_imports(node))
+
+    def _call_capable_imports(self, node) -> List[str]:
+        """names an import binds when it comes from runpod or project code."""
+        if isinstance(node, ast.Import):
+            return [
                 alias.asname or _top_module(alias.name)
                 for alias in node.names
                 if self.import_may_call(alias.name, 0)
-            )
-        elif isinstance(node, ast.ImportFrom) and self.import_may_call(
-            node.module or "", node.level
-        ):
-            self.call_capable.update(alias.asname or alias.name for alias in node.names)
+            ]
+        if not self.import_may_call(node.module or "", node.level):
+            return []
+        return [alias.asname or alias.name for alias in node.names]
+
+    def node(self, name: str) -> ast.AST:
+        return self.defs.get(name) or self.assigns[name]
+
+    def helpers(self, names: Set[str]) -> List[str]:
+        """the names that refer to module-level definitions or values."""
+        return [n for n in names if n in self.defs or n in self.assigns]
+
+
+def _assigned_names(node) -> List[str]:
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    return [n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)]
 
 
 def _source_tree(path: Optional[str]) -> Optional[ast.Module]:
@@ -226,52 +246,77 @@ def _source_tree(path: Optional[str]) -> Optional[ast.Module]:
         return None
 
 
+def _uses_resource(
+    used: _BodyNames, index: _ModuleIndex, other_resources: Set[str]
+) -> bool:
+    """true if a body calls .remote()/.spawn(), names another resource, or
+    uses runpod or project code."""
+    return bool(
+        used.attrs & _REMOTE_ATTRS
+        or used.names & (other_resources | index.call_capable)
+        or any(index.import_may_call(m, level) for m, level in used.imports)
+    )
+
+
 def _reaches_resource(index: _ModuleIndex, roots, other_resources: Set[str]) -> bool:
-    """walk the roots and every module-level helper they use, looking for
-    a remote call, a resource, or a runpod or project import."""
+    """true if the roots, or any module-level helper they use, use a resource."""
     seen: Set[str] = set()
     pending = list(roots)
     while pending:
-        current = pending.pop()
-        if current in seen:
+        name = pending.pop()
+        if name in seen:
             continue
-        seen.add(current)
-        used = _body_names(index.defs.get(current) or index.assigns[current])
-        if used.attrs & _REMOTE_ATTRS:
+        seen.add(name)
+        used = _body_names(index.node(name))
+        if _uses_resource(used, index, other_resources):
             return True
-        if any(index.import_may_call(m, level) for m, level in used.imports):
-            return True
-        if used.names & (other_resources | index.call_capable):
-            return True
-        pending.extend(
-            ref
-            for ref in used.names - seen
-            if ref in index.defs or ref in index.assigns
-        )
+        pending.extend(index.helpers(used.names - seen))
     return False
 
 
-def makes_remote_calls(app, handle) -> bool:
-    """true unless the resource provably cannot reach another resource."""
+def _worker_entry_points(handle) -> Optional[List[Callable]]:
+    """the functions a worker runs for this resource: its target and any
+    startup hook. None when one is nested or anonymous, since the
+    analysis cannot find it in the module source."""
     target = resource_target(handle)
     init_fn = getattr(handle, "_init_fn", None)
-    # worker startup hooks run on the worker too
-    hooks = [init_fn] if init_fn is not None else []
-    if target is None or not all(_is_module_level(fn) for fn in [target, *hooks]):
-        return True
-    try:
-        source_file = inspect.getsourcefile(target)
-    except TypeError:
-        source_file = None
-    tree = _source_tree(source_file)
-    if tree is None:
-        log.debug("source for %s unavailable; giving it the api key", target.__name__)
-        return True
+    entry_points = [fn for fn in (target, init_fn) if fn is not None]
+    if target is None or not all(_is_module_level(fn) for fn in entry_points):
+        return None
+    return entry_points
 
-    index = _ModuleIndex(_project_dirs(source_file))
+
+def _index_module(fn: Callable) -> Optional[_ModuleIndex]:
+    """index the module that defines fn, or None without its source."""
+    try:
+        path = inspect.getsourcefile(fn)
+    except TypeError:  # builtins and c extensions
+        path = None
+    tree = _source_tree(path)
+    if tree is None:
+        log.debug("source for %s unavailable; giving it the api key", fn.__name__)
+        return None
+    index = _ModuleIndex(_project_dirs(path))
     for node in tree.body:
         index.add(node)
-    roots = [fn.__name__ for fn in [target, *hooks]]
-    if any(root not in index.defs for root in roots):
+    return index
+
+
+def makes_remote_calls(app, handle) -> bool:
+    """true unless the resource provably cannot reach another resource.
+
+    whenever the analysis cannot follow the resource, it answers true, so
+    a worker that needs the api key never goes without it.
+    """
+    entry_points = _worker_entry_points(handle)
+    if entry_points is None:
         return True
-    return _reaches_resource(index, roots, _resource_names(target, app, handle))
+
+    target = entry_points[0]
+    index = _index_module(target)
+    names = [fn.__name__ for fn in entry_points]
+    if index is None or not all(name in index.defs for name in names):
+        return True
+
+    other_resources = _resource_names(target, app, handle)
+    return _reaches_resource(index, names, other_resources)
