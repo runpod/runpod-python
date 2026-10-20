@@ -6,7 +6,7 @@ streams and finite snapshots use the host api, which supports both.
 
 import json
 import os
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import aiohttp
 
@@ -46,18 +46,15 @@ async def stream_pod_logs(
     pod_id: str,
     *,
     endpoint_id: Optional[str] = None,
-    log_type: Optional[str] = "all",
+    log_type: str = "all",
     tail: int = 100,
     since: Optional[str] = None,
-    last_event_id: Optional[str] = None,
-    on_event_id: Optional[Callable[[str], None]] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """follow a pod's logs as they arrive.
 
     yields {"source": "container"|"system", "line": str, "ts": str}
     parsed from the sse stream. pass endpoint_id for serverless workers.
-    log_type=None selects both sources through rest. last_event_id resumes
-    a stream; on_event_id receives the cursor of each delivered event.
+    ends when the server closes the stream or the caller breaks out.
     """
     params: Dict[str, Any] = {"tail": str(tail)}
     if log_type == "all":
@@ -72,32 +69,28 @@ async def stream_pod_logs(
                 f"/workers/{_path_segment(pod_id)}/logs"
             )
         url = _build_url(path)
-        if log_type:
-            params["source"] = log_type
+        params["source"] = log_type
     if since:
         params["since"] = since
-    headers = _headers()
-    if last_event_id:
-        headers["Last-Event-ID"] = last_event_id
 
-    client_timeout = aiohttp.ClientTimeout(total=STREAM_TIMEOUT_SECONDS, sock_read=60)
+    client_timeout = aiohttp.ClientTimeout(
+        total=STREAM_TIMEOUT_SECONDS, sock_read=60
+    )
     async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.get(url, params=params, headers=headers) as resp:
+        async with session.get(
+            url, params=params, headers=_headers()
+        ) as resp:
             resp.raise_for_status()
-            event_id = None
             async for raw in resp.content:
                 line = raw.decode("utf-8", "replace").strip()
-                if line.startswith("id:"):
-                    event_id = line[3:].strip()
+                # sse frames: "data: {...}"; comments (heartbeats) start
+                # with ":"
                 if not line.startswith("data:"):
                     continue
                 try:
-                    event = json.loads(line[len("data:") :].strip())
+                    yield json.loads(line[len("data:") :].strip())
                 except json.JSONDecodeError:
                     continue
-                if event_id is not None and on_event_id is not None:
-                    on_event_id(event_id)
-                yield event
 
 
 def tail_summary(logs: Dict[str, List[str]], lines: int = 20) -> str:
