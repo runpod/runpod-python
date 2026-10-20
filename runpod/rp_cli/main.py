@@ -462,7 +462,7 @@ def dev(module, once):
         """after a stop, wait for the still-running entrypoint so its remote
         calls cannot race teardown, unless a second signal forces the stop."""
         if done.done():
-            await done  # surfaces the entrypoint's own error
+            _discard_result(done)
             return
         forced = asyncio.ensure_future(force_stop.wait())
         await asyncio.wait({done, forced}, return_when=asyncio.FIRST_COMPLETED)

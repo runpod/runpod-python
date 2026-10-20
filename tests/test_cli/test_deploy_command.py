@@ -331,6 +331,48 @@ class TestDev:
         assert events == ["finished", "deleted"]
 
     @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    @pytest.mark.parametrize("stop_signal", ["SIGINT", "SIGTERM"])
+    def test_stop_signal_preserves_cancellation_on_entrypoint_failure(
+        self, tmp_path, monkeypatch, stop_signal
+    ):
+        import asyncio
+        import signal
+
+        handlers = {}
+        shield = asyncio.shield
+
+        def install_handler(loop, sig, callback):
+            handlers[sig] = callback
+
+        def stop_on_completion(future):
+            waiter = shield(future)
+            if not isinstance(future, asyncio.Task):
+                future.add_done_callback(
+                    lambda _: handlers[getattr(signal, stop_signal)]()
+                )
+            return waiter
+
+        def entrypoint(events):
+            events.append("failed")
+            raise RuntimeError("entrypoint failed while stopping")
+
+        with (
+            patch.object(
+                asyncio.SelectorEventLoop, "add_signal_handler", install_handler
+            ),
+            patch("asyncio.shield", side_effect=stop_on_completion),
+            patch(
+                "runpod.apps.watch.FileWatcher.changed",
+                side_effect=AssertionError("a stopped session must not resume watching"),
+            ) as changed,
+        ):
+            result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+
+        assert result.exit_code == 0, result.output
+        assert events == ["failed", "deleted"]
+        changed.assert_not_called()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
     def test_sigint_cleans_up_even_when_ignored_at_start(self, tmp_path, monkeypatch):
         import os
         import signal
