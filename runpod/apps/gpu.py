@@ -10,7 +10,7 @@ import os
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 log = logging.getLogger(__name__)
 
@@ -234,13 +234,40 @@ class _CatalogCache:
             or time.monotonic() - self.failed_at >= CATALOG_RETRY_SECONDS
         )
 
+    def fail(self, exc: Exception) -> None:
+        self.failed_at = time.monotonic()
+        log.warning(
+            "gpu catalog unavailable (%s); device pins use the static pool "
+            "table, which can miss newer devices in a pool",
+            exc,
+        )
 
-_catalog_cache = _CatalogCache()
+
+_catalog_caches: Dict[Tuple[str, str], _CatalogCache] = {}
 
 
 def _clear_catalog_cache() -> None:
-    global _catalog_cache
-    _catalog_cache = _CatalogCache()
+    _catalog_caches.clear()
+
+
+def _catalog_context(api_key: Optional[str] = None) -> Tuple[str, str]:
+    import runpod
+
+    base = os.environ.get("RUNPOD_API_BASE_URL")
+    url = os.environ.get(
+        "RUNPOD_GPU_CATALOG_URL",
+        f"{base.rstrip('/')}/v2/catalog/gpus" if base else CATALOG_URL,
+    )
+    key = api_key or os.environ.get("RUNPOD_API_KEY") or runpod.api_key or ""
+    return url, key
+
+
+def _catalog_headers(key: str) -> Dict[str, str]:
+    if not key:
+        raise RuntimeError(
+            "no api key configured. run `rp login` or set RUNPOD_API_KEY."
+        )
+    return {"Authorization": f"Bearer {key}"}
 
 
 def _parse_catalog(data: Any) -> Dict[str, Set[str]]:
@@ -255,15 +282,10 @@ def _parse_catalog(data: Any) -> Dict[str, Set[str]]:
     return members
 
 
-def _fetch_catalog() -> Dict[str, Set[str]]:
+def _fetch_catalog(url: str, key: str) -> Dict[str, Set[str]]:
     import requests
 
-    from .utils.network import api_key
-
-    url = os.environ.get("RUNPOD_GPU_CATALOG_URL", CATALOG_URL)
-    resp = requests.get(
-        url, headers={"Authorization": f"Bearer {api_key()}"}, timeout=10
-    )
+    resp = requests.get(url, headers=_catalog_headers(key), timeout=10)
     resp.raise_for_status()
     return _parse_catalog(resp.json())
 
@@ -276,22 +298,39 @@ def live_pool_members() -> Optional[Dict[str, Set[str]]]:
     membership. returns None when the catalog is unreachable. a result
     is kept for the process; a failure is retried after a minute.
     """
-    cache = _catalog_cache
+    context = _catalog_context()
+    cache = _catalog_caches.setdefault(context, _CatalogCache())
     if cache.may_fetch():
         try:
-            cache.members = _fetch_catalog()
+            cache.members = _fetch_catalog(*context)
         except Exception as exc:  # noqa: BLE001 - offline, auth, or malformed
-            cache.failed_at = time.monotonic()
-            log.warning(
-                "gpu catalog unavailable (%s); device pins use the static pool "
-                "table, which can miss newer devices in a pool",
-                exc,
-            )
+            cache.fail(exc)
     return cache.members
 
 
-def _pool_members(pool: str) -> Set[str]:
-    live = live_pool_members()
+async def live_pool_members_async(
+    api_key: Optional[str] = None,
+) -> Optional[Dict[str, Set[str]]]:
+    """fetch pool membership without blocking, cached by catalog url and credentials."""
+    import aiohttp
+
+    context = _catalog_context(api_key)
+    cache = _catalog_caches.setdefault(context, _CatalogCache())
+    if cache.may_fetch():
+        url, key = context
+        try:
+            headers = _catalog_headers(key)
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as response:
+                    response.raise_for_status()
+                    cache.members = _parse_catalog(await response.json())
+        except Exception as exc:
+            cache.fail(exc)
+    return cache.members
+
+
+def _pool_members(pool: str, live: Optional[Dict[str, Set[str]]]) -> Set[str]:
     if live is not None and pool in live:
         return live[pool]
     try:
@@ -309,7 +348,17 @@ def _device_pool(value: str) -> Optional[str]:
     return pool.value if pool is not None else None
 
 
-def gpu_ids_value(gpu: Optional[List[str]]) -> str:
+def needs_gpu_catalog(gpu: Optional[List[str]]) -> bool:
+    if not gpu or any(str(g).lower() == "any" for g in gpu):
+        return False
+    return any(
+        (pool := _device_pool(str(g))) is not None and pool not in gpu for g in gpu
+    )
+
+
+def gpu_ids_value(
+    gpu: Optional[List[str]], *, pool_members: Optional[Dict[str, Set[str]]] = None
+) -> str:
     """the gpuIds string for an endpoint payload.
 
     "any gpu" (no selection, or the ANY sentinel) means every pool id:
@@ -318,6 +367,9 @@ def gpu_ids_value(gpu: Optional[List[str]]) -> str:
     that pool is excluded with a "-<device id>" token so workers only
     land on the requested devices. pools named directly allow all of
     their devices.
+
+    supplying pool_members keeps serialization offline; an empty mapping
+    uses the static pool table. omitted membership is fetched synchronously.
     """
     if not gpu or any(str(g).lower() == "any" for g in gpu):
         return ",".join(g.value for g in GpuGroup.all())
@@ -336,10 +388,12 @@ def gpu_ids_value(gpu: Optional[List[str]]) -> str:
         if value not in pools:
             pools.append(value)
     device_pools = {_device_pool(d) for d in devices} - named_pools
+    if pool_members is None and device_pools:
+        pool_members = live_pool_members()
     exclusions = sorted(
         member
         for pool in device_pools
-        for member in _pool_members(pool)
+        for member in _pool_members(pool, pool_members)
         if member not in devices
     )
     return ",".join(pools + [f"-{m}" for m in exclusions])

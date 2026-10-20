@@ -449,7 +449,8 @@ class TestGpuStringResolution:
             assert fetch() is None
             assert get.call_count == 1
         # it is retried once the window passes
-        gpu_mod._catalog_cache.failed_at -= gpu_mod.CATALOG_RETRY_SECONDS
+        cache = next(iter(gpu_mod._catalog_caches.values()))
+        cache.failed_at -= gpu_mod.CATALOG_RETRY_SECONDS
         with patch("requests.get", return_value=resp):
             assert fetch() == {"AMPERE_24": {"NVIDIA L4"}}
         gpu_mod._clear_catalog_cache()
