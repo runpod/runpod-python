@@ -1,6 +1,7 @@
 """output, picker, prompt, and completion helpers shared by resource commands."""
 
 import json
+import shutil
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
@@ -72,10 +73,18 @@ def pick(message: str, choices: Sequence[tuple[str, str]], missing: str) -> str:
         raise click.UsageError(f"{missing} (none found)")
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
+    from rich.text import Text
 
+    width = max(1, shutil.get_terminal_size().columns - Text(message).cell_len - 3)
+    items = []
+    for value, label in choices:
+        name = Text(label)
+        name.truncate(width, overflow="ellipsis")
+        items.append(Choice(value, name=name.plain))
     return inquirer.fuzzy(
         message=message,
-        choices=[Choice(value, name=label) for value, label in choices],
+        choices=items,
+        wrap_lines=False,
     ).execute()
 
 
