@@ -400,10 +400,12 @@ async def test_async_log_stream_matches_public_export(peer):
         stream = sandbox.logs()
         assert type(stream) is sandbox_domain.AsyncioSandboxLogStream
         assert aiter(stream) is stream
-        assert await stream.open() is stream
+        opened_stream = await stream.open()
+        assert opened_stream is stream
         async with stream as opened:
             assert opened is stream
-            assert (await anext(opened)).line == "café"
+            event = await anext(opened)
+            assert event.line == "café"
 
 
 @pytest.mark.asyncio
