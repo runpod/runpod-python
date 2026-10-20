@@ -109,7 +109,16 @@ def _gpu_columns(product: str, count: int, cloud: Optional[str]):
                     lambda row, tier=tier: _money(row["totalPrice"].get(tier)),
                 )
             )
-        columns.append(("MAX", lambda row: max(row["maxCount"].values(), default=None)))
+        columns.append(
+            (
+                "MAX",
+                lambda row: (
+                    row["maxCount"].get(cloud)
+                    if cloud
+                    else max(row["maxCount"].values(), default=None)
+                ),
+            )
+        )
     columns += [
         ("STOCK", lambda row: (row.get("availability") or "NONE").lower()),
         ("DATA CENTERS", lambda row: _stock(row.get("dataCenters") or [])),
@@ -241,6 +250,8 @@ def catalog(
     if cloud and product == "SERVERLESS":
         raise click.UsageError("--cloud applies to pods only")
     cloud = cloud.lower() if cloud else None
+    if cpu_mode and cloud == "community":
+        raise click.UsageError("--cpu is only available in the secure cloud")
 
     with api_errors():
         if datacenters:

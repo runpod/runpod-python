@@ -153,7 +153,10 @@ def parse_cuda(values: Iterable[str]) -> tuple[Optional[str], list[str]]:
                     f"invalid cuda version '{part}'. use 12.4, 12.4,12.8, or '>=12.4'"
                 )
             if floor:
-                minimum = version
+                if minimum is None or tuple(map(int, version.split("."))) > tuple(
+                    map(int, minimum.split("."))
+                ):
+                    minimum = version
             else:
                 exact.append(version)
     if minimum and exact:
