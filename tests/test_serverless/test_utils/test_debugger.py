@@ -2,7 +2,6 @@
 Unit tests for the debugger utility functions.
 """
 
-import importlib
 import time
 import unittest
 from unittest.mock import patch
@@ -24,17 +23,46 @@ class TestDebugger(unittest.TestCase):
         self.checkpoints = Checkpoints()
         self.checkpoints.clear()
 
-    @patch("runpod.serverless.utils.rp_debugger.cpuinfo.get_cpu_info")
-    def test_key_error(self, mock_get_cpu_info):
-        """
-        Test that a KeyError is raised when an invalid key is used.
-        """
-        mock_get_cpu_info.side_effect = KeyError("Test Error")
+    def tearDown(self):
+        rp_debugger.get_processor_info.cache_clear()
 
-        importlib.reload(rp_debugger)
+    @patch("cpuinfo.get_cpu_info")
+    def test_processor_info_fallback_on_missing_brand(self, mock_get_cpu_info):
+        """
+        Missing brand_raw falls back to a placeholder instead of raising.
+        """
+        mock_get_cpu_info.return_value = {}
+        rp_debugger.get_processor_info.cache_clear()
 
-        assert mock_get_cpu_info.called
-        self.assertEqual(rp_debugger.PROCESSOR, "Unable to get processor info.")
+        self.assertEqual(
+            rp_debugger.get_processor_info(), "Unable to get processor info."
+        )
+
+    @patch("cpuinfo.get_cpu_info")
+    def test_processor_info_probed_once(self, mock_get_cpu_info):
+        """
+        The CPU probe runs on first use only and is cached afterwards.
+        """
+        mock_get_cpu_info.return_value = {"brand_raw": "Test CPU"}
+        rp_debugger.get_processor_info.cache_clear()
+
+        first = rp_debugger.get_processor_info()
+        second = rp_debugger.get_processor_info()
+
+        self.assertEqual((first, second), ("Test CPU", "Test CPU"))
+        self.assertEqual(mock_get_cpu_info.call_count, 1)
+
+    @patch("cpuinfo.get_cpu_info")
+    def test_debugger_output_includes_processor(self, mock_get_cpu_info):
+        """
+        Debugger output reports the probed processor name.
+        """
+        mock_get_cpu_info.return_value = {"brand_raw": "Test CPU"}
+        rp_debugger.get_processor_info.cache_clear()
+
+        system_info = get_debugger_output()["system_info"]
+
+        self.assertEqual(system_info["processor"], "Test CPU")
 
     def test_checkpoints(self):
         """

@@ -6,20 +6,30 @@ A collection of functions to help with debugging.
 
 import datetime
 from datetime import timezone
+import functools
 import platform
 import time
-
-import cpuinfo
 
 # ---------------------------------------------------------------------------- #
 #                                  System Info                                 #
 # ---------------------------------------------------------------------------- #
 OS_INFO = f"{platform.system()} {platform.release()}"
 
-try:
-    PROCESSOR = cpuinfo.get_cpu_info()["brand_raw"]
-except KeyError:
-    PROCESSOR = "Unable to get processor info."
+PROCESSOR_UNKNOWN = "Unable to get processor info."
+
+
+@functools.cache
+def get_processor_info():
+    """
+    Return the processor brand name, probing the CPU on first call only.
+
+    The probe takes ~75ms, so it is kept off the worker import path and only
+    runs when a job requests debugger output.
+    """
+    import cpuinfo  # pylint: disable=import-outside-toplevel
+
+    return cpuinfo.get_cpu_info().get("brand_raw", PROCESSOR_UNKNOWN)
+
 
 PYTHON_VERSION = platform.python_version()
 
@@ -192,7 +202,7 @@ def get_debugger_output():
 
     system_info = {
         "os": OS_INFO,
-        "processor": PROCESSOR,
+        "processor": get_processor_info(),
         "python_version": PYTHON_VERSION,
         "runpod": runpod.__version__,
     }
