@@ -5,7 +5,7 @@ import json
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from email.utils import format_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -209,7 +209,7 @@ def test_budget_reservations_and_single_reset_probe(clock):
     bucket.release()
     clock.sleep(10)
     assert bucket.acquire() == 0
-    assert bucket.acquire() > 0
+    assert isinstance(bucket.acquire(), Future)
     bucket.update(200, {"RateLimit": '"minute";r=5;t=60'}, 0)
     bucket.release()
     assert bucket.acquire() == 0
@@ -262,7 +262,7 @@ def test_headerless_cooldown_allows_one_probe(clock):
     bucket.update(429, {"Retry-After": "1"}, 0)
     clock.sleep(1)
     assert bucket.acquire() == 0
-    assert bucket.acquire() > 0
+    assert isinstance(bucket.acquire(), Future)
     bucket.update(200, {}, 0)
     bucket.release()
     assert bucket.acquire() == 0
@@ -295,7 +295,7 @@ def test_in_flight_requests_are_subtracted_from_learned_budget(clock):
 def test_initial_discovery_allows_one_request_then_headerless_concurrency(clock):
     bucket = _rate_limit._Bucket()
     assert bucket.acquire() == 0
-    assert bucket.acquire() > 0
+    assert isinstance(bucket.acquire(), Future)
     bucket.update(200, {}, 0)
     bucket.release()
     assert bucket.acquire() == 0
@@ -628,25 +628,98 @@ def test_coordination_waits_do_not_consume_budget(
             bucket.update(429, {"Retry-After": "1"}, 0)
         clock.sleep(1)
         assert bucket.acquire() == 0
-        sleeps = []
+        waiting = threading.Event()
+        acquire = bucket.acquire
 
-        def sleep(delay):
-            sleeps.append(delay)
+        def observe_acquire(*args):
+            result = acquire(*args)
+            if isinstance(result, Future):
+                waiting.set()
+            return result
+
+        def finish_probe():
+            assert waiting.wait(2)
             bucket.update(200, {}, 0)
             bucket.release()
-            clock.sleep(delay)
 
-        async def async_sleep(delay):
-            sleep(delay)
+        def unexpected_sleep(*args):
+            pytest.fail("coordination must wait for a notification")
 
-        monkeypatch.setattr(rest.time, "sleep", sleep)
-        monkeypatch.setattr(rest.asyncio, "sleep", async_sleep)
-        assert request_rest(
-            "GET", "/v2/pods", api_key="key", max_rate_limit_wait=0
-        ) == {"id": "pod-1"}
-        assert sleeps == [0.05]
+        monkeypatch.setattr(bucket, "acquire", observe_acquire)
+        monkeypatch.setattr(rest.time, "sleep", unexpected_sleep)
+        monkeypatch.setattr(rest.asyncio, "sleep", unexpected_sleep)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            probe = executor.submit(finish_probe)
+            assert request_rest(
+                "GET", "/v2/pods", api_key="key", max_rate_limit_wait=0
+            ) == {"id": "pod-1"}
+            probe.result(timeout=2)
+        assert waiting.is_set()
+        assert not bucket.waiters
         assert bucket.in_flight == 0
         assert len(quota_server["requests"]) == 1
+
+
+def test_nonexhausted_window_reset_preserves_concurrency(clock):
+    bucket = _rate_limit._Bucket()
+    bucket.update(200, {"RateLimit": '"minute";r=5;t=1'}, 0)
+    assert bucket.acquire() == 0
+    clock.sleep(1)
+    assert bucket.acquire() == 0
+    assert bucket.acquire() == 0
+    assert bucket.windows['"minute"'][0] is None
+    for _ in range(3):
+        bucket.release()
+
+
+@pytest.mark.parametrize("notification", ["update", "release"])
+def test_probe_waiters_receive_notifications_without_lost_wakeups(notification):
+    bucket = _rate_limit._Bucket()
+    assert bucket.acquire() == 0
+    waiters = [bucket.acquire() for _ in range(10)]
+    assert all(isinstance(waiter, Future) and not waiter.done() for waiter in waiters)
+    waiters[0].cancel()
+    assert len(bucket.waiters) == 9
+    if notification == "update":
+        bucket.update(200, {}, 0)
+    else:
+        bucket.release()
+    assert all(waiter.result(timeout=0) is None for waiter in waiters[1:])
+    assert not bucket.waiters
+    if notification == "update":
+        bucket.release()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_probe_waiter_is_removed(quota_server, monkeypatch):
+    waiting = asyncio.Event()
+    with rest.rate_limits.bucket(rest._build_url("/v2/pods"), "key") as bucket:
+        assert bucket.acquire() == 0
+        acquire = bucket.acquire
+
+        def observe_acquire(*args):
+            result = acquire(*args)
+            if isinstance(result, Future):
+                waiting.set()
+            return result
+
+        monkeypatch.setattr(bucket, "acquire", observe_acquire)
+        pending = asyncio.create_task(
+            rest.run_rest_request_async("GET", "/v2/pods", api_key="key")
+        )
+        try:
+            await asyncio.wait_for(waiting.wait(), 2)
+            assert len(bucket.waiters) == 1
+            pending.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert not bucket.waiters
+            assert bucket.in_flight == 1
+            assert not quota_server["requests"]
+        finally:
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+            bucket.release()
 
 
 def test_failed_request_keeps_its_quota_reservation(clock):

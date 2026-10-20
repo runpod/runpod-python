@@ -4,6 +4,7 @@ import asyncio
 import json as json_module
 import os
 import time
+from concurrent.futures import Future
 from typing import Any, Mapping, Optional
 
 import aiohttp
@@ -110,8 +111,11 @@ def run_rest_request(
     budget = _RetryBudget(max_retries, max_rate_limit_wait, f"{method.upper()} {path}")
     with rate_limits.bucket(url, key) as bucket:
         for attempt in range(max_retries + 1):
-            while delay := bucket.acquire(budget):
-                time.sleep(delay)
+            while wait := bucket.acquire(budget):
+                if isinstance(wait, Future):
+                    wait.result()
+                else:
+                    time.sleep(wait)
             try:
                 started_at = time.monotonic()
                 response = requests.request(
@@ -179,8 +183,11 @@ async def run_rest_request_async(
         session._retry_connection = False  # pylint: disable=protected-access
         with rate_limits.bucket(url, key) as bucket:
             for attempt in range(max_retries + 1):
-                while delay := bucket.acquire(budget):
-                    await asyncio.sleep(delay)
+                while wait := bucket.acquire(budget):
+                    if isinstance(wait, Future):
+                        await asyncio.wrap_future(wait)
+                    else:
+                        await asyncio.sleep(wait)
                 try:
                     started_at = time.monotonic()
                     async with session.request(

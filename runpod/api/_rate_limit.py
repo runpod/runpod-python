@@ -7,6 +7,7 @@ import random
 import re
 import threading
 import time
+from concurrent.futures import Future
 from contextlib import contextmanager
 from datetime import timezone
 from email.utils import parsedate_to_datetime
@@ -73,6 +74,7 @@ class _RetryBudget:
 class _Bucket:
     def __init__(self):
         self.lock = threading.Lock()
+        self.waiters: set[Future[None]] = set()
         self.windows: dict[str, tuple[Optional[int], float]] = {}
         self.estimates: dict[str, int] = {}
         self.reset_lower_bounds: dict[str, float] = {}
@@ -82,32 +84,45 @@ class _Bucket:
         self.users = 0
         self.last_used = time.monotonic()
 
-    def acquire(self, budget: Optional[_RetryBudget] = None) -> float:
+    def acquire(self, budget: Optional[_RetryBudget] = None) -> float | Future[None]:
         with self.lock:
             now = time.monotonic()
             delay = max(0.0, self.blocked_until - now)
-            probing = self.in_flight and (
-                not self.discovered or (self.blocked_until and not delay)
-            )
             for name, (remaining, reset_at) in self.windows.items():
-                if now >= reset_at:
+                if remaining is not None and now >= reset_at:
                     self.windows[name] = (None, reset_at)
-                    if self.in_flight:
-                        probing = True
+                    if remaining == 0:
+                        self.discovered = False
                 elif remaining == 0:
                     delay = max(delay, reset_at - now)
             if delay:
                 if budget is not None:
                     budget.wait(delay)
                 return delay
-            if probing:
-                return 0.05
+            if self.in_flight and (
+                not self.discovered or (self.blocked_until and not delay)
+            ):
+                waiter: Future[None] = Future()
+                self.waiters.add(waiter)
+                waiter.add_done_callback(self._remove_waiter)
+                return waiter
             self.in_flight += 1
             for name, (remaining, reset_at) in self.windows.items():
                 if remaining is not None:
                     self.windows[name] = (max(0, remaining - 1), reset_at)
                     self.estimates[name] = max(0, self.estimates[name] - 1)
             return 0.0
+
+    def _remove_waiter(self, waiter: Future[None]) -> None:
+        with self.lock:
+            self.waiters.discard(waiter)
+
+    def _notify_waiters(self) -> None:
+        with self.lock:
+            waiters, self.waiters = self.waiters, set()
+        for waiter in waiters:
+            if waiter.set_running_or_notify_cancel():
+                waiter.set_result(None)
 
     def update(
         self,
@@ -173,7 +188,8 @@ class _Bucket:
                     0.0,
                 )
                 self.blocked_until = max(self.blocked_until, now + retry_after)
-            return retry_after
+        self._notify_waiters()
+        return retry_after
 
     def release(self):
         with self.lock:
@@ -184,6 +200,7 @@ class _Bucket:
                         max(0, self.estimates[name] - self.in_flight),
                         reset_at,
                     )
+        self._notify_waiters()
 
 
 class _RateLimits:
