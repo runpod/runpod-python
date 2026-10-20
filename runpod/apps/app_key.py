@@ -80,16 +80,38 @@ async def _secret_has_live_key(
 
 async def ensure_app_key(api, app_name: str, env_name: Optional[str] = None) -> Secret:
     """the secret holding the app environment's api key, minting the key
-    and the secret on first use."""
+    and the secret on first use. refresh preserves other same-name keys for
+    concurrent deployments; teardown revokes every matching key."""
     name = app_key_name(app_name, env_name)
     secret = await _find_secret(api, name)
     if secret:
         if await _secret_has_live_key(api, name, secret):
             return Secret(name)
-        await api.delete_secret(secret["id"])
+        try:
+            await api.delete_secret(secret["id"])
+        except QueryError as exc:
+            if exc.status_code != 404:
+                raise
     try:
         key = await api.create_api_key(name, APP_KEY_SCOPES)
     except (AuthenticationError, QueryError) as exc:
+        if not (
+            isinstance(exc, AuthenticationError)
+            or exc.status_code in (401, 403)
+            or (
+                exc.status_code in (None, 400)
+                and any(
+                    reason in str(exc).casefold()
+                    for reason in (
+                        "not grantable",
+                        "permission",
+                        "unauthorized",
+                        "forbidden",
+                    )
+                )
+            )
+        ):
+            raise
         exc.message = (
             f"{exc}. Automatic worker credentials require API key creation "
             "permission and permission to grant: "
@@ -102,7 +124,7 @@ async def ensure_app_key(api, app_name: str, env_name: Optional[str] = None) -> 
     description = f"api key {key['id']} for {target} workers"
     try:
         await api.create_secret(name, key["rawKey"], description=description)
-    except Exception as create_error:
+    except BaseException as create_error:
         try:
             secret = await _find_secret(api, name)
         except Exception:
@@ -132,7 +154,7 @@ async def ensure_app_key(api, app_name: str, env_name: Optional[str] = None) -> 
                     "could not revoke api key for secret %s; retry credential cleanup",
                     name,
                 )
-        if secret:
+        if secret and isinstance(create_error, Exception):
             try:
                 if await _secret_has_live_key(
                     api, name, secret, None if owns_secret else key["id"]

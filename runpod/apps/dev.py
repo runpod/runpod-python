@@ -438,9 +438,13 @@ class DevSession:
         for app_name in list(self._app_keys):
             try:
                 await delete_app_key(self.api, app_name)
-            except Exception:
-                failures.append(f"credentials for {app_name}")
-                log.warning("failed to delete dev credentials for %s", app_name)
+            except Exception as exc:
+                failures.append(f"credentials for {app_name} ({type(exc).__name__})")
+                log.warning(
+                    "failed to delete dev credentials for %s (%s)",
+                    app_name,
+                    type(exc).__name__,
+                )
             else:
                 del self._app_keys[app_name]
         if failures:
@@ -450,7 +454,13 @@ class DevSession:
         try:
             await self.start()
         except BaseException:
-            await self.stop()
+            try:
+                await self.stop()
+            except BaseException as exc:
+                log.warning(
+                    "failed to clean up dev session after startup failure (%s)",
+                    type(exc).__name__,
+                )
             raise
         return self
 

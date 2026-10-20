@@ -1,6 +1,7 @@
 """worker credentials: workers get an api key minted per app environment,
 and templates only ever carry a secret reference to it."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, call
 
@@ -123,6 +124,187 @@ class TestAppKeyName:
 
 
 class TestEnsureAppKey:
+
+    @pytest.mark.parametrize(
+        "outcome", ["absent", "committed", "winner", "unknown", "revoke_failed"]
+    )
+    async def test_cancelled_secret_creation_reconciles_and_propagates(
+        self, outcome, caplog
+    ):
+        api = _api()
+        entered = asyncio.Event()
+        blocked = asyncio.Event()
+
+        async def create_secret(name, value, description):
+            if outcome in ("committed", "winner"):
+                api.list_secrets.return_value = [
+                    {
+                        "id": "s1",
+                        "name": name,
+                        "description": (
+                            description if outcome == "committed" else "another owner"
+                        ),
+                    }
+                ]
+                api.list_api_keys.return_value = [{"id": "key-new", "name": name}]
+            elif outcome == "unknown":
+                api.list_secrets.side_effect = AuthenticationError(APP_KEY)
+            elif outcome == "revoke_failed":
+                api.delete_api_key.side_effect = RuntimeError(APP_KEY)
+            entered.set()
+            await blocked.wait()
+
+        api.create_secret.side_effect = create_secret
+        task = asyncio.create_task(ensure_app_key(api, "pipe", "prod"))
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 2)
+            if outcome in ("committed", "unknown"):
+                api.delete_api_key.assert_not_awaited()
+            else:
+                api.delete_api_key.assert_awaited_once_with("key-new")
+            assert APP_KEY not in caplog.text
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_base_exception_after_key_creation_runs_rollback(self):
+        api = _api()
+        failure = BaseException("interrupted")
+        api.create_secret.side_effect = failure
+        with pytest.raises(BaseException) as caught:
+            await ensure_app_key(api, "pipe", "prod")
+        assert caught.value is failure
+        api.delete_api_key.assert_awaited_once_with("key-new")
+
+    async def test_concurrent_stale_secret_refresh_reconciles_one_live_pair(self):
+        api = _api()
+        stale = {
+            "id": "stale",
+            "name": PROD_SECRET,
+            "description": "api key revoked for pipe/prod workers",
+        }
+        secret = stale
+        keys = {}
+        reads = 0
+        both_read = asyncio.Event()
+
+        async def list_secrets(name):
+            nonlocal reads
+            if reads < 2:
+                reads += 1
+                if reads == 2:
+                    both_read.set()
+                await both_read.wait()
+                return [stale]
+            return [secret] if secret else []
+
+        async def list_keys():
+            return [{"id": key_id, "name": PROD_SECRET} for key_id in keys]
+
+        async def delete_secret(secret_id):
+            nonlocal secret
+            if secret is None or secret["id"] != secret_id:
+                raise QueryError("not found", status_code=404)
+            secret = None
+
+        async def create_key(name, scopes):
+            key_id = f"key-{api.create_api_key.await_count}"
+            keys[key_id] = APP_KEY
+            return {"id": key_id, "rawKey": APP_KEY}
+
+        async def create_secret(name, value, description):
+            nonlocal secret
+            if secret is not None:
+                raise QueryError("conflict", status_code=409)
+            secret = {"id": "fresh", "name": name, "description": description}
+
+        async def delete_key(key_id):
+            del keys[key_id]
+
+        api.list_secrets.side_effect = list_secrets
+        api.list_api_keys.side_effect = list_keys
+        api.delete_secret.side_effect = delete_secret
+        api.create_api_key.side_effect = create_key
+        api.create_secret.side_effect = create_secret
+        api.delete_api_key.side_effect = delete_key
+        results = await asyncio.wait_for(
+            asyncio.gather(*(ensure_app_key(api, "pipe", "prod") for _ in range(2))),
+            2,
+        )
+        assert [result.name for result in results] == [PROD_SECRET, PROD_SECRET]
+        assert api.delete_secret.await_count == 2
+        assert api.create_api_key.await_count == 2
+        assert len(keys) == 1
+        assert (
+            secret["description"] == f"api key {next(iter(keys))} for pipe/prod workers"
+        )
+
+    @pytest.mark.parametrize("status", [403, 500])
+    async def test_stale_secret_delete_errors_other_than_missing_propagate(
+        self, status
+    ):
+        api = _api([{"id": "stale", "name": PROD_SECRET}])
+        failure = QueryError("delete failed", status_code=status)
+        api.delete_secret.side_effect = failure
+        with pytest.raises(QueryError) as caught:
+            await ensure_app_key(api, "pipe", "prod")
+        assert caught.value is failure
+        api.create_api_key.assert_not_awaited()
+
+    async def test_refresh_preserves_other_keys_until_teardown(self):
+        api = _api(
+            [
+                {
+                    "id": "stale",
+                    "name": PROD_SECRET,
+                    "description": "api key revoked for pipe/prod workers",
+                }
+            ],
+            [{"id": "orphan", "name": PROD_SECRET}],
+        )
+        await ensure_app_key(api, "pipe", "prod")
+        api.delete_api_key.assert_not_awaited()
+        api.list_secrets.return_value = [{"id": "fresh", "name": PROD_SECRET}]
+        api.list_api_keys.return_value.append({"id": "key-new", "name": PROD_SECRET})
+        await delete_app_key(api, "pipe", "prod")
+        assert api.delete_api_key.await_args_list == [call("orphan"), call("key-new")]
+
+    @pytest.mark.parametrize(
+        "message,status",
+        [
+            ("max of 50 API keys are allowed", None),
+            ("rate limit exceeded", 429),
+            ("permission service unavailable", 503),
+            ("upstream error", 500),
+            ("invalid scope", 400),
+        ],
+    )
+    async def test_nonpermission_key_errors_are_unchanged(self, message, status):
+        api = _api()
+        failure = QueryError(message, status_code=status, errors=["detail"])
+        api.create_api_key.side_effect = failure
+        with pytest.raises(QueryError) as caught:
+            await ensure_app_key(api, "pipe", "prod")
+        assert caught.value is failure
+        assert str(caught.value) == message
+        assert caught.value.errors == ["detail"]
+        api.create_secret.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "message,status",
+        [("denied", 403), ("unauthorized", 401), ("permission denied", None)],
+    )
+    async def test_permission_query_errors_include_override_guidance(
+        self, message, status
+    ):
+        api = _api()
+        api.create_api_key.side_effect = QueryError(message, status_code=status)
+        with pytest.raises(QueryError, match="RUNPOD_API_KEY"):
+            await ensure_app_key(api, "pipe", "prod")
+
     async def test_mints_scoped_key_into_secret(self):
         api = _api()
         secret = await ensure_app_key(api, "pipe", "prod")
@@ -567,6 +749,53 @@ class TestDeployedEndpoints:
 
 
 class TestDevEndpoints:
+
+    @pytest.mark.parametrize("cancelled", [False, True])
+    async def test_start_failure_survives_credential_cleanup_failure(
+        self, cancelled, caplog
+    ):
+        app, _, _ = _pipeline_app()
+        api = _api(
+            [{"id": "s1", "name": DEV_SECRET}],
+            [{"id": "k1", "name": DEV_SECRET}],
+        )
+        failure = (
+            asyncio.CancelledError("interrupted")
+            if cancelled
+            else RuntimeError("provisioning failed")
+        )
+        api.save_endpoint.side_effect = failure
+        api.delete_api_key.side_effect = QueryError(APP_KEY, status_code=503)
+        session = DevSession([app], api=api)
+        with pytest.raises(type(failure)) as caught:
+            async with session:
+                pytest.fail("startup must fail")
+        assert caught.value is failure
+        assert "QueryError" in caplog.text
+        assert "failed to clean up dev session" in caplog.text
+        assert APP_KEY not in caplog.text
+        assert session._app_keys
+        api.delete_api_key.side_effect = None
+        await session.stop()
+        assert not session._app_keys
+
+    async def test_credential_cleanup_reports_type_without_sensitive_message(
+        self, caplog
+    ):
+        app, _, _ = _pipeline_app()
+        api = _api(
+            [{"id": "s1", "name": DEV_SECRET}],
+            [{"id": "k1", "name": DEV_SECRET}],
+        )
+        session = DevSession([app], api=api)
+        await session.start()
+        api.delete_api_key.side_effect = QueryError(APP_KEY, status_code=503)
+        with pytest.raises(
+            AppError, match=r"credentials for pipe \(QueryError\)"
+        ) as caught:
+            await session.stop()
+        assert APP_KEY not in str(caught.value)
+        assert APP_KEY not in caplog.text
 
     async def test_stop_deletes_credentials_without_a_registered_app(self):
         app, _, _ = _pipeline_app()
