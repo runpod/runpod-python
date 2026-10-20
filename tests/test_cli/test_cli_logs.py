@@ -29,6 +29,7 @@ def test_pod_snapshot_uses_sdk_reader(monkeypatch, capsys, as_json):
     assert calls[0][1]["log_type"] is None
     assert calls[0][1]["tail"] == 7
     assert calls[0][1]["since"] == "2025-01-01T00:00:00Z"
+    assert calls[0][1]["idle_timeout"] == logs.SNAPSHOT_IDLE_SECONDS
 
 
 def test_worker_snapshot_is_sorted_and_filterable(monkeypatch, capsys):
@@ -63,7 +64,7 @@ def test_snapshot_closes_idle_or_live_stream(monkeypatch, capsys, empty):
             if not empty:
                 yield event("backfill")
                 yield event("live", "2999-01-01T00:00:00Z")
-            await asyncio.sleep(10)
+            await asyncio.sleep(kwargs["idle_timeout"])
         finally:
             closed.append(True)
 
@@ -77,6 +78,34 @@ def test_empty_workers(monkeypatch, capsys):
     monkeypatch.setattr(logs, "run_rest_request", lambda *a, **k: {"workers": []})
     logs.show_logs(endpoint_id="ep1")
     assert "no workers" in capsys.readouterr().out
+
+
+def test_snapshot_propagates_connection_timeout(monkeypatch):
+    async def stream(*args, **kwargs):
+        raise asyncio.TimeoutError("connection timed out")
+        yield
+
+    monkeypatch.setattr(logs, "stream_pod_logs", stream)
+    with pytest.raises(click.ClickException, match="connection timed out"):
+        logs.show_logs("pod1")
+
+
+def test_snapshot_surfaces_delayed_authentication_failure(monkeypatch):
+    monkeypatch.setattr(logs, "SNAPSHOT_IDLE_SECONDS", 0.001)
+
+    async def stream(*args, **kwargs):
+        await asyncio.sleep(0.03)
+        raise aiohttp.ClientResponseError(
+            SimpleNamespace(real_url="https://api.runpod.io/v2/pods/pod1/logs"),
+            (),
+            status=403,
+            message="denied",
+        )
+        yield
+
+    monkeypatch.setattr(logs, "stream_pod_logs", stream)
+    with pytest.raises(click.ClickException, match="denied"):
+        logs.show_logs("pod1")
 
 
 @pytest.mark.parametrize(
@@ -114,6 +143,7 @@ async def test_follow_resumes_and_cancels_streams(monkeypatch, capsys):
     monkeypatch.setattr(logs, "WORKER_POLL_SECONDS", 0.01)
 
     async def stream(worker, **kwargs):
+        assert kwargs["idle_timeout"] is None
         resumes.append(kwargs["last_event_id"])
         try:
             if len(resumes) == 1:

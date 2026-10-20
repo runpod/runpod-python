@@ -1,5 +1,6 @@
 """unit tests for pod log access."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -87,6 +88,7 @@ class TestStreamPodLogs:
             [
                 b"id: cursor2\n",
                 b'data: {"source":"system","line":"ready","ts":"t2"}\n',
+                b"\n",
             ]
         )
         session_cm, session = _mock_session(response)
@@ -121,11 +123,14 @@ class TestStreamPodLogs:
             b"data: "
             + json.dumps({"source": "container", "line": "hi", "ts": "t1"}).encode()
             + b"\n",
+            b"\n",
             b"garbage\n",
             b"data: not-json\n",
+            b"\n",
             b"data: "
             + json.dumps({"source": "system", "line": "boot", "ts": "t2"}).encode()
             + b"\n",
+            b"\n",
         ]
         response = MagicMock()
         response.raise_for_status = MagicMock()
@@ -142,6 +147,107 @@ class TestStreamPodLogs:
         params = session.get.call_args[1]["params"]
         assert params["stream"] == "true"
         assert params["tail"] == "100"
+
+    @pytest.mark.parametrize("id_first", [False, True])
+    async def test_cursor_matches_each_complete_frame(self, monkeypatch, id_first):
+        monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+        frames = []
+        for index in range(2):
+            fields = [
+                f"id: cursor{index}\n".encode(),
+                f'data: {{"line": {index}}}\n'.encode(),
+            ]
+            frames.extend(fields if id_first else reversed(fields))
+            frames.append(b"\n")
+        response = MagicMock()
+        response.content = _FakeContent(frames)
+        session_cm, _ = _mock_session(response)
+        cursors = []
+        with patch("aiohttp.ClientSession", return_value=session_cm):
+            stream = stream_pod_logs("pod1", on_event_id=cursors.append)
+            assert await anext(stream) == {"line": 0}
+            assert cursors == ["cursor0"]
+            assert await anext(stream) == {"line": 1}
+            assert cursors == ["cursor0", "cursor1"]
+            await stream.aclose()
+
+    async def test_multiline_data_and_incomplete_frames(self, monkeypatch):
+        monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+        response = MagicMock()
+        response.content = _FakeContent(
+            [
+                b'data: {"source": "system",\r\n',
+                b'data: "line": "ready"}\r\n',
+                b"id: delivered\r\n",
+                b"\r\n",
+                b'data: {"line": "incomplete"}\n',
+                b"id: incomplete\n",
+            ]
+        )
+        session_cm, _ = _mock_session(response)
+        cursors = []
+        with patch("aiohttp.ClientSession", return_value=session_cm):
+            events = [
+                e async for e in stream_pod_logs("pod1", on_event_id=cursors.append)
+            ]
+        assert events == [{"source": "system", "line": "ready"}]
+        assert cursors == ["delivered"]
+
+    @pytest.mark.parametrize("status", [200, 403])
+    async def test_idle_timeout_starts_after_response_headers(
+        self, monkeypatch, status
+    ):
+        monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+        response = MagicMock()
+        response.content = _FakeContent([b'data: {"line": "ready"}\n', b"\n"])
+        if status == 403:
+            response.raise_for_status.side_effect = web.HTTPForbidden()
+        session_cm, session = _mock_session(response)
+
+        async def connect():
+            await asyncio.sleep(0.03)
+            return response
+
+        session.get.return_value.__aenter__.side_effect = connect
+        with patch("aiohttp.ClientSession", return_value=session_cm):
+            stream = stream_pod_logs("pod1", idle_timeout=0.001)
+            if status == 403:
+                with pytest.raises(web.HTTPForbidden):
+                    await anext(stream)
+            else:
+                assert [e async for e in stream] == [{"line": "ready"}]
+        session.get.return_value.__aexit__.assert_awaited_once()
+
+    async def test_idle_timeout_closes_established_stream(self, monkeypatch):
+        monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+        closed = []
+
+        async def content():
+            try:
+                yield b'data: {"line": "ready"}\n'
+                yield b"\n"
+                await asyncio.sleep(10)
+            finally:
+                closed.append(True)
+
+        response = MagicMock()
+        response.content = content()
+        session_cm, session = _mock_session(response)
+        with patch("aiohttp.ClientSession", return_value=session_cm):
+            events = [e async for e in stream_pod_logs("pod1", idle_timeout=0.001)]
+        assert events == [{"line": "ready"}]
+        assert closed == [True]
+        session.get.return_value.__aexit__.assert_awaited_once()
+
+    async def test_connection_timeout_propagates(self, monkeypatch):
+        monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+        session_cm, session = _mock_session(MagicMock())
+        session.get.return_value.__aenter__.side_effect = asyncio.TimeoutError(
+            "connection timed out"
+        )
+        with patch("aiohttp.ClientSession", return_value=session_cm):
+            with pytest.raises(asyncio.TimeoutError, match="connection timed out"):
+                await anext(stream_pod_logs("pod1", idle_timeout=0.001))
 
     @pytest.mark.parametrize(
         "endpoint_id,log_type,owner",

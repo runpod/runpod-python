@@ -231,6 +231,32 @@ class TestList:
         assert "no pods" in result.output
         assert api.calls[0][2] == {"includeClusterPods": "true"}
 
+    @pytest.mark.parametrize("runtime", [None, {}, {"uptime": 0}])
+    @pytest.mark.parametrize("as_json", [False, True])
+    def test_filters_use_displayed_status(self, runtime, as_json):
+        starting = {**POD, "id": "starting-pod", "runtime": runtime}
+        api = FakeApi(
+            {
+                ("GET", "/v2/pods"): {
+                    "pods": [POD, starting],
+                    "pagination": {"hasNextPage": False, "nextCursor": None},
+                }
+            }
+        )
+        for status, expected, excluded in (
+            ("starting", "starting-pod", "pod123"),
+            ("running", "pod123", "starting-pod"),
+        ):
+            result = _invoke(
+                ["list", "--status", status, *(["--json"] if as_json else [])], api=api
+            )
+            assert result.exit_code == 0, result.output
+            if as_json:
+                assert [p["id"] for p in json.loads(result.stdout)] == [expected]
+            else:
+                assert expected in result.stdout
+                assert excluded not in result.stdout
+
     def test_api_error_is_clean(self):
         api = FakeApi({("GET", "/v2/pods"): error.AuthenticationError("Unauthorized")})
         result = _invoke(["list"], api=api)
@@ -479,6 +505,16 @@ class TestCreateContainer:
 
 
 class TestCreateValidation:
+    @pytest.mark.parametrize("option", ["--cmd", "--entrypoint"])
+    @pytest.mark.parametrize("value", ["python 'unclosed", 'python "unclosed'])
+    def test_malformed_command_quoting(self, option, value):
+        result = _invoke(
+            ["create", "a", "--gpu", "4090", "--image", "x", option, value]
+        )
+        assert result.exit_code == 2
+        assert f"Invalid value for {option}" in result.output
+        assert not result.api.made("POST", "/v2/pods")
+
     @pytest.mark.parametrize(
         "args, message",
         [
@@ -575,6 +611,13 @@ class TestWait:
 
 
 class TestUpdate:
+    @pytest.mark.parametrize("option", ["--cmd", "--entrypoint"])
+    def test_malformed_command_quoting(self, option):
+        result = _invoke(["update", "pod123", option, "python 'unclosed"])
+        assert result.exit_code == 2
+        assert f"Invalid value for {option}" in result.output
+        assert not result.api.made("PATCH", "/v2/pods/pod123")
+
     def test_nothing_to_update(self):
         result = _invoke(["update", "pod123"])
         assert result.exit_code == 2
@@ -649,6 +692,57 @@ class TestActions:
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout)["runtime"] == {"uptime": 1}
         assert "started pod pod456" in result.stderr
+
+    def test_restart_wait_rejects_recent_pre_action_runtime(self):
+        previous = {**POD, "runtime": {"uptime": 1}}
+        restarted = {**previous, "startedAt": "2026-10-19T20:02:00Z"}
+        api = FakeApi(
+            {
+                ("GET", "/v2/pods/pod123"): [
+                    previous,
+                    previous,
+                    {**previous, "runtime": None},
+                    restarted,
+                ]
+            }
+        )
+        result = _invoke(["restart", "pod123", "--wait", "--json"], api=api)
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == restarted
+        assert [call[:2] for call in api.calls] == [
+            ("GET", "/v2/pods/pod123"),
+            ("POST", "/v2/pods/pod123/action"),
+            ("GET", "/v2/pods/pod123"),
+            ("GET", "/v2/pods/pod123"),
+            ("GET", "/v2/pods/pod123"),
+        ]
+
+    @pytest.mark.parametrize("started_at", [None, POD["startedAt"]])
+    def test_restart_wait_requires_new_start_timestamp(self, monkeypatch, started_at):
+        monkeypatch.setattr(pod_module, "WAIT_TIMEOUT", -1)
+        stale = {**POD, "runtime": {"uptime": 1}, "startedAt": started_at}
+        api = FakeApi({("GET", "/v2/pods/pod123"): stale})
+        result = _invoke(["restart", "pod123", "--wait"], api=api)
+        assert result.exit_code == 1
+        assert "still running" in result.output
+
+    def test_restart_wait_rejects_stale_runtime_with_new_timestamp(self):
+        restarted = {**POD, "startedAt": "2026-10-19T20:02:00Z"}
+        ready = {**restarted, "runtime": {"uptime": 1}}
+        api = FakeApi({("GET", "/v2/pods/pod123"): [POD, restarted, ready]})
+        result = _invoke(["restart", "pod123", "--wait", "--json"], api=api)
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == ready
+        assert sum(call[:2] == ("GET", "/v2/pods/pod123") for call in api.calls) == 3
+
+    def test_restart_wait_rejects_recent_runtime_with_new_timestamp(self, monkeypatch):
+        monkeypatch.setattr(pod_module, "WAIT_TIMEOUT", -1)
+        previous = {**POD, "runtime": {"uptime": 1}}
+        restarted = {**previous, "startedAt": "2026-10-19T20:02:00Z"}
+        api = FakeApi({("GET", "/v2/pods/pod123"): [previous, restarted]})
+        result = _invoke(["restart", "pod123", "--wait"], api=api)
+        assert result.exit_code == 1
+        assert "still running" in result.output
 
     def test_picker_offers_pods_that_allow_the_action(self):
         with patch("InquirerPy.inquirer.fuzzy") as fuzzy:

@@ -4,6 +4,7 @@ single-source streams use rest pod or serverless-worker routes. combined
 streams and finite snapshots use the host api, which supports both.
 """
 
+import asyncio
 import json
 import os
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
@@ -51,6 +52,7 @@ async def stream_pod_logs(
     since: Optional[str] = None,
     last_event_id: Optional[str] = None,
     on_event_id: Optional[Callable[[str], None]] = None,
+    idle_timeout: Optional[float] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """follow a pod's logs as they arrive.
 
@@ -58,6 +60,8 @@ async def stream_pod_logs(
     parsed from the sse stream. pass endpoint_id for serverless workers.
     log_type=None selects both sources through rest. last_event_id resumes
     a stream; on_event_id receives the cursor of each delivered event.
+    idle_timeout ends a stream after that many seconds without content,
+    measured only after the response headers have been received.
     """
     params: Dict[str, Any] = {"tail": str(tail)}
     if log_type == "all":
@@ -85,16 +89,35 @@ async def stream_pod_logs(
         async with session.get(url, params=params, headers=headers) as resp:
             resp.raise_for_status()
             event_id = None
-            async for raw in resp.content:
-                line = raw.decode("utf-8", "replace").strip()
-                if line.startswith("id:"):
-                    event_id = line[3:].strip()
-                if not line.startswith("data:"):
+            data = []
+            content = resp.content.__aiter__()
+            while True:
+                try:
+                    raw = await asyncio.wait_for(anext(content), timeout=idle_timeout)
+                except StopAsyncIteration:
+                    return
+                except asyncio.TimeoutError:
+                    if idle_timeout is None:
+                        raise
+                    return
+                line = raw.decode("utf-8", "replace").rstrip("\r\n")
+                if line:
+                    field, _, value = line.partition(":")
+                    if value.startswith(" "):
+                        value = value[1:]
+                    if field == "id" and "\x00" not in value:
+                        event_id = value
+                    elif field == "data":
+                        data.append(value)
+                    continue
+                if not data:
                     continue
                 try:
-                    event = json.loads(line[len("data:") :].strip())
+                    event = json.loads("\n".join(data))
                 except json.JSONDecodeError:
                     continue
+                finally:
+                    data = []
                 if event_id is not None and on_event_id is not None:
                     on_event_id(event_id)
                 yield event
