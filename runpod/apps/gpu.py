@@ -225,6 +225,15 @@ class _CatalogCache:
     members: Optional[Dict[str, Set[str]]] = None
     failed_at: Optional[float] = None
 
+    def may_fetch(self) -> bool:
+        """true until a fetch succeeds, except within a minute of a failure."""
+        if self.members is not None:
+            return False
+        return (
+            self.failed_at is None
+            or time.monotonic() - self.failed_at >= CATALOG_RETRY_SECONDS
+        )
+
 
 _catalog_cache = _CatalogCache()
 
@@ -246,6 +255,19 @@ def _parse_catalog(data: Any) -> Dict[str, Set[str]]:
     return members
 
 
+def _fetch_catalog() -> Dict[str, Set[str]]:
+    import requests
+
+    from .utils.network import api_key
+
+    url = os.environ.get("RUNPOD_GPU_CATALOG_URL", CATALOG_URL)
+    resp = requests.get(
+        url, headers={"Authorization": f"Bearer {api_key()}"}, timeout=10
+    )
+    resp.raise_for_status()
+    return _parse_catalog(resp.json())
+
+
 def live_pool_members() -> Optional[Dict[str, Set[str]]]:
     """pool id -> device ids, from the platform's gpu catalog.
 
@@ -254,34 +276,17 @@ def live_pool_members() -> Optional[Dict[str, Set[str]]]:
     membership. returns None when the catalog is unreachable. a result
     is kept for the process; a failure is retried after a minute.
     """
-    import requests
-
-    from .utils.network import api_key
-
     cache = _catalog_cache
-    if cache.members is not None:
-        return cache.members
-    if (
-        cache.failed_at is not None
-        and time.monotonic() - cache.failed_at < CATALOG_RETRY_SECONDS
-    ):
-        return None
-
-    url = os.environ.get("RUNPOD_GPU_CATALOG_URL", CATALOG_URL)
-    try:
-        resp = requests.get(
-            url, headers={"Authorization": f"Bearer {api_key()}"}, timeout=10
-        )
-        resp.raise_for_status()
-        cache.members = _parse_catalog(resp.json())
-    except Exception as exc:  # noqa: BLE001 - offline, auth, or malformed
-        cache.failed_at = time.monotonic()
-        log.warning(
-            "gpu catalog unavailable (%s); device pins use the static pool "
-            "table, which can miss newer devices in a pool",
-            exc,
-        )
-        return None
+    if cache.may_fetch():
+        try:
+            cache.members = _fetch_catalog()
+        except Exception as exc:  # noqa: BLE001 - offline, auth, or malformed
+            cache.failed_at = time.monotonic()
+            log.warning(
+                "gpu catalog unavailable (%s); device pins use the static pool "
+                "table, which can miss newer devices in a pool",
+                exc,
+            )
     return cache.members
 
 
