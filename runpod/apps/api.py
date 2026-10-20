@@ -1,11 +1,11 @@
 """control-plane calls for app provisioning.
 
 rest handles equivalent resource operations; graphql handles flash lifecycle,
-auth, secrets, global storage, task provisioning, and endpoint capabilities
+auth, secrets, task provisioning, and endpoint capabilities
 absent from rest. management verbs for the wider sdk stay in runpod.api.ctl_commands.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import aiohttp
 
@@ -13,7 +13,7 @@ from ..api.ctl_commands import _cpu_config, _path_segment, _split_values
 from ..api.graphql import run_graphql_query_async
 from ..api.mutations import apps as app_mutations
 from ..api.queries import apps as app_queries
-from ..api.rest import run_rest_request_async
+from ..api.rest import run_rest_paginated_request_async, run_rest_request_async
 from ..error import QueryError
 
 _TRANSPORT_RETRIES = 4
@@ -387,21 +387,62 @@ class AppsApiClient:
         )
         return _stock_in_datacenter(data, data_center_id)
 
+    async def network_volume_datacenters(self) -> Set[str]:
+        """datacenters supporting any network volume tier chosen by the backend."""
+        data = await run_rest_request_async(
+            "GET", "/v2/catalog/datacenters", api_key=self._api_key
+        )
+        datacenters = data.get("dataCenters") if isinstance(data, dict) else None
+        if not isinstance(datacenters, list):
+            raise QueryError("datacenter catalog is missing dataCenters")
+        supported = set()
+        for dc in datacenters:
+            if (
+                not isinstance(dc, dict)
+                or not isinstance(dc.get("id"), str)
+                or not dc["id"]
+                or not isinstance(dc.get("networkVolumeTypes"), list)
+                or any(
+                    not isinstance(tier, str) or not tier
+                    for tier in dc["networkVolumeTypes"]
+                )
+            ):
+                raise QueryError("datacenter catalog has invalid networkVolumeTypes")
+            if dc["networkVolumeTypes"]:
+                supported.add(dc["id"])
+        return supported
+
     async def list_global_volumes(self) -> List[Dict[str, Any]]:
-        data = await self._execute(app_queries.QUERY_GLOBAL_VOLUMES, retry=True)
-        return data["myself"]["globalStoreBuckets"]
+        """list every rest page, retrying transient read failures with backoff."""
+        return await run_rest_paginated_request_async(
+            "/v2/global-volumes", "globalVolumes", api_key=self._api_key
+        )
 
     async def create_global_volume(self, name: str) -> Dict[str, Any]:
-        data = await self._execute(
-            app_mutations.MUTATION_CREATE_GLOBAL_VOLUME, {"input": {"name": name}}
+        """create once via rest and require a usable volume id in the response."""
+        data = await run_rest_request_async(
+            "POST",
+            "/v2/global-volumes",
+            api_key=self._api_key,
+            json={"name": name},
         )
-        return data["globalStoreBucketCreate"]
+        if (
+            not isinstance(data, dict)
+            or not isinstance(data.get("id"), str)
+            or not data["id"]
+        ):
+            raise QueryError(
+                "global volume creation returned an invalid response; "
+                "the volume may have been created, check existing volumes before retrying",
+                "POST /v2/global-volumes",
+            )
+        return data
 
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
-        data = await run_rest_request_async(
-            "GET", "/v2/network-volumes", api_key=self._api_key
+        """list every rest page, retrying transient read failures with backoff."""
+        return await run_rest_paginated_request_async(
+            "/v2/network-volumes", "networkVolumes", api_key=self._api_key
         )
-        return data["networkVolumes"]
 
     async def create_network_volume(
         self, name: str, size: int, data_center_id: str

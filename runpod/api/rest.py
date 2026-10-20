@@ -1,7 +1,9 @@
 """Runpod REST API transport."""
 
+import asyncio
 import json as json_module
 import os
+from contextlib import nullcontext
 from typing import Any, Mapping, Optional
 
 import aiohttp
@@ -58,7 +60,6 @@ def _raise_for_status(
 
     if status_code < HTTP_STATUS_BAD_REQUEST:
         return
-
 
     message = payload.get("detail") or payload.get("title")
     if not message:
@@ -120,11 +121,13 @@ async def run_rest_request_async(
     params: Optional[Mapping[str, Any]] = None,
     json: Optional[Mapping[str, Any]] = None,
     timeout: float = 30,
+    session: Optional[aiohttp.ClientSession] = None,
 ) -> Optional[dict[str, Any]]:
-    """Send an authenticated REST request without blocking the event loop."""
+    """send an authenticated request, leaving a supplied session open."""
     headers = _build_headers(_resolve_api_key(api_key))
     client_timeout = aiohttp.ClientTimeout(total=timeout)
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
+    context = nullcontext(session) if session is not None else aiohttp.ClientSession()
+    async with context as session:
         # aiohttp otherwise replays put/delete requests after an ambiguous disconnect.
         session._retry_connection = False  # pylint: disable=protected-access
         async with session.request(
@@ -133,6 +136,7 @@ async def run_rest_request_async(
             headers=headers,
             params=params,
             json=json,
+            timeout=client_timeout,
         ) as response:
             if response.status >= HTTP_STATUS_BAD_REQUEST:
                 text = (
@@ -145,3 +149,54 @@ async def run_rest_request_async(
             if response.status == HTTP_STATUS_NO_CONTENT or not await response.read():
                 return None
             return await response.json(content_type=None)
+
+
+async def run_rest_paginated_request_async(
+    path: str,
+    collection: str,
+    *,
+    api_key: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """read all cursor pages with one session and four transport attempts per page."""
+    records = []
+    params = {}
+    seen_cursors = set()
+    query = f"GET {path}"
+    async with aiohttp.ClientSession() as session:
+        while True:
+            for attempt in range(4):
+                try:
+                    data = await run_rest_request_async(
+                        "GET", path, api_key=api_key, params=params, session=session
+                    )
+                    break
+                except (aiohttp.ClientError, OSError, asyncio.TimeoutError):
+                    if attempt == 3:
+                        raise
+                    await asyncio.sleep(2**attempt)
+            page = data.get(collection) if isinstance(data, dict) else None
+            if not isinstance(page, list) or any(
+                not isinstance(record, dict) for record in page
+            ):
+                raise error.QueryError(f"invalid {collection} list response", query)
+            pagination = data.get("pagination")
+            if not isinstance(pagination, dict) or not isinstance(
+                pagination.get("hasNextPage"), bool
+            ):
+                raise error.QueryError(
+                    f"invalid {collection} pagination response", query
+                )
+            records.extend(page)
+            if not pagination["hasNextPage"]:
+                return records
+            cursor = pagination.get("nextCursor")
+            if not isinstance(cursor, str) or not cursor:
+                raise error.QueryError(
+                    f"{collection} pagination is missing a valid nextCursor", query
+                )
+            if cursor in seen_cursors:
+                raise error.QueryError(
+                    f"{collection} pagination repeated a cursor", query
+                )
+            seen_cursors.add(cursor)
+            params = {"cursor": cursor}

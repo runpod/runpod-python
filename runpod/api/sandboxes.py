@@ -15,9 +15,6 @@ import aiohttp
 from yarl import URL
 
 from runpod import error
-from runpod.api.graphql import _build_payload, _check_response
-from runpod.api.mutations.apps import MUTATION_CREATE_GLOBAL_VOLUME
-from runpod.api.queries.apps import QUERY_GLOBAL_VOLUMES
 from runpod.api.rest import (
     _build_headers,
     _build_url,
@@ -356,32 +353,82 @@ class AsyncSandboxAPI:
                 )
             return payload
 
-    async def _graphql(
-        self, query: str, variables: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        payload = await self._request(
-            "POST", "/graphql", body=_build_payload(query, variables)
-        )
-        if payload is None:
-            raise error.QueryError("GraphQL response is empty", query)
-        return _check_response(payload, query)["data"]
+    async def _list_volumes(self, path: str, collection: str) -> list[dict[str, Any]]:
+        records = []
+        params = []
+        seen_cursors = set()
+        while True:
+            payload = await self._request("GET", path, params=params)
+            page = payload.get(collection) if isinstance(payload, dict) else None
+            if not isinstance(page, list) or any(
+                not isinstance(record, dict) for record in page
+            ):
+                raise error.QueryError(
+                    f"invalid {collection} list response", f"GET {path}"
+                )
+            pagination = payload.get("pagination")
+            if not isinstance(pagination, dict) or not isinstance(
+                pagination.get("hasNextPage"), bool
+            ):
+                raise error.QueryError(
+                    f"invalid {collection} pagination response", f"GET {path}"
+                )
+            records.extend(page)
+            if not pagination["hasNextPage"]:
+                return records
+            cursor = pagination.get("nextCursor")
+            if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+                raise error.QueryError(
+                    f"{collection} pagination requires a unique nextCursor",
+                    f"GET {path}",
+                )
+            seen_cursors.add(cursor)
+            params = [("cursor", cursor)]
 
     async def list_global_volumes(self) -> list[dict[str, Any]]:
-        data = await self._graphql(QUERY_GLOBAL_VOLUMES)
-        return data["myself"]["globalStoreBuckets"]
+        return await self._list_volumes("/v2/global-volumes", "globalVolumes")
 
     async def create_global_volume(self, name: str) -> dict[str, Any]:
-        data = await self._graphql(
-            MUTATION_CREATE_GLOBAL_VOLUME, {"input": {"name": name}}
-        )
-        return data["globalStoreBucketCreate"]
+        payload = await self._request("POST", "/v2/global-volumes", body={"name": name})
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(payload.get("id"), str)
+            or not payload["id"]
+        ):
+            raise error.QueryError(
+                "global volume creation returned an invalid response; "
+                "the volume may have been created, check existing volumes before retrying",
+                "POST /v2/global-volumes",
+            )
+        return payload
 
     async def list_network_volumes(self) -> list[dict[str, Any]]:
         """list storage through this handle's credentials and control-plane URL."""
-        payload = await self._request("GET", "/v2/network-volumes")
-        if payload is None:
-            raise ValueError("Network volume listing returned no response")
-        return payload["networkVolumes"]
+        return await self._list_volumes("/v2/network-volumes", "networkVolumes")
+
+    async def network_volume_datacenters(self) -> set[str]:
+        payload = await self._request("GET", "/v2/catalog/datacenters")
+        datacenters = payload.get("dataCenters") if isinstance(payload, dict) else None
+        if not isinstance(datacenters, list):
+            raise error.QueryError("datacenter catalog is missing dataCenters")
+        supported = set()
+        for dc in datacenters:
+            if (
+                not isinstance(dc, dict)
+                or not isinstance(dc.get("id"), str)
+                or not dc["id"]
+                or not isinstance(dc.get("networkVolumeTypes"), list)
+                or any(
+                    not isinstance(tier, str) or not tier
+                    for tier in dc["networkVolumeTypes"]
+                )
+            ):
+                raise error.QueryError(
+                    "datacenter catalog has invalid networkVolumeTypes"
+                )
+            if dc["networkVolumeTypes"]:
+                supported.add(dc["id"])
+        return supported
 
     async def create_network_volume(
         self, name: str, size: int, data_center_id: str

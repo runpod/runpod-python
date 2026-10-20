@@ -52,7 +52,6 @@ class TestPodInput:
 
         assert pod["imageName"] == f"runpod/task:py{local_python_version()}-latest"
         assert pod["ports"] == "8080/http"
-        assert pod["terminateAfter"]
         env = {e["key"]: e["value"] for e in pod["env"]}
         assert env["RUNPOD_TASK_TOKEN"] == "tok"
         assert "RUNPOD_RUNTIME_PACKAGE_SPEC" not in env
@@ -142,28 +141,45 @@ class TestPodTargetPayload:
         assert _unb64(payload["args"][0]) == 5
         assert payload["dependencies"] == ["numpy"]
 
-    def test_task_remote_runs_full_lifecycle(self):
+    def test_task_remote_runs_past_one_hour_and_cleans_up(self):
+        from types import SimpleNamespace
+
+        from runpod.apps.tasks import TaskExecution
+
         app = App("a")
 
         @app.task(name="t", cpu="cpu3c-1-2")
         def t(x):
             return x * 2
 
-        with patch("runpod.apps.tasks.TaskExecution") as MockExec:
-            instance = MockExec.return_value
-            instance.start = AsyncMock()
-            instance.wait_ready = AsyncMock()
-            instance.execute = AsyncMock(
-                return_value={"success": True, "result": _b64(10)}
-            )
-            instance.terminate = AsyncMock()
+        clock = [0.0]
+        pods = {"pod-1"}
 
-            result = t.remote(5)
+        async def poll_result():
+            if clock[0] == 0:
+                clock[0] = 7200.0
+                return None
+            return {"success": True, "result": _b64(10)}
 
-        assert result == 10
-        instance.start.assert_awaited_once()
-        instance.wait_ready.assert_awaited_once()
-        instance.terminate.assert_awaited_once()
+        async def delete(pod_id):
+            pods.remove(pod_id)
+
+        execution = TaskExecution(t.spec, api=MagicMock(terminate_pod=delete))
+        execution.pod_id = "pod-1"
+        execution.start = AsyncMock()
+        execution.wait_ready = AsyncMock()
+        execution.submit = AsyncMock()
+        execution.poll_result = poll_result
+        with (
+            patch("runpod.apps.tasks.TaskExecution", return_value=execution),
+            patch(
+                "runpod.apps.tasks.time",
+                SimpleNamespace(monotonic=lambda: clock[0]),
+            ),
+            patch("runpod.apps.tasks.RESULT_POLL_INTERVAL", 0),
+        ):
+            assert t.remote(5) == 10
+        assert not pods
 
     def test_task_terminates_pod_on_failure(self):
         app = App("a")
@@ -399,7 +415,9 @@ class TestTaskExecutionLifecycle:
             datacenter=["US-IL-1"],
         )
         api = AsyncMock()
+        api.network_volume_datacenters.return_value = {"EU-RO-1", "US-IL-1"}
         api.list_network_volumes.return_value = []
+        api.network_volume_datacenters.return_value = {"EU-RO-1", "US-IL-1"}
         api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
             "High" if dc == "US-IL-1" else "Low"
         )
@@ -459,6 +477,7 @@ class TestTaskExecutionLifecycle:
         with patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()):
             response = await execution.execute({"fn": "t"}, timeout=60)
         assert response == {"success": True, "json_result": 4}
+        execution.submit.assert_awaited_once_with({"fn": "t", "timeout": 60})
 
     async def test_execute_timeout(self):
         from runpod.apps.tasks import TaskExecution
@@ -476,6 +495,46 @@ class TestTaskExecutionLifecycle:
         ):
             with pytest.raises(TimeoutError, match="did not finish"):
                 await execution.execute({"fn": "t"}, timeout=10)
+
+
+class TestTaskTimeoutTransport:
+    @pytest.mark.parametrize("method", ["submit", "set_timeout"])
+    @pytest.mark.parametrize("acknowledged", [False, True])
+    async def test_runtime_must_acknowledge_timeout(self, method, acknowledged):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(
+            ResourceSpec(kind=ResourceKind.TASK, name="t"), api=MagicMock()
+        )
+        execution.pod_id = "pod-9"
+        response = MagicMock(status=200)
+        response.json = AsyncMock(
+            return_value={"timeout": 60} if acknowledged else {"status": "RUNNING"}
+        )
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.post.return_value.__aenter__.return_value = response
+        with patch("runpod.apps.tasks.aiohttp.ClientSession", return_value=session):
+            argument = {"timeout": 60} if method == "submit" else 60
+            if acknowledged:
+                await getattr(execution, method)(argument)
+            else:
+                with pytest.raises(RuntimeError, match="did not acknowledge"):
+                    await getattr(execution, method)(argument)
+        assert session.post.call_args.kwargs["json"] == {"timeout": 60}
+        assert session.post.call_args.kwargs["headers"] == execution._headers
+
+    @pytest.mark.parametrize("timeout", [-1, True, "60", float("nan"), float("inf")])
+    async def test_invalid_timeouts_fail_before_http(self, timeout):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(
+            ResourceSpec(kind=ResourceKind.TASK, name="t"), api=MagicMock()
+        )
+        with patch("runpod.apps.tasks.aiohttp.ClientSession") as session:
+            with pytest.raises(ValueError, match="finite non-negative"):
+                await execution.set_timeout(timeout)
+        session.assert_not_called()
 
 
 class TestTaskJob:
@@ -497,16 +556,42 @@ class TestTaskJob:
         assert result == 9
         execution.terminate.assert_awaited_once()
 
-    async def test_wait_timeout_terminates_pod(self):
+    async def test_wait_sends_timeout_to_runtime(self):
         job, execution = self._job()
-        execution.poll_result = AsyncMock(return_value=None)
-        with (
-            patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()),
-            patch("runpod.apps.tasks.time.monotonic", side_effect=[0, 100]),
-        ):
-            with pytest.raises(TimeoutError):
-                await job.wait(timeout=10)
+        execution.poll_result = AsyncMock(
+            return_value={"success": True, "json_result": 9}
+        )
+        assert await job.wait(timeout=60) == 9
+        execution.set_timeout.assert_awaited_once_with(60)
         execution.terminate.assert_awaited_once()
+
+    async def test_timeout_configuration_failure_terminates_pod(self):
+        job, execution = self._job()
+        execution.set_timeout = AsyncMock(side_effect=RuntimeError("unsupported"))
+        with pytest.raises(RuntimeError, match="unsupported"):
+            await job.wait(timeout=60)
+        execution.poll_result.assert_not_called()
+        execution.terminate.assert_awaited_once()
+
+    async def test_wait_timeout_terminates_pod(self):
+        from runpod.apps.tasks import TaskExecution, TaskJob
+
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(spec, api=MagicMock())
+        execution.pod_id = "pod-9"
+        pods = {"pod-9"}
+
+        async def delete(pod_id):
+            pods.remove(pod_id)
+
+        execution.api.terminate_pod = delete
+        execution.set_timeout = AsyncMock()
+        job = TaskJob(execution)
+        with pytest.raises(TimeoutError):
+            await job.wait(timeout=0)
+        assert not pods
+        assert job.pod_id is None
+        execution.set_timeout.assert_awaited_once_with(0)
 
     @pytest.mark.parametrize(
         "failure",
@@ -577,3 +662,63 @@ class TestSpawnCleanup:
                 await PodTarget(spec, lambda: None).submit({})
         assert not pods
         assert execution.pod_id is None
+
+
+class TestCancellationCleanup:
+    @pytest.mark.parametrize("method", ["invoke", "submit"])
+    async def test_cancel_during_creation_recovers_and_deletes_pod(self, method):
+        from runpod.apps.tasks import TaskExecution
+        from runpod.error import QueryError
+
+        creating, release_create = asyncio.Event(), asyncio.Event()
+        deleting, release_delete = asyncio.Event(), asyncio.Event()
+        pods = set()
+        failures = iter([QueryError("rate limited", status_code=429), None])
+
+        async def deploy(*args, **kwargs):
+            creating.set()
+            await release_create.wait()
+            pods.add("pod-late")
+            return {"id": "pod-late"}
+
+        async def delete(pod_id):
+            deleting.set()
+            await release_delete.wait()
+            failure = next(failures)
+            if failure:
+                raise failure
+            pods.remove(pod_id)
+
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(
+            spec, api=MagicMock(deploy_task_pod=deploy, terminate_pod=delete)
+        )
+        with patch("runpod.apps.tasks.TaskExecution", return_value=execution):
+            task = asyncio.create_task(
+                getattr(PodTarget(spec, lambda: None), method)({})
+            )
+            await creating.wait()
+            task.cancel()
+            release_create.set()
+            await deleting.wait()
+            task.cancel()
+            release_delete.set()
+            await asyncio.wait({task})
+            assert task.cancelled()
+        assert not pods
+
+    async def test_failed_cleanup_preserves_error_and_recoverable_pod(self):
+        from runpod.apps.tasks import TaskExecution, TaskJob
+
+        failure = ValueError("work failed")
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        api = MagicMock(
+            terminate_pod=AsyncMock(side_effect=RuntimeError("delete failed"))
+        )
+        execution = TaskExecution(spec, api=api)
+        execution.pod_id = "pod-recoverable"
+        execution.poll_result = AsyncMock(side_effect=failure)
+        with pytest.raises(ValueError) as caught:
+            await TaskJob(execution).wait()
+        assert caught.value is failure
+        assert execution.pod_id == "pod-recoverable"

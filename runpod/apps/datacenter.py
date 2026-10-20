@@ -1,6 +1,6 @@
 """datacenter selection for app resources.
 
-only datacenters with storage support and S3 API support are listed"""
+network volume creation support is discovered from the datacenter catalog."""
 
 from enum import Enum
 from typing import List
@@ -41,8 +41,8 @@ class DataCenter(str, Enum):
         return list(cls)
 
 
-# datacenters with high cpu serverless stock, restricted to the
-# storage+S3 set above. cpu5c/cpu5g are only stocked in EU-RO-1.
+# datacenters with high cpu serverless stock. storage support is checked
+# separately; cpu5c/cpu5g are only stocked in EU-RO-1.
 CPU3_DATACENTERS: List[DataCenter] = [
     DataCenter.EU_CZ_1,
     DataCenter.EU_RO_1,

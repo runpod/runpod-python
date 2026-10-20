@@ -1,5 +1,6 @@
 """tests for context detection and remote dispatch."""
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -10,6 +11,7 @@ import pytest
 import runpod
 from runpod.apps import App, Context, current_context, is_local
 from runpod.apps.app import _clear_registry
+from runpod.apps.context import block
 from runpod.apps.errors import (
     EndpointNotFound,
     InvalidResourceError,
@@ -417,6 +419,69 @@ class TestStubs:
 
 
 class TestSyncBridge:
+    def test_waits_across_poll_timeouts(self):
+        async def slow():
+            await asyncio.sleep(0.45)
+            return "complete"
+
+        assert block(slow()) == "complete"
+
+    @pytest.mark.timeout(5)
+    def test_propagates_operation_timeout(self):
+        async def fail():
+            raise asyncio.TimeoutError("operation deadline")
+
+        with pytest.raises(asyncio.TimeoutError):
+            block(fail())
+
+    @pytest.mark.parametrize("bounded", [False, True])
+    def test_interrupt_waits_for_cleanup_and_preserves_first_signal(self, bounded):
+        script = """
+import asyncio
+import os
+import signal
+import threading
+from runpod.apps import context
+
+started = threading.Event()
+cleaning = threading.Event()
+finished = threading.Event()
+if BOUNDED:
+    context.BRIDGE_CLEANUP_TIMEOUT = 0.05
+
+async def operation():
+    started.set()
+    try:
+        await asyncio.Future()
+    finally:
+        cleaning.set()
+        await asyncio.sleep(1 if BOUNDED else 0.4)
+        finished.set()
+
+def interrupt():
+    assert started.wait(5)
+    os.kill(os.getpid(), signal.SIGINT)
+    assert cleaning.wait(5)
+    os.kill(os.getpid(), signal.SIGINT)
+
+threading.Thread(target=interrupt, daemon=True).start()
+try:
+    context.block(operation())
+except KeyboardInterrupt:
+    assert cleaning.is_set()
+    assert finished.is_set() == (not BOUNDED)
+else:
+    raise AssertionError("interruption was swallowed")
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", f"BOUNDED = {bounded!r}\n" + script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+
     def test_remote_inside_running_loop(self, monkeypatch):
         """calling sync .remote() from inside an event loop must not raise."""
         import asyncio

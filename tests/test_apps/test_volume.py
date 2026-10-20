@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from runpod.apps.datacenter import DataCenter
+from runpod.apps.placement import PlacementError
 from runpod.apps.spec import ResourceKind, ResourceSpec
 from runpod.apps.volume import (
     GlobalVolume,
@@ -26,6 +28,7 @@ def _spec(name="r", gpu=None, cpu=None):
 def _api(volumes=None, created=None, global_volumes=None):
     api = AsyncMock()
     api.list_network_volumes.return_value = volumes or []
+    api.network_volume_datacenters.return_value = {dc.value for dc in DataCenter.all()}
     api.list_global_volumes.return_value = global_volumes or []
     api.create_global_volume.return_value = {"id": "gv-new", "name": "models"}
     api.create_network_volume.return_value = created or {
@@ -140,6 +143,16 @@ class TestVolumeRef:
         with pytest.raises(VolumeError):
             normalize_mounts(mounts)
 
+    @pytest.mark.parametrize("kind", list(ResourceKind))
+    def test_global_volume_rejects_cpu_resources(self, kind):
+        with pytest.raises(VolumeError):
+            ResourceSpec(
+                kind=kind,
+                name="cpu",
+                cpu="cpu3c-1-2",
+                mounts={"/runpod-volume": GlobalVolume("models")},
+            )
+
 
 class TestVolumeResolver:
     def test_existing_by_name(self):
@@ -148,9 +161,10 @@ class TestVolumeResolver:
                 {"id": "nv-1", "name": "models", "size": 50, "dataCenter": "EU-RO-1"}
             ]
         )
+        api.network_volume_datacenters.side_effect = RuntimeError("catalog unavailable")
         resolver = VolumeResolver(api)
         resolved = asyncio.run(
-            resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)])
+            resolver.resolve(NetworkVolume("models", datacenter="US-IL-1"), [_spec()])
         )
         assert resolved == {"id": "nv-1", "dataCenterId": "EU-RO-1"}
         api.create_network_volume.assert_not_awaited()
@@ -167,14 +181,17 @@ class TestVolumeResolver:
         )
         assert resolved["id"] == "nv-1"
 
-    def test_missing_creates_with_placement(self):
+    def test_storage_capability_beats_higher_hardware_stock(self):
         api = _api()
+        api.network_volume_datacenters.return_value = {"EU-RO-1"}
+        api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
+            "HIGH" if dc == "US-IL-1" else "LOW"
+        )
         resolver = VolumeResolver(api)
         resolved = asyncio.run(
-            resolver.resolve(NetworkVolume("models"), [_spec(gpu=None)])
+            resolver.resolve(NetworkVolume("models"), [_spec(cpu="cpu3c-2-4")])
         )
-        assert resolved["id"] == "nv-new"
-        api.create_network_volume.assert_awaited_once()
+        assert resolved == {"id": "nv-new", "dataCenterId": "EU-RO-1"}
 
     @pytest.mark.parametrize("volume_type", [NetworkVolume, GlobalVolume])
     def test_missing_no_create_raises(self, volume_type):
@@ -262,6 +279,25 @@ class TestVolumeResolver:
         )
         assert resolved == {"id": "nv-new", "dataCenterId": "EU-RO-1"}
 
+    async def test_unsupported_explicit_pin_never_relocates(self):
+        api = _api()
+        api.network_volume_datacenters.return_value = {"EU-RO-1"}
+        with pytest.raises(VolumeError):
+            await VolumeResolver(api).resolve(
+                NetworkVolume("models", datacenter="US-IL-1"), [_spec()]
+            )
+
+    async def test_disjoint_storage_and_hardware_cannot_create(self):
+        api = _api()
+        api.network_volume_datacenters.return_value = {"EU-RO-1"}
+        api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
+            "HIGH" if dc == "US-IL-1" else "NONE"
+        )
+        with pytest.raises(PlacementError):
+            await VolumeResolver(api).resolve(
+                NetworkVolume("models"), [_spec(cpu="cpu3c-2-4")]
+            )
+
 
 class TestTaskVolume:
     def test_one_volume_per_backend(self):
@@ -285,7 +321,7 @@ class TestTaskVolume:
         spec = ResourceSpec(
             kind=ResourceKind.TASK,
             name="t",
-            cpu=["cpu3c-1-2"],
+            gpu="4090",
             mounts={"/models": NetworkVolume("models"), "/data": GlobalVolume("gv-1")},
         )
         execution = TaskExecution(spec, api=api)
@@ -310,22 +346,18 @@ class TestTaskVolume:
 
 class TestEndpointMounts:
     @pytest.mark.parametrize(
-        "mounts,cpu",
+        "mounts",
         [
-            ({"/models": NetworkVolume("models")}, None),
-            ({"/runpod-volume": GlobalVolume("global")}, "cpu3c-1-2"),
-            (
-                {
-                    "/runpod-volume": NetworkVolume("models"),
-                    "/data": GlobalVolume("global"),
-                },
-                None,
-            ),
+            {"/models": NetworkVolume("models")},
+            {
+                "/runpod-volume": NetworkVolume("models"),
+                "/data": GlobalVolume("global"),
+            },
         ],
     )
-    def test_unsupported_attachment_rejected_before_provisioning(self, mounts, cpu):
+    def test_unsupported_attachment_rejected_before_provisioning(self, mounts):
         with pytest.raises(VolumeError):
-            ResourceSpec(kind=ResourceKind.QUEUE, name="queue", cpu=cpu, mounts=mounts)
+            ResourceSpec(kind=ResourceKind.QUEUE, name="queue", mounts=mounts)
 
     def test_global_attachment_does_not_pin_datacenter(self):
         from runpod import App

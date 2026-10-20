@@ -31,9 +31,7 @@ def clean_registry():
 
 
 def _write_project(tmp_path: Path) -> Path:
-    (tmp_path / "main.py").write_text(
-        textwrap.dedent(
-            """
+    (tmp_path / "main.py").write_text(textwrap.dedent("""
             import runpod
             from runpod import App
 
@@ -45,9 +43,7 @@ def _write_project(tmp_path: Path) -> Path:
 
             if __name__ == "__main__":
                 raise SystemExit("main guard must not run during discovery")
-            """
-        )
-    )
+            """))
     return tmp_path
 
 
@@ -128,9 +124,7 @@ class TestEndpointInput:
             def value(self):
                 return {"value": 1}
 
-        payload = _deployed_endpoint_input(
-            app, Api.spec, "env-1", "build-1", "3.12"
-        )
+        payload = _deployed_endpoint_input(app, Api.spec, "env-1", "build-1", "3.12")
         assert payload["type"] == "LB"
         assert payload["template"]["ports"] == "80/http"
         env = {entry["key"]: entry["value"] for entry in payload["template"]["env"]}
@@ -141,6 +135,7 @@ class TestEndpointInput:
 class TestPackaging:
     def test_tarball_contains_source_and_manifest(self, tmp_path):
         _write_project(tmp_path)
+        (tmp_path / "runpod_manifest.json").write_text('{"app": "forged"}')
         manifest = {"version": 1, "app": "demo-app", "resources": []}
         tar_path = package_project(tmp_path, manifest)
 
@@ -151,25 +146,61 @@ class TestPackaging:
             extracted = json.load(tar.extractfile("runpod_manifest.json"))
             assert extracted["app"] == "demo-app"
 
-    def test_ignores_applied(self, tmp_path):
+    def test_ignores_and_non_overridable_credentials(self, tmp_path):
         _write_project(tmp_path)
-        (tmp_path / "secret.env").write_text("KEY=1")
-        (tmp_path / ".runpodignore").write_text("secret.env\n")
-        pycache = tmp_path / "__pycache__"
-        pycache.mkdir()
-        (pycache / "x.pyc").write_text("junk")
+        for name in ("secret.env", ".env.production", "private.pem"):
+            (tmp_path / name).write_text("private")
+        (tmp_path / "local.txt").write_text("local")
+        (tmp_path / "__pycache__").mkdir()
+        (tmp_path / "__pycache__/main.pyc").write_text("cache")
+        (tmp_path / ".runpodignore").write_text(
+            "!*.env\n!.env.production\n!private.pem\nlocal.txt\n"
+        )
 
-        tar_path = package_project(tmp_path, {"version": 1, "resources": []})
-        with tarfile.open(tar_path) as tar:
-            names = tar.getnames()
-            assert "secret.env" not in names
-            assert not any("__pycache__" in n for n in names)
+        with tarfile.open(package_project(tmp_path, {})) as tar:
+            assert set(tar.getnames()) == {
+                "main.py",
+                ".runpodignore",
+                "runpod_manifest.json",
+            }
+
+    def test_credential_like_source_paths_are_included(self, tmp_path):
+        names = (
+            "credentials.py",
+            "secrets.py",
+            "credentials",
+            "secrets",
+            "nested/secrets/config.py",
+            "nested/credentials/config.py",
+        )
+        for name in names:
+            path = tmp_path / "src" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("source")
+        with tarfile.open(package_project(tmp_path, {})) as tar:
+            for name in names:
+                assert f"src/{name}" in tar.getnames()
+
+    def test_excluded_paths_are_logged_without_contents(self, tmp_path, caplog):
+        for name in (".env", "private.key", "private.pem", "local.txt", ".aws/config"):
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("sensitive-file-contents")
+        (tmp_path / ".runpodignore").write_text("!*.key\n!.aws/\nlocal.txt\n")
+
+        with tarfile.open(package_project(tmp_path, {})) as tar:
+            assert set(tar.getnames()) == {".runpodignore", "runpod_manifest.json"}
+        for name in (".env", "private.key", "private.pem", "local.txt", ".aws/"):
+            assert f"excluded source path {name!r} from deployment artifact" in caplog.text
+        assert "sensitive-file-contents" not in caplog.text
 
     def test_vendored_env_included_under_env(self, tmp_path):
         _write_project(tmp_path)
         env_dir = tmp_path / "built-env"
         (env_dir / "numpy").mkdir(parents=True)
         (env_dir / "numpy" / "__init__.py").write_text("")
+        (env_dir / "numpy" / "cacert.pem").write_text("dependency CA")
+        (tmp_path / ".runpodignore").write_text("*.pem\n")
 
         tar_path = package_project(
             tmp_path, {"version": 1, "resources": []}, env_dir=env_dir
@@ -180,6 +211,47 @@ class TestPackaging:
             # env dir under project root must not be double-added as source
             assert "built-env/numpy/__init__.py" not in names
             assert "main.py" in names
+            assert tar.extractfile("env/numpy/cacert.pem").read() == b"dependency CA"
+
+    def test_project_ignore_precedence(self, tmp_path):
+        for name in (
+            "root.log",
+            "nested/keep.log",
+            "nested/drop.log",
+            "other/keep.log",
+        ):
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(name)
+        (tmp_path / ".gitignore").write_text("*.log\n")
+        (tmp_path / "nested/.gitignore").write_text("!*.log\n")
+        (tmp_path / ".runpodignore").write_text("!root.log\nnested/drop.log\n")
+
+        with tarfile.open(package_project(tmp_path, {})) as tar:
+            assert set(tar.getnames()) == {
+                ".gitignore",
+                ".runpodignore",
+                "nested/.gitignore",
+                "root.log",
+                "nested/keep.log",
+                "runpod_manifest.json",
+            }
+
+    def test_symlinks_cannot_escape_source_or_dependencies(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "main.py").write_text("source")
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("private")
+        env_dir = tmp_path / "built-env"
+        env_dir.mkdir()
+        for root in (project, env_dir):
+            (root / "linked.py").symlink_to(outside / "secret.txt")
+            (root / "linked-dir").symlink_to(outside, target_is_directory=True)
+
+        with tarfile.open(package_project(project, {}, env_dir=env_dir)) as tar:
+            assert set(tar.getnames()) == {"main.py", "runpod_manifest.json"}
 
 
 def _stub_build(tmp_path):
@@ -241,7 +313,9 @@ class TestDeployPipeline:
         api.create_app.assert_not_awaited()
         api.create_environment.assert_not_awaited()
 
-    async def test_deploy_environment_is_used_for_nested_calls(self, tmp_path, monkeypatch):
+    async def test_deploy_environment_is_used_for_nested_calls(
+        self, tmp_path, monkeypatch
+    ):
         _write_project(tmp_path)
         (app,) = discover_apps(tmp_path)
         handle = next(iter(app.resources.values()))
@@ -252,7 +326,8 @@ class TestDeployPipeline:
             "flashEnvironments": [{"id": "env-prod", "name": "prod"}],
         }
         api.prepare_artifact_upload.return_value = {
-            "uploadUrl": "https://upload", "objectKey": "key-1",
+            "uploadUrl": "https://upload",
+            "objectKey": "key-1",
         }
         api.finalize_artifact_upload.return_value = {"id": "build-1"}
         api.save_endpoint.return_value = {"id": "ep-1"}
@@ -300,9 +375,7 @@ class TestTolerantDiscovery:
 
     def test_import_time_invocation_diagnosed(self, tmp_path):
         _write_project(tmp_path)
-        (tmp_path / "client.py").write_text(
-            "from main import que1\nque1.remote(1)\n"
-        )
+        (tmp_path / "client.py").write_text("from main import que1\nque1.remote(1)\n")
         # directory walk: the client file fails with the precise
         # diagnosis but the app still discovers
         apps = discover_apps(tmp_path)

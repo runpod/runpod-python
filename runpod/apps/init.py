@@ -42,12 +42,16 @@ REQUIREMENTS_TEMPLATE = """# packages your functions need on the workers
 # (also installed locally for rp flash dev)
 """
 
-RUNPODIGNORE_TEMPLATE = """# excluded from the deploy artifact
-.git
-.venv
-__pycache__
-*.pyc
-.env
+RUNPODIGNORE_TEMPLATE = """# git-style patterns, applied after project .gitignore files
+# excluded directories must be re-included before their files
+# credential safeguards and internal paths cannot be re-included
+# add project-specific exclusions here; review the artifact before deploying
+.venv/
+__pycache__/
+tests/
+.env*
+*.pem
+*.key
 """
 
 PROJECT_FILES: Dict[str, str] = {
@@ -59,9 +63,7 @@ PROJECT_FILES: Dict[str, str] = {
 
 def detect_conflicts(project_dir: Path) -> List[str]:
     """names of skeleton files that already exist in project_dir."""
-    return [
-        name for name in PROJECT_FILES if (project_dir / name).exists()
-    ]
+    return [name for name in PROJECT_FILES if (project_dir / name).exists()]
 
 
 def create_project(

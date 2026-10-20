@@ -40,6 +40,10 @@ class SandboxService:
         self.network_volumes = []
         self.global_volumes = []
         self.global_error = None
+        self.volume_page_size = None
+        self.volume_datacenters = [
+            {"id": "US-KS-2", "networkVolumeTypes": ["NETWORK_VOLUME"]}
+        ]
         self.registries = []
         self.delete_status = 204
         self.create_status = 201
@@ -119,6 +123,16 @@ def sandbox_peer():
             payload, status=status, content_type="application/problem+json"
         )
 
+    def volume_page(request, records, collection):
+        start = int(request.query.get("cursor", "0"))
+        end = start + (service.volume_page_size or len(records))
+        pagination = {"hasNextPage": end < len(records)}
+        if pagination["hasNextPage"]:
+            pagination["nextCursor"] = str(end)
+        return web.json_response(
+            {collection: records[start:end], "pagination": pagination}
+        )
+
     async def handle(request):
         body = await request.json() if request.can_read_body else None
         service.requests.append(
@@ -126,30 +140,25 @@ def sandbox_peer():
         )
         if request.headers.get("Authorization") != "Bearer sandbox-test-key":
             return failure(401, "invalid key")
-        if request.path == "/graphql":
+        if request.path == "/v2/global-volumes":
             if service.global_error:
-                return web.json_response(
-                    {"errors": [{"message": service.global_error}]}
-                )
-            query = body["query"]
-            if "globalStoreBucketCreate(" in query:
+                return failure(403, service.global_error)
+            if request.method == "POST":
                 volume = {
                     "id": f"global-{len(service.global_volumes) + 1}",
-                    "name": body["variables"]["input"]["name"],
+                    "name": body["name"],
                 }
                 service.global_volumes.append(volume)
-                return web.json_response({"data": {"globalStoreBucketCreate": volume}})
-            if "globalStoreBuckets" in query:
-                return web.json_response(
-                    {"data": {"myself": {"globalStoreBuckets": service.global_volumes}}}
-                )
-            return failure(400, "unknown graphql operation")
+                return web.json_response(volume, status=201)
+            return volume_page(request, service.global_volumes, "globalVolumes")
+        if request.path == "/v2/catalog/datacenters":
+            return web.json_response({"dataCenters": service.volume_datacenters})
         if request.path == "/v2/network-volumes":
             if request.method == "POST":
                 volume = {"id": "created-volume", **body}
                 service.network_volumes.append(volume)
                 return web.json_response(volume, status=201)
-            return web.json_response({"networkVolumes": service.network_volumes})
+            return volume_page(request, service.network_volumes, "networkVolumes")
         if request.path == "/v2/registries":
             return web.json_response({"registries": service.registries})
         sandbox_id = request.match_info.get("id")
@@ -286,7 +295,8 @@ def sandbox_peer():
         service.loop = asyncio.get_running_loop()
         app = web.Application()
         for path in (
-            "/graphql",
+            "/v2/global-volumes",
+            "/v2/catalog/datacenters",
             "/v2/sandboxes",
             "/v2/network-volumes",
             "/v2/registries",
@@ -1080,6 +1090,48 @@ async def test_missing_global_with_creation_disabled_prevents_provisioning(peer)
             **peer.options,
         )
     assert peer.global_volumes == []
+    assert peer.records == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("volume_type", [GlobalVolume, NetworkVolume])
+async def test_sandbox_volume_lookup_reads_every_page(peer, volume_type):
+    records = [
+        {"id": "first", "name": "first", "dataCenter": "US-KS-2"},
+        {"id": "second", "name": "second", "dataCenter": "US-KS-2"},
+    ]
+    if volume_type is GlobalVolume:
+        peer.global_volumes = records
+        path = "/v2/global-volumes"
+    else:
+        peer.network_volumes = records
+        path = "/v2/network-volumes"
+    peer.volume_page_size = 1
+    async with AsyncioSandbox(
+        image="image",
+        mounts={"/data": volume_type("second", create=False)},
+        **peer.options,
+    ) as sandbox:
+        assert sandbox.info.mounts[volume_type.kind] == [
+            {"volumeId": "second", "path": "/data"}
+        ]
+    assert sum(request_path == path for _, request_path, _, _ in peer.requests) == 2
+    assert all(
+        headers["Authorization"] == "Bearer sandbox-test-key"
+        for _, _, _, headers in peer.requests
+    )
+
+
+@pytest.mark.asyncio
+async def test_sandbox_network_creation_requires_catalog_support(peer):
+    peer.volume_datacenters = [{"id": "US-KS-2", "networkVolumeTypes": []}]
+    with pytest.raises(VolumeError, match="does not support network volumes"):
+        await AsyncioSandbox.create(
+            image="image",
+            mounts={"/data": NetworkVolume("new-data", datacenter="US-KS-2")},
+            **peer.options,
+        )
+    assert peer.network_volumes == []
     assert peer.records == {}
 
 
