@@ -13,6 +13,7 @@ from runpod.apps.api import AppsApiClient
 from runpod.apps.app import _clear_registry
 from runpod.apps.deploy import reconcile_endpoints
 from runpod.apps.dev import DevSession
+from runpod.apps.gpu import live_pool_members as _real_live_pool_members
 from runpod.apps.gpu import live_pool_members_async as _real_live_pool_members_async
 
 
@@ -30,7 +31,6 @@ def clean_catalog(monkeypatch, offline_gpu_catalog):
     _clear_registry()
     gpu._clear_catalog_cache()
     monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
-    monkeypatch.delenv("RUNPOD_GPU_CATALOG_URL", raising=False)
     monkeypatch.setattr(runpod, "api_key", None)
     monkeypatch.setattr(gpu, "live_pool_members_async", _real_live_pool_members_async)
     monkeypatch.setattr(
@@ -60,7 +60,7 @@ async def catalog(monkeypatch):
 
     app = web.Application()
     app.router.add_get("/v2/catalog/gpus", handle)
-    app.router.add_get("/custom-catalog", handle)
+    app.router.add_get("/custom/v2/catalog/gpus", handle)
     runner = web.AppRunner(app, shutdown_timeout=0.1)
     await runner.setup()
     try:
@@ -184,6 +184,25 @@ async def test_failed_catalog_retries_after_cooldown(catalog, malformed, caplog)
     assert len(catalog.requests) == 2
 
 
+async def test_catalog_uses_sdk_authentication_errors(catalog, caplog):
+    catalog.status = 401
+    assert await AppsApiClient(api_key="explicit-key").gpu_pool_members() is None
+    assert "Unauthorized request, please check your API key." in caplog.text
+    assert "explicit-key" not in caplog.text
+
+
+def test_sync_catalog_reuses_gpu_catalog_command(monkeypatch):
+    from runpod.api import ctl_commands
+
+    monkeypatch.setattr(runpod, "api_key", "sdk-key")
+    monkeypatch.setenv("RUNPOD_API_KEY", "different-env-key")
+    fetch = Mock(return_value=CATALOG["gpus"])
+    monkeypatch.setattr(ctl_commands, "get_gpus", fetch)
+    assert MIG in _real_live_pool_members()["AMPERE_24"]
+    assert MIG in _real_live_pool_members()["AMPERE_24"]
+    fetch.assert_called_once_with(api_key="sdk-key")
+
+
 async def test_cache_is_scoped_to_credentials_and_catalog_url(catalog, monkeypatch):
     first = AppsApiClient(api_key="first-key")
     assert MIG in (await first.gpu_pool_members())["AMPERE_24"]
@@ -195,9 +214,9 @@ async def test_cache_is_scoped_to_credentials_and_catalog_url(catalog, monkeypat
     monkeypatch.setenv("RUNPOD_API_BASE_URL", catalog.other_url)
     assert await first.gpu_pool_members() == {"AMPERE_24": {"NVIDIA L4"}}
     assert len(catalog.requests) == 3
-    monkeypatch.setenv("RUNPOD_GPU_CATALOG_URL", f"{catalog.url}/custom-catalog")
+    monkeypatch.setenv("RUNPOD_API_BASE_URL", f"{catalog.url}/custom")
     assert await first.gpu_pool_members() == {"AMPERE_24": {"NVIDIA L4"}}
-    assert catalog.requests[-1] == ("/custom-catalog", "Bearer first-key")
+    assert catalog.requests[-1] == ("/custom/v2/catalog/gpus", "Bearer first-key")
     assert len(catalog.requests) == 4
 
 

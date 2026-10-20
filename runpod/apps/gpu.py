@@ -6,7 +6,6 @@ configured. CpuInstanceType values are backend cpu flavor ids.
 """
 
 import logging
-import os
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -214,7 +213,7 @@ def resolve_gpu_string(value: str) -> List[str]:
     )
 
 
-CATALOG_URL = "https://api.runpod.io/v2/catalog/gpus"
+CATALOG_PATH = "/v2/catalog/gpus"
 CATALOG_RETRY_SECONDS = 60.0
 
 
@@ -251,23 +250,14 @@ def _clear_catalog_cache() -> None:
 
 
 def _catalog_context(api_key: Optional[str] = None) -> Tuple[str, str]:
-    import runpod
+    from ..api.rest import _build_url, _resolve_api_key
+    from ..error import AuthenticationError
 
-    base = os.environ.get("RUNPOD_API_BASE_URL")
-    url = os.environ.get(
-        "RUNPOD_GPU_CATALOG_URL",
-        f"{base.rstrip('/')}/v2/catalog/gpus" if base else CATALOG_URL,
-    )
-    key = api_key or os.environ.get("RUNPOD_API_KEY") or runpod.api_key or ""
-    return url, key
-
-
-def _catalog_headers(key: str) -> Dict[str, str]:
-    if not key:
-        raise RuntimeError(
-            "no api key configured. run `rp login` or set RUNPOD_API_KEY."
-        )
-    return {"Authorization": f"Bearer {key}"}
+    try:
+        key = _resolve_api_key(api_key)
+    except AuthenticationError:
+        key = ""
+    return _build_url(CATALOG_PATH), key
 
 
 def _parse_catalog(data: Any) -> Dict[str, Set[str]]:
@@ -282,14 +272,6 @@ def _parse_catalog(data: Any) -> Dict[str, Set[str]]:
     return members
 
 
-def _fetch_catalog(url: str, key: str) -> Dict[str, Set[str]]:
-    import requests
-
-    resp = requests.get(url, headers=_catalog_headers(key), timeout=10)
-    resp.raise_for_status()
-    return _parse_catalog(resp.json())
-
-
 def live_pool_members() -> Optional[Dict[str, Set[str]]]:
     """pool id -> device ids, from the platform's gpu catalog.
 
@@ -298,11 +280,13 @@ def live_pool_members() -> Optional[Dict[str, Set[str]]]:
     membership. returns None when the catalog is unreachable. a result
     is kept for the process; a failure is retried after a minute.
     """
+    from ..api.ctl_commands import get_gpus
+
     context = _catalog_context()
     cache = _catalog_caches.setdefault(context, _CatalogCache())
     if cache.may_fetch():
         try:
-            cache.members = _fetch_catalog(*context)
+            cache.members = _parse_catalog(get_gpus(api_key=context[1]))
         except Exception as exc:  # noqa: BLE001 - offline, auth, or malformed
             cache.fail(exc)
     return cache.members
@@ -312,19 +296,16 @@ async def live_pool_members_async(
     api_key: Optional[str] = None,
 ) -> Optional[Dict[str, Set[str]]]:
     """fetch pool membership without blocking, cached by catalog url and credentials."""
-    import aiohttp
+    from ..api.rest import run_rest_request_async
 
     context = _catalog_context(api_key)
     cache = _catalog_caches.setdefault(context, _CatalogCache())
     if cache.may_fetch():
-        url, key = context
         try:
-            headers = _catalog_headers(key)
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, headers=headers) as response:
-                    response.raise_for_status()
-                    cache.members = _parse_catalog(await response.json())
+            data = await run_rest_request_async(
+                "GET", CATALOG_PATH, api_key=context[1], timeout=10
+            )
+            cache.members = _parse_catalog(data)
         except Exception as exc:
             cache.fail(exc)
     return cache.members

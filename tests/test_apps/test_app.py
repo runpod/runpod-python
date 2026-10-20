@@ -429,8 +429,9 @@ class TestGpuStringResolution:
 
         from runpod.apps import gpu as gpu_mod
 
-        monkeypatch.setenv("RUNPOD_API_KEY", "k")
+        monkeypatch.setattr(runpod, "api_key", "k")
         resp = MagicMock()
+        resp.status_code = 200
         resp.json.return_value = {
             "gpus": [
                 {"id": "NVIDIA L4", "pool": "AMPERE_24"},
@@ -439,11 +440,11 @@ class TestGpuStringResolution:
         }
         fetch = _real_live_pool_members
         gpu_mod._clear_catalog_cache()
-        with patch("requests.get", return_value=resp) as get:
+        with patch("requests.request", return_value=resp) as get:
             assert fetch() == {"AMPERE_24": {"NVIDIA L4"}}
             assert get.call_args.kwargs["headers"]["Authorization"] == "Bearer k"
         gpu_mod._clear_catalog_cache()
-        with patch("requests.get", side_effect=OSError("offline")) as get:
+        with patch("requests.request", side_effect=OSError("offline")) as get:
             assert fetch() is None
             # a failure is not retried on every lookup
             assert fetch() is None
@@ -451,7 +452,7 @@ class TestGpuStringResolution:
         # it is retried once the window passes
         cache = next(iter(gpu_mod._catalog_caches.values()))
         cache.failed_at -= gpu_mod.CATALOG_RETRY_SECONDS
-        with patch("requests.get", return_value=resp):
+        with patch("requests.request", return_value=resp):
             assert fetch() == {"AMPERE_24": {"NVIDIA L4"}}
         gpu_mod._clear_catalog_cache()
 
