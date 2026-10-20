@@ -8,10 +8,14 @@ goes without it.
 """
 
 import ast
+import importlib.util
 import inspect
 import logging
+import site
+import sys
+import sysconfig
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +38,8 @@ class _BodyNames(ast.NodeVisitor):
     def __init__(self):
         self.names: Set[str] = set()
         self.attrs: Set[str] = set()
+        # (module, level) of imports inside the body
+        self.imports: Set[Tuple[str, int]] = set()
 
     def visit_FunctionDef(self, node):
         self._visit_def(node)
@@ -63,6 +69,13 @@ class _BodyNames(ast.NodeVisitor):
         self.attrs.add(node.attr)
         self.generic_visit(node)
 
+    def visit_Import(self, node):
+        for alias in node.names:
+            self.imports.add((alias.name, 0))
+
+    def visit_ImportFrom(self, node):
+        self.imports.add((node.module or "", node.level))
+
 
 def _body_names(node) -> _BodyNames:
     visitor = _BodyNames()
@@ -71,6 +84,75 @@ def _body_names(node) -> _BodyNames:
     else:
         visitor.generic_visit(node)
     return visitor
+
+
+def _installed_dirs() -> Tuple[Path, ...]:
+    """directories holding the stdlib and installed distributions."""
+    paths = {sysconfig.get_paths().get(k) for k in ("stdlib", "platstdlib", "purelib", "platlib")}
+    try:
+        paths.update(site.getsitepackages())
+    except AttributeError:  # some virtualenv site modules lack it
+        pass
+    paths.add(site.getusersitepackages())
+    return tuple(Path(p).resolve() for p in paths if p)
+
+
+def _project_dirs(module_file: str) -> Tuple[Path, ...]:
+    """where the module's project-local imports live: its directory, the
+    directory above its package, and the working directory."""
+    here = Path(module_file).resolve().parent
+    top = here
+    while (top / "__init__.py").exists() and top.parent != top:
+        top = top.parent
+    return tuple(dict.fromkeys((here, top, Path.cwd().resolve())))
+
+
+def _is_local(module_name: str, project_dirs: Tuple[Path, ...]) -> bool:
+    """true unless the module is the stdlib or an installed distribution.
+
+    project modules, and modules that resolve outside the installed
+    locations, count as local: the analysis does not follow them. a
+    module found nowhere (torch imported inside a gpu function, absent
+    from the client) is a third-party package, not project code.
+    """
+    top = module_name.split(".")[0]
+    if not top:
+        return True
+    if any((d / f"{top}.py").is_file() or (d / top).is_dir() for d in project_dirs):
+        return True
+    if top in sys.builtin_module_names or top in getattr(sys, "stdlib_module_names", ()):
+        return False
+    try:
+        spec = importlib.util.find_spec(top)
+    except (ImportError, ValueError):
+        return True
+    if spec is None:
+        return False
+    locations = [spec.origin] if spec.origin and spec.has_location else []
+    locations += list(spec.submodule_search_locations or [])
+    installed = _installed_dirs()
+    return any(
+        not any(Path(loc).resolve().is_relative_to(d) for d in installed)
+        for loc in locations
+    )
+
+
+def _resource_names(target, app, handle) -> Set[str]:
+    """names bound to resource handles other than this one: the app's
+    resources and any handle in the module's globals (other apps)."""
+    from .handles import ApiHandle, FunctionHandle
+
+    names = {
+        getattr(resource_target(h), "__name__", None)
+        for h in app.resources.values()
+        if h is not handle
+    }
+    module = inspect.getmodule(target)
+    for key, value in vars(module).items() if module else ():
+        if isinstance(value, (FunctionHandle, ApiHandle)) and value is not handle:
+            names.add(key)
+    names.discard(None)
+    return names
 
 
 def _module_tree(target) -> Optional[ast.Module]:
@@ -97,14 +179,13 @@ def makes_remote_calls(app, handle) -> bool:
     assigns: Dict[str, ast.AST] = {}
     runpod_names: Set[str] = set()
     local_imports: Set[str] = set()
-    module_file = inspect.getsourcefile(target) or ""
-    project_dir = Path(module_file).resolve().parent if module_file else None
+    project_dirs = _project_dirs(inspect.getsourcefile(target))
 
-    def _is_local(module_name: str) -> bool:
-        if not module_name or project_dir is None:
-            return True
-        top = module_name.split(".")[0]
-        return (project_dir / f"{top}.py").exists() or (project_dir / top).is_dir()
+    def _is_local_import(module_name: str, level: int) -> bool:
+        return bool(level) or _is_local(module_name, project_dirs)
+
+    def _uncertain_import(module_name: str, level: int) -> bool:
+        return module_name.split(".")[0] == "runpod" or _is_local_import(module_name, level)
 
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -120,7 +201,7 @@ def makes_remote_calls(app, handle) -> bool:
                 bound = alias.asname or alias.name.split(".")[0]
                 if alias.name.split(".")[0] == "runpod":
                     runpod_names.add(bound)
-                elif _is_local(alias.name):
+                elif _is_local_import(alias.name, 0):
                     local_imports.add(bound)
         elif isinstance(node, ast.ImportFrom):
             module_name = node.module or ""
@@ -128,20 +209,24 @@ def makes_remote_calls(app, handle) -> bool:
                 bound = alias.asname or alias.name
                 if module_name.split(".")[0] == "runpod":
                     runpod_names.add(bound)
-                elif node.level or _is_local(module_name):
+                elif _is_local_import(module_name, node.level):
                     local_imports.add(bound)
 
-    if name not in defs:
+    # worker startup hooks run on the worker too
+    roots = [name]
+    init_fn = getattr(handle, "_init_fn", None)
+    if init_fn is not None:
+        init_name = getattr(init_fn, "__name__", None)
+        if getattr(init_fn, "__qualname__", init_name) != init_name:
+            return True
+        roots.append(init_name)
+    if any(root not in defs for root in roots):
         return True
 
-    other_resources = {
-        resource_target(h).__name__
-        for h in app.resources.values()
-        if h is not handle and resource_target(h) is not None
-    }
+    other_resources = _resource_names(target, app, handle)
 
     seen: Set[str] = set()
-    pending = [name]
+    pending = list(roots)
     while pending:
         current = pending.pop()
         if current in seen:
@@ -149,6 +234,8 @@ def makes_remote_calls(app, handle) -> bool:
         seen.add(current)
         used = _body_names(defs.get(current) or assigns[current])
         if used.attrs & _REMOTE_ATTRS:
+            return True
+        if any(_uncertain_import(m, level) for m, level in used.imports):
             return True
         for ref in used.names:
             if ref in other_resources or ref in runpod_names or ref in local_imports:

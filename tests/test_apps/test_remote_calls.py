@@ -119,6 +119,101 @@ class TestMakesRemoteCalls:
         )
         assert makes_remote_calls(mod.app, mod.app.resources["uses"]) is True
 
+    def test_import_inside_the_body_counts(self, tmp_path, load):
+        (tmp_path / "helpers_body.py").write_text("def run():\n    return 1\n")
+        mod = load(
+            """
+            import runpod
+
+            app = runpod.App("bodyimport")
+
+            @app.queue(name="uses", cpu="cpu3c-1-2")
+            def uses() -> int:
+                from helpers_body import run
+                return run()
+
+            @app.queue(name="gpu", gpu="NVIDIA GeForce RTX 4090")
+            def gpu() -> str:
+                import json
+                import not_installed_anywhere
+                return json.dumps(not_installed_anywhere.x)
+            """,
+            name="remote_calls_body",
+        )
+        assert makes_remote_calls(mod.app, mod.app.resources["uses"]) is True
+        # stdlib and packages absent from the client (torch on a gpu
+        # worker) are not project code
+        assert makes_remote_calls(mod.app, mod.app.resources["gpu"]) is False
+
+    def test_package_import_from_inside_the_package_counts(self, tmp_path, load):
+        pkg = tmp_path / "mypkg_rc"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "helpers.py").write_text("def run():\n    return 1\n")
+        source = textwrap.dedent(
+            """
+            import runpod
+            from mypkg_rc.helpers import run
+
+            app = runpod.App("pkgimport")
+
+            @app.queue(name="uses", cpu="cpu3c-1-2")
+            def uses() -> int:
+                return run()
+            """
+        )
+        (pkg / "worker.py").write_text(source)
+        import importlib
+
+        mod = importlib.import_module("mypkg_rc.worker")
+        assert makes_remote_calls(mod.app, mod.app.resources["uses"]) is True
+
+    def test_init_hook_calls_count(self, load):
+        mod = load(
+            """
+            import runpod
+
+            app = runpod.App("inithook")
+
+            @app.queue(name="sibling", cpu="cpu3c-1-2")
+            def sibling() -> int:
+                return 1
+
+            @app.queue(name="leaf", cpu="cpu3c-1-2")
+            def leaf() -> int:
+                return 2
+
+            @leaf.init
+            def warm():
+                sibling.remote()
+            """,
+            name="remote_calls_init",
+        )
+        assert makes_remote_calls(mod.app, mod.app.resources["leaf"]) is True
+        assert makes_remote_calls(mod.app, mod.app.resources["sibling"]) is False
+
+    def test_handles_of_other_apps_count(self, load):
+        mod = load(
+            """
+            import runpod
+
+            other = runpod.App("other-app")
+            app = runpod.App("main-app")
+
+            @other.api(name="svc", cpu="cpu3c-1-2")
+            class Svc:
+                @runpod.post("/x")
+                def x(self, body: dict) -> dict:
+                    return body
+
+            @app.queue(name="calls_api", cpu="cpu3c-1-2")
+            def calls_api() -> dict:
+                return Svc.post("/x", json={})
+            """,
+            name="remote_calls_other",
+        )
+        assert makes_remote_calls(mod.app, mod.app.resources["calls_api"]) is True
+
     def test_unanalyzable_targets_fail_open(self):
         import runpod
 
