@@ -15,6 +15,8 @@ from email.parser import HeaderParser
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from packaging.markers import InvalidMarker, Marker
+
 from .errors import AppError
 from .images import DEFAULT_PYTHON_VERSION, SUPPORTED_PYTHON_VERSIONS
 
@@ -68,7 +70,6 @@ _STRICT_REQ_NAME_RE = re.compile(
     r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:$|[<>=!~;@(])"
 )
 _REQ_EXTRAS_RE = re.compile(r"\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*\[([^\]]*)\]")
-_EXTRA_MARKER_RE = re.compile(r"""\bextra\s*==\s*['"]([^'"]+)['"]""")
 
 
 class BuildError(AppError):
@@ -238,19 +239,28 @@ def _requirement_extras(requirement: str) -> set:
     return {_canonical_name(e.strip()) for e in match.group(1).split(",") if e.strip()}
 
 
-def _gating_extras(marker: str) -> set:
-    """extras a marker requires, or an empty set when it can apply
-    without one. every "or" branch must name an extra: in
-    'extra == "torch" or python_version >= "3.12"' the second branch
-    applies on its own, so nothing gates the line."""
-    branches = re.split(r"\bor\b", marker)
-    if not marker.strip() or not all(_EXTRA_MARKER_RE.search(b) for b in branches):
-        return set()
-    return {_canonical_name(e) for e in _EXTRA_MARKER_RE.findall(marker)}
+def _extra_marker_applies(markers: list, extra: str) -> bool:
+    """evaluate a parsed marker's extra conditions, preserving grouping.
+
+    non-extra comparisons are conservatively true: the builder's platform
+    and python patch version do not describe the worker environment.
+    """
+    groups = [True]
+    for marker in markers:
+        if isinstance(marker, list):
+            groups[-1] &= _extra_marker_applies(marker, extra)
+        elif isinstance(marker, tuple):
+            lhs, _, rhs = marker
+            if lhs.serialize() == "extra" or rhs.serialize() == "extra":
+                comparison = Marker(" ".join(part.serialize() for part in marker))
+                groups[-1] &= comparison.evaluate({"extra": extra})
+        elif marker == "or":
+            groups.append(True)
+    return any(groups)
 
 
 def _read_requires_by_extra(dist_info: Path) -> Optional[list]:
-    """(dependency, its extras, extras that gate it) per Requires-Dist
+    """(dependency, its extras, parsed marker) per Requires-Dist
     line, or None when unreadable. other markers are ignored, which can
     only keep more wheels."""
     lines = _requires_dist(dist_info)
@@ -259,11 +269,15 @@ def _read_requires_by_extra(dist_info: Path) -> Optional[list]:
     entries = []
     for line in lines:
         requirement, _, marker = line.partition(";")
+        try:
+            parsed = Marker(marker) if marker.strip() else None
+        except InvalidMarker:
+            return None
         entries.append(
             (
                 _strict_requirement_name(line),
                 _requirement_extras(requirement),
-                _gating_extras(marker),
+                parsed,
             )
         )
     return entries
@@ -274,8 +288,9 @@ def _active_requirements(entries: list, extras: set) -> list:
     with these extras pulls in. non-extra markers are ignored."""
     return [
         (dep, dep_extras)
-        for dep, dep_extras, gates in entries
-        if not gates or gates & extras
+        for dep, dep_extras, marker in entries
+        if marker is None
+        or any(_extra_marker_applies(marker._markers, extra) for extra in {""} | extras)
     ]
 
 

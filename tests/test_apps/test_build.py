@@ -6,6 +6,7 @@ import threading
 from unittest.mock import patch
 
 import pytest
+from packaging.markers import default_environment
 
 from runpod.apps import App
 from runpod.apps.app import _clear_registry
@@ -14,6 +15,7 @@ from runpod.apps.build import (
     BuildError,
     build_environment,
     collect_requirements,
+    installed_closure,
     prune_excluded,
     requirement_name,
     runpod_requirement,
@@ -489,6 +491,44 @@ class TestBuildEnvironmentPrunes:
             result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
         assert result.excluded == ["torch"]
 
+    @pytest.mark.parametrize(
+        "marker",
+        [
+            '(sys_platform == "linux" or sys_platform == "win32") and extra == "torch"',
+            'extra == "torch" and (sys_platform == "linux" or sys_platform == "win32")',
+            '"torch" == extra',
+            'extra == "torch" and python_version < "3.12"',
+        ],
+    )
+    @pytest.mark.parametrize("requested", [False, True])
+    @pytest.mark.parametrize("builder_platform", ["darwin", "linux"])
+    def test_mixed_app_evaluates_extra_markers(
+        self, tmp_path, marker, requested, builder_platform
+    ):
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(
+            name="prep",
+            cpu="cpu3c-1-2",
+            dependencies=["transformers[torch]" if requested else "transformers"],
+        )
+        def prep():
+            pass
+
+        def vendor(env_dir, requirements, python_version, **kwargs):
+            self._fake_vendor(env_dir, requirements, python_version)
+            _wheel(env_dir, "transformers", requires=[f"torch; {marker}"])
+
+        builder = default_environment()
+        builder.update(sys_platform=builder_platform, python_version="3.14")
+        with (
+            patch("runpod.apps.build.vendor", side_effect=vendor),
+            patch("packaging.markers.default_environment", return_value=builder),
+        ):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+
+        assert result.excluded == (["torch"] if requested else [])
+
     def test_mixed_app_records_torch_when_a_marker_branch_skips_the_extra(
         self, tmp_path
     ):
@@ -539,3 +579,37 @@ class TestBuildEnvironmentPrunes:
             )
         assert result.excluded == []
         assert _installed(result.env_dir) == ["peft", "sympy", "torch"]
+
+
+class TestInstalledClosure:
+    def test_transitive_extras_activate_grouped_marker(self, tmp_path):
+        _wheel(tmp_path, "wrapper", requires=["models[torch]"])
+        _wheel(
+            tmp_path,
+            "models",
+            requires=[
+                'torch; (sys_platform == "linux" or sys_platform == "win32") and extra == "torch"'
+            ],
+        )
+        _wheel(tmp_path, "torch")
+        assert installed_closure(tmp_path, ["wrapper"]) == {"wrapper", "models", "torch"}
+
+    def test_each_extra_is_a_separate_marker_context(self, tmp_path):
+        _wheel(tmp_path, "models", requires=['torch; extra == "a" and extra == "b"'])
+        _wheel(tmp_path, "torch")
+        assert installed_closure(tmp_path, ["models[a,b]"]) == {"models"}
+
+    @pytest.mark.parametrize("requested", [False, True])
+    def test_or_in_extra_name_is_not_an_operator(self, tmp_path, requested):
+        _wheel(tmp_path, "models", requires=['torch; extra == "torch-or-gpu"'])
+        _wheel(tmp_path, "torch")
+        roots = ["models[torch-or-gpu]" if requested else "models"]
+        assert installed_closure(tmp_path, roots) == (
+            {"models", "torch"} if requested else {"models"}
+        )
+
+    def test_invalid_marker_fails_closed(self, tmp_path):
+        _wheel(tmp_path, "models", requires=['torch; extra =='])
+        _wheel(tmp_path, "torch")
+        _wheel(tmp_path, "other")
+        assert installed_closure(tmp_path, ["models"]) == {"models", "torch", "other"}
