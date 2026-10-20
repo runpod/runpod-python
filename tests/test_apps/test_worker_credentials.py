@@ -366,7 +366,24 @@ class TestEnsureAppKey:
                 await ensure_app_key(api, "pipe", "prod")
             assert caught.value is failure
         api.delete_api_key.assert_awaited_once_with("key-new")
-        assert "could not revoke api key key-new" in caplog.text
+        assert "could not revoke api key for secret" in caplog.text
+        assert "key-new" not in caplog.text
+        assert APP_KEY not in caplog.text
+
+    @pytest.mark.parametrize("outcome", ["uncertain", "metadata_less", "revoke_failed"])
+    async def test_cleanup_logs_exclude_key_response_fields(self, outcome, caplog):
+        api = _api()
+        api.create_api_key.return_value = {"id": APP_KEY, "rawKey": APP_KEY}
+        api.create_secret.side_effect = TimeoutError(APP_KEY)
+        if outcome == "uncertain":
+            api.list_secrets.side_effect = [[], AuthenticationError(APP_KEY)]
+        elif outcome == "metadata_less":
+            api.list_secrets.side_effect = [[], [{"id": "s1", "name": PROD_SECRET}]]
+        else:
+            api.delete_api_key.side_effect = RuntimeError(APP_KEY)
+        with pytest.raises(TimeoutError):
+            await ensure_app_key(api, "pipe", "prod")
+        assert PROD_SECRET in caplog.text
         assert APP_KEY not in caplog.text
 
     async def test_secret_failure_revokes_key_and_propagates(self):

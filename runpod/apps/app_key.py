@@ -107,9 +107,8 @@ async def ensure_app_key(api, app_name: str, env_name: Optional[str] = None) -> 
             secret = await _find_secret(api, name)
         except Exception:
             log.warning(
-                "could not reconcile secret %s; retained api key %s for cleanup",
+                "could not reconcile secret %s; retained associated api key for cleanup",
                 name,
-                key["id"],
             )
             raise create_error from None
         owns_secret = secret and secret.get("description") == description
@@ -121,9 +120,8 @@ async def ensure_app_key(api, app_name: str, env_name: Optional[str] = None) -> 
             )
         ):
             log.warning(
-                "secret %s has no ownership metadata; retained api key %s for cleanup",
+                "secret %s has no ownership metadata; retained associated api key for cleanup",
                 name,
-                key["id"],
             )
             raise
         if not owns_secret:
@@ -131,8 +129,7 @@ async def ensure_app_key(api, app_name: str, env_name: Optional[str] = None) -> 
                 await api.delete_api_key(key["id"])
             except Exception:
                 log.warning(
-                    "could not revoke api key %s for secret %s; retry credential cleanup",
-                    key["id"],
+                    "could not revoke api key for secret %s; retry credential cleanup",
                     name,
                 )
         if secret:

@@ -490,12 +490,11 @@ class AppsApiClient:
                     api_key=self._api_key,
                     params={"name": name} if name else None,
                 )
-                break
+                return data["secrets"]
             except (aiohttp.ClientError, OSError, asyncio.TimeoutError):
                 if attempt == _TRANSPORT_RETRIES - 1:
                     raise
                 await asyncio.sleep(2**attempt)
-        return data["secrets"]
 
     async def create_secret(
         self, name: str, value: str, description: str = ""
