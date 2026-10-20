@@ -177,10 +177,12 @@ def _configure_mounts(bindings: List[Dict[str, str]]) -> None:
             if path not in paths:
                 paths.append(path)
     global _mount_bindings, _mounts_configured
-    _mounts_configured = True
+    # publish the bindings before the flag: a thread that sees the flag
+    # must not read the previous, empty bindings
     _mount_bindings = MappingProxyType(
         {key: tuple(paths) for key, paths in resolved.items()}
     )
+    _mounts_configured = True
 
 
 class VolumeResolver:
