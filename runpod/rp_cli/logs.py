@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-from contextlib import suppress
 from datetime import datetime, timezone
 
 import aiohttp
@@ -52,28 +51,24 @@ async def _show_logs(
                 since=since,
                 last_event_id=cursor,
                 on_event_id=remember,
+                idle_timeout=None if follow else SNAPSHOT_IDLE_SECONDS,
             )
             try:
-                with suppress(StopAsyncIteration, asyncio.TimeoutError):
-                    while True:
-                        event = await asyncio.wait_for(
-                            anext(stream),
-                            timeout=None if follow else SNAPSHOT_IDLE_SECONDS,
-                        )
-                        if follow:
-                            emit(worker, event)
-                        elif (
-                            datetime.fromisoformat(event["ts"].replace("Z", "+00:00"))
-                            >= started
-                        ):
-                            return
-                        else:
-                            records.append((worker, event))
+                async for event in stream:
+                    if follow:
+                        emit(worker, event)
+                    elif (
+                        datetime.fromisoformat(event["ts"].replace("Z", "+00:00"))
+                        >= started
+                    ):
+                        return
+                    else:
+                        records.append((worker, event))
             except aiohttp.ClientResponseError as exc:
                 if not endpoint_id or exc.status != 404:
                     raise
                 return
-            except aiohttp.ClientConnectionError:
+            except (aiohttp.ClientConnectionError, asyncio.TimeoutError):
                 if not follow:
                     raise
             finally:

@@ -1,4 +1,3 @@
-import shlex
 import time
 from operator import itemgetter
 from typing import Optional
@@ -9,7 +8,7 @@ from runpod.api.rest import run_rest_request
 from runpod.cli.groups.pod.commands import sync_pods
 from runpod.rp_cli import compute
 from runpod.rp_cli.api import api_errors, list_all
-from runpod.rp_cli.options import parse_env
+from runpod.rp_cli.options import container_fields
 from runpod.rp_cli.output import (
     completer,
     confirm,
@@ -165,17 +164,28 @@ def _show(pod: dict, as_json: bool) -> None:
     print_fields(fields, [(label, itemgetter(label)) for label in fields])
 
 
-def _wait_running(pod_id: str, since: float) -> dict:
+def _wait_running(pod_id: str, since: float, previous: Optional[dict] = None) -> dict:
     from runpod.rp_cli import console as ui
 
     deadline = time.monotonic() + WAIT_TIMEOUT
+    previous_uptime = ((previous or {}).get("runtime") or {}).get("uptime") or 0
+    runtime_restarted = previous is None
     with ui.console.status(f"[dim]waiting for {pod_id} to start ...[/dim]"):
         while True:
             pod = run_rest_request("GET", f"/v2/pods/{pod_id}")
             status = _status(pod)
             uptime = pod["runtime"]["uptime"] if status == "running" else 0
-            # a longer uptime is a stale report from the container before the action
-            if status == "running" and uptime <= time.monotonic() - since + 1:
+            if status != "running" or uptime < previous_uptime:
+                runtime_restarted = True
+            new_start = previous is None or (
+                pod.get("startedAt") and pod["startedAt"] != previous.get("startedAt")
+            )
+            if (
+                status == "running"
+                and new_start
+                and runtime_restarted
+                and uptime <= time.monotonic() - since + 1
+            ):
                 return pod
             if status in ("error", "terminated"):
                 raise click.ClickException(f"pod {pod_id} is {status}")
@@ -191,41 +201,7 @@ def _container_body(
 ) -> dict:
     """build container settings, preserving existing environment and mount paths."""
     current = current or {}
-    body = {
-        field: options[option]
-        for option, field in (
-            ("image", "image"),
-            ("template", "templateId"),
-            ("args", "args"),
-            ("disk", "disk"),
-            ("global_networking", "globalNetworking"),
-        )
-        if options[option] is not None
-    }
-    for option in ("cmd", "entrypoint"):
-        if options[option] is not None:
-            body[option] = shlex.split(options[option])
-    if options["ports"]:
-        body["ports"] = list(options["ports"])
-    if options["registry"] is not None:
-        value = options["registry"]
-        body["registry"] = None
-        if value:
-            matches = [
-                registry["id"]
-                for registry in list_all("/v2/registries", "registries")
-                if value in (registry["id"], registry["name"])
-            ]
-            if not matches:
-                raise compute.ResolutionError(
-                    f"unknown registry credential '{value}'. list them with rp registry list"
-                )
-            body["registry"] = matches[0]
-    if options["env"] or unset_env:
-        env = {**current.get("env", {}), **parse_env(options["env"])}
-        for key in unset_env:
-            env.pop(key, None)
-        body["env"] = env
+    body = container_fields(options, current, unset_env)
     mounts = {}
     for kind in ("persistent", "network", "global"):
         value = options[f"{kind}_volume"]
@@ -538,8 +514,8 @@ def list_pods(name, statuses, include_cluster_pods, as_json):
     if name:
         pods = [p for p in pods if name.lower() in (p.get("name") or "").lower()]
     if statuses:
-        wanted = {status.upper() for status in statuses}
-        pods = [p for p in pods if p.get("status") in wanted]
+        wanted = {status.lower() for status in statuses}
+        pods = [p for p in pods if _status(p) in wanted]
     if as_json:
         print_json(pods)
         return
@@ -700,13 +676,18 @@ def _act(
 ):
     pod_id = _resolve_pod_id(pod_id, action)
     with api_errors():
+        previous = (
+            run_rest_request("GET", f"/v2/pods/{pod_id}")
+            if wait and action == "restart"
+            else None
+        )
         since = time.monotonic()
         result = run_rest_request(
             "POST", f"/v2/pods/{pod_id}/action", json={"action": action}
         )
         _say(f"{done} pod {pod_id}", as_json)
         if wait:
-            result = _wait_running(pod_id, since)
+            result = _wait_running(pod_id, since, previous)
     _show(result, as_json)
 
 
