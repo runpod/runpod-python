@@ -1,11 +1,10 @@
 import json
-import shlex
 from typing import Any, Optional
 
 import click
 
 from runpod.rp_cli import compute
-from runpod.rp_cli.options import parse_env
+from runpod.rp_cli.options import container_fields
 
 FLASHBOOT = {"off": "OFF", "standard": "FLASHBOOT", "priority": "PRIORITY_FLASHBOOT"}
 
@@ -121,7 +120,7 @@ def scale_patch(options: dict, current: dict) -> dict:
         if options.get(flag) is not None
     }
     if changes:
-        patch["workers"] = {**current.get("workers", {}), **changes}
+        patch["workers"] = {**(current.get("workers") or {}), **changes}
     delay = options.get("queue_delay_seconds")
     count = options.get("requests_per_worker")
     if delay is not None and count is not None:
@@ -142,36 +141,19 @@ def scale_patch(options: dict, current: dict) -> dict:
 def config_body(options: dict, current: Optional[dict] = None) -> dict:
     updating = current is not None
     current = current if updating else {"type": options["endpoint_type"]}
-    body = {}
+    body = container_fields(
+        {**options, "ports": options.get("port")},
+        current,
+        options.get("unset_env", ()),
+    )
     if not updating:
         body["type"] = current["type"]
-    for key, flag in (
-        ("name", "name"),
-        ("image", "image"),
-        ("templateId", "template"),
-        ("args", "args"),
-        ("disk", "disk"),
-        ("registry", "registry"),
-    ):
-        if options.get(flag) is not None:
-            body[key] = options[flag]
-    for key in ("entrypoint", "cmd"):
-        if options.get(key) is not None:
-            body[key] = shlex.split(options[key])
-    if options.get("port"):
-        body["ports"] = list(options["port"])
+    if options.get("name") is not None:
+        body["name"] = options["name"]
     if options.get("flashboot"):
         body["flashboot"] = FLASHBOOT[options["flashboot"].lower()]
     if options.get("request_timeout_seconds") is not None:
         body["timeout"] = options["request_timeout_seconds"] * 1000
-
-    if options.get("env") or options.get("unset_env"):
-        env = {**current.get("env", {}), **parse_env(options.get("env", ()))}
-        for key in options.get("unset_env", ()):
-            if key not in env:
-                raise click.UsageError(f"--unset-env {key}: no such variable")
-            del env[key]
-        body["env"] = env
 
     if options.get("gpu") and options.get("cpu"):
         raise click.UsageError("use either --gpu or --cpu")
@@ -203,7 +185,7 @@ def config_body(options: dict, current: Optional[dict] = None) -> dict:
             places, compute.list_datacenters()
         )
     if options.get("network_volume") or options.get("global_volume"):
-        mounts = dict(current.get("mounts", {}))
+        mounts = dict(current.get("mounts") or {})
         for kind, flag in (("network", "network_volume"), ("global", "global_volume")):
             if options.get(flag):
                 mounts[kind] = [{"volumeId": volume} for volume in options[flag]]
@@ -301,7 +283,9 @@ def patch(before: dict, after: dict) -> dict:
         gpu = {k: v for k, v in value.items() if old.get(k) != v}
         if "pools" in gpu or "excludedTypes" in gpu:
             gpu["pools"] = value.get("pools", old.get("pools"))
-            gpu["excludedTypes"] = value.get("excludedTypes") or []
+            gpu["excludedTypes"] = (
+                value.get("excludedTypes", old.get("excludedTypes")) or []
+            )
         if "minCudaVersion" in gpu and gpu["minCudaVersion"] is None:
             gpu["minCudaVersion"] = ""
         patch["gpu"] = gpu

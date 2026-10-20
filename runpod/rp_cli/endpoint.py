@@ -1,6 +1,7 @@
 import contextlib
 import fnmatch
 import json
+import sys
 import time
 from typing import Any, Iterator, Optional
 from urllib.parse import quote
@@ -320,7 +321,7 @@ def _config_options(creating: bool):
         click.option("--cmd", help="Container CMD, shell-quoted."),
         click.option(
             "--registry",
-            help="Registry credential ID for private images.",
+            help="Registry credential name or ID for private images; empty clears it.",
             shell_complete=complete_registry,
         ),
     ]
@@ -393,14 +394,17 @@ def _follow_rollout(
 def _apply(
     endpoint_id: str, patch: dict, follow: bool, timeout: float, as_json: bool
 ) -> None:
+    before = None
+    if follow:
+        try:
+            with api_errors():
+                before = run_rest_request(
+                    "GET", _path(endpoint_id, "releases"), params={"limit": 1}
+                ).get("endpointVersion")
+        except click.ClickException as exc:
+            click.echo(f"warning: cannot follow rollout: {exc.message}", err=True)
+            follow = False
     with api_errors():
-        before = (
-            run_rest_request(
-                "GET", _path(endpoint_id, "releases"), params={"limit": 1}
-            ).get("endpointVersion")
-            if follow
-            else None
-        )
         updated = run_rest_request("PATCH", _path(endpoint_id), json=patch)
     if as_json:
         print_json(updated)
@@ -410,7 +414,12 @@ def _apply(
             f"[dim]{endpoint_id}[/dim]"
         )
     if follow:
-        _follow_rollout(endpoint_id, before, timeout)
+        with (
+            contextlib.redirect_stdout(sys.stderr)
+            if as_json
+            else contextlib.nullcontext()
+        ):
+            _follow_rollout(endpoint_id, before, timeout)
 
 
 def _edit_document(before: dict) -> Optional[dict]:
@@ -515,7 +524,20 @@ def _follow_job(client, endpoint_id, job_id, as_json, *, stream=False, timeout=N
     """wait for completion, draining streamed chunks before reading the final result."""
     action = "stream" if stream else "status"
     resume = "stream" if stream else "wait"
-    deadline = time.monotonic() + timeout if timeout else None
+    deadline = time.monotonic() + timeout if timeout is not None else None
+    status = "pending"
+
+    def remaining_time(limit):
+        if deadline is None:
+            return limit
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise click.ClickException(
+                f"job {job_id} is still {status} after {timeout:g}s. "
+                f"resume with: rp endpoint job {resume} {endpoint_id} {job_id}"
+            )
+        return min(limit, remaining)
+
     streamed = open_line = False
     progress = (
         contextlib.nullcontext()
@@ -528,7 +550,13 @@ def _follow_job(client, endpoint_id, job_id, as_json, *, stream=False, timeout=N
                 try:
                     if stream:
                         job = client.get(
-                            _job_path(endpoint_id, action, job_id), timeout=60
+                            _job_path(endpoint_id, action, job_id),
+                            timeout=remaining_time(60),
+                        )
+                    elif deadline is not None:
+                        job = client.get(
+                            _job_path(endpoint_id, action, job_id),
+                            timeout=remaining_time(10),
                         )
                     else:
                         job = client.get(_job_path(endpoint_id, action, job_id))
@@ -536,7 +564,8 @@ def _follow_job(client, endpoint_id, job_id, as_json, *, stream=False, timeout=N
                     if stream:
                         continue
                     raise
-                chunks = job["stream"] if stream else []
+                status = job["status"]
+                chunks = (job.get("stream") or []) if stream else []
                 streamed = streamed or bool(chunks)
                 for chunk in chunks:
                     output = chunk["output"]
@@ -550,13 +579,8 @@ def _follow_job(client, endpoint_id, job_id, as_json, *, stream=False, timeout=N
                         click.echo(json.dumps(output))
                 if is_completed(job["status"]) and not chunks:
                     break
-                if deadline and time.monotonic() >= deadline:
-                    raise click.ClickException(
-                        f"job {job_id} is still {job['status']} after {timeout:g}s. "
-                        f"resume with: rp endpoint job {resume} {endpoint_id} {job_id}"
-                    )
                 if not chunks:
-                    time.sleep(0.5 if stream else 1)
+                    time.sleep(remaining_time(0.5 if stream else 1))
     except KeyboardInterrupt:
         click.echo(
             f"\njob {job_id} keeps running. resume with: "
@@ -569,7 +593,8 @@ def _follow_job(client, endpoint_id, job_id, as_json, *, stream=False, timeout=N
     if streamed and job["status"] == "COMPLETED":
         return
     if stream:
-        job = client.get(_job_path(endpoint_id, "status", job_id))
+        kwargs = {"timeout": remaining_time(10)} if deadline is not None else {}
+        job = client.get(_job_path(endpoint_id, "status", job_id), **kwargs)
     _print_job(job, as_json)
 
 
@@ -610,7 +635,10 @@ def _call_load_balancer(
     try:
         payload = response.json()
     except ValueError:
-        click.echo(response.text)
+        if as_json:
+            print_json(response.text)
+        else:
+            click.echo(response.text)
         return
     if isinstance(payload, str) and not as_json:
         click.echo(payload)
@@ -1064,7 +1092,7 @@ def run_endpoint(
     if stream:
         if not as_json:
             click.echo(f"job {job_id}", err=True)
-        _follow_job(client, endpoint_id, job_id, as_json, stream=True)
+        _follow_job(client, endpoint_id, job_id, as_json, stream=True, timeout=timeout)
         return
     _follow_job(client, endpoint_id, job_id, as_json, timeout=timeout)
 

@@ -215,6 +215,10 @@ def api(monkeypatch):
         ("GET", "/v2/serverless/lb1"): LB_ENDPOINT,
         ("GET", "/v2/serverless/ep1/workers"): WORKERS,
         ("GET", "/v2/serverless/ep1/releases"): RELEASES,
+        ("GET", "/v2/registries"): {
+            "registries": [{"id": "reg1", "name": "ghcr"}],
+            "pagination": PAGE,
+        },
         ("POST", "/v2/serverless"): lambda params, body: dict(body, id="new1"),
         ("PATCH", "/v2/serverless/ep1"): lambda params, body: dict(
             GPU_ENDPOINT, **body
@@ -503,7 +507,6 @@ def test_update_cpu_vcpus_and_mounts(api):
     "args, message",
     [
         (["ep1"], "nothing to update"),
-        (["ep1", "--unset-env", "MISSING"], "no such variable"),
         (["ep1", "--cpu", "cpu3c:4"], "cannot switch to CPUs"),
         (["ep2", "--gpu", "h100"], "cannot switch to GPUs"),
         (["ep2", "--cuda", "12.4"], "apply to GPU"),
@@ -534,6 +537,91 @@ def test_update_json_and_wait_follows_rollout(api):
     assert "release v4 is live" in out
     out = ok("update", "ep1", "--name", "renamed", "--json")
     assert json.loads(out)["name"] == "renamed"
+
+
+def test_wait_json_keeps_rollout_messages_on_stderr(api):
+    states = iter(
+        [
+            {"endpointVersion": 3},
+            {"endpointVersion": 4, "rollout": {"inProgress": True}},
+            {"endpointVersion": 4, "rollout": {"inProgress": False}},
+        ]
+    )
+    api.routes[("GET", "/v2/serverless/ep1/releases")] = lambda *_: next(states)
+    result = invoke("update", "ep1", "--image", "img:2", "--wait", "--json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["image"] == "img:2"
+    assert "rolling out" in result.stderr
+    assert "release v4 is live" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        error.QueryError("releases unavailable", "GET"),
+        requests.ConnectionError("offline"),
+    ],
+)
+def test_release_baseline_failure_does_not_block_update(api, failure):
+    api.routes[("GET", "/v2/serverless/ep1/releases")] = failure
+    result = invoke("update", "ep1", "--image", "img:2", "--wait", "--json")
+    assert result.exit_code == 0, result.output
+    assert api.bodies("PATCH") == [{"image": "img:2"}]
+    assert json.loads(result.stdout)["image"] == "img:2"
+    assert "cannot follow rollout" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "value, expected", [("ghcr", "reg1"), ("reg1", "reg1"), ("", None)]
+)
+def test_registry_selection_and_clearing(api, value, expected):
+    ok("update", "ep1", "--registry", value)
+    assert api.bodies("PATCH") == [{"registry": expected}]
+
+
+def test_unset_missing_environment_variable_is_noop(api):
+    ok("update", "ep1", "--unset-env", "MISSING")
+    assert api.bodies("PATCH") == [{"env": GPU_ENDPOINT["env"]}]
+
+
+@pytest.mark.parametrize("option", ["--cmd", "--entrypoint"])
+def test_invalid_container_quoting_is_usage_error(api, option):
+    result = invoke("update", "ep1", option, "'unterminated")
+    assert result.exit_code == 2
+    assert option in result.output
+    assert not api.bodies("PATCH")
+
+
+@pytest.mark.parametrize(
+    "key, args, expected",
+    [
+        ("env", ["update", "ep1", "--env", "A=1"], {"env": {"A": "1"}}),
+        ("workers", ["scale", "ep1", "--max-workers", "2"], {"workers": {"max": 2}}),
+        (
+            "mounts",
+            ["update", "ep1", "--network-volume", "vol1"],
+            {"mounts": {"network": [{"volumeId": "vol1"}]}},
+        ),
+    ],
+)
+def test_nullable_configuration_maps(api, key, args, expected):
+    api.routes[("GET", "/v2/serverless/ep1")] = {**GPU_ENDPOINT, key: None}
+    ok(*args)
+    assert api.bodies("PATCH") == [expected]
+
+
+@pytest.mark.parametrize("excluded", [None, []])
+def test_partial_gpu_edit_preserves_omitted_exclusions(excluded):
+    before = {"gpu": {"pools": ["ADA_80_PRO"], "excludedTypes": ["excluded"]}}
+    edited = {"pools": ["ADA_24"]}
+    if excluded is not None:
+        edited["excludedTypes"] = excluded
+    assert config.patch(before, {"gpu": edited}) == {
+        "gpu": {
+            "pools": ["ADA_24"],
+            "excludedTypes": ["excluded"] if excluded is None else [],
+        }
+    }
 
 
 def _doc(**changes):
@@ -848,6 +936,42 @@ def test_run_timeout_and_interrupt(api, client, monkeypatch):
     assert result.exit_code != 0
 
 
+@pytest.mark.parametrize("retry", [False, True])
+def test_run_stream_timeout_bounds_every_request(api, client, monkeypatch, retry):
+    clock = [0.0]
+    monkeypatch.setattr(ep.time, "monotonic", lambda: clock[0])
+    client.post.return_value = {"id": "job1", "status": "IN_QUEUE"}
+
+    def poll(path, timeout):
+        assert path == "ep1/stream/job1"
+        assert 0 < timeout <= 5 - clock[0]
+        clock[0] += min(2.0, timeout)
+        if retry:
+            raise requests.ReadTimeout("still waiting")
+        return {"status": "IN_QUEUE"}
+
+    client.get.side_effect = poll
+    result = invoke("run", "ep1", "--data", "{}", "--stream", "--timeout", "5")
+    assert result.exit_code == 1
+    assert "after 5s" in result.stderr
+    assert "resume with: rp endpoint job stream ep1 job1" in result.stderr
+    assert client.get.call_count == 3
+    assert clock[0] == 5
+
+
+@pytest.mark.parametrize("empty_stream", [{}, {"stream": None}])
+def test_stream_responses_can_omit_chunks(api, client, empty_stream):
+    client.post.return_value = {"id": "job1", "status": "IN_QUEUE"}
+    client.get.side_effect = [
+        {"status": "IN_QUEUE", **empty_stream},
+        {"status": "COMPLETED", **empty_stream},
+        {"id": "job1", "status": "COMPLETED", "output": "done"},
+    ]
+    result = invoke("run", "ep1", "--data", "{}", "--stream", "--json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["output"] == "done"
+
+
 def test_run_stream(api, client):
     client.post.return_value = {"id": "job1"}
     client.get.side_effect = [
@@ -896,6 +1020,14 @@ def test_run_stream_failure_and_json(api, client):
 def test_run_rejects_bad_flags(api, client, args, message):
     assert message in fails("run", *args)
     client.post.assert_not_called()
+
+
+def test_load_balancer_plain_text_json(api, monkeypatch):
+    response = MagicMock(status_code=200, text="pong")
+    response.json.side_effect = ValueError("not json")
+    monkeypatch.setattr(ep.requests, "request", lambda *a, **k: response)
+    monkeypatch.setattr(ep, "api_key", lambda: "test-key")
+    assert json.loads(ok("run", "lb1", "--json")) == "pong"
 
 
 def test_run_load_balancer(api, monkeypatch):
