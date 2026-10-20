@@ -480,12 +480,21 @@ class AppsApiClient:
 
     async def list_secrets(self, name: Optional[str] = None) -> List[Dict[str, Any]]:
         """account secrets, or only the one matching name (case-insensitive)."""
-        data = await run_rest_request_async(
-            "GET",
-            "/v2/account/secrets",
-            api_key=self._api_key,
-            params={"name": name} if name else None,
-        )
+        import asyncio
+
+        for attempt in range(_TRANSPORT_RETRIES):
+            try:
+                data = await run_rest_request_async(
+                    "GET",
+                    "/v2/account/secrets",
+                    api_key=self._api_key,
+                    params={"name": name} if name else None,
+                )
+                break
+            except (aiohttp.ClientError, OSError, asyncio.TimeoutError):
+                if attempt == _TRANSPORT_RETRIES - 1:
+                    raise
+                await asyncio.sleep(2**attempt)
         return data["secrets"]
 
     async def create_secret(

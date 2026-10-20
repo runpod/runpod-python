@@ -10,13 +10,16 @@ separate key per app.
 """
 
 import hashlib
+import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from ..error import QueryError
+from ..error import AuthenticationError, QueryError
 from .secret import Secret
 
 APP_KEY_ENV = "RUNPOD_API_KEY"
+log = logging.getLogger(__name__)
 
 # what flash runtime does from a worker: call endpoints and list them
 # (serverless:read), launch and terminate task pods (pods), resolve
@@ -43,10 +46,9 @@ def app_key_name(app_name: str, env_name: Optional[str] = None) -> str:
         raw = f"flash-dev-key.{app_name}"
     else:
         raw = f"flash-app-key.{app_name}.{env_name}"
-    name = _UNSAFE.sub("-", raw)
-    if len(name) <= _MAX_NAME:
-        return name
-    digest = hashlib.sha256(raw.encode()).hexdigest()[:12]
+    name = _UNSAFE.sub("-", raw).lower()
+    identity = json.dumps([app_name, env_name], ensure_ascii=True)
+    digest = hashlib.sha256(identity.encode()).hexdigest()[:24]
     return f"{name[: _MAX_NAME - len(digest) - 1]}.{digest}"
 
 
@@ -66,23 +68,83 @@ async def _key_ids(api, name: str) -> List[str]:
     return [k["id"] for k in await api.list_api_keys() if k.get("name") == name]
 
 
+async def _secret_has_live_key(
+    api, name: str, secret: Dict[str, Any], exclude_key_id: Optional[str] = None
+) -> bool:
+    key_ids = [
+        key_id for key_id in await _key_ids(api, name) if key_id != exclude_key_id
+    ]
+    owner = re.match(r"api key (\S+) for ", secret.get("description") or "")
+    return owner[1] in key_ids if owner else bool(key_ids)
+
+
 async def ensure_app_key(api, app_name: str, env_name: Optional[str] = None) -> Secret:
     """the secret holding the app environment's api key, minting the key
     and the secret on first use."""
     name = app_key_name(app_name, env_name)
-    if await _find_secret(api, name):
-        return Secret(name)
-    key = await api.create_api_key(name, APP_KEY_SCOPES)
-    target = f"{app_name}/{env_name}" if env_name else f"{app_name} dev sessions"
+    secret = await _find_secret(api, name)
+    if secret:
+        if await _secret_has_live_key(api, name, secret):
+            return Secret(name)
+        await api.delete_secret(secret["id"])
     try:
-        await api.create_secret(
-            name, key["rawKey"], description=f"api key for {target} workers"
+        key = await api.create_api_key(name, APP_KEY_SCOPES)
+    except (AuthenticationError, QueryError) as exc:
+        exc.message = (
+            f"{exc}. Automatic worker credentials require API key creation "
+            "permission and permission to grant: "
+            + ", ".join(APP_KEY_SCOPES)
+            + ". Use a caller with those permissions, or set RUNPOD_API_KEY "
+            "in each resource's env to an appropriate scoped key or Secret."
         )
-    except QueryError:
-        await api.delete_api_key(key["id"])
-        # a concurrent deploy may have created it first
-        if not await _find_secret(api, name):
+        raise
+    target = f"{app_name}/{env_name}" if env_name else f"{app_name} dev sessions"
+    description = f"api key {key['id']} for {target} workers"
+    try:
+        await api.create_secret(name, key["rawKey"], description=description)
+    except Exception as create_error:
+        try:
+            secret = await _find_secret(api, name)
+        except Exception:
+            log.warning(
+                "could not reconcile secret %s; retained api key %s for cleanup",
+                name,
+                key["id"],
+            )
+            raise create_error from None
+        owns_secret = secret and secret.get("description") == description
+        if (
+            secret
+            and not secret.get("description")
+            and not (
+                isinstance(create_error, QueryError) and create_error.status_code == 409
+            )
+        ):
+            log.warning(
+                "secret %s has no ownership metadata; retained api key %s for cleanup",
+                name,
+                key["id"],
+            )
             raise
+        if not owns_secret:
+            try:
+                await api.delete_api_key(key["id"])
+            except Exception:
+                log.warning(
+                    "could not revoke api key %s for secret %s; retry credential cleanup",
+                    key["id"],
+                    name,
+                )
+        if secret:
+            try:
+                if await _secret_has_live_key(
+                    api, name, secret, None if owns_secret else key["id"]
+                ):
+                    return Secret(name)
+            except Exception:
+                log.warning("could not validate the api key for secret %s", name)
+                raise create_error from None
+        raise
     return Secret(name)
 
 

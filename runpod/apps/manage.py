@@ -76,8 +76,8 @@ async def undeploy_environment(
     delete_env: bool = True,
     events: Optional[object] = None,
 ) -> UndeployResult:
-    """tear down an environment: endpoints first, then the environment
-    and its app key.
+    """tear down an environment: endpoints first, then its app key
+    and the environment.
 
     events, when given, receives cleanup_started(total), deleting(name),
     deleted(name), delete_failed(name).
@@ -102,17 +102,17 @@ async def undeploy_environment(
 
     if delete_env and not result.failures:
         try:
+            await delete_app_key(client, app_name, env_name)
+        except Exception as exc:
+            result.failures.append(f"app key for {env_name}: {exc}")
+
+    if delete_env and not result.failures:
+        try:
             await client.delete_environment(env["id"])
             result.environment_deleted = True
             log.info("deleted environment %s (%s)", env_name, env["id"])
         except Exception as exc:  # noqa: BLE001 - collected for the caller
             result.failures.append(f"environment {env_name}: {exc}")
-
-    if result.environment_deleted:
-        try:
-            await delete_app_key(client, app_name, env_name)
-        except Exception as exc:  # noqa: BLE001 - collected for the caller
-            result.failures.append(f"app key for {env_name}: {exc}")
 
     return result
 
@@ -123,7 +123,7 @@ async def delete_app(
     api: Optional[AppsApiClient] = None,
     events: Optional[object] = None,
 ) -> UndeployResult:
-    """delete an app after undeploying every environment in it, then its
+    """delete an app after undeploying its environments and removing its
     dev key."""
     client = api or AppsApiClient()
     app = await get_app(app_name, api=client)
@@ -138,16 +138,16 @@ async def delete_app(
 
     if not result.failures:
         try:
+            await delete_app_key(client, app_name)
+        except Exception as exc:
+            result.failures.append(f"dev key for {app_name}: {exc}")
+
+    if not result.failures:
+        try:
             await client.delete_app(app["id"])
             result.app_deleted = True
             log.info("deleted app %s (%s)", app_name, app["id"])
         except Exception as exc:  # noqa: BLE001 - collected for the caller
             result.failures.append(f"app {app_name}: {exc}")
-
-    if result.app_deleted:
-        try:
-            await delete_app_key(client, app_name)
-        except Exception as exc:  # noqa: BLE001 - collected for the caller
-            result.failures.append(f"dev key for {app_name}: {exc}")
 
     return result

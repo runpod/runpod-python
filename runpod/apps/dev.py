@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Union
 
 from .api import AppsApiClient
 from .app import App
-from .app_key import APP_KEY_ENV, ensure_app_key, needs_app_key
+from .app_key import APP_KEY_ENV, delete_app_key, ensure_app_key, needs_app_key
 from .errors import AppError
 from .handles import ApiHandle, FunctionHandle
 from .secret import Secret, render_env
@@ -403,7 +403,7 @@ class DevSession:
             )
 
     async def stop(self, events: Optional[object] = None) -> None:
-        """delete every endpoint this session owns.
+        """delete every endpoint this session owns, then its dev credentials.
 
         events, when given, overrides the session sink for teardown
         rendering: cleanup_started(total), deleting(name), deleted(name),
@@ -432,6 +432,17 @@ class DevSession:
         for app in self.apps:
             app._dev_targets.clear()
             app._dev_events = None
+        if failures:
+            raise AppError("dev cleanup incomplete: " + "; ".join(failures))
+
+        for app_name in list(self._app_keys):
+            try:
+                await delete_app_key(self.api, app_name)
+            except Exception:
+                failures.append(f"credentials for {app_name}")
+                log.warning("failed to delete dev credentials for %s", app_name)
+            else:
+                del self._app_keys[app_name]
         if failures:
             raise AppError("dev cleanup incomplete: " + "; ".join(failures))
 

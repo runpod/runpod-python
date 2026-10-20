@@ -6,8 +6,7 @@ import aiohttp
 import pytest
 
 from runpod.apps.api import AppsApiClient
-from runpod.error import QueryError
-
+from runpod.error import AuthenticationError, QueryError
 
 def _respond(data):
     return AsyncMock(return_value={"data": data})
@@ -16,6 +15,65 @@ def _respond(data):
 def _client_with(data):
     client = AppsApiClient(api_key="test-key")
     return client, patch("runpod.apps.api.run_graphql_query_async", _respond(data))
+
+
+class TestSecretReadRetry:
+    async def test_retries_transport_failures_with_bounded_backoff(self):
+        client = AppsApiClient(api_key="test-key")
+        transport = AsyncMock(
+            side_effect=[
+                aiohttp.ClientConnectionError("reset"),
+                OSError("dns"),
+                TimeoutError("timeout"),
+                {"secrets": [{"id": "s1", "name": "tok"}]},
+            ]
+        )
+        with (
+            patch("runpod.apps.api.run_rest_request_async", transport),
+            patch("asyncio.sleep", new_callable=AsyncMock) as sleep,
+        ):
+            assert await client.list_secrets(name="tok") == [
+                {"id": "s1", "name": "tok"}
+            ]
+        assert sleep.await_args_list == [call(1), call(2), call(4)]
+        assert (
+            transport.await_args_list
+            == [
+                call(
+                    "GET",
+                    "/v2/account/secrets",
+                    api_key="test-key",
+                    params={"name": "tok"},
+                )
+            ]
+            * 4
+        )
+
+    async def test_transport_retries_stop_after_four_attempts(self):
+        transport = AsyncMock(side_effect=TimeoutError("timeout"))
+        with (
+            patch("runpod.apps.api.run_rest_request_async", transport),
+            patch("asyncio.sleep", new_callable=AsyncMock) as sleep,
+            pytest.raises(TimeoutError),
+        ):
+            await AppsApiClient(api_key="test-key").list_secrets()
+        assert transport.await_count == 4
+        assert sleep.await_args_list == [call(1), call(2), call(4)]
+
+    @pytest.mark.parametrize(
+        "failure",
+        [AuthenticationError("denied"), QueryError("forbidden", status_code=403)],
+    )
+    async def test_authorization_failures_do_not_retry(self, failure):
+        transport = AsyncMock(side_effect=failure)
+        with (
+            patch("runpod.apps.api.run_rest_request_async", transport),
+            patch("asyncio.sleep", new_callable=AsyncMock) as sleep,
+            pytest.raises(type(failure)),
+        ):
+            await AppsApiClient(api_key="test-key").list_secrets()
+        transport.assert_awaited_once()
+        sleep.assert_not_awaited()
 
 
 class TestExecuteRetry:
