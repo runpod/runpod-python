@@ -104,6 +104,30 @@ def _invoke(args, gpus=GPUS, cpus=CPUS, datacenters=DATACENTERS):
 
 
 class TestGpuCatalog:
+    @pytest.mark.parametrize(
+        "cloud, expected", [(None, 10), ("secure", 1), ("community", 10)]
+    )
+    def test_max_count_matches_cloud(self, cloud, expected):
+        from runpod.rp_cli.catalog import _gpu_columns
+
+        columns = dict(_gpu_columns("POD", 1, cloud))
+        assert columns["MAX"](GPUS[1]) == expected
+
+    def test_cpu_community_rejected_before_fetch(self):
+        result, list_gpus, list_cpus = _invoke(["--cpu", "--cloud", "community"])
+        assert result.exit_code == 2
+        assert "secure cloud" in result.output
+        list_gpus.assert_not_called()
+        list_cpus.assert_not_called()
+
+    @pytest.mark.parametrize("floors", [("12.4", "12.10"), ("12.10", "12.4")])
+    def test_strongest_cuda_floor_is_sent(self, floors):
+        result, list_gpus, _ = _invoke(
+            ["--cuda", ">=" + floors[0], "--cuda", ">=" + floors[1]]
+        )
+        assert result.exit_code == 0, result.output
+        assert list_gpus.call_args.kwargs["min_cuda_version"] == "12.10"
+
     def test_unavailable_gpu_omits_stock_fields(self):
         gpu = {
             key: value
