@@ -269,6 +269,16 @@ def _read_requires_by_extra(dist_info: Path) -> Optional[list]:
     return entries
 
 
+def _active_requirements(entries: list, extras: set) -> list:
+    """(dependency, its extras) for each Requires-Dist entry that an install
+    with these extras pulls in. non-extra markers are ignored."""
+    return [
+        (dep, dep_extras)
+        for dep, dep_extras, gates in entries
+        if not gates or gates & extras
+    ]
+
+
 def installed_closure(env_dir: Path, roots: List[str]) -> set:
     """canonical names of installed distributions the roots pull in,
     roots included. a dependency behind an extra counts only when that
@@ -290,9 +300,7 @@ def installed_closure(env_dir: Path, roots: List[str]) -> set:
         if known is not None and extras <= known:
             continue
         active = activated[node] = (known or set()) | extras
-        for dep, dep_extras, gates in requires.get(node) or ():
-            if not gates or gates & active:
-                stack.append((dep, dep_extras))
+        stack.extend(_active_requirements(requires.get(node) or (), active))
     return set(activated)
 
 
@@ -363,27 +371,52 @@ def prune_excluded(
     """
     dist_infos = _installed_dist_infos(env_dir)
     excluded_set = {_canonical_name(n) for n in excluded}
-    dropped = set(dist_infos) & excluded_set
-    if not dropped:
+    if not set(dist_infos) & excluded_set:
         return []
-
     records = {name: _read_record(d) for name, d in dist_infos.items()}
+    dropped = _distributions_to_drop(
+        dist_infos, records, excluded_set, roots, image_provided
+    )
+    _delete_distributions(env_dir, dist_infos, records, dropped)
+    return sorted(dropped)
+
+
+def _distributions_to_drop(
+    dist_infos: Dict[str, Path],
+    records: Dict[str, Optional[set]],
+    excluded: set,
+    roots: List[str],
+    image_provided: List[str],
+) -> set:
+    """the excluded distributions, plus the wheels only image-provided
+    packages need. just the excluded ones when metadata is incomplete
+    or a root has no name."""
+    installed = set(dist_infos)
+    targets = installed & excluded
     requires = {name: _read_requires(d) for name, d in dist_infos.items()}
     root_names = {_strict_requirement_name(r) for r in roots}
-    complete = None not in records.values() and None not in requires.values()
+    if None in records.values() or None in requires.values() or "" in root_names:
+        return targets
 
-    if complete and "" not in root_names:
-        installed = set(dist_infos)
-        provided = {_canonical_name(n) for n in image_provided}
-        pulled_by_provided = _dependency_closure(requires, installed & provided, set())
-        # keep everything the roots, unrelated wheels, and user exclusions
-        # (which remove only the named package) need, without walking
-        # into image-provided packages
-        seed = (installed - pulled_by_provided) | (installed & root_names)
-        seed |= installed & (excluded_set - provided)
-        kept = _dependency_closure(requires, seed - provided, stop=provided)
-        dropped |= installed - kept
+    provided = {_canonical_name(n) for n in image_provided}
+    pulled_by_provided = _dependency_closure(requires, installed & provided, set())
+    # keep what the roots, unrelated wheels, and user exclusions (which
+    # remove only the named package) need, without walking into
+    # image-provided packages
+    seed = (installed - pulled_by_provided) | (installed & root_names)
+    seed |= installed & (excluded - provided)
+    kept = _dependency_closure(requires, seed - provided, stop=provided)
+    return targets | (installed - kept)
 
+
+def _delete_distributions(
+    env_dir: Path,
+    dist_infos: Dict[str, Path],
+    records: Dict[str, Optional[set]],
+    dropped: set,
+) -> None:
+    """delete the dropped distributions' files, keeping any file a kept
+    distribution also installed."""
     dropped_files = set()
     kept_files = set()
     for name, paths in records.items():
@@ -398,7 +431,6 @@ def prune_excluded(
             shutil.rmtree(fallback, ignore_errors=True)
 
     _remove_empty_dirs(env_dir, touched)
-    return sorted(dropped)
 
 
 def _is_pinnable_name(spec: str) -> bool:
