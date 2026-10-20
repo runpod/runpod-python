@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from collections import deque
 from email.parser import HeaderParser
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .errors import AppError
 from .images import DEFAULT_PYTHON_VERSION, SUPPORTED_PYTHON_VERSIONS
@@ -217,27 +217,71 @@ def _read_requires(dist_info: Path) -> Optional[set]:
     return deps
 
 
+_EXTRA_MARKER_RE = re.compile(r"""\bextra\s*==\s*['"]([^'"]+)['"]""")
+_REQ_EXTRAS_RE = re.compile(r"\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*\[([^\]]*)\]")
+
+
+def _requirement_extras(requirement: str) -> set:
+    """canonical extras a requirement asks for ("transformers[torch]")."""
+    match = _REQ_EXTRAS_RE.match(requirement)
+    if not match:
+        return set()
+    return {_canonical_name(e.strip()) for e in match.group(1).split(",") if e.strip()}
+
+
+def _read_requires_by_extra(dist_info: Path) -> Optional[list]:
+    """(dependency, its extras, extras that gate it) per Requires-Dist
+    line, or None when unreadable. an ungated line has no gating extras.
+    other markers are ignored, which can only keep more wheels."""
+    metadata = dist_info / "METADATA"
+    if not metadata.is_file():
+        return None
+    headers = HeaderParser().parsestr(
+        metadata.read_text(encoding="utf-8", errors="replace")
+    )
+    entries = []
+    for line in headers.get_all("Requires-Dist") or []:
+        dep = _strict_requirement_name(line)
+        if not dep:
+            return None
+        marker = line.split(";", 1)[1] if ";" in line else ""
+        gates = set()
+        # gated only when every "or" branch names an extra; any other
+        # branch (extra == "torch" or python_version >= "3.12") can
+        # apply without the extra, so the line counts as ungated
+        branches = re.split(r"\bor\b", marker)
+        if marker.strip() and all(_EXTRA_MARKER_RE.search(b) for b in branches):
+            gates = {_canonical_name(e) for e in _EXTRA_MARKER_RE.findall(marker)}
+        entries.append((dep, _requirement_extras(line.split(";", 1)[0]), gates))
+    return entries
+
+
 def installed_closure(env_dir: Path, roots: List[str]) -> set:
     """canonical names of installed distributions the roots pull in,
-    roots included. unreadable metadata counts every installed
-    distribution as pulled in."""
+    roots included. a dependency behind an extra counts only when that
+    extra was asked for (transformers does not pull torch, while
+    transformers[torch] does). unreadable metadata counts every
+    installed distribution as pulled in."""
     requires = {
-        _canonical_name(_dist_info_name(d.name)): _read_requires(d)
+        _canonical_name(_dist_info_name(d.name)): _read_requires_by_extra(d)
         for d in env_dir.glob("*.dist-info")
         if d.is_dir()
     }
     names = {_strict_requirement_name(r) for r in roots}
     if "" in names or any(v is None for v in requires.values()):
         return set(requires) | (names - {""})
-    seen = set()
-    stack = list(names)
+    activated: Dict[str, set] = {}
+    stack = [(_strict_requirement_name(r), _requirement_extras(r)) for r in roots]
     while stack:
-        node = stack.pop()
-        if node in seen:
+        node, extras = stack.pop()
+        known = activated.get(node)
+        if known is not None and extras <= known:
             continue
-        seen.add(node)
-        stack.extend(requires.get(node) or ())
-    return seen
+        active = activated[node] = (known or set()) | extras
+        for dep, dep_extras, gates in requires.get(node) or ():
+            if not gates or gates & active:
+                stack.append((dep, dep_extras))
+    return set(activated)
 
 
 def prune_excluded(

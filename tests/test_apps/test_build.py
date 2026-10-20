@@ -448,6 +448,68 @@ class TestBuildEnvironmentPrunes:
         # the cpu workers install torch at cold start, so it stays listed
         assert result.excluded == ["torch"]
 
+    def test_mixed_app_ignores_torch_behind_an_unrequested_extra(self, tmp_path):
+        from runpod.apps.build import build_environment
+
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["transformers"])
+        def prep():
+            pass
+
+        def vendor(env_dir, requirements, python_version, **kwargs):
+            self._fake_vendor(env_dir, requirements, python_version)
+            _wheel(env_dir, "transformers", requires=['torch>=2; extra == "torch"'])
+
+        with patch("runpod.apps.build.vendor", side_effect=vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        # transformers without [torch] never imports it on the cpu stage
+        assert result.excluded == []
+
+    def test_mixed_app_records_torch_for_a_requested_extra(self, tmp_path):
+        from runpod.apps.build import build_environment
+
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["transformers[torch]"])
+        def prep():
+            pass
+
+        def vendor(env_dir, requirements, python_version, **kwargs):
+            self._fake_vendor(env_dir, requirements, python_version)
+            _wheel(
+                env_dir,
+                "transformers",
+                requires=['torch>=2; extra == "torch" or extra == "all"'],
+            )
+
+        with patch("runpod.apps.build.vendor", side_effect=vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == ["torch"]
+
+    def test_mixed_app_records_torch_when_a_marker_branch_skips_the_extra(
+        self, tmp_path
+    ):
+        from runpod.apps.build import build_environment
+
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["transformers"])
+        def prep():
+            pass
+
+        def vendor(env_dir, requirements, python_version, **kwargs):
+            self._fake_vendor(env_dir, requirements, python_version)
+            _wheel(
+                env_dir,
+                "transformers",
+                requires=['torch; extra == "torch" or python_version >= "3.12"'],
+            )
+
+        with patch("runpod.apps.build.vendor", side_effect=vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == ["torch"]
+
     def test_mixed_app_direct_gpu_torch_not_recorded(self, tmp_path):
         from runpod.apps.build import build_environment
 
