@@ -430,12 +430,6 @@ def dev(module, once):
             else:
                 done.set_exception(exc)
 
-        def _discard_result(future: "asyncio.Future[None]") -> None:
-            # an abandoned entrypoint's error would otherwise be logged
-            # as never retrieved
-            if not future.cancelled():
-                future.exception()
-
         def _report(exc: "BaseException | None") -> None:
             try:
                 loop.call_soon_threadsafe(_finish, exc)
@@ -461,14 +455,19 @@ def dev(module, once):
         try:
             return await asyncio.shield(done)
         except asyncio.CancelledError:
-            if done.done():
-                await done
-            else:
-                forced = asyncio.ensure_future(force_stop.wait())
-                await asyncio.wait({done, forced}, return_when=asyncio.FIRST_COMPLETED)
-                forced.cancel()
-                done.add_done_callback(_discard_result)
+            await _settle_after_stop(done)
             raise
+
+    async def _settle_after_stop(done: "asyncio.Future[None]") -> None:
+        """after a stop, wait for the still-running entrypoint so its remote
+        calls cannot race teardown, unless a second signal forces the stop."""
+        if done.done():
+            await done  # surfaces the entrypoint's own error
+            return
+        forced = asyncio.ensure_future(force_stop.wait())
+        await asyncio.wait({done, forced}, return_when=asyncio.FIRST_COMPLETED)
+        forced.cancel()
+        done.add_done_callback(_discard_result)
 
     def _install_stop_signals() -> None:
         """stop cleanly on sigint and sigterm.
@@ -549,6 +548,13 @@ def dev(module, once):
         ui.console.print()
     except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
         raise click.ClickException(str(exc)) from exc
+
+
+def _discard_result(future: "asyncio.Future[None]") -> None:
+    """mark an abandoned entrypoint's error as retrieved, so asyncio does
+    not log it as never retrieved."""
+    if not future.cancelled():
+        future.exception()
 
 
 # ------------------------------------------------------------------ logs

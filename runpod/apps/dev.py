@@ -402,13 +402,20 @@ class DevSession:
         try:
             return await asyncio.shield(create)
         except asyncio.CancelledError:
-            try:
-                result = await create
-            except Exception:  # noqa: BLE001 - the create failed; nothing to track
-                raise asyncio.CancelledError from None
-            self._endpoints[name] = result["id"]
-            self._resource_names[name] = resource
+            await self._record_late_create(create, name, resource)
             raise
+
+    async def _record_late_create(
+        self, create: "asyncio.Future[Dict]", name: str, resource: str
+    ) -> None:
+        """wait for a create the session was cancelled during, and record
+        the endpoint it made."""
+        try:
+            result = await create
+        except Exception:  # noqa: BLE001 - the create failed; nothing to track
+            return
+        self._endpoints[name] = result["id"]
+        self._resource_names[name] = resource
 
     async def stop(self, events: Optional[object] = None) -> None:
         """delete every endpoint this session owns.
