@@ -67,6 +67,8 @@ _REQ_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 _STRICT_REQ_NAME_RE = re.compile(
     r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:$|[<>=!~;@(])"
 )
+_REQ_EXTRAS_RE = re.compile(r"\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*\[([^\]]*)\]")
+_EXTRA_MARKER_RE = re.compile(r"""\bextra\s*==\s*['"]([^'"]+)['"]""")
 
 
 class BuildError(AppError):
@@ -197,28 +199,35 @@ def _read_record(dist_info: Path) -> Optional[set]:
     return paths
 
 
-def _read_requires(dist_info: Path) -> Optional[set]:
-    """canonical names a wheel depends on, or None when unreadable.
+def _installed_dist_infos(env_dir: Path) -> Dict[str, Path]:
+    """canonical distribution name -> its .dist-info dir in env_dir."""
+    return {
+        _canonical_name(_dist_info_name(d.name)): d
+        for d in env_dir.glob("*.dist-info")
+        if d.is_dir()
+    }
 
-    markers and extras are ignored, which can only keep more wheels.
-    """
+
+def _requires_dist(dist_info: Path) -> Optional[List[str]]:
+    """a wheel's Requires-Dist lines, or None when METADATA is missing or
+    a line does not start with a name."""
     metadata = dist_info / "METADATA"
     if not metadata.is_file():
         return None
     headers = HeaderParser().parsestr(
         metadata.read_text(encoding="utf-8", errors="replace")
     )
-    deps = set()
-    for line in headers.get_all("Requires-Dist") or []:
-        dep = _strict_requirement_name(line)
-        if not dep:
-            return None
-        deps.add(dep)
-    return deps
+    lines = headers.get_all("Requires-Dist") or []
+    return None if any(not _strict_requirement_name(line) for line in lines) else lines
 
 
-_EXTRA_MARKER_RE = re.compile(r"""\bextra\s*==\s*['"]([^'"]+)['"]""")
-_REQ_EXTRAS_RE = re.compile(r"\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*\[([^\]]*)\]")
+def _read_requires(dist_info: Path) -> Optional[set]:
+    """canonical names a wheel depends on, or None when unreadable.
+
+    markers and extras are ignored, which can only keep more wheels.
+    """
+    lines = _requires_dist(dist_info)
+    return None if lines is None else {_strict_requirement_name(line) for line in lines}
 
 
 def _requirement_extras(requirement: str) -> set:
@@ -229,30 +238,34 @@ def _requirement_extras(requirement: str) -> set:
     return {_canonical_name(e.strip()) for e in match.group(1).split(",") if e.strip()}
 
 
+def _gating_extras(marker: str) -> set:
+    """extras a marker requires, or an empty set when it can apply
+    without one. every "or" branch must name an extra: in
+    'extra == "torch" or python_version >= "3.12"' the second branch
+    applies on its own, so nothing gates the line."""
+    branches = re.split(r"\bor\b", marker)
+    if not marker.strip() or not all(_EXTRA_MARKER_RE.search(b) for b in branches):
+        return set()
+    return {_canonical_name(e) for e in _EXTRA_MARKER_RE.findall(marker)}
+
+
 def _read_requires_by_extra(dist_info: Path) -> Optional[list]:
     """(dependency, its extras, extras that gate it) per Requires-Dist
-    line, or None when unreadable. an ungated line has no gating extras.
-    other markers are ignored, which can only keep more wheels."""
-    metadata = dist_info / "METADATA"
-    if not metadata.is_file():
+    line, or None when unreadable. other markers are ignored, which can
+    only keep more wheels."""
+    lines = _requires_dist(dist_info)
+    if lines is None:
         return None
-    headers = HeaderParser().parsestr(
-        metadata.read_text(encoding="utf-8", errors="replace")
-    )
     entries = []
-    for line in headers.get_all("Requires-Dist") or []:
-        dep = _strict_requirement_name(line)
-        if not dep:
-            return None
-        marker = line.split(";", 1)[1] if ";" in line else ""
-        gates = set()
-        # gated only when every "or" branch names an extra; any other
-        # branch (extra == "torch" or python_version >= "3.12") can
-        # apply without the extra, so the line counts as ungated
-        branches = re.split(r"\bor\b", marker)
-        if marker.strip() and all(_EXTRA_MARKER_RE.search(b) for b in branches):
-            gates = {_canonical_name(e) for e in _EXTRA_MARKER_RE.findall(marker)}
-        entries.append((dep, _requirement_extras(line.split(";", 1)[0]), gates))
+    for line in lines:
+        requirement, _, marker = line.partition(";")
+        entries.append(
+            (
+                _strict_requirement_name(line),
+                _requirement_extras(requirement),
+                _gating_extras(marker),
+            )
+        )
     return entries
 
 
@@ -263,15 +276,14 @@ def installed_closure(env_dir: Path, roots: List[str]) -> set:
     transformers[torch] does). unreadable metadata counts every
     installed distribution as pulled in."""
     requires = {
-        _canonical_name(_dist_info_name(d.name)): _read_requires_by_extra(d)
-        for d in env_dir.glob("*.dist-info")
-        if d.is_dir()
+        name: _read_requires_by_extra(d)
+        for name, d in _installed_dist_infos(env_dir).items()
     }
-    names = {_strict_requirement_name(r) for r in roots}
+    stack = [(_strict_requirement_name(r), _requirement_extras(r)) for r in roots]
+    names = {name for name, _ in stack}
     if "" in names or any(v is None for v in requires.values()):
         return set(requires) | (names - {""})
     activated: Dict[str, set] = {}
-    stack = [(_strict_requirement_name(r), _requirement_extras(r)) for r in roots]
     while stack:
         node, extras = stack.pop()
         known = activated.get(node)
@@ -282,6 +294,49 @@ def installed_closure(env_dir: Path, roots: List[str]) -> set:
             if not gates or gates & active:
                 stack.append((dep, dep_extras))
     return set(activated)
+
+
+def _dependency_closure(requires: Dict[str, set], start: set, stop: set) -> set:
+    """installed distributions reachable from start, not walking into stop."""
+    seen = set()
+    stack = [n for n in start if n in requires]
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(d for d in requires[node] if d in requires and d not in stop)
+    return seen
+
+
+def _remove_files(env_dir: Path, rel_paths: set) -> set:
+    """delete files under env_dir, returning the top-level entries touched.
+    paths that resolve outside env_dir are skipped."""
+    root = env_dir.resolve()
+    touched = set()
+    for rel in rel_paths:
+        path = env_dir / rel
+        if not path.resolve().is_relative_to(root):
+            continue
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+            touched.add(rel.split("/", 1)[0])
+    return touched
+
+
+def _remove_empty_dirs(env_dir: Path, tops: set) -> None:
+    """remove directories under each top that the deletions emptied."""
+    for top in tops:
+        top_path = env_dir / top
+        if not top_path.is_dir() or top_path.is_symlink():
+            continue
+        subdirs = [p for p in top_path.rglob("*") if p.is_dir() and not p.is_symlink()]
+        # deepest first, so a parent is empty by the time it is checked
+        for directory in sorted(subdirs, key=lambda p: len(p.parts), reverse=True):
+            if not any(directory.iterdir()):
+                directory.rmdir()
+        if not any(top_path.iterdir()):
+            top_path.rmdir()
 
 
 def prune_excluded(
@@ -306,92 +361,43 @@ def prune_excluded(
 
     returns the canonical names of removed distributions.
     """
-    dist_infos = {
-        _canonical_name(_dist_info_name(d.name)): d
-        for d in env_dir.glob("*.dist-info")
-        if d.is_dir()
-    }
+    dist_infos = _installed_dist_infos(env_dir)
     excluded_set = {_canonical_name(n) for n in excluded}
-    targets = set(dist_infos) & excluded_set
-    if not targets:
+    dropped = set(dist_infos) & excluded_set
+    if not dropped:
         return []
 
     records = {name: _read_record(d) for name, d in dist_infos.items()}
     requires = {name: _read_requires(d) for name, d in dist_infos.items()}
     root_names = {_strict_requirement_name(r) for r in roots}
-    complete = all(v is not None for v in records.values()) and all(
-        v is not None for v in requires.values()
-    )
+    complete = None not in records.values() and None not in requires.values()
 
-    dropped = set(targets)
     if complete and "" not in root_names:
-        provided = {_canonical_name(n) for n in image_provided}
         installed = set(dist_infos)
-
-        def closure(start, stop):
-            seen = set()
-            stack = [n for n in start if n in installed]
-            while stack:
-                node = stack.pop()
-                if node in seen:
-                    continue
-                seen.add(node)
-                stack.extend(
-                    d for d in requires[node] if d in installed and d not in stop
-                )
-            return seen
-
-        # a user exclusion removes only the named package, so its
-        # dependencies are protected like the roots
-        pulled = closure(installed & provided, stop=set())
-        seed = (installed - pulled) | (installed & root_names)
+        provided = {_canonical_name(n) for n in image_provided}
+        pulled_by_provided = _dependency_closure(requires, installed & provided, set())
+        # keep everything the roots, unrelated wheels, and user exclusions
+        # (which remove only the named package) need, without walking
+        # into image-provided packages
+        seed = (installed - pulled_by_provided) | (installed & root_names)
         seed |= installed & (excluded_set - provided)
-        kept = closure(seed - provided, stop=provided)
+        kept = _dependency_closure(requires, seed - provided, stop=provided)
         dropped |= installed - kept
 
-    kept_files = set()
     dropped_files = set()
+    kept_files = set()
     for name, paths in records.items():
-        if paths is None:
-            continue
-        (dropped_files if name in dropped else kept_files).update(paths)
-    dropped_files -= kept_files
-
-    root = env_dir.resolve()
-    touched_tops = set()
-    for rel in dropped_files:
-        path = env_dir / rel
-        try:
-            path.resolve().relative_to(root)
-        except ValueError:
-            continue
-        if path.is_file() or path.is_symlink():
-            path.unlink()
-            touched_tops.add(rel.split("/", 1)[0])
+        (dropped_files if name in dropped else kept_files).update(paths or ())
+    touched = _remove_files(env_dir, dropped_files - kept_files)
 
     for name in dropped:
         shutil.rmtree(dist_infos[name], ignore_errors=True)
-        # wheels without a RECORD: fall back to the import-name directory
-        if records[name] is None:
-            top = env_dir / name.replace("-", "_")
-            if top.is_dir() and not top.is_symlink():
-                shutil.rmtree(top, ignore_errors=True)
+        # a wheel without a RECORD: fall back to its import-name directory
+        fallback = env_dir / name.replace("-", "_")
+        if records[name] is None and fallback.is_dir() and not fallback.is_symlink():
+            shutil.rmtree(fallback, ignore_errors=True)
 
-    # drop directories the removal emptied
-    for top in touched_tops:
-        top_path = env_dir / top
-        if not top_path.is_dir() or top_path.is_symlink():
-            continue
-        for directory in sorted(
-            (p for p in top_path.rglob("*") if p.is_dir() and not p.is_symlink()),
-            key=lambda p: len(p.parts),
-            reverse=True,
-        ):
-            if not any(directory.iterdir()):
-                directory.rmdir()
-        if not any(top_path.iterdir()):
-            top_path.rmdir()
-
+    _remove_empty_dirs(env_dir, touched)
     return sorted(dropped)
 
 
@@ -565,6 +571,41 @@ def vendor(
         )
 
 
+def _cpu_requirements_closure(project_root: Path, resources, env_dir: Path) -> set:
+    """installed distributions the cpu resources' requirements pull in."""
+    roots = _requirements_txt(project_root)
+    roots += [
+        dep for h in resources if not h.spec.gpu for dep in h.spec.dependencies or []
+    ]
+    return installed_closure(env_dir, roots)
+
+
+def _exclusions_for_cpu_workers(
+    excluded: List[str], user_exclude: List[str], cpu_needs: set
+) -> List[str]:
+    """the manifest exclusions for a mixed cpu and gpu app.
+
+    workers pip-install manifest-excluded packages their image lacks at
+    cold start. the gpu images ship the torch family, so only cpu workers
+    act on those entries: keep one only when the cpu resources need it.
+    """
+    user_excluded = {_canonical_name(requirement_name(e)) for e in user_exclude}
+    kept = [
+        name
+        for name in excluded
+        if name in user_excluded
+        or name not in SIZE_PROHIBITIVE_PACKAGES
+        or name in cpu_needs
+    ]
+    for name in sorted(set(kept) & SIZE_PROHIBITIVE_PACKAGES):
+        log.warning(
+            "cpu resources need %s, which is not bundled; their workers "
+            "install it at cold start, so give them container disk for it",
+            name,
+        )
+    return kept
+
+
 def build_environment(
     app,
     project_root: Path,
@@ -639,19 +680,9 @@ def build_environment(
     prune_names = {requirement_name(e) for e in (exclude or [])}
     if auto_exclude:
         prune_names |= SIZE_PROHIBITIVE_PACKAGES
-    # workers install manifest-excluded packages their image lacks at
-    # cold start. the gpu images have the torch family, so in a mixed app
-    # only the cpu resources act on it: record it only if they need it
     cpu_needs = None
     if auto_exclude and any(not h.spec.gpu for h in resources):
-        cpu_roots = _requirements_txt(project_root)
-        cpu_roots += [
-            dep
-            for h in resources
-            if not h.spec.gpu
-            for dep in h.spec.dependencies or []
-        ]
-        cpu_needs = installed_closure(env_dir, cpu_roots)
+        cpu_needs = _cpu_requirements_closure(project_root, resources, env_dir)
     pruned = prune_excluded(
         env_dir,
         sorted(prune_names),
@@ -669,20 +700,7 @@ def build_environment(
             set(excluded) | ({_canonical_name(n) for n in prune_names} & set(pruned))
         )
     if cpu_needs is not None:
-        user_excluded = {_canonical_name(requirement_name(e)) for e in exclude or []}
-        excluded = [
-            name
-            for name in excluded
-            if name in user_excluded
-            or name not in SIZE_PROHIBITIVE_PACKAGES
-            or name in cpu_needs
-        ]
-        for name in sorted(set(excluded) & SIZE_PROHIBITIVE_PACKAGES):
-            log.warning(
-                "cpu resources need %s, which is not bundled; their workers "
-                "install it at cold start, so give them container disk for it",
-                name,
-            )
+        excluded = _exclusions_for_cpu_workers(excluded, exclude or [], cpu_needs)
 
     if not package_spec:
         sync_running_package(env_dir)
