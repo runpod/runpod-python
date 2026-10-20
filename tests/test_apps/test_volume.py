@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import runpod.apps.volume as volume_mod
 from runpod.apps.datacenter import DataCenter
 from runpod.apps.placement import PlacementError
 from runpod.apps.spec import ResourceKind, ResourceSpec
@@ -112,8 +113,6 @@ class TestVolumeRef:
     def test_path_binds_from_env_when_runtime_did_not(self, monkeypatch):
         # runtime images released before the mounts hook never call
         # _configure_mounts; the vendored sdk reads the env itself
-        import runpod.apps.volume as volume_mod
-
         monkeypatch.setattr(volume_mod, "_mounts_configured", False)
         monkeypatch.setattr(volume_mod, "_mount_bindings", {})
         monkeypatch.setenv(
@@ -143,9 +142,7 @@ class TestVolumeRef:
         with pytest.raises(VolumeError, match="not mounted"):
             NetworkVolume("models").path
 
-    def test_invalid_env_bindings_raise(self, monkeypatch):
-        import runpod.apps.volume as volume_mod
-
+    def test_malformed_mounts_env_raises(self, monkeypatch):
         monkeypatch.setattr(volume_mod, "_mounts_configured", False)
         monkeypatch.setenv("RUNPOD_MOUNTS", "{not json")
         with pytest.raises(VolumeError, match="valid JSON"):

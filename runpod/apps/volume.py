@@ -44,7 +44,7 @@ class Volume(ABC):
     @property
     def path(self) -> Path:
         """the unique mount path for this volume in the current worker."""
-        _ensure_mounts_configured()
+        _bind_mounts_from_env()
         paths = _mount_bindings.get((self.kind, self.reference), ())
         if not paths:
             raise VolumeError(
@@ -135,13 +135,13 @@ _mount_bindings: Mapping[Tuple[str, str], Tuple[Path, ...]] = MappingProxyType({
 _mounts_configured = False
 
 
-def _ensure_mounts_configured() -> None:
-    """bind mounts from RUNPOD_MOUNTS if the worker runtime did not.
+def _bind_mounts_from_env() -> None:
+    """bind mounts from RUNPOD_MOUNTS unless the worker runtime already did.
 
-    the runtime calls _configure_mounts before user code, but runtime
-    images released before that hook never do. deployed workers run
-    this vendored package, so reading the provisioning env here keeps
-    vol.path working regardless of the image's runtime version.
+    the runtime calls _configure_mounts before user code, but images
+    released before that hook never do. deployed workers run this
+    vendored package, so reading the provisioning env here keeps
+    vol.path working on those images. no-op without the env.
     """
     if _mounts_configured:
         return
