@@ -2,7 +2,7 @@
 
 from runpod.api.sandboxes import SandboxCreationError
 
-from .asyncio import AsyncioSandbox, AsyncSandboxLogStream
+from .asyncio import AsyncioSandbox, AsyncioSandboxLogStream
 from .models import (
     ExecResult,
     LogEvent,
@@ -18,7 +18,7 @@ from .sync import Sandbox, SandboxLogs
 
 __all__ = [
     "AsyncioSandbox",
-    "AsyncSandboxLogStream",
+    "AsyncioSandboxLogStream",
     "Sandbox",
     "SandboxLogs",
     "ExecResult",

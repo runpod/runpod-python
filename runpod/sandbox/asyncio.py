@@ -211,7 +211,7 @@ class AsyncioSandbox:
         self._owned = False
         self._entering = False
         self._creating = False
-        self._streams: set[AsyncSandboxLogStream] = set()
+        self._streams: set[AsyncioSandboxLogStream] = set()
 
     @classmethod
     async def create(cls, **options: Any) -> "AsyncioSandbox":
@@ -575,7 +575,7 @@ class AsyncioSandbox:
         since: Optional[str] = None,
         last_event_id: Optional[str] = None,
         startup_timeout: Optional[float] = None,
-    ) -> "AsyncSandboxLogStream":
+    ) -> "AsyncioSandboxLogStream":
         """Return a lazy, closeable stream of main-process or lifecycle logs.
 
         This does not include exec output. Only the initial HTTP handshake is
@@ -583,7 +583,7 @@ class AsyncioSandbox:
         Use an async context or ``aclose`` when stopping iteration early.
         """
         sandbox_id = self.id
-        stream = AsyncSandboxLogStream(
+        stream = AsyncioSandboxLogStream(
             self, sandbox_id, source, tail, since, last_event_id, startup_timeout
         )
         self._streams.add(stream)
@@ -628,7 +628,7 @@ class AsyncioSandbox:
             raise error
 
 
-class AsyncSandboxLogStream:
+class AsyncioSandboxLogStream:
     """A handle-owned typed log stream with a separately awaitable handshake."""
 
     def __init__(
@@ -662,7 +662,7 @@ class AsyncSandboxLogStream:
             await _cleanup(stream.aclose(), self._sandbox._request_timeout, error)
             raise
 
-    async def open(self) -> "AsyncSandboxLogStream":
+    async def open(self) -> "AsyncioSandboxLogStream":
         """Complete the HTTP handshake without waiting for the first log event."""
         if self._closed:
             raise RuntimeError("Log stream is closed")
@@ -683,7 +683,7 @@ class AsyncSandboxLogStream:
                 raise
         return self
 
-    def __aiter__(self) -> "AsyncSandboxLogStream":
+    def __aiter__(self) -> "AsyncioSandboxLogStream":
         return self
 
     async def __anext__(self) -> LogEvent:
@@ -714,7 +714,7 @@ class AsyncSandboxLogStream:
             if stream is not None:
                 await stream.aclose()
 
-    async def __aenter__(self) -> "AsyncSandboxLogStream":
+    async def __aenter__(self) -> "AsyncioSandboxLogStream":
         return await self.open()
 
     async def __aexit__(

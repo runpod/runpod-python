@@ -8,11 +8,14 @@ from collections import deque
 from concurrent.futures import Future
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from typing import get_type_hints
 
 import pytest
 from aiohttp import web
 
+import runpod.sandbox as sandbox_domain
 from runpod import AsyncioSandbox, Sandbox
+from runpod.api.sandboxes import AsyncSandboxAPI
 from runpod.apps.volume import GlobalVolume, NetworkVolume, VolumeError
 from runpod.error import AuthenticationError, QueryError
 from runpod.sandbox import (
@@ -344,6 +347,53 @@ def sandbox_peer():
 def peer():
     with sandbox_peer() as service:
         yield service
+
+
+@pytest.mark.asyncio
+async def test_transport_sessions_disable_connection_retries():
+    api = AsyncSandboxAPI()
+    try:
+        session = api._get_session()
+        assert session._retry_connection is False
+        assert api._get_session() is session
+        await api.close()
+        assert session.closed
+        reopened = api._get_session()
+        assert reopened is not session
+        assert reopened._retry_connection is False
+    finally:
+        await api.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vcpu_count", [0.5, 2.0, 2])
+async def test_compute_snapshot_preserves_numeric_vcpu_count(peer, vcpu_count):
+    assert get_type_hints(sandbox_domain.SandboxCompute)["vcpu_count"] is float
+    record = peer.create_record({})
+    record["compute"]["vcpuCount"] = vcpu_count
+    sandbox = await AsyncioSandbox.get(record["id"], **peer.options)
+    try:
+        assert sandbox.compute.vcpu_count == vcpu_count
+        assert sandbox.info.compute is sandbox.compute
+    finally:
+        await sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_log_stream_matches_public_export(peer):
+    assert "AsyncioSandboxLogStream" in sandbox_domain.__all__
+    assert (
+        get_type_hints(AsyncioSandbox.logs)["return"]
+        is sandbox_domain.AsyncioSandboxLogStream
+    )
+    async with AsyncioSandbox(image="image", **peer.options) as sandbox:
+        stream = sandbox.logs()
+        assert type(stream) is sandbox_domain.AsyncioSandboxLogStream
+        assert aiter(stream) is stream
+        assert await stream.open() is stream
+        async with stream as opened:
+            assert opened is stream
+            assert (await anext(opened)).line == "café"
 
 
 @pytest.mark.asyncio
