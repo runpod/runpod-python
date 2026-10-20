@@ -582,6 +582,37 @@ class TestBuildEnvironmentPrunes:
 
 
 class TestInstalledClosure:
+    @pytest.mark.parametrize("requested", [False, True])
+    def test_named_url_requirements_preserve_extras_and_markers(self, tmp_path, requested):
+        _wheel(
+            tmp_path,
+            "models",
+            requires=[
+                'torch @ https://example.com/torch.whl;download=1 ; extra == "gpu-mode"'
+            ],
+        )
+        _wheel(tmp_path, "torch")
+        root = "models[GPU_Mode]" if requested else "models"
+        assert installed_closure(
+            tmp_path, [f"{root} @ https://example.com/models.whl"]
+        ) == ({"models", "torch"} if requested else {"models"})
+
+    @pytest.mark.parametrize(
+        "root",
+        [
+            "https://example.com/models.whl",
+            "./models.whl",
+            "models.whl",
+            "models.zip",
+            "models.tar.gz",
+            "models.tgz",
+        ],
+    )
+    def test_unnamed_roots_fail_closed(self, tmp_path, root):
+        _wheel(tmp_path, "models")
+        _wheel(tmp_path, "other")
+        assert installed_closure(tmp_path, [root]) == {"models", "other"}
+
     def test_transitive_extras_activate_grouped_marker(self, tmp_path):
         _wheel(tmp_path, "wrapper", requires=["models[torch]"])
         _wheel(

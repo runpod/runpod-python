@@ -15,7 +15,9 @@ from email.parser import HeaderParser
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from packaging.markers import InvalidMarker, Marker
+from packaging.markers import Marker
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
 
 from .errors import AppError
 from .images import DEFAULT_PYTHON_VERSION, SUPPORTED_PYTHON_VERSIONS
@@ -63,13 +65,6 @@ API_RUNTIME_REQUIREMENTS = ("fastapi[standard]", "uvicorn>=0.30")
 MAX_ARTIFACT_MB = 1500
 
 _REQ_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-
-# a name only when followed by extras, a specifier, a marker, a direct
-# reference, or the end (not a url, path, or archive filename)
-_STRICT_REQ_NAME_RE = re.compile(
-    r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:$|[<>=!~;@(])"
-)
-_REQ_EXTRAS_RE = re.compile(r"\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*\[([^\]]*)\]")
 
 
 class BuildError(AppError):
@@ -152,22 +147,17 @@ def split_exclusions(
     return kept, sorted(set(excluded))
 
 
-def _canonical_name(name: str) -> str:
-    """pep 503 normalized distribution name."""
-    return re.sub(r"[-_.]+", "-", name).lower()
-
-
-def _strict_requirement_name(requirement: str) -> str:
-    """canonical name of a requirement or Requires-Dist line, or "" when
-    the line does not start with a name (url, path, archive filename)."""
-    match = _STRICT_REQ_NAME_RE.match(requirement)
-    if not match:
-        return ""
-    if requirement.strip() == match.group(1) and re.search(
-        r"\.(whl|zip|tar\.gz|tgz)$", match.group(1), re.I
+def _parse_requirement(requirement: str) -> Optional[Requirement]:
+    """parse a named requirement, or None for unnamed or invalid inputs."""
+    try:
+        parsed = Requirement(requirement)
+    except InvalidRequirement:
+        return None
+    if requirement.strip() == parsed.name and re.search(
+        r"\.(whl|zip|tar\.gz|tgz)$", parsed.name, re.I
     ):
-        return ""
-    return _canonical_name(match.group(1))
+        return None
+    return parsed
 
 
 def _dist_info_name(dist_info_dir: str) -> str:
@@ -203,40 +193,24 @@ def _read_record(dist_info: Path) -> Optional[set]:
 def _installed_dist_infos(env_dir: Path) -> Dict[str, Path]:
     """canonical distribution name -> its .dist-info dir in env_dir."""
     return {
-        _canonical_name(_dist_info_name(d.name)): d
+        canonicalize_name(_dist_info_name(d.name)): d
         for d in env_dir.glob("*.dist-info")
         if d.is_dir()
     }
 
 
-def _requires_dist(dist_info: Path) -> Optional[List[str]]:
-    """a wheel's Requires-Dist lines, or None when METADATA is missing or
-    a line does not start with a name."""
+def _requires_dist(dist_info: Path) -> Optional[List[Requirement]]:
+    """a wheel's requirements, or None for missing or invalid metadata."""
     metadata = dist_info / "METADATA"
     if not metadata.is_file():
         return None
     headers = HeaderParser().parsestr(
         metadata.read_text(encoding="utf-8", errors="replace")
     )
-    lines = headers.get_all("Requires-Dist") or []
-    return None if any(not _strict_requirement_name(line) for line in lines) else lines
-
-
-def _read_requires(dist_info: Path) -> Optional[set]:
-    """canonical names a wheel depends on, or None when unreadable.
-
-    markers and extras are ignored, which can only keep more wheels.
-    """
-    lines = _requires_dist(dist_info)
-    return None if lines is None else {_strict_requirement_name(line) for line in lines}
-
-
-def _requirement_extras(requirement: str) -> set:
-    """canonical extras a requirement asks for ("transformers[torch]")."""
-    match = _REQ_EXTRAS_RE.match(requirement)
-    if not match:
-        return set()
-    return {_canonical_name(e.strip()) for e in match.group(1).split(",") if e.strip()}
+    requirements = [
+        _parse_requirement(line) for line in headers.get_all("Requires-Dist") or []
+    ]
+    return None if None in requirements else requirements
 
 
 def _extra_marker_applies(markers: list, extra: str) -> bool:
@@ -259,38 +233,16 @@ def _extra_marker_applies(markers: list, extra: str) -> bool:
     return any(groups)
 
 
-def _read_requires_by_extra(dist_info: Path) -> Optional[list]:
-    """(dependency, its extras, parsed marker) per Requires-Dist
-    line, or None when unreadable. other markers are ignored, which can
-    only keep more wheels."""
-    lines = _requires_dist(dist_info)
-    if lines is None:
-        return None
-    entries = []
-    for line in lines:
-        requirement, _, marker = line.partition(";")
-        try:
-            parsed = Marker(marker) if marker.strip() else None
-        except InvalidMarker:
-            return None
-        entries.append(
-            (
-                _strict_requirement_name(line),
-                _requirement_extras(requirement),
-                parsed,
-            )
-        )
-    return entries
-
-
-def _active_requirements(entries: list, extras: set) -> list:
+def _active_requirements(requirements: List[Requirement], extras: set) -> list:
     """(dependency, its extras) for each Requires-Dist entry that an install
     with these extras pulls in. non-extra markers are ignored."""
     return [
-        (dep, dep_extras)
-        for dep, dep_extras, marker in entries
-        if marker is None
-        or any(_extra_marker_applies(marker._markers, extra) for extra in {""} | extras)
+        (canonicalize_name(req.name), {canonicalize_name(e) for e in req.extras})
+        for req in requirements
+        if req.marker is None
+        or any(
+            _extra_marker_applies(req.marker._markers, extra) for extra in {""} | extras
+        )
     ]
 
 
@@ -301,13 +253,18 @@ def installed_closure(env_dir: Path, roots: List[str]) -> set:
     transformers[torch] does). unreadable metadata counts every
     installed distribution as pulled in."""
     requires = {
-        name: _read_requires_by_extra(d)
+        name: _requires_dist(d)
         for name, d in _installed_dist_infos(env_dir).items()
     }
-    stack = [(_strict_requirement_name(r), _requirement_extras(r)) for r in roots]
+    parsed_roots = [_parse_requirement(r) for r in roots]
+    stack = [
+        (canonicalize_name(r.name), {canonicalize_name(e) for e in r.extras})
+        for r in parsed_roots
+        if r is not None
+    ]
     names = {name for name, _ in stack}
-    if "" in names or any(v is None for v in requires.values()):
-        return set(requires) | (names - {""})
+    if None in parsed_roots or None in requires.values():
+        return set(requires) | names
     activated: Dict[str, set] = {}
     while stack:
         node, extras = stack.pop()
@@ -385,7 +342,7 @@ def prune_excluded(
     returns the canonical names of removed distributions.
     """
     dist_infos = _installed_dist_infos(env_dir)
-    excluded_set = {_canonical_name(n) for n in excluded}
+    excluded_set = {canonicalize_name(n) for n in excluded}
     if not set(dist_infos) & excluded_set:
         return []
     records = {name: _read_record(d) for name, d in dist_infos.items()}
@@ -408,12 +365,18 @@ def _distributions_to_drop(
     or a root has no name."""
     installed = set(dist_infos)
     targets = installed & excluded
-    requires = {name: _read_requires(d) for name, d in dist_infos.items()}
-    root_names = {_strict_requirement_name(r) for r in roots}
-    if None in records.values() or None in requires.values() or "" in root_names:
+    parsed_roots = [_parse_requirement(r) for r in roots]
+    if None in records.values() or None in parsed_roots:
         return targets
+    root_names = {canonicalize_name(r.name) for r in parsed_roots}
+    requires = {}
+    for name, dist_info in dist_infos.items():
+        dependencies = _requires_dist(dist_info)
+        if dependencies is None:
+            return targets
+        requires[name] = {canonicalize_name(r.name) for r in dependencies}
 
-    provided = {_canonical_name(n) for n in image_provided}
+    provided = {canonicalize_name(n) for n in image_provided}
     pulled_by_provided = _dependency_closure(requires, installed & provided, set())
     # keep what the roots, unrelated wheels, and user exclusions (which
     # remove only the named package) need, without walking into
@@ -636,7 +599,7 @@ def _exclusions_for_cpu_workers(
     cold start. the gpu images ship the torch family, so only cpu workers
     act on those entries: keep one only when the cpu resources need it.
     """
-    user_excluded = {_canonical_name(requirement_name(e)) for e in user_exclude}
+    user_excluded = {canonicalize_name(requirement_name(e)) for e in user_exclude}
     kept = [
         name
         for name in excluded
@@ -744,7 +707,7 @@ def build_environment(
             ", ".join(pruned),
         )
         excluded = sorted(
-            set(excluded) | ({_canonical_name(n) for n in prune_names} & set(pruned))
+            set(excluded) | ({canonicalize_name(n) for n in prune_names} & set(pruned))
         )
     if cpu_needs is not None:
         excluded = _exclusions_for_cpu_workers(excluded, exclude or [], cpu_needs)
