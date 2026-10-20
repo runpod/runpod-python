@@ -409,6 +409,8 @@ def dev(module, once):
     # set once a second stop signal arrives: teardown stops waiting for
     # a running entrypoint
     force_stop: "list[asyncio.Event]" = []
+    # set when teardown starts: signals then leave it to finish
+    tearing_down: "list[bool]" = []
 
     async def _run_entrypoint_cancellable(fn) -> None:
         """run user code without blocking the event loop.
@@ -471,7 +473,8 @@ def dev(module, once):
         ignored; sigterm has no handler at all. without these a stopped
         session would leave its endpoints running. the first signal
         cancels the session (teardown deletes the endpoints), the second
-        stops waiting for a running entrypoint.
+        stops waiting for a running entrypoint. signals during teardown
+        are ignored so every endpoint still gets deleted.
         """
         loop = asyncio.get_running_loop()
         task = asyncio.current_task()
@@ -480,6 +483,9 @@ def dev(module, once):
 
         def _on_signal() -> None:
             seen.append(True)
+            if tearing_down:
+                # cancelling teardown would skip the remaining deletes
+                return
             if len(seen) == 1:
                 task.cancel()
             else:
@@ -525,6 +531,7 @@ def dev(module, once):
                     ui.set_name_width(_all_resource_names(apps))
                     await session.refresh(apps)
         finally:
+            tearing_down.append(True)
             events = ui.CleanupEvents()
             try:
                 await session.stop(events=events)

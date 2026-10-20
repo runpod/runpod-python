@@ -375,6 +375,68 @@ class TestDev:
         assert result.exit_code == 0, result.output
         assert events[0] == "deleted"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_signal_during_teardown_still_deletes(self, tmp_path, monkeypatch):
+        import asyncio
+        import os
+        import signal
+
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        events = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-active"}
+
+        async def delete(endpoint_id):
+            os.kill(os.getpid(), signal.SIGTERM)
+            await asyncio.sleep(0.1)
+            events.append(("deleted", endpoint_id))
+            return True
+
+        api.delete_endpoint.side_effect = delete
+        with (
+            patch("runpod.apps.dev.AppsApiClient", return_value=api),
+            patch("runpod.apps.entrypoint.run_entrypoint"),
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        assert result.exit_code == 0, result.output
+        assert events == [("deleted", "ep-active")]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_signal_during_create_deletes_the_new_endpoint(self, tmp_path, monkeypatch):
+        import asyncio
+        import os
+        import signal
+
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deleted = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+
+        async def create(payload):
+            # the platform creates the endpoint before the reply arrives
+            os.kill(os.getpid(), signal.SIGTERM)
+            await asyncio.sleep(0.1)
+            return {"id": "ep-new"}
+
+        async def delete(endpoint_id):
+            deleted.append(endpoint_id)
+            return True
+
+        api.save_endpoint.side_effect = create
+        api.delete_endpoint.side_effect = delete
+        with (
+            patch("runpod.apps.dev.AppsApiClient", return_value=api),
+            patch("runpod.apps.entrypoint.run_entrypoint"),
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module)])
+        assert result.exit_code == 0, result.output
+        assert deleted == ["ep-new"]
+
     def test_module_without_entrypoint(self, tmp_path, monkeypatch):
         module = tmp_path / "main.py"
         module.write_text(APP_SOURCE)
