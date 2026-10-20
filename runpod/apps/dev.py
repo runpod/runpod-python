@@ -14,6 +14,7 @@ from .api import AppsApiClient
 from .app import App
 from .errors import AppError
 from .handles import ApiHandle, FunctionHandle
+from .remote_calls import may_call_resources
 from .shim import runtime_launcher
 from .spec import ResourceKind, ResourceSpec
 from .targets import LiveTarget
@@ -107,13 +108,6 @@ def _cpu_locations(instance_ids: List[str]) -> str:
 GENERATION_ENV = "RUNPOD_DEV_GENERATION"
 
 
-def _needs_api_key(app: App, spec: ResourceSpec) -> bool:
-    from .remote_calls import makes_remote_calls
-
-    handle = app.resources.get(spec.name)
-    return handle is None or makes_remote_calls(app, handle)
-
-
 def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
     """build a live endpoint payload with an atomically bound container config."""
 
@@ -141,10 +135,10 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
                 # nested .remote() calls from inside a dev worker need
                 # credentials and the dev-session marker to resolve
                 # sibling dev endpoints by name. only resources that may
-                # make one get the key (the analysis fails open)
+                # make one get the key
                 *(
                     [{"key": "RUNPOD_API_KEY", "value": key}]
-                    if _needs_api_key(app, spec) and (key := _client_api_key())
+                    if may_call_resources(app, spec) and (key := _client_api_key())
                     else []
                 ),
                 {"key": "RUNPOD_DEV_APP", "value": app.name},
