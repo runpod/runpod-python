@@ -438,21 +438,21 @@ class TestGpuStringResolution:
             ]
         }
         fetch = _real_live_pool_members
-        fetch.cache_clear()
+        gpu_mod._clear_catalog_cache()
         with patch("requests.get", return_value=resp) as get:
             assert fetch() == {"AMPERE_24": {"NVIDIA L4"}}
             assert get.call_args.kwargs["headers"]["Authorization"] == "Bearer k"
-        fetch.cache_clear()
+        gpu_mod._clear_catalog_cache()
         with patch("requests.get", side_effect=OSError("offline")) as get:
             assert fetch() is None
             # a failure is not retried on every lookup
             assert fetch() is None
             assert get.call_count == 1
         # it is retried once the window passes
-        gpu_mod._catalog["failed_at"] -= gpu_mod._CATALOG_RETRY_SECONDS
+        gpu_mod._catalog_cache.failed_at -= gpu_mod.CATALOG_RETRY_SECONDS
         with patch("requests.get", return_value=resp):
             assert fetch() == {"AMPERE_24": {"NVIDIA L4"}}
-        fetch.cache_clear()
+        gpu_mod._clear_catalog_cache()
 
     def test_gpu_ids_maps_devices_to_pools(self):
         from runpod.apps.gpu import gpu_ids_value

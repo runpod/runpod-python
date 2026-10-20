@@ -8,6 +8,7 @@ configured. CpuInstanceType values are backend cpu flavor ids.
 import logging
 import os
 import time
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
 
@@ -214,11 +215,35 @@ def resolve_gpu_string(value: str) -> List[str]:
 
 
 CATALOG_URL = "https://api.runpod.io/v2/catalog/gpus"
+CATALOG_RETRY_SECONDS = 60.0
 
 
-# live catalog result, or when it last failed
-_catalog: Dict[str, Any] = {}
-_CATALOG_RETRY_SECONDS = 60.0
+@dataclass
+class _CatalogCache:
+    """the live catalog's pool membership, or when fetching it last failed."""
+
+    members: Optional[Dict[str, Set[str]]] = None
+    failed_at: Optional[float] = None
+
+
+_catalog_cache = _CatalogCache()
+
+
+def _clear_catalog_cache() -> None:
+    global _catalog_cache
+    _catalog_cache = _CatalogCache()
+
+
+def _parse_catalog(data: Any) -> Dict[str, Set[str]]:
+    """pool id -> device ids from a catalog response."""
+    gpus = data.get("gpus", []) if isinstance(data, dict) else data
+    members: Dict[str, Set[str]] = {}
+    for gpu in gpus:
+        if gpu.get("pool") and gpu.get("id"):
+            members.setdefault(gpu["pool"], set()).add(gpu["id"])
+    if not members:
+        raise ValueError("catalog lists no pools")
+    return members
 
 
 def live_pool_members() -> Optional[Dict[str, Set[str]]]:
@@ -233,10 +258,13 @@ def live_pool_members() -> Optional[Dict[str, Set[str]]]:
 
     from .utils.network import api_key
 
-    if _catalog.get("members") is not None:
-        return _catalog["members"]
-    failed_at = _catalog.get("failed_at")
-    if failed_at is not None and time.monotonic() - failed_at < _CATALOG_RETRY_SECONDS:
+    cache = _catalog_cache
+    if cache.members is not None:
+        return cache.members
+    if (
+        cache.failed_at is not None
+        and time.monotonic() - cache.failed_at < CATALOG_RETRY_SECONDS
+    ):
         return None
 
     url = os.environ.get("RUNPOD_GPU_CATALOG_URL", CATALOG_URL)
@@ -245,27 +273,16 @@ def live_pool_members() -> Optional[Dict[str, Set[str]]]:
             url, headers={"Authorization": f"Bearer {api_key()}"}, timeout=10
         )
         resp.raise_for_status()
-        data = resp.json()
-        gpus = data.get("gpus", []) if isinstance(data, dict) else data
-        members: Dict[str, Set[str]] = {}
-        for gpu in gpus:
-            if gpu.get("pool") and gpu.get("id"):
-                members.setdefault(gpu["pool"], set()).add(gpu["id"])
-        if not members:
-            raise ValueError("catalog lists no pools")
-        _catalog["members"] = members
-        return members
-    except Exception as exc:  # any failure falls back to the static table
-        _catalog["failed_at"] = time.monotonic()
+        cache.members = _parse_catalog(resp.json())
+    except Exception as exc:  # noqa: BLE001 - offline, auth, or malformed
+        cache.failed_at = time.monotonic()
         log.warning(
             "gpu catalog unavailable (%s); device pins use the static pool "
             "table, which can miss newer devices in a pool",
             exc,
         )
         return None
-
-
-live_pool_members.cache_clear = _catalog.clear  # type: ignore[attr-defined]
+    return cache.members
 
 
 def _pool_members(pool: str) -> Set[str]:
@@ -276,6 +293,15 @@ def _pool_members(pool: str) -> Set[str]:
         return {t.value for t in POOLS_TO_TYPES.get(GpuGroup(pool), [])}
     except ValueError:
         return set()
+
+
+def _device_pool(value: str) -> Optional[str]:
+    """the pool id of a known device name, or None."""
+    try:
+        pool = pool_for_gpu_type(GpuType(value))
+    except ValueError:
+        return None
+    return pool.value if pool is not None else None
 
 
 def gpu_ids_value(gpu: Optional[List[str]]) -> str:
@@ -293,26 +319,21 @@ def gpu_ids_value(gpu: Optional[List[str]]) -> str:
     pools: List[str] = []
     named_pools: Set[str] = set()
     devices: Set[str] = set()
-    device_pools: List[str] = []
     for entry in gpu:
         value = str(entry)
-        try:
-            pool = pool_for_gpu_type(GpuType(value))
-        except ValueError:
-            # not a known GpuType: a pool id or raw id passes through
+        pool = _device_pool(value)
+        if pool is None:
+            # a pool id allows every device in it; other ids pass through
             named_pools.add(value)
         else:
-            if pool is not None:
-                devices.add(value)
-                if pool.value not in device_pools:
-                    device_pools.append(pool.value)
-                value = pool.value
+            devices.add(value)
+            value = pool
         if value not in pools:
             pools.append(value)
+    device_pools = {_device_pool(d) for d in devices} - named_pools
     exclusions = sorted(
         member
         for pool in device_pools
-        if pool not in named_pools
         for member in _pool_members(pool)
         if member not in devices
     )
