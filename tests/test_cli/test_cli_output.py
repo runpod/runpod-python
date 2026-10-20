@@ -78,6 +78,36 @@ class TestOutputHelpers:
             output.confirm("sure?", yes=False)
         ask.assert_called_once_with("sure?", abort=True)
 
+    @pytest.mark.parametrize("message", ["volume", "pod", "endpoint", "区域"])
+    @pytest.mark.parametrize("width", [20, 40])
+    def test_pick_truncates_labels_to_terminal_cells(self, message, width):
+        import os
+
+        from rich.text import Text
+
+        labels = ["capy-test-example-network  EU-RO-1  10 GB", "训练资源" * 12]
+        with (
+            patch.object(output, "interactive", return_value=True),
+            patch.object(
+                output.shutil,
+                "get_terminal_size",
+                return_value=os.terminal_size((width, 24)),
+            ),
+            patch("InquirerPy.inquirer.fuzzy") as fuzzy,
+        ):
+            fuzzy.return_value.execute.return_value = "second-id"
+            assert (
+                output.pick(message, list(zip(["first-id", "second-id"], labels)), "x")
+                == "second-id"
+            )
+        choices = fuzzy.call_args.kwargs["choices"]
+        assert [choice.value for choice in choices] == ["first-id", "second-id"]
+        assert all(choice.name.endswith("…") for choice in choices)
+        assert all(
+            Text(f"? {message} {choice.name}").cell_len <= width for choice in choices
+        )
+        assert fuzzy.call_args.kwargs["wrap_lines"] is False
+
     def test_completer(self):
         complete = output.completer(lambda: [("abc", "first"), ("xyz", "second")])
         items = complete(None, None, "a")
