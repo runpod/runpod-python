@@ -82,6 +82,9 @@ jobs:
           source .venv/bin/activate
           pytest tests/e2e/ -v -p no:xdist --timeout=600 --reruns 1 --reruns-delay 5 --log-cli-level=INFO -o "addopts="
         env:
+          # the e2e provisioner still drives runpod-flash, whose import-time
+          # sunset FutureWarning is an error under pytest.ini filterwarnings
+          RUNPOD_FLASH_SILENCE_DEPRECATION: "1"
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_SDK_GIT_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
@@ -96,16 +99,16 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.38.1
+        uses: github/codeql-action/init@v4.39.0
         with:
           languages: python
           queries: security-extended,security-and-quality
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4.38.1
+        uses: github/codeql-action/autobuild@v4.39.0
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.38.1
+        uses: github/codeql-action/analyze@v4.39.0
         with:
           category: "/language:python"
 

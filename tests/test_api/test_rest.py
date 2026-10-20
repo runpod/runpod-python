@@ -5,13 +5,18 @@ import json
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import AsyncMock, call, patch
 
 import aiohttp
 import pytest
 import requests
 
 import runpod
-from runpod.api.rest import run_rest_request, run_rest_request_async
+from runpod.api.rest import (
+    run_rest_paginated_request_async,
+    run_rest_request,
+    run_rest_request_async,
+)
 from runpod.error import AuthenticationError, QueryError
 
 
@@ -45,7 +50,9 @@ def rest_server(monkeypatch):
                 status, response_body = 401, b"invalid key"
             elif self.path != state.get("path", "/prefix/v2/pods"):
                 status, response_body = 404, b"wrong path"
-            elif "expected_body" in state and json.loads(body) != state["expected_body"]:
+            elif (
+                "expected_body" in state and json.loads(body) != state["expected_body"]
+            ):
                 status, response_body = 400, b"wrong body"
             self.send_response(status)
             self.send_header("Content-Type", state["content_type"])
@@ -180,7 +187,9 @@ async def _wait_for_event(event):
 
 
 @pytest.mark.asyncio
-async def test_cancellation_closes_pending_request_without_repeating_mutation(rest_server):
+async def test_cancellation_closes_pending_request_without_repeating_mutation(
+    rest_server,
+):
     rest_server["stall"] = True
     pending = asyncio.create_task(
         run_rest_request_async(
@@ -208,3 +217,146 @@ async def test_timeout_closes_pending_request_without_repeating_mutation(rest_se
         )
     await _wait_for_event(rest_server["disconnected"])
     assert rest_server["hits"] == 1
+
+
+async def test_supplied_session_remains_open(rest_server):
+    async with aiohttp.ClientSession() as session:
+        for _ in range(2):
+            assert await run_rest_request_async(
+                "GET", "/v2/pods", api_key="key", session=session
+            ) == {"id": "pod-1"}
+            assert not session.closed
+    assert rest_server["hits"] == 2
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE"])
+async def test_supplied_session_does_not_replay_mutations(rest_server, method):
+    async with aiohttp.ClientSession() as session:
+        await run_rest_request_async("GET", "/v2/pods", api_key="key", session=session)
+        rest_server["disconnect"] = True
+        with pytest.raises(aiohttp.ClientConnectionError):
+            await run_rest_request_async(
+                method, "/v2/pods", api_key="key", session=session
+            )
+    assert rest_server["hits"] == 2
+
+
+class TestCursorPagination:
+    async def test_retries_current_page_with_backoff_and_one_session(self):
+        first = {"id": "one"}
+        second = {"id": "two"}
+        rest = AsyncMock(
+            side_effect=[
+                {
+                    "items": [first],
+                    "pagination": {"hasNextPage": True, "nextCursor": "next"},
+                },
+                aiohttp.ClientError("reset"),
+                OSError("dns"),
+                asyncio.TimeoutError(),
+                {"items": [second], "pagination": {"hasNextPage": False}},
+            ]
+        )
+        with (
+            patch("runpod.api.rest.run_rest_request_async", rest),
+            patch("runpod.api.rest.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        ):
+            assert await run_rest_paginated_request_async(
+                "/v2/items", "items", api_key="key"
+            ) == [first, second]
+        assert sleep.await_args_list == [call(1), call(2), call(4)]
+        assert [item.kwargs["params"] for item in rest.await_args_list] == [
+            {},
+            *[{"cursor": "next"}] * 4,
+        ]
+        session = rest.await_args_list[0].kwargs["session"]
+        assert all(item.kwargs["session"] is session for item in rest.await_args_list)
+        assert session.closed
+
+    async def test_exhausted_retries_close_session(self):
+        rest = AsyncMock(side_effect=aiohttp.ClientError("down"))
+        with (
+            patch("runpod.api.rest.run_rest_request_async", rest),
+            patch("runpod.api.rest.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        ):
+            with pytest.raises(aiohttp.ClientError, match="down"):
+                await run_rest_paginated_request_async("/v2/items", "items")
+        assert rest.await_count == 4
+        assert sleep.await_args_list == [call(1), call(2), call(4)]
+        assert rest.await_args.kwargs["session"].closed
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            QueryError("denied"),
+            AuthenticationError("bad key"),
+            asyncio.CancelledError(),
+        ],
+    )
+    async def test_non_transport_errors_are_not_retried(self, failure):
+        rest = AsyncMock(side_effect=failure)
+        with patch("runpod.api.rest.run_rest_request_async", rest):
+            with pytest.raises(type(failure)):
+                await run_rest_paginated_request_async("/v2/items", "items")
+        rest.assert_awaited_once()
+        assert rest.await_args.kwargs["session"].closed
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            None,
+            [],
+            {},
+            {"items": None},
+            {"items": {}},
+            {"items": [None]},
+            {"items": []},
+            {"items": [], "pagination": None},
+            {"items": [], "pagination": []},
+            {"items": [], "pagination": {}},
+            {"items": [], "pagination": {"hasNextPage": "false"}},
+            {"items": [], "pagination": {"hasNextPage": 0}},
+        ],
+    )
+    async def test_invalid_envelopes_raise_query_error(self, data):
+        rest = AsyncMock(return_value=data)
+        with patch("runpod.api.rest.run_rest_request_async", rest):
+            with pytest.raises(QueryError, match="invalid items") as raised:
+                await run_rest_paginated_request_async("/v2/items", "items")
+        assert raised.value.query == "GET /v2/items"
+        rest.assert_awaited_once()
+        assert rest.await_args.kwargs["session"].closed
+
+    @pytest.mark.parametrize(
+        "pagination",
+        [
+            {"hasNextPage": True},
+            *[
+                {"hasNextPage": True, "nextCursor": cursor}
+                for cursor in (None, "", 1, [], {})
+            ],
+        ],
+    )
+    async def test_missing_or_invalid_cursor_raises(self, pagination):
+        rest = AsyncMock(return_value={"items": [], "pagination": pagination})
+        with patch("runpod.api.rest.run_rest_request_async", rest):
+            with pytest.raises(QueryError, match="nextCursor"):
+                await run_rest_paginated_request_async("/v2/items", "items")
+        rest.assert_awaited_once()
+
+    @pytest.mark.parametrize("cursors", [["a", "a"], ["a", "b", "a"]])
+    async def test_cursor_cycles_raise(self, cursors):
+        rest = AsyncMock(
+            side_effect=[
+                {
+                    "items": [{"id": cursor}],
+                    "pagination": {"hasNextPage": True, "nextCursor": cursor},
+                }
+                for cursor in cursors
+            ]
+        )
+        with patch("runpod.api.rest.run_rest_request_async", rest):
+            with pytest.raises(QueryError, match="repeated a cursor"):
+                await run_rest_paginated_request_async("/v2/items", "items")
+        assert rest.await_count == len(cursors)
+        assert rest.await_args.kwargs["session"].closed

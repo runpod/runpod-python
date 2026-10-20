@@ -23,7 +23,10 @@ _FLASH_UPDATE_CHECK_EXCLUDED = frozenset({"dev"})
 @click.group()
 @click.pass_context
 def cli(ctx):
-    """Runpod CLI: manage Flash apps, endpoints, and pods."""
+    """Runpod CLI: manage Flash apps, endpoints, and pods.
+
+    Using an AI agent? Point it to https://docs.runpod.io/agent-setup.md
+    """
     if ctx.invoked_subcommand not in _UPDATE_CHECK_EXCLUDED:
         from runpod.rp_cli.update import start_background_check
 

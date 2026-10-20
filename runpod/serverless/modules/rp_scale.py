@@ -56,6 +56,8 @@ class JobScaler:
 
     def __init__(self, config: dict[str, Any]):
         self._shutdown_event = asyncio.Event()
+        # Set by get_jobs after queuing so run_jobs dispatches without polling.
+        self._jobs_available = asyncio.Event()
         self._prestart_ready = asyncio.Event()
         self._prestart_succeeded = False
         self._prestart_error: dict[str, Any] | None = None
@@ -157,7 +159,14 @@ class JobScaler:
             frame: The current stack frame.
         """
         log.debug(f"Received shutdown signal: {signum}.")
-        self.kill_worker()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.kill_worker()
+            return
+        # A signal.signal handler does not wake a loop blocked in its selector;
+        # call_soon_threadsafe writes to the loop's self-pipe so it does.
+        loop.call_soon_threadsafe(self.kill_worker)
 
     async def run(self):
         """Run prestart and the three persistent request loops concurrently."""
@@ -338,6 +347,7 @@ class JobScaler:
                     await self.jobs_queue.put(job)
                     self.job_progress.add(job)
                     log.debug("Job Queued", job["id"])
+                self._jobs_available.set()
 
                 log.info(f"Jobs in queue: {self.jobs_queue.qsize()}")
 
@@ -371,6 +381,9 @@ class JobScaler:
 
         last_task_count = 0
         while self.is_alive() or not self.jobs_queue.empty():
+            # Clear before draining: a job queued after this point re-arms it.
+            self._jobs_available.clear()
+
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
                 job = await self.jobs_queue.get()
@@ -379,23 +392,14 @@ class JobScaler:
                 tasks.add(task)
                 self.jobs_tasks[job["id"]] = task
 
-            # Wait for any job to finish
             if tasks:
                 current_task_count = len(tasks)
                 if current_task_count != last_task_count:
                     log.info(f"Jobs in progress: {current_task_count}")
                     last_task_count = current_task_count
 
-                done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED, timeout=0.1
-                )
-
-                # Remove completed tasks from the list
-                tasks.difference_update(done)
-
-            else:
-                # don't busy wait
-                await asyncio.sleep(0.1)
+            finished = await self._wait_for_dispatch_event(tasks)
+            tasks.difference_update(finished)
 
         # Ensure all remaining tasks finish before stopping. Stopped jobs raise
         # CancelledError during this drain, which is expected, but a genuine
@@ -408,6 +412,35 @@ class JobScaler:
                 log.error(
                     f"JobScaler.run_jobs | Task failed during shutdown drain: {result}"
                 )
+
+    async def _wait_for_dispatch_event(
+        self, tasks: set[asyncio.Task[Any]]
+    ) -> set[asyncio.Task[Any]]:
+        """Block until a job finishes, a job is queued, or shutdown begins.
+
+        Waiting on events instead of polling starts a fetched job as soon as
+        it is queued; a poll interval delayed every cold start's first job.
+
+        Returns the job tasks that finished.
+        """
+        # Snapshot once: a signal handler can stop the worker at any bytecode.
+        alive = self.is_alive()
+        if not alive and not tasks:
+            # Intake has stopped, so nothing would ever set _jobs_available.
+            return set()
+
+        waiters = {asyncio.create_task(self._jobs_available.wait())}
+        if alive:
+            # Once shutting down, the set event would wake this loop instantly.
+            waiters.add(asyncio.create_task(self._shutdown_event.wait()))
+        try:
+            done, _ = await asyncio.wait(
+                tasks | waiters, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            for waiter in waiters:
+                waiter.cancel()
+        return done & tasks
 
     async def monitor_stop_signals(self, session: ClientSession):
         """
