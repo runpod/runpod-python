@@ -6,13 +6,17 @@ import threading
 from unittest.mock import patch
 
 import pytest
+from packaging.markers import default_environment
 
 from runpod.apps import App
 from runpod.apps.app import _clear_registry
 from runpod.apps.build import (
     SIZE_PROHIBITIVE_PACKAGES,
     BuildError,
+    build_environment,
     collect_requirements,
+    installed_closure,
+    prune_excluded,
     requirement_name,
     runpod_requirement,
     split_exclusions,
@@ -253,3 +257,390 @@ class TestVendor:
                 process.wait()
         assert not expired.is_set()
         assert seen == [(1, "numpy")]
+
+
+def _wheel(env, name, version="1.0", requires=(), files=(), record=True, metadata=True):
+    """fake a pip --target install of one wheel into env."""
+    dist_info = env / f"{name.replace('-', '_')}-{version}.dist-info"
+    dist_info.mkdir(parents=True)
+    if metadata:
+        lines = [f"Name: {name}", f"Version: {version}"]
+        lines += [f"Requires-Dist: {r}" for r in requires]
+        (dist_info / "METADATA").write_text("\n".join(lines) + "\n")
+    rel_files = list(files) or [f"{name.replace('-', '_')}/__init__.py"]
+    for rel in rel_files:
+        target = env / (rel[len("../../") :] if rel.startswith("../../") else rel)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("")
+    if record:
+        rows = rel_files + [f"{dist_info.name}/METADATA", f"{dist_info.name}/RECORD"]
+        (dist_info / "RECORD").write_text("".join(f"{r},,\n" for r in rows))
+
+
+def _installed(env):
+    return sorted(d.name.split("-")[0] for d in env.glob("*.dist-info"))
+
+
+IMAGE_PROVIDED = sorted(SIZE_PROHIBITIVE_PACKAGES)
+
+
+class TestPruneExcluded:
+    def _peft_env(self, env):
+        _wheel(env, "peft", requires=["torch>=1.13", "numpy"])
+        _wheel(env, "numpy")
+        _wheel(
+            env,
+            "torch",
+            requires=[
+                "sympy",
+                "numpy",
+                'nvidia-cublas-cu12==12.8; platform_system == "Linux"',
+            ],
+            files=[
+                "torch/__init__.py",
+                "torch/__pycache__/__init__.cpython-312.pyc",
+                "functorch/__init__.py",
+                "torchgen/__init__.py",
+                "../../bin/torchrun",
+            ],
+        )
+        _wheel(env, "sympy", requires=["mpmath"])
+        _wheel(env, "mpmath")
+        _wheel(
+            env,
+            "nvidia-cublas-cu12",
+            files=["nvidia/cublas/lib/libcublas.so", "nvidia/__init__.py"],
+        )
+        _wheel(
+            env,
+            "nvidia-cudnn-cu12",
+            files=["nvidia/cudnn/lib/libcudnn.so", "nvidia/__init__.py"],
+        )
+
+    def test_transitive_torch_and_its_tree_removed(self, tmp_path):
+        self._peft_env(tmp_path)
+        _wheel(tmp_path, "faster-whisper", requires=["nvidia-cudnn-cu12"])
+
+        dropped = prune_excluded(
+            tmp_path, IMAGE_PROVIDED, ["peft", "faster-whisper"], IMAGE_PROVIDED
+        )
+
+        assert dropped == ["mpmath", "nvidia-cublas-cu12", "sympy", "torch"]
+        assert _installed(tmp_path) == [
+            "faster_whisper",
+            "numpy",
+            "nvidia_cudnn_cu12",
+            "peft",
+        ]
+        for gone in ("torch", "functorch", "torchgen", "sympy", "bin/torchrun"):
+            assert not (tmp_path / gone).exists(), gone
+        # shared namespace dir keeps the files a kept wheel installed
+        assert (tmp_path / "nvidia/cudnn/lib/libcudnn.so").is_file()
+        assert (tmp_path / "nvidia/__init__.py").is_file()
+        assert not (tmp_path / "nvidia/cublas").exists()
+
+    def test_root_requirement_is_kept(self, tmp_path):
+        self._peft_env(tmp_path)
+        prune_excluded(
+            tmp_path, IMAGE_PROVIDED, ["peft", "sympy==1.14"], IMAGE_PROVIDED
+        )
+        assert "sympy" in _installed(tmp_path)
+        assert "mpmath" in _installed(tmp_path)
+
+    def test_nothing_excluded_installed_is_noop(self, tmp_path):
+        _wheel(tmp_path, "numpy")
+        assert prune_excluded(tmp_path, IMAGE_PROVIDED, ["numpy"], IMAGE_PROVIDED) == []
+        assert _installed(tmp_path) == ["numpy"]
+
+    def test_missing_record_fails_closed(self, tmp_path):
+        self._peft_env(tmp_path)
+        _wheel(tmp_path, "oddball", record=False)
+        dropped = prune_excluded(
+            tmp_path, IMAGE_PROVIDED, ["peft", "oddball"], IMAGE_PROVIDED
+        )
+        # only the excluded package itself goes
+        assert dropped == ["torch"]
+        assert not (tmp_path / "torch").exists()
+        assert "sympy" in _installed(tmp_path)
+
+    def test_missing_record_on_excluded_falls_back_to_dir(self, tmp_path):
+        _wheel(tmp_path, "peft", requires=["torch"])
+        _wheel(tmp_path, "torch", record=False)
+        assert prune_excluded(tmp_path, IMAGE_PROVIDED, ["peft"], IMAGE_PROVIDED) == [
+            "torch"
+        ]
+        assert not (tmp_path / "torch").exists()
+
+    def test_unnamed_root_fails_closed(self, tmp_path):
+        self._peft_env(tmp_path)
+        dropped = prune_excluded(
+            tmp_path,
+            IMAGE_PROVIDED,
+            ["peft", "https://example.com/pkg.tar.gz"],
+            IMAGE_PROVIDED,
+        )
+        assert dropped == ["torch"]
+
+    def test_unreadable_requires_dist_fails_closed(self, tmp_path):
+        self._peft_env(tmp_path)
+        _wheel(tmp_path, "weird", requires=["https://example.com/x.whl"])
+        dropped = prune_excluded(
+            tmp_path, IMAGE_PROVIDED, ["peft", "weird"], IMAGE_PROVIDED
+        )
+        assert dropped == ["torch"]
+
+    def test_user_exclude_keeps_its_dependencies(self, tmp_path):
+        self._peft_env(tmp_path)
+        _wheel(tmp_path, "bigpkg", requires=["sympy"])
+        dropped = prune_excluded(
+            tmp_path, IMAGE_PROVIDED + ["bigpkg"], ["peft", "bigpkg"], IMAGE_PROVIDED
+        )
+        assert "bigpkg" in dropped
+        # sympy is torch-only except that bigpkg needs it
+        assert "sympy" in _installed(tmp_path)
+
+    def test_no_image_provided_removes_only_named(self, tmp_path):
+        # custom image: a user --exclude of torch drops torch, not its tree
+        self._peft_env(tmp_path)
+        assert prune_excluded(tmp_path, ["torch"], ["peft"], []) == ["torch"]
+        assert "sympy" in _installed(tmp_path)
+
+
+class TestBuildEnvironmentPrunes:
+    def _app(self, **kwargs):
+        app = App("a")
+
+        @app.queue(name="q", dependencies=["peft"], **kwargs)
+        def q():
+            pass
+
+        return app
+
+    def _fake_vendor(self, env_dir, requirements, python_version, **kwargs):
+        if "peft" in requirements:
+            _wheel(env_dir, "peft", requires=["torch"])
+            _wheel(env_dir, "torch", requires=["sympy"])
+            _wheel(env_dir, "sympy")
+
+    def test_gpu_builtin_image_prunes_transitive_torch(self, tmp_path):
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(
+                self._app(gpu="AMPERE_16"), tmp_path, scratch_dir=tmp_path / "s"
+            )
+        assert result.excluded == ["torch"]
+        assert _installed(result.env_dir) == ["peft"]
+
+    def test_mixed_cpu_gpu_app_prunes_transitive_torch(self, tmp_path):
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["pandas"])
+        def prep():
+            pass
+
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        # torch comes from the gpu image; the cpu stage never needs it,
+        # so its workers must not install it at cold start
+        assert result.excluded == []
+        assert _installed(result.env_dir) == ["peft"]
+
+    def test_mixed_app_records_torch_only_when_cpu_needs_it(self, tmp_path):
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["peft"])
+        def prep():
+            pass
+
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        # the cpu workers install torch at cold start, so it stays listed
+        assert result.excluded == ["torch"]
+
+    def test_mixed_app_ignores_torch_behind_an_unrequested_extra(self, tmp_path):
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["transformers"])
+        def prep():
+            pass
+
+        def vendor(env_dir, requirements, python_version, **kwargs):
+            self._fake_vendor(env_dir, requirements, python_version)
+            _wheel(env_dir, "transformers", requires=['torch>=2; extra == "torch"'])
+
+        with patch("runpod.apps.build.vendor", side_effect=vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        # transformers without [torch] never imports it on the cpu stage
+        assert result.excluded == []
+
+    def test_mixed_app_records_torch_for_a_requested_extra(self, tmp_path):
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["transformers[torch]"])
+        def prep():
+            pass
+
+        def vendor(env_dir, requirements, python_version, **kwargs):
+            self._fake_vendor(env_dir, requirements, python_version)
+            _wheel(
+                env_dir,
+                "transformers",
+                requires=['torch>=2; extra == "torch" or extra == "all"'],
+            )
+
+        with patch("runpod.apps.build.vendor", side_effect=vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == ["torch"]
+
+    @pytest.mark.parametrize(
+        "marker",
+        [
+            '(sys_platform == "linux" or sys_platform == "win32") and extra == "torch"',
+            'extra == "torch" and (sys_platform == "linux" or sys_platform == "win32")',
+            '"torch" == extra',
+            'extra == "torch" and python_version < "3.12"',
+        ],
+    )
+    @pytest.mark.parametrize("requested", [False, True])
+    @pytest.mark.parametrize("builder_platform", ["darwin", "linux"])
+    def test_mixed_app_evaluates_extra_markers(
+        self, tmp_path, marker, requested, builder_platform
+    ):
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(
+            name="prep",
+            cpu="cpu3c-1-2",
+            dependencies=["transformers[torch]" if requested else "transformers"],
+        )
+        def prep():
+            pass
+
+        def vendor(env_dir, requirements, python_version, **kwargs):
+            self._fake_vendor(env_dir, requirements, python_version)
+            _wheel(env_dir, "transformers", requires=[f"torch; {marker}"])
+
+        builder = default_environment()
+        builder.update(sys_platform=builder_platform, python_version="3.14")
+        with (
+            patch("runpod.apps.build.vendor", side_effect=vendor),
+            patch("packaging.markers.default_environment", return_value=builder),
+        ):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+
+        assert result.excluded == (["torch"] if requested else [])
+
+    def test_mixed_app_records_torch_when_a_marker_branch_skips_the_extra(
+        self, tmp_path
+    ):
+        app = self._app(gpu="AMPERE_16")
+
+        @app.queue(name="prep", cpu="cpu3c-1-2", dependencies=["transformers"])
+        def prep():
+            pass
+
+        def vendor(env_dir, requirements, python_version, **kwargs):
+            self._fake_vendor(env_dir, requirements, python_version)
+            _wheel(
+                env_dir,
+                "transformers",
+                requires=['torch; extra == "torch" or python_version >= "3.12"'],
+            )
+
+        with patch("runpod.apps.build.vendor", side_effect=vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == ["torch"]
+
+    def test_mixed_app_direct_gpu_torch_not_recorded(self, tmp_path):
+        app = App("a")
+
+        @app.queue(name="g", gpu="AMPERE_16", dependencies=["torch"])
+        def g():
+            pass
+
+        @app.queue(name="c", cpu="cpu3c-1-2", dependencies=["pandas"])
+        def c():
+            pass
+
+        with patch("runpod.apps.build.vendor"):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == []
+
+    def test_custom_image_keeps_transitive_torch(self, tmp_path):
+        app = self._app(gpu="AMPERE_16", image="me/custom:1")
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert result.excluded == []
+        assert _installed(result.env_dir) == ["peft", "sympy", "torch"]
+
+    def test_cpu_keeps_transitive_torch(self, tmp_path):
+        with patch("runpod.apps.build.vendor", side_effect=self._fake_vendor):
+            result = build_environment(
+                self._app(cpu="cpu3c-1-2"), tmp_path, scratch_dir=tmp_path / "s"
+            )
+        assert result.excluded == []
+        assert _installed(result.env_dir) == ["peft", "sympy", "torch"]
+
+
+class TestInstalledClosure:
+    @pytest.mark.parametrize("requested", [False, True])
+    def test_named_url_requirements_preserve_extras_and_markers(self, tmp_path, requested):
+        _wheel(
+            tmp_path,
+            "models",
+            requires=[
+                'torch @ https://example.com/torch.whl;download=1 ; extra == "gpu-mode"'
+            ],
+        )
+        _wheel(tmp_path, "torch")
+        root = "models[GPU_Mode]" if requested else "models"
+        assert installed_closure(
+            tmp_path, [f"{root} @ https://example.com/models.whl"]
+        ) == ({"models", "torch"} if requested else {"models"})
+
+    @pytest.mark.parametrize(
+        "root",
+        [
+            "https://example.com/models.whl",
+            "./models.whl",
+            "models.whl",
+            "models.zip",
+            "models.tar.gz",
+            "models.tgz",
+        ],
+    )
+    def test_unnamed_roots_fail_closed(self, tmp_path, root):
+        _wheel(tmp_path, "models")
+        _wheel(tmp_path, "other")
+        assert installed_closure(tmp_path, [root]) == {"models", "other"}
+
+    def test_transitive_extras_activate_grouped_marker(self, tmp_path):
+        _wheel(tmp_path, "wrapper", requires=["models[torch]"])
+        _wheel(
+            tmp_path,
+            "models",
+            requires=[
+                'torch; (sys_platform == "linux" or sys_platform == "win32") and extra == "torch"'
+            ],
+        )
+        _wheel(tmp_path, "torch")
+        assert installed_closure(tmp_path, ["wrapper"]) == {"wrapper", "models", "torch"}
+
+    def test_each_extra_is_a_separate_marker_context(self, tmp_path):
+        _wheel(tmp_path, "models", requires=['torch; extra == "a" and extra == "b"'])
+        _wheel(tmp_path, "torch")
+        assert installed_closure(tmp_path, ["models[a,b]"]) == {"models"}
+
+    @pytest.mark.parametrize("requested", [False, True])
+    def test_or_in_extra_name_is_not_an_operator(self, tmp_path, requested):
+        _wheel(tmp_path, "models", requires=['torch; extra == "torch-or-gpu"'])
+        _wheel(tmp_path, "torch")
+        roots = ["models[torch-or-gpu]" if requested else "models"]
+        assert installed_closure(tmp_path, roots) == (
+            {"models", "torch"} if requested else {"models"}
+        )
+
+    def test_invalid_marker_fails_closed(self, tmp_path):
+        _wheel(tmp_path, "models", requires=['torch; extra =='])
+        _wheel(tmp_path, "torch")
+        _wheel(tmp_path, "other")
+        assert installed_closure(tmp_path, ["models"]) == {"models", "torch", "other"}
