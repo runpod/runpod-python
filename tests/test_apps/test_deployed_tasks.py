@@ -251,7 +251,7 @@ async def test_cancellation_retains_pending_create_and_cleans_success():
         assert not invocation.done()
         finish.set()
         with pytest.raises(asyncio.CancelledError):
-            await invocation
+            await asyncio.wait_for(invocation, timeout=5)
     api.create.assert_awaited_once()
     api.terminate.assert_awaited_once_with("child", execution.token)
     assert execution.pod_id is None

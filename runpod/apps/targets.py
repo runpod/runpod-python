@@ -802,54 +802,12 @@ class LiveTarget(InvocationTarget):
         return result
 
 
-class PodTarget(InvocationTarget):
-    """ephemeral pod execution for @app.task: provision a pod, run the
-    function body, collect the result, terminate.
+class _TaskTarget(InvocationTarget):
+    """shared execution, result collection, and cleanup for task targets."""
 
-    tasks run to completion far beyond the queue data plane's sync
-    window, so the transport is a direct http channel to a single-shot
-    runner on the pod (see runpod.apps.tasks).
-    """
-
-    def __init__(
-        self,
-        spec: ResourceSpec,
-        fn: Callable,
-        events: Optional[object] = None,
-        *,
-        specs: Optional[List[ResourceSpec]] = None,
-    ):
-        self.spec = spec
-        self.fn = fn
-        self.events = events
-        self.specs = specs
-        self.resource_name = spec.name
-        self.hardware = ",".join(spec.cpu or spec.gpu or ["any"])
-
+    @abstractmethod
     def _execution(self, payload, timeout=None):
-        from .tasks import TaskExecution
-
-        return TaskExecution(self.spec, specs=self.specs)
-
-    def build_payload(
-        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
-    ) -> Dict[str, Any]:
-        from .serialization import (
-            get_function_source,
-            serialize_args,
-            serialize_kwargs,
-        )
-
-        request = FunctionRequest(
-            function_name=fn.__name__,
-            function_code=get_function_source(fn),
-            args=serialize_args(args),
-            kwargs=serialize_kwargs(kwargs),
-            dependencies=spec.dependencies,
-            system_dependencies=spec.system_dependencies,
-            accelerate_downloads=spec.accelerate_downloads,
-        )
-        return request.to_input()
+        raise NotImplementedError
 
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: Optional[float] = None
@@ -924,7 +882,57 @@ class PodTarget(InvocationTarget):
         return TaskJob(execution)
 
 
-class DeployedTaskTarget(PodTarget):
+class PodTarget(_TaskTarget):
+    """ephemeral pod execution for @app.task: provision a pod, run the
+    function body, collect the result, terminate.
+
+    tasks run to completion far beyond the queue data plane's sync
+    window, so the transport is a direct http channel to a single-shot
+    runner on the pod (see runpod.apps.tasks).
+    """
+
+    def __init__(
+        self,
+        spec: ResourceSpec,
+        fn: Callable,
+        events: Optional[object] = None,
+        *,
+        specs: Optional[List[ResourceSpec]] = None,
+    ):
+        self.spec = spec
+        self.fn = fn
+        self.events = events
+        self.specs = specs
+        self.resource_name = spec.name
+        self.hardware = ",".join(spec.cpu or spec.gpu or ["any"])
+
+    def _execution(self, payload, timeout=None):
+        from .tasks import TaskExecution
+
+        return TaskExecution(self.spec, specs=self.specs)
+
+    def build_payload(
+        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
+    ) -> Dict[str, Any]:
+        from .serialization import (
+            get_function_source,
+            serialize_args,
+            serialize_kwargs,
+        )
+
+        request = FunctionRequest(
+            function_name=fn.__name__,
+            function_code=get_function_source(fn),
+            args=serialize_args(args),
+            kwargs=serialize_kwargs(kwargs),
+            dependencies=spec.dependencies,
+            system_dependencies=spec.system_dependencies,
+            accelerate_downloads=spec.accelerate_downloads,
+        )
+        return request.to_input()
+
+
+class DeployedTaskTarget(_TaskTarget):
     """invoke an approved deployed task without transmitting source or specs."""
 
     def __init__(self, app, env, name, events=None):
