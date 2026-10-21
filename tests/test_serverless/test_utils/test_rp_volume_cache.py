@@ -1369,3 +1369,73 @@ def test_hydrate_cleans_temp_when_rename_fails(tmp_path, monkeypatch):
 
     assert _hydrating_cache(cache, vol).hydrate() == 0
     assert os.listdir(cache) == []
+
+
+def test_hydrate_workers_follow_explicit_max_workers(tmp_path):
+    # Before range-parallel hydrate, max_workers sized the hydrate pool too. A
+    # caller who set it low to keep hydrate light must not silently get 64.
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), max_workers=4)
+    assert vc._hydrate_workers == 4
+
+
+def test_explicit_hydrate_workers_override_max_workers(tmp_path):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache(
+        [str(tmp_path / "cache")],
+        namespace="ep1",
+        volume_path=str(vol),
+        max_workers=4,
+        hydrate_workers=16,
+    )
+    assert vc._hydrate_workers == 16
+
+
+def test_range_retry_jitters_backoff(monkeypatch):
+    # Ranges failing together under load must not all retry at the same instant.
+    delays = []
+    monkeypatch.setattr(vcmod.time, "sleep", delays.append)
+
+    def flaky():
+        failures = iter([True])
+
+        def fn():
+            if next(failures, False):
+                raise OSError(errno.EIO, "Input/output error")
+
+        return fn
+
+    for _ in range(20):
+        vcmod._with_range_retry(flaky())
+
+    assert all(0 <= d <= vcmod._RANGE_RETRY_BASE_SECONDS for d in delays)
+    assert len(set(delays)) > 1
+
+
+def test_run_bounded_stops_workers_when_wait_is_interrupted(monkeypatch):
+    # Ctrl-C lands in the main thread while it waits on the pool. The workers
+    # must stop taking items instead of draining every remaining range.
+    import concurrent.futures
+
+    real_result = concurrent.futures.Future.result
+    interrupted = []
+
+    def interrupting_result(self, *args, **kwargs):
+        if not interrupted:
+            interrupted.append(True)
+            raise KeyboardInterrupt
+        return real_result(self, *args, **kwargs)
+
+    monkeypatch.setattr(concurrent.futures.Future, "result", interrupting_result)
+    processed = []
+
+    def slow(item):
+        time.sleep(0.002)
+        processed.append(item)
+
+    with pytest.raises(KeyboardInterrupt):
+        vcmod._run_bounded(range(2000), slow, workers=2)
+
+    assert len(processed) < 100

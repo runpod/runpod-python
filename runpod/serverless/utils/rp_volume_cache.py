@@ -27,6 +27,7 @@ import collections
 import errno
 import json
 import os
+import random
 import shutil
 import subprocess
 import tarfile
@@ -51,7 +52,8 @@ _BIG_SUBDIR = "big"
 _HYDRATE_WORKERS = 64
 _HYDRATE_CHUNK_SIZE = 8 * 1024 * 1024
 # Transient errors an object-store FUSE mount returns under load; retried with
-# exponential backoff (~6s in total) before the file is given up on.
+# jittered exponential backoff (up to ~6s in total) before the file is given up
+# on. Jitter keeps ranges that failed together from retrying in lockstep.
 _RANGE_RETRY_ERRNOS = frozenset({errno.ENOMEM, errno.EIO, errno.EAGAIN})
 _RANGE_MAX_ATTEMPTS = 8
 _RANGE_RETRY_BASE_SECONDS = 0.05
@@ -83,7 +85,8 @@ class VolumeCache:
         max_workers: Thread count for parallel copy of large files on sync.
             Defaults to ``min(32, (os.cpu_count() or 4) * 4)`` (I/O-bound, so
             oversubscribing the CPU count is fine).
-        hydrate_workers: Concurrent range reads on hydrate. Defaults to 64.
+        hydrate_workers: Concurrent range reads on hydrate. Defaults to
+            ``max_workers`` when that is set, else 64.
         hydrate_chunk_size: Bytes per hydrate range. Defaults to 8 MiB. Peak
             hydrate memory is about ``hydrate_workers * hydrate_chunk_size``.
 
@@ -133,7 +136,11 @@ class VolumeCache:
         self._max_workers = _positive_or_default(
             "max_workers", max_workers, min(32, (os.cpu_count() or 4) * 4)
         )
-        self._hydrate_workers = _positive_or_default("hydrate_workers", hydrate_workers, _HYDRATE_WORKERS)
+        # An explicit max_workers sized hydrate too before ranged hydrate; keep
+        # honoring it so a caller who set it low doesn't silently get 64 threads.
+        self._hydrate_workers = _positive_or_default(
+            "hydrate_workers", hydrate_workers, max_workers or _HYDRATE_WORKERS
+        )
         self._hydrate_chunk_size = _positive_or_default(
             "hydrate_chunk_size", hydrate_chunk_size, _HYDRATE_CHUNK_SIZE
         )
@@ -717,12 +724,18 @@ def _run_bounded(items, fn, workers):
                 raise
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for future in [pool.submit(drain) for _ in range(workers)]:
-            future.result()
+        try:
+            for future in [pool.submit(drain) for _ in range(workers)]:
+                future.result()
+        except BaseException:
+            # The waiting thread was interrupted (e.g. Ctrl-C): stop the workers
+            # before the pool's shutdown waits on them, or they drain every item.
+            stop.set()
+            raise
 
 
 def _with_range_retry(fn, *args):
-    """Call fn, retrying transient FUSE errors with exponential backoff."""
+    """Call fn, retrying transient FUSE errors with jittered exponential backoff."""
     for attempt in range(_RANGE_MAX_ATTEMPTS - 1):
         try:
             fn(*args)
@@ -730,7 +743,7 @@ def _with_range_retry(fn, *args):
         except OSError as exc:
             if exc.errno not in _RANGE_RETRY_ERRNOS:
                 raise
-            time.sleep(_RANGE_RETRY_BASE_SECONDS * 2**attempt)
+            time.sleep(random.uniform(0, _RANGE_RETRY_BASE_SECONDS * 2**attempt))
     fn(*args)  # final attempt: any error propagates
 
 

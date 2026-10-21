@@ -60,7 +60,7 @@ vc.sync(background=False)           # persist new files back to the volume, inli
 | `volume_path` | `/runpod-volume` | Network-volume mount point. |
 | `best_effort` | `True` | Swallow and log errors instead of raising. Set `False` while debugging. |
 | `max_workers` | `min(32, (os.cpu_count() or 4) * 4)` | Thread count for parallel copy of large files on sync (I/O-bound). |
-| `hydrate_workers` | `64` | Concurrent range reads when hydrating large files. |
+| `hydrate_workers` | `max_workers` if set, else `64` | Concurrent range reads when hydrating large files. |
 | `hydrate_chunk_size` | `8 MiB` | Bytes per hydrate range. Peak hydrate memory is about `hydrate_workers * hydrate_chunk_size` (512 MiB by default). |
 
 ## How it works
@@ -89,7 +89,7 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   roughly 140 MiB/s, and reading several whole files at once doesn't add up,
   but independent range reads scale to the host's network (~1.1 GiB/s
   measured). Transient `ENOMEM`/`EIO`/`EAGAIN` errors, which such mounts
-  return under load, are retried with backoff. A file is assembled in a temp
+  return under load, are retried with jittered exponential backoff. A file is assembled in a temp
   file and renamed into place only when every range has copied, so a failed
   file leaves any existing local copy untouched and is simply not restored.
   A mirror file whose size differs from the manifest, or whose size or mtime
