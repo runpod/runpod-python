@@ -1439,3 +1439,45 @@ def test_run_bounded_stops_workers_when_wait_is_interrupted(monkeypatch):
         vcmod._run_bounded(range(2000), slow, workers=2)
 
     assert len(processed) < 100
+
+
+def _leftover_temps(root):
+    return [os.path.join(d, n) for d, _s, files in os.walk(root) for n in files if n.endswith(".rpvc.tmp")]
+
+
+def _interrupt_on_call(n, real):
+    calls = []
+
+    def wrapper(*args, **kwargs):
+        calls.append(True)
+        if len(calls) == n:
+            raise KeyboardInterrupt
+        return real(*args, **kwargs)
+
+    return wrapper
+
+
+def test_hydrate_interrupted_during_preparation_leaves_no_temps(tmp_path, monkeypatch):
+    # Temps are pre-sized to the full file, so one left behind by Ctrl-C while
+    # later files are still being prepared can hold gigabytes.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.safetensors", "b.safetensors"])
+    # _file_identity's second call is the second file's preparation, after the
+    # first file's temp exists.
+    monkeypatch.setattr(vcmod, "_file_identity", _interrupt_on_call(2, vcmod._file_identity))
+
+    with pytest.raises(KeyboardInterrupt):
+        _hydrating_cache(cache, vol).hydrate()
+
+    assert _leftover_temps(cache) == []
+
+
+def test_hydrate_interrupted_during_finalization_leaves_no_temps(tmp_path, monkeypatch):
+    # A temp interrupted between its last range and the rename is a fully
+    # copied file that nothing will ever publish or reuse.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.safetensors", "b.safetensors"])
+    monkeypatch.setattr(vcmod, "_copy_metadata", _interrupt_on_call(1, vcmod._copy_metadata))
+
+    with pytest.raises(KeyboardInterrupt):
+        _hydrating_cache(cache, vol).hydrate()
+
+    assert _leftover_temps(cache) == []

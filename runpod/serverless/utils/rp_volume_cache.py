@@ -353,19 +353,23 @@ class VolumeCache:
 
         Returns the set of sources restored.
         """
-        files = [f for f in (self._prepare_ranged(*e) for e in entries) if f]
+        # Temp paths are fixed before any is created so an interrupt (e.g.
+        # Ctrl-C) in preparation, copying or finalization removes every one.
+        # Temps are pre-sized to the full file and named per pid, so a later
+        # run never reuses them; leaking them can fill the disk. Removing an
+        # already published temp is a no-op.
+        tmps = [_tmp_path(dst) for _src, dst, _entry in entries]
         try:
+            prepared = (self._prepare_ranged(*e, tmp) for e, tmp in zip(entries, tmps))
+            files = [f for f in prepared if f]
             failed = self._copy_ranges(files)
+            return {f.src for i, f in enumerate(files) if self._finish_ranged(f, i in failed)}
         except BaseException:
-            # Temps are pre-sized to the full file and named per pid, so a
-            # later run never reuses them; leaking them can fill the disk.
-            for f in files:
-                _silent_remove(f.tmp)
+            for tmp in tmps:
+                _silent_remove(tmp)
             raise
-        return {f.src for i, f in enumerate(files) if self._finish_ranged(f, i in failed)}
 
-    def _prepare_ranged(self, src, dst, entry):
-        tmp = _tmp_path(dst)
+    def _prepare_ranged(self, src, dst, entry, tmp):
         try:
             st = os.stat(src)
             if st.st_size != entry["size"]:
