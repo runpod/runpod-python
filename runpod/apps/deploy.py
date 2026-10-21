@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pathspec import GitIgnoreSpec
 
-import runpod
-
 from .api import AppsApiClient
 from .app import App
 from .build import (
@@ -316,7 +314,6 @@ def _deployed_endpoint_input(
     python_version: str,
     *,
     env_name: Optional[str] = None,
-    production_protocol: bool = False,
 ) -> Dict[str, Any]:
     """saveEndpoint payload for one deployed queue/api resource.
 
@@ -331,42 +328,31 @@ def _deployed_endpoint_input(
     from .secret import render_env
 
     spec.validate()
-    template_env = {
-        "FLASH_RESOURCE_NAME": spec.name,
-        # version-triggering: a new build recreates all workers
-        "RUNPOD_BUILD_ID": build_id,
-        **render_env(spec.env),
-        "FLASH_ENVIRONMENT": env_name or app.env,
+    resource_env = render_env(spec.env)
+    reserved = {
+        "RUNPOD_API_KEY",
+        "RUNPOD_AI_API_KEY",
+        "RUNPOD_ENDPOINT_ID",
+        "RUNPOD_POD_ID",
+        "RUNPOD_TASK_TOKEN",
+        "RUNPOD_TASK_PORT",
+        "FLASH_BUILD_ARTIFACT_PATH",
+        "RUNPOD_RUNTIME_KIND",
+        "RUNPOD_DEV_APP",
+        "RUNPOD_DEV_RESOURCE",
+        "RUNPOD_DEV_SESSION",
     }
-    if production_protocol:
-        reserved = {
-            "RUNPOD_API_KEY",
-            "RUNPOD_AI_API_KEY",
-            "RUNPOD_ENDPOINT_ID",
-            "RUNPOD_POD_ID",
-            "RUNPOD_FLASH_TASK",
-            "RUNPOD_TASK_TOKEN",
-            "RUNPOD_TASK_PORT",
-            "FLASH_BUILD_ARTIFACT_PATH",
-            "RUNPOD_RUNTIME_KIND",
-            "RUNPOD_DEV_APP",
-            "RUNPOD_DEV_RESOURCE",
-            "RUNPOD_DEV_SESSION",
-        }
-        if reserved.intersection(template_env):
-            raise InvalidResourceError(
-                "production endpoint env contains reserved runtime fields"
-            )
-        template_env.update(
-            RUNPOD_FLASH_PROTOCOL="1",
-            FLASH_APP_NAME=app.name,
-            FLASH_RESOURCE_NAME=spec.name,
-            RUNPOD_BUILD_ID=build_id,
+    if reserved.intersection(resource_env):
+        raise InvalidResourceError(
+            "production endpoint env contains reserved runtime fields"
         )
-
-    api_key = runpod.api_key
-    if not production_protocol and api_key and "RUNPOD_API_KEY" not in template_env:
-        template_env["RUNPOD_API_KEY"] = api_key
+    template_env = {
+        **resource_env,
+        "FLASH_APP_NAME": app.name,
+        "FLASH_ENVIRONMENT": env_name or app.env,
+        "FLASH_RESOURCE_NAME": spec.name,
+        "RUNPOD_BUILD_ID": build_id,
+    }
 
     # nested tasks use the same runtime and sdk channels as the endpoint
     for key in (
@@ -444,8 +430,6 @@ async def reconcile_endpoints(
     environment: Dict[str, Any],
     build_id: str,
     python_version: str,
-    *,
-    production_protocol: bool = False,
 ) -> Dict[str, str]:
     """converge the environment's endpoints to the app's resources.
 
@@ -475,7 +459,6 @@ async def reconcile_endpoints(
             build_id,
             python_version,
             env_name=environment["name"],
-            production_protocol=production_protocol,
         )
         await attach_endpoint_volumes(payload, handle.spec, resolver, app)
         auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
@@ -620,16 +603,19 @@ async def deploy_app(
         upload["uploadUrl"], str(tar_path), progress=upload_progress
     )
     build = await client.finalize_artifact_upload(app_id, upload["objectKey"], manifest)
-    policy = build.get("resourceSpec")
+    definitions = build.get("resourceSpec")
     tasks = {r["name"] for r in manifest["resources"] if r["kind"] == "task"}
     if (
-        not isinstance(policy, dict)
-        or policy.get("version") != 1
-        or not isinstance(policy.get("tasks"), dict)
-        or set(policy["tasks"]) != tasks
+        not isinstance(definitions, dict)
+        or not isinstance(definitions.get("tasks"), dict)
+        or set(definitions["tasks"]) != tasks
+        or any(
+            not isinstance(task, dict) or not task
+            for task in definitions["tasks"].values()
+        )
     ):
         raise RuntimeError(
-            "backend did not acknowledge the production flash task policy contract"
+            "backend did not acknowledge the registered task definitions"
         )
     log.info("uploaded build %s", build["id"])
 
@@ -638,7 +624,7 @@ async def deploy_app(
 
     _phase(events, "endpoints")
     endpoints = await reconcile_endpoints(
-        client, app, environment, build["id"], python_version, production_protocol=True
+        client, app, environment, build["id"], python_version
     )
     endpoint_ready = getattr(events, "endpoint_ready", None)
     if endpoint_ready is not None:

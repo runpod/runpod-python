@@ -13,7 +13,7 @@ def runtime_headers() -> Optional[Dict[str, str]]:
         return None
     endpoint = os.getenv("RUNPOD_ENDPOINT_ID")
     pod = os.getenv("RUNPOD_POD_ID")
-    if os.getenv("RUNPOD_FLASH_TASK") == "1":
+    if os.getenv("RUNPOD_RUNTIME_KIND") == "task":
         endpoint = None
     if not endpoint and not pod:
         raise RuntimeError("production flash runtime source identity is missing")

@@ -191,7 +191,9 @@ class TestPackaging:
         with tarfile.open(package_project(tmp_path, {})) as tar:
             assert set(tar.getnames()) == {".runpodignore", "runpod_manifest.json"}
         for name in (".env", "private.key", "private.pem", "local.txt", ".aws/"):
-            assert f"excluded source path {name!r} from deployment artifact" in caplog.text
+            assert (
+                f"excluded source path {name!r} from deployment artifact" in caplog.text
+            )
         assert "sensitive-file-contents" not in caplog.text
 
     def test_vendored_env_included_under_env(self, tmp_path):
@@ -282,7 +284,7 @@ class TestDeployPipeline:
         }
         api.finalize_artifact_upload.return_value = {
             "id": "build-1",
-            "resourceSpec": {"version": 1, "tasks": {}},
+            "resourceSpec": {"tasks": {}},
         }
         api.deploy_build.return_value = {"id": "env-1"}
 
@@ -310,7 +312,7 @@ class TestDeployPipeline:
         }
         api.finalize_artifact_upload.return_value = {
             "id": "build-2",
-            "resourceSpec": {"version": 1, "tasks": {}},
+            "resourceSpec": {"tasks": {}},
         }
 
         with _stub_build(tmp_path):
@@ -337,7 +339,7 @@ class TestDeployPipeline:
         }
         api.finalize_artifact_upload.return_value = {
             "id": "build-1",
-            "resourceSpec": {"version": 1, "tasks": {}},
+            "resourceSpec": {"tasks": {}},
         }
         api.save_endpoint.return_value = {"id": "ep-1"}
         with _stub_build(tmp_path):
