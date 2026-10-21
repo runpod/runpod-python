@@ -36,6 +36,16 @@ DELETE_TIMEOUT = 5.0
 _pending_cleanups = set()
 
 
+def _validate_timeout(timeout):
+    if timeout is not None and (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+        or timeout < 0
+    ):
+        raise ValueError("task timeout must be a finite non-negative number")
+
+
 async def finish_cleanup(coro) -> None:
     """finish cleanup despite repeated cancellation, without hiding its cause."""
     original = sys.exc_info()[1]
@@ -185,19 +195,11 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     return pod
 
 
-class TaskExecution:
-    """one pod running one function."""
+class _TaskTransport:
+    """token-authenticated execution transport with cancellation-safe cleanup."""
 
-    def __init__(
-        self,
-        spec: ResourceSpec,
-        api: Optional[AppsApiClient] = None,
-        *,
-        specs: Optional[List[ResourceSpec]] = None,
-    ):
-        self.spec = spec
-        self.specs = specs if specs is not None else [spec]
-        self.api = api or AppsApiClient()
+    def __init__(self, api):
+        self.api = api
         self.token = secrets.token_urlsafe(32)
         self.pod_id: Optional[str] = None
         self._deployment: Optional[asyncio.Task] = None
@@ -205,55 +207,6 @@ class TaskExecution:
     @property
     def _headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.token}"}
-
-    async def start(self) -> None:
-        pod = _pod_input(self.spec, self.token, self.spec.name)
-        if self.spec.registry_auth:
-            from .registry import resolve_registry_auth
-
-            pod["containerRegistryAuthId"] = await resolve_registry_auth(
-                self.spec.registry_auth, api=self.api
-            )
-        pod = await self._attach_mounts(pod)
-        self._deployment = asyncio.create_task(self._deploy_and_record(pod))
-        await asyncio.shield(self._deployment)
-
-    async def _deploy_and_record(self, pod: Dict[str, Any]) -> None:
-        result = await self._deploy_pod(pod)
-        self.pod_id = result["id"]
-        log.info("task pod %s deployed for %s", self.pod_id, self.spec.name)
-
-    async def _deploy_pod(self, pod: Dict[str, Any]) -> Dict[str, Any]:
-        from ..error import QueryError
-
-        try:
-            return await self.api.deploy_task_pod(pod, is_cpu=self.spec.is_cpu)
-        except QueryError as exc:
-            if not is_capacity_error(exc):
-                raise
-            capacity_error = exc
-
-        datacenters = pod.get("dataCenterIds") or []
-        if len(datacenters) < 2:
-            raise capacity_error
-
-        for datacenter in datacenters:
-            candidate = dict(pod, dataCenterIds=[datacenter])
-            try:
-                return await self.api.deploy_task_pod(
-                    candidate, is_cpu=self.spec.is_cpu
-                )
-            except QueryError as exc:
-                if not is_capacity_error(exc):
-                    raise
-        raise capacity_error
-
-    async def _attach_mounts(self, pod: Dict[str, Any]) -> Dict[str, Any]:
-        """resolve storage mounts and apply their placement constraints."""
-        from .volume import VolumeResolver, attach_pod_mounts
-
-        await attach_pod_mounts(pod, self.spec, VolumeResolver(self.api), self.specs)
-        return pod
 
     async def wait_ready(self, timeout: float = READY_TIMEOUT) -> None:
         """poll the runner's /ping through the pod proxy until it answers."""
@@ -312,13 +265,7 @@ class TaskExecution:
 
     async def _post(self, path: str, request: Dict[str, Any]) -> None:
         timeout = request.get("timeout")
-        if timeout is not None and (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or not math.isfinite(timeout)
-            or timeout < 0
-        ):
-            raise ValueError("task timeout must be a finite non-negative number")
+        _validate_timeout(timeout)
         url = f"{_proxy_url(self.pod_id)}{path}"
         attempts = 6
         async with aiohttp.ClientSession() as session:
@@ -385,9 +332,7 @@ class TaskExecution:
         try:
             for attempt in range(DELETE_ATTEMPTS):
                 try:
-                    await asyncio.wait_for(
-                        self.api.terminate_pod(self.pod_id), DELETE_TIMEOUT
-                    )
+                    await asyncio.wait_for(self._terminate_pod(), DELETE_TIMEOUT)
                     break
                 except Exception as exc:
                     status = getattr(exc, "status_code", None) or getattr(
@@ -420,6 +365,109 @@ class TaskExecution:
             raise
         self.pod_id = None
 
+    async def _terminate_pod(self):
+        raise NotImplementedError
+
+
+class TaskExecution(_TaskTransport):
+    """one pod running one function."""
+
+    def __init__(
+        self,
+        spec: ResourceSpec,
+        api: Optional[AppsApiClient] = None,
+        *,
+        specs: Optional[List[ResourceSpec]] = None,
+    ):
+        self.spec = spec
+        self.specs = specs if specs is not None else [spec]
+        super().__init__(api or AppsApiClient())
+
+    async def start(self) -> None:
+        pod = _pod_input(self.spec, self.token, self.spec.name)
+        if self.spec.registry_auth:
+            from .registry import resolve_registry_auth
+
+            pod["containerRegistryAuthId"] = await resolve_registry_auth(
+                self.spec.registry_auth, api=self.api
+            )
+        pod = await self._attach_mounts(pod)
+        self._deployment = asyncio.create_task(self._deploy_and_record(pod))
+        await asyncio.shield(self._deployment)
+
+    async def _deploy_and_record(self, pod: Dict[str, Any]) -> None:
+        result = await self._deploy_pod(pod)
+        self.pod_id = result["id"]
+        log.info("task pod %s deployed for %s", self.pod_id, self.spec.name)
+
+    async def _deploy_pod(self, pod: Dict[str, Any]) -> Dict[str, Any]:
+        from ..error import QueryError
+
+        try:
+            return await self.api.deploy_task_pod(pod, is_cpu=self.spec.is_cpu)
+        except QueryError as exc:
+            if not is_capacity_error(exc):
+                raise
+            capacity_error = exc
+
+        datacenters = pod.get("dataCenterIds") or []
+        if len(datacenters) < 2:
+            raise capacity_error
+
+        for datacenter in datacenters:
+            candidate = dict(pod, dataCenterIds=[datacenter])
+            try:
+                return await self.api.deploy_task_pod(
+                    candidate, is_cpu=self.spec.is_cpu
+                )
+            except QueryError as exc:
+                if not is_capacity_error(exc):
+                    raise
+        raise capacity_error
+
+    async def _attach_mounts(self, pod: Dict[str, Any]) -> Dict[str, Any]:
+        """resolve storage mounts and apply their placement constraints."""
+        from .volume import VolumeResolver, attach_pod_mounts
+
+        await attach_pod_mounts(pod, self.spec, VolumeResolver(self.api), self.specs)
+        return pod
+
+    async def _terminate_pod(self):
+        await self.api.terminate_pod(self.pod_id)
+
+
+class DeployedTaskExecution(_TaskTransport):
+    """one approved named task using the task transport and cleanup lifecycle."""
+
+    def __init__(self, app, env, name, api=None, *, timeout=None):
+        from .api import FlashTaskApiClient
+
+        _validate_timeout(timeout)
+        self.app_name = app
+        self.env_name = env
+        self.resource_name = name
+        self.timeout = timeout
+        super().__init__(api or FlashTaskApiClient())
+
+    async def start(self):
+        self._deployment = asyncio.create_task(self._create_and_record())
+        await asyncio.shield(self._deployment)
+
+    async def _create_and_record(self):
+        task_input = {
+            "flashAppName": self.app_name,
+            "flashEnvironmentName": self.env_name,
+            "resourceName": self.resource_name,
+            "executionToken": self.token,
+        }
+        if self.timeout is not None:
+            task_input["executionTimeoutSeconds"] = self.timeout
+        result = await self.api.create(task_input)
+        self.pod_id = result["podId"]
+
+    async def _terminate_pod(self):
+        await self.api.terminate(self.pod_id, self.token)
+
 
 def unwrap_task_response(response: Dict[str, Any]) -> Any:
     """extract the function result from a runner response."""
@@ -437,7 +485,7 @@ def unwrap_task_response(response: Dict[str, Any]) -> Any:
 class TaskJob:
     """handle for a spawned task; owns the pod until the result is read."""
 
-    def __init__(self, execution: TaskExecution):
+    def __init__(self, execution: _TaskTransport):
         self._execution = execution
         self._result: Any = None
         self._done = False

@@ -233,6 +233,15 @@ class FunctionHandle:
     def _is_current_worker(self) -> bool:
         import os
 
+        from .context import deployed_identity
+
+        identity = deployed_identity()
+        if identity is not None:
+            return (
+                self.spec.kind is not ResourceKind.TASK
+                and identity[0] == self._app.name
+                and identity[2] == self.spec.name
+            )
         if dev_app := os.getenv("RUNPOD_DEV_APP"):
             return (
                 dev_app == self._app.name

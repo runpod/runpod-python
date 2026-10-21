@@ -282,14 +282,17 @@ def deploy(target, env, python_version, exclude, build_only):
             f"[bold white]{result.app_name}/{env or found.env}[/bold white] "
             f"is live [dim]{t.elapsed:.1f}s[/dim]"
         )
-        if result.endpoints:
+        if result.resources:
             ui.console.print()
-            w = max(len(n) for n in result.endpoints)
-            for name, endpoint_id in sorted(result.endpoints.items()):
-                ui.console.print(
-                    f"  [white]{name:<{w}}[/white]  "
-                    f"{ui.endpoint_link(endpoint_id)}"
+            ui.resources_table(
+                (
+                    name,
+                    handle.spec.kind.value,
+                    ",".join(handle.spec.cpu or handle.spec.gpu or ["any"]),
+                    result.endpoints.get(name, "registered"),
                 )
+                for name, handle in sorted(found.resources.items())
+            )
     ui.console.print()
 
 

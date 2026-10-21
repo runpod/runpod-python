@@ -137,6 +137,17 @@ def build_manifest(
             )
 
         entry = spec.to_manifest()
+        if spec.kind is ResourceKind.TASK:
+            from .images import image_for_spec
+
+            entry["imageName"] = image_for_spec(spec, python_version=python_version)
+            entry["customImage"] = bool(spec.image)
+            for mount, volume in zip(entry.get("mounts", []), spec.mounts.values()):
+                mount["create"] = volume.create
+                if volume.kind == "network":
+                    mount["size"] = volume.size
+                    if volume.datacenter is not None:
+                        mount["datacenter"] = volume.datacenter
 
         fn = (
             getattr(handle, "_fn", None)
@@ -160,6 +171,26 @@ def build_manifest(
         manifest["excludedPackages"] = excluded_packages
 
     return manifest
+
+
+async def _prepare_task_resources(
+    app: App, manifest: Dict[str, Any], client: AppsApiClient, events=None
+) -> None:
+    from .registry import resolve_registry_auth
+    from .volume import VolumeResolver
+
+    resolver = VolumeResolver(client, events=events)
+    specs = [handle.spec for handle in app.resources.values()]
+    for resource in manifest["resources"]:
+        if resource["kind"] != "task":
+            continue
+        spec = app.resources[resource["name"]].spec
+        bindings = await resolver.resolve_mounts(spec.mounts, specs)
+        for mount, binding in zip(resource.get("mounts", []), bindings):
+            mount["id"] = binding["id"]
+        registry_id = await resolve_registry_auth(spec.registry_auth, api=client)
+        if registry_id:
+            resource["registryAuth"] = registry_id
 
 
 def _load_ignores(path: Path) -> GitIgnoreSpec:
@@ -285,6 +316,7 @@ def _deployed_endpoint_input(
     python_version: str,
     *,
     env_name: Optional[str] = None,
+    production_protocol: bool = False,
 ) -> Dict[str, Any]:
     """saveEndpoint payload for one deployed queue/api resource.
 
@@ -306,12 +338,34 @@ def _deployed_endpoint_input(
         **render_env(spec.env),
         "FLASH_ENVIRONMENT": env_name or app.env,
     }
+    if production_protocol:
+        reserved = {
+            "RUNPOD_API_KEY",
+            "RUNPOD_AI_API_KEY",
+            "RUNPOD_ENDPOINT_ID",
+            "RUNPOD_POD_ID",
+            "RUNPOD_FLASH_TASK",
+            "RUNPOD_TASK_TOKEN",
+            "RUNPOD_TASK_PORT",
+            "FLASH_BUILD_ARTIFACT_PATH",
+            "RUNPOD_RUNTIME_KIND",
+            "RUNPOD_DEV_APP",
+            "RUNPOD_DEV_RESOURCE",
+            "RUNPOD_DEV_SESSION",
+        }
+        if reserved.intersection(template_env):
+            raise InvalidResourceError(
+                "production endpoint env contains reserved runtime fields"
+            )
+        template_env.update(
+            RUNPOD_FLASH_PROTOCOL="1",
+            FLASH_APP_NAME=app.name,
+            FLASH_RESOURCE_NAME=spec.name,
+            RUNPOD_BUILD_ID=build_id,
+        )
 
-    # cross-resource calls from inside a worker go through the sentinel,
-    # which authenticates with the account api key; without it any
-    # .remote() from worker code would fail
     api_key = runpod.api_key
-    if api_key and "RUNPOD_API_KEY" not in template_env:
+    if not production_protocol and api_key and "RUNPOD_API_KEY" not in template_env:
         template_env["RUNPOD_API_KEY"] = api_key
 
     # nested tasks use the same runtime and sdk channels as the endpoint
@@ -390,6 +444,8 @@ async def reconcile_endpoints(
     environment: Dict[str, Any],
     build_id: str,
     python_version: str,
+    *,
+    production_protocol: bool = False,
 ) -> Dict[str, str]:
     """converge the environment's endpoints to the app's resources.
 
@@ -419,6 +475,7 @@ async def reconcile_endpoints(
             build_id,
             python_version,
             env_name=environment["name"],
+            production_protocol=production_protocol,
         )
         await attach_endpoint_volumes(payload, handle.spec, resolver, app)
         auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
@@ -531,6 +588,7 @@ async def deploy_app(
         python_version=python_version,
         excluded_packages=build.excluded,
     )
+    await _prepare_task_resources(app, manifest, client, events)
     _phase(events, "package")
     tar_path = package_project(project_root, manifest, env_dir=build.env_dir)
     tar_size = tar_path.stat().st_size
@@ -562,6 +620,17 @@ async def deploy_app(
         upload["uploadUrl"], str(tar_path), progress=upload_progress
     )
     build = await client.finalize_artifact_upload(app_id, upload["objectKey"], manifest)
+    policy = build.get("resourceSpec")
+    tasks = {r["name"] for r in manifest["resources"] if r["kind"] == "task"}
+    if (
+        not isinstance(policy, dict)
+        or policy.get("version") != 1
+        or not isinstance(policy.get("tasks"), dict)
+        or set(policy["tasks"]) != tasks
+    ):
+        raise RuntimeError(
+            "backend did not acknowledge the production flash task policy contract"
+        )
     log.info("uploaded build %s", build["id"])
 
     await client.deploy_build(environment["id"], build["id"])
@@ -569,7 +638,7 @@ async def deploy_app(
 
     _phase(events, "endpoints")
     endpoints = await reconcile_endpoints(
-        client, app, environment, build["id"], python_version
+        client, app, environment, build["id"], python_version, production_protocol=True
     )
     endpoint_ready = getattr(events, "endpoint_ready", None)
     if endpoint_ready is not None:

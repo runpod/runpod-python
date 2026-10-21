@@ -62,6 +62,34 @@ def _result(name="demo", endpoints=None):
 
 
 class TestDeploy:
+
+    def test_task_only_deployment_shows_registered_per_call(
+        self, tmp_path, monkeypatch
+    ):
+        source = """
+import runpod
+app = runpod.App("tasks")
+@app.task(name="batch", cpu="cpu3c-1-2")
+def batch():
+    return 1
+"""
+        (tmp_path / "main.py").write_text(source)
+        monkeypatch.chdir(tmp_path)
+        deployed = DeployResult(
+            app_name="tasks",
+            build_id="build",
+            environment_id="env",
+            resources=["batch"],
+            endpoints={},
+        )
+        with patch("runpod.apps.deploy.deploy_app", AsyncMock(return_value=deployed)):
+            result = _runner().invoke(cli, ["flash", "deploy"])
+        assert result.exit_code == 0, result.output
+        assert "batch" in result.output
+        assert "task" in result.output
+        assert "cpu3c-1-2" in result.output
+        assert "registered / per-call" in result.output
+
     def test_deploys_discovered_app(self, tmp_path, monkeypatch):
         (tmp_path / "main.py").write_text(APP_SOURCE)
         monkeypatch.chdir(tmp_path)

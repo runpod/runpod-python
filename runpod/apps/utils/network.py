@@ -1,9 +1,31 @@
 """shared authentication and lightweight data-plane requests."""
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import aiohttp
+
+
+def runtime_headers() -> Optional[Dict[str, str]]:
+    from ..context import deployed_identity
+
+    if deployed_identity() is None:
+        return None
+    endpoint = os.getenv("RUNPOD_ENDPOINT_ID")
+    pod = os.getenv("RUNPOD_POD_ID")
+    if os.getenv("RUNPOD_FLASH_TASK") == "1":
+        endpoint = None
+    if not endpoint and not pod:
+        raise RuntimeError("production flash runtime source identity is missing")
+    key = os.getenv("RUNPOD_AI_API_KEY" if endpoint else "RUNPOD_API_KEY")
+    if not key or key != key.strip():
+        raise RuntimeError("production flash runtime credential is missing")
+    if (endpoint or pod) != (endpoint or pod).strip():
+        raise RuntimeError("production flash runtime source identity is malformed")
+    return {
+        "Authorization": f"Bearer {key}",
+        "X-RunPod-Endpoint-Id" if endpoint else "X-RunPod-Pod-Id": endpoint or pod,
+    }
 
 
 def api_key() -> str:

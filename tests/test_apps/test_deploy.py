@@ -280,7 +280,10 @@ class TestDeployPipeline:
             "uploadUrl": "https://upload",
             "objectKey": "key-1",
         }
-        api.finalize_artifact_upload.return_value = {"id": "build-1"}
+        api.finalize_artifact_upload.return_value = {
+            "id": "build-1",
+            "resourceSpec": {"version": 1, "tasks": {}},
+        }
         api.deploy_build.return_value = {"id": "env-1"}
 
         with _stub_build(tmp_path):
@@ -305,7 +308,10 @@ class TestDeployPipeline:
             "uploadUrl": "https://upload",
             "objectKey": "key-1",
         }
-        api.finalize_artifact_upload.return_value = {"id": "build-2"}
+        api.finalize_artifact_upload.return_value = {
+            "id": "build-2",
+            "resourceSpec": {"version": 1, "tasks": {}},
+        }
 
         with _stub_build(tmp_path):
             await deploy_app(app, tmp_path, api=api)
@@ -329,7 +335,10 @@ class TestDeployPipeline:
             "uploadUrl": "https://upload",
             "objectKey": "key-1",
         }
-        api.finalize_artifact_upload.return_value = {"id": "build-1"}
+        api.finalize_artifact_upload.return_value = {
+            "id": "build-1",
+            "resourceSpec": {"version": 1, "tasks": {}},
+        }
         api.save_endpoint.return_value = {"id": "ep-1"}
         with _stub_build(tmp_path):
             await deploy_app(app, tmp_path, env_name="prod", api=api)

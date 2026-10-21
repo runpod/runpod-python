@@ -39,11 +39,16 @@ def _lb_domain() -> str:
 
 
 def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    from .utils.network import runtime_headers
+
     headers = {
-        "Authorization": f"Bearer {_api_key()}",
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
     }
+    runtime = runtime_headers()
+    headers.update(
+        runtime if runtime is not None else {"Authorization": f"Bearer {_api_key()}"}
+    )
     if extra:
         headers.update(extra)
     return headers
@@ -818,6 +823,13 @@ class PodTarget(InvocationTarget):
         self.fn = fn
         self.events = events
         self.specs = specs
+        self.resource_name = spec.name
+        self.hardware = ",".join(spec.cpu or spec.gpu or ["any"])
+
+    def _execution(self, payload, timeout=None):
+        from .tasks import TaskExecution
+
+        return TaskExecution(self.spec, specs=self.specs)
 
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
@@ -844,16 +856,16 @@ class PodTarget(InvocationTarget):
     ) -> Any:
         import time
 
-        from .tasks import TaskExecution, finish_cleanup, unwrap_task_response
+        from .tasks import finish_cleanup, unwrap_task_response
 
-        name = self.spec.name
-        hardware = ",".join(self.spec.cpu or self.spec.gpu or ["any"])
+        name = self.resource_name
+        hardware = self.hardware
         emit(self.events, "dispatch", name)
         emit(self.events, "task_status", name, f"provisioning pod on {hardware}")
         start = time.monotonic()
 
         stream = None
-        execution = TaskExecution(self.spec, specs=self.specs)
+        execution = self._execution(payload, timeout)
         try:
             await execution.start()
             if execution.pod_id:
@@ -899,9 +911,9 @@ class PodTarget(InvocationTarget):
         return result
 
     async def submit(self, payload: Dict[str, Any]) -> Any:
-        from .tasks import TaskExecution, TaskJob, finish_cleanup
+        from .tasks import TaskJob, finish_cleanup
 
-        execution = TaskExecution(self.spec, specs=self.specs)
+        execution = self._execution(payload)
         try:
             await execution.start()
             await execution.wait_ready()
@@ -910,3 +922,32 @@ class PodTarget(InvocationTarget):
             await finish_cleanup(execution.terminate())
             raise
         return TaskJob(execution)
+
+
+class DeployedTaskTarget(PodTarget):
+    """invoke an approved deployed task without transmitting source or specs."""
+
+    def __init__(self, app, env, name, events=None):
+        self.app_name = app
+        self.env_name = env
+        self.resource_name = name
+        self.hardware = "approved resources"
+        self.events = events
+
+    def _execution(self, payload, timeout=None):
+        from .tasks import DeployedTaskExecution
+
+        if (
+            set(payload) != {"args", "kwargs"}
+            or not isinstance(payload["args"], list)
+            or not isinstance(payload["kwargs"], dict)
+            or any(not isinstance(key, str) for key in payload["kwargs"])
+        ):
+            raise ValueError("deployed tasks accept only JSON args and kwargs")
+        json.dumps(payload, allow_nan=False)
+        return DeployedTaskExecution(
+            self.app_name, self.env_name, self.resource_name, timeout=timeout
+        )
+
+    def build_payload(self, fn, spec, args, kwargs):
+        return {"args": list(args), "kwargs": kwargs}
