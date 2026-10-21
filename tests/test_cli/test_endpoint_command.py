@@ -746,6 +746,45 @@ def test_follow_rollout_without_new_release(api):
     ep._follow_rollout("ep1", 3, timeout=0)
 
 
+def test_follow_rollout_waits_for_delayed_release(api, monkeypatch, capsys):
+    clock = [0.0]
+    monkeypatch.setattr(ep.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        ep.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+    )
+    api.routes[("GET", "/v2/serverless/ep1/releases")] = lambda *_: {
+        "endpointVersion": 3 if clock[0] < 12 else 4,
+        "rollout": {"inProgress": False},
+    }
+
+    ep._follow_rollout("ep1", 3, timeout=30)
+
+    assert clock[0] == 12
+    assert "release v4 is live" in capsys.readouterr().out
+
+
+def test_follow_rollout_reports_unobserved_release_at_deadline(
+    api, monkeypatch, capsys
+):
+    clock = [0.0]
+    monkeypatch.setattr(ep.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        ep.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+    )
+    api.routes[("GET", "/v2/serverless/ep1/releases")] = {
+        "endpointVersion": 3,
+        "rollout": {"inProgress": False},
+    }
+
+    ep._follow_rollout("ep1", 3, timeout=20)
+
+    assert clock[0] == 20
+    output = capsys.readouterr().out
+    assert "no new release observed after 20s" in output
+    assert "follow with: rp endpoint releases ep1" in output
+    assert "no new release to roll out" not in output
+
+
 def test_follow_rollout_times_out_and_detaches(api, monkeypatch, capsys):
     state = {"endpointVersion": 4, "rollout": {"inProgress": True}}
     api.routes[("GET", "/v2/serverless/ep1/releases")] = state
@@ -970,6 +1009,93 @@ def test_stream_responses_can_omit_chunks(api, client, empty_stream):
     result = invoke("run", "ep1", "--data", "{}", "--stream", "--json")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["output"] == "done"
+
+
+@pytest.mark.parametrize(
+    "status, chunks",
+    [("COMPLETED", [{"output": "done"}]), ("COMPLETED", []), ("FAILED", [])],
+)
+def test_stream_terminal_status_can_drain_after_deadline(
+    api, client, monkeypatch, status, chunks
+):
+    clock = [0.0]
+    monkeypatch.setattr(ep.time, "monotonic", lambda: clock[0])
+    client.post.return_value = {"id": "job1"}
+    responses = iter(
+        [
+            {"status": status, "stream": chunks},
+            {"status": status, "stream": []}
+            if chunks
+            else {
+                "id": "job1",
+                "status": status,
+                "output": "done",
+                "error": "worker failed",
+            },
+        ]
+    )
+
+    def poll(path, timeout):
+        assert timeout > 0
+        clock[0] = 5.1
+        return next(responses)
+
+    client.get.side_effect = poll
+    result = invoke("run", "ep1", "--data", "{}", "--stream", "--timeout", "5")
+
+    assert result.exit_code == (1 if status == "FAILED" else 0), result.output
+    assert "still COMPLETED" not in result.output
+    assert "still FAILED" not in result.output
+    expected = "failed: worker failed" if status == "FAILED" else "done"
+    assert expected in result.output
+    assert client.get.call_count == 2
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "timeout_error", [requests.ConnectTimeout, requests.ReadTimeout]
+)
+def test_request_timeout_at_deadline_includes_resume_hint(
+    api, client, monkeypatch, stream, timeout_error
+):
+    clock = [0.0]
+    monkeypatch.setattr(ep.time, "monotonic", lambda: clock[0])
+    client.post.return_value = {"id": "job1"}
+
+    def poll(path, timeout):
+        clock[0] += timeout
+        raise timeout_error("connection timed out")
+
+    client.get.side_effect = poll
+    result = invoke(
+        "run", "ep1", "--data", "{}", "--timeout", "5",
+        *(["--stream"] if stream else []),
+    )
+
+    assert result.exit_code == 1
+    assert "after 5s" in result.stderr
+    action = "stream" if stream else "wait"
+    assert f"resume with: rp endpoint job {action} ep1 job1" in result.stderr
+    assert "connection timed out" not in result.stderr
+
+
+@pytest.mark.parametrize("timeout", ["0", "-1"])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["run", "ep1", "--data", "{}"],
+        ["run", "lb1", "--data", "{}"],
+        ["job", "wait", "ep1", "job1"],
+    ],
+)
+def test_job_timeouts_must_be_positive_before_requests(api, client, timeout, args):
+    result = invoke(*args, "--timeout", timeout)
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--timeout'" in result.stderr
+    assert not api.calls
+    client.post.assert_not_called()
+    client.get.assert_not_called()
 
 
 def test_run_stream(api, client):

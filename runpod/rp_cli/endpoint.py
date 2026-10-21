@@ -365,11 +365,10 @@ def _follow_rollout(
                 )
             version = state.get("endpointVersion")
             elapsed = time.monotonic() - started
-            if previous_version is not None and version == previous_version:
-                if elapsed >= min(10.0, timeout):
-                    ui.console.print("[dim]no new release to roll out[/dim]")
-                    return
-            else:
+            waiting_for_release = (
+                previous_version is not None and version == previous_version
+            )
+            if not waiting_for_release:
                 line = _rollout_line(state)
                 if line != last:
                     ui.console.print(f"[dim]{line}[/dim]")
@@ -378,8 +377,13 @@ def _follow_rollout(
                     ui.success(f"release v{version} is live")
                     return
             if elapsed >= timeout:
+                phase = (
+                    "no new release observed"
+                    if waiting_for_release
+                    else "rollout still in progress"
+                )
                 ui.warn(
-                    f"rollout still in progress after {timeout:g}s. "
+                    f"{phase} after {timeout:g}s. "
                     f"follow with: rp endpoint releases {endpoint_id}"
                 )
                 return
@@ -528,7 +532,7 @@ def _follow_job(client, endpoint_id, job_id, as_json, *, stream=False, timeout=N
     status = "pending"
 
     def remaining_time(limit):
-        if deadline is None:
+        if deadline is None or is_completed(status):
             return limit
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -560,8 +564,13 @@ def _follow_job(client, endpoint_id, job_id, as_json, *, stream=False, timeout=N
                         )
                     else:
                         job = client.get(_job_path(endpoint_id, action, job_id))
-                except requests.ReadTimeout:
-                    if stream:
+                except requests.Timeout as exc:
+                    remaining_time(0)
+                    if (
+                        stream
+                        and isinstance(exc, requests.ReadTimeout)
+                        and not is_completed(status)
+                    ):
                         continue
                     raise
                 status = job["status"]
@@ -1009,7 +1018,11 @@ def logs(endpoint_id, worker_ids, follow, source, tail, since, as_json):
 @click.option(
     "--low-priority", is_flag=True, help="Do not scale up workers for this job."
 )
-@click.option("--timeout", type=float, help="Seconds to wait for the result.")
+@click.option(
+    "--timeout",
+    type=click.FloatRange(min=0, min_open=True),
+    help="Seconds to wait for the result.",
+)
 @click.option("--path", "lb_path", help="Load-balancer endpoints: request path.")
 @click.option(
     "--method",
@@ -1142,7 +1155,9 @@ def job_get(endpoint_id, job_id, as_json):
 
 
 @_job_command("wait")
-@click.option("--timeout", type=float, help="Seconds to wait.")
+@click.option(
+    "--timeout", type=click.FloatRange(min=0, min_open=True), help="Seconds to wait."
+)
 @_data_plane_errors()
 def job_wait(endpoint_id, job_id, timeout, as_json):
     """Wait for a job to finish and print its output."""
