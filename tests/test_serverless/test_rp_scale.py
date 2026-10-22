@@ -694,3 +694,24 @@ async def test_full_worker_stops_taking_promptly_on_shutdown(job_scaler: PatchSc
     assert fetches == [1]
     release["job-0"].set()
     await asyncio.wait_for(tasks[1], timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_zero_concurrency_waits_instead_of_spinning(job_scaler: PatchScaler):
+    """A modifier returning 0 on an empty worker must still yield to the loop."""
+    scaler = job_scaler.scaler
+    calls = []
+
+    def zero_concurrency(_current):
+        calls.append(1)
+        if len(calls) >= 50:
+            scaler.kill_worker()  # bound the spin so the failure is an assert, not a hang
+        return 0
+
+    scaler.concurrency_modifier = zero_concurrency
+    task = asyncio.create_task(scaler.get_jobs(AsyncMock()))
+    await asyncio.sleep(0.05)
+
+    assert len(calls) == 1
+    scaler.kill_worker()
+    await asyncio.wait_for(task, timeout=DISPATCH_DEADLINE)

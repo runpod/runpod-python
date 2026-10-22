@@ -386,7 +386,10 @@ class JobScaler:
             # Clear, then re-check: a slot freed after this point re-arms the event.
             self._slot_freed.clear()
             remaining = deadline - loop.time()
-            if self.current_occupancy() == 0 or remaining <= 0:
+            # Zero concurrency has no slots to free, so wait out the bound
+            # rather than return without yielding to the event loop.
+            drained = self.current_occupancy() == 0 and self.current_concurrency > 0
+            if drained or remaining <= 0:
                 return
             freed = asyncio.create_task(self._slot_freed.wait())
             stopping = asyncio.create_task(self._shutdown_event.wait())
