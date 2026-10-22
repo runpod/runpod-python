@@ -164,6 +164,11 @@ class AppsApiClient:
     def __init__(self, api_key: Optional[str] = None):
         self._api_key = api_key
 
+    async def gpu_pool_members(self) -> Optional[Dict[str, Set[str]]]:
+        from .gpu import live_pool_members_async
+
+        return await live_pool_members_async(self._api_key)
+
     async def _execute(
         self,
         query: str,

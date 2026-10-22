@@ -8,11 +8,12 @@ api is the only source of truth; nothing is persisted locally.
 
 import logging
 import os as _os
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Set, Union
 
 from .api import AppsApiClient
 from .app import App
 from .errors import AppError
+from .gpu import needs_gpu_catalog
 from .handles import ApiHandle, FunctionHandle
 from .shim import runtime_launcher
 from .spec import ResourceKind, ResourceSpec
@@ -107,7 +108,13 @@ def _cpu_locations(instance_ids: List[str]) -> str:
 GENERATION_ENV = "RUNPOD_DEV_GENERATION"
 
 
-def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
+def _endpoint_input(
+    app: App,
+    spec: ResourceSpec,
+    generation: int = 1,
+    *,
+    pool_members: Optional[Dict[str, Set[str]]] = None,
+) -> Dict:
     """build a live endpoint payload with an atomically bound container config."""
 
     spec.validate()
@@ -179,7 +186,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
     else:
         from .gpu import gpu_ids_value
 
-        payload["gpuIds"] = gpu_ids_value(spec.gpu)
+        payload["gpuIds"] = gpu_ids_value(spec.gpu, pool_members=pool_members)
         payload["gpuCount"] = spec.gpu_count
         if spec.min_cuda_version:
             payload["minCudaVersion"] = spec.min_cuda_version
@@ -274,7 +281,13 @@ class DevSession:
                 if found:
                     self._endpoints[name] = found["id"]
                     self._resource_names[name] = spec.name
-                payload = _endpoint_input(app, spec, self.generation)
+                spec.validate()
+                members = None
+                if needs_gpu_catalog(spec.gpu):
+                    members = await self.api.gpu_pool_members()
+                payload = _endpoint_input(
+                    app, spec, self.generation, pool_members=members or {}
+                )
                 await self._attach_volumes(payload, spec, app)
 
                 hardware = ",".join(spec.cpu or spec.gpu or ["any"])
@@ -351,7 +364,13 @@ class DevSession:
 
         # update survivors (config + generation bump) and create additions
         for name, (app, handle) in desired.items():
-            payload = _endpoint_input(app, handle.spec, self.generation)
+            handle.spec.validate()
+            members = None
+            if needs_gpu_catalog(handle.spec.gpu):
+                members = await self.api.gpu_pool_members()
+            payload = _endpoint_input(
+                app, handle.spec, self.generation, pool_members=members or {}
+            )
             await self._attach_volumes(payload, handle.spec, app)
 
             existing_id = self._endpoints.get(name)
