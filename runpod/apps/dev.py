@@ -6,6 +6,7 @@ the local entrypoint, and delete every session endpoint on exit. the
 api is the only source of truth; nothing is persisted locally.
 """
 
+import asyncio
 import logging
 import os as _os
 from typing import Dict, List, Optional, Set, Union
@@ -301,7 +302,7 @@ class DevSession:
                     log.info("adopted dev endpoint %s (%s)", name, endpoint_id)
                 else:
                     self._emit("provisioning", spec.name, spec.kind.value, hardware)
-                    result = await self.api.save_endpoint(payload)
+                    result = await self._create_tracked(name, spec.name, payload)
                     endpoint_id = result["id"]
                     log.info("provisioned dev endpoint %s (%s)", name, endpoint_id)
 
@@ -379,8 +380,9 @@ class DevSession:
 
             if existing_id:
                 payload["id"] = existing_id
-
-            result = await self.api.save_endpoint(payload)
+                result = await self.api.save_endpoint(payload)
+            else:
+                result = await self._create_tracked(name, handle.spec.name, payload)
             endpoint_id = result["id"]
 
             self._endpoints[name] = endpoint_id
@@ -411,6 +413,28 @@ class DevSession:
                 endpoint_id,
                 self.generation,
             )
+
+    async def _create_tracked(self, name: str, resource: str, payload: Dict) -> Dict:
+        """create an endpoint, recording it even if the session is
+        cancelled mid-request, so teardown deletes it."""
+        create = asyncio.ensure_future(self.api.save_endpoint(payload))
+        try:
+            return await asyncio.shield(create)
+        except asyncio.CancelledError:
+            await self._record_late_create(create, name, resource)
+            raise
+
+    async def _record_late_create(
+        self, create: "asyncio.Future[Dict]", name: str, resource: str
+    ) -> None:
+        """wait for a create the session was cancelled during, and record
+        the endpoint it made."""
+        try:
+            result = await create
+        except Exception:  # noqa: BLE001 - the create failed; nothing to track
+            return
+        self._endpoints[name] = result["id"]
+        self._resource_names[name] = resource
 
     async def stop(self, events: Optional[object] = None) -> None:
         """delete every endpoint this session owns.
