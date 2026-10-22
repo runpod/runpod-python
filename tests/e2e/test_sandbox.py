@@ -27,8 +27,6 @@ def test_sandbox_execution_and_borrowed_handles(require_api_key):
     with Sandbox(
         image="python:3.12-slim",
         cmd=["sleep", "infinity"],
-        vcpu_count=2,
-        memory_in_gb=4,
         idle_timeout_seconds=180,
         max_lifetime_seconds=300,
         **connection_options,

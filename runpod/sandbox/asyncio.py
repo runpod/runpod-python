@@ -126,8 +126,11 @@ async def _cleanup(
 class AsyncioSandbox:
     """a cached sandbox handle; construction never performs network I/O.
 
-    supply exactly one of ``image`` or ``template_id``. unspecified
-    resource and lifetime options are left to the server's account policy.
+    supply at most one of ``image`` or ``template_id``; omitting both uses the
+    server's default image. unspecified resource and lifetime options are left
+    to the server's account policy. supply ``cpu_flavor_id`` and ``vcpu_count``
+    together, or omit both for server defaults. memory is derived by the server
+    from the CPU flavor and vCPU count.
     created handles own their remote sandbox in a context; ``get`` and ``list``
     return borrowed handles whose context only closes local resources.
     """
@@ -140,7 +143,6 @@ class AsyncioSandbox:
         name: Optional[str] = None,
         cpu_flavor_id: Optional[str] = None,
         vcpu_count: Optional[int] = None,
-        memory_in_gb: Optional[int] = None,
         disk_gb: Optional[int] = None,
         data_center_ids: Optional[Sequence[str]] = None,
         mounts: Optional[Mapping[str, Volume]] = None,
@@ -164,18 +166,17 @@ class AsyncioSandbox:
         request_timeout: float = 30,
         startup_timeout: float = 60,
     ) -> None:
-        if (image is None) == (template_id is None):
-            raise ValueError("Supply exactly one of image or template_id")
+        if image is not None and template_id is not None:
+            raise ValueError("Supply at most one of image or template_id")
+        if (cpu_flavor_id is None) != (vcpu_count is None):
+            raise ValueError("Supply cpu_flavor_id and vcpu_count together")
         self._initialize(api_key, base_url, request_timeout, startup_timeout)
         self._mounts = _sandbox_mounts(mounts)
         self._registry_auth = registry_auth
         self._create_body = {
-            "imageName": image,
+            "image": image,
             "templateId": template_id,
             "name": name,
-            "cpuFlavorId": cpu_flavor_id,
-            "vcpuCount": vcpu_count,
-            "memoryInGb": memory_in_gb,
             "disk": disk_gb,
             "dataCenterIds": _string_list(
                 data_center_ids, "data_center_ids", nonempty=True
@@ -189,6 +190,8 @@ class AsyncioSandbox:
             "maxLifetimeSeconds": max_lifetime_seconds,
             "labels": dict(labels) if labels is not None else None,
         }
+        if cpu_flavor_id is not None and vcpu_count is not None:
+            self._create_body["cpu"] = {"id": cpu_flavor_id, "vcpuCount": vcpu_count}
 
     def _initialize(
         self,

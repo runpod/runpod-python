@@ -264,6 +264,11 @@ class Sandbox:
     finished, or ``close`` to release only local connections. Handles retrieved
     with ``get`` or ``list`` never terminate compute on context exit.
 
+    supply at most one of ``image`` or ``template_id``; omitting both uses the
+    server's default image. supply ``cpu_flavor_id`` and ``vcpu_count`` together,
+    or omit both for server defaults. memory is derived by the server from the
+    CPU flavor and vCPU count.
+
     A stable background event loop runs the async implementation. No thread or
     connection is started by the constructor. Prefer AsyncioSandbox in async
     applications so blocking calls do not pause the application's event loop.
@@ -277,7 +282,6 @@ class Sandbox:
         name: Optional[str] = None,
         cpu_flavor_id: Optional[str] = None,
         vcpu_count: Optional[int] = None,
-        memory_in_gb: Optional[int] = None,
         disk_gb: Optional[int] = None,
         data_center_ids: Optional[Sequence[str]] = None,
         mounts: Optional[Mapping[str, Volume]] = None,
@@ -310,7 +314,6 @@ class Sandbox:
             name=name,
             cpu_flavor_id=cpu_flavor_id,
             vcpu_count=vcpu_count,
-            memory_in_gb=memory_in_gb,
             disk_gb=disk_gb,
             data_center_ids=data_center_ids,
             mounts=mounts,
