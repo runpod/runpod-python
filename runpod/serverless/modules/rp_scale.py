@@ -27,6 +27,11 @@ log = RunPodLogger()
 PRESTART_CLAIM_TIMEOUT_SECONDS = 10
 # Bound best-effort failure reporting well below the shared 600s HTTP timeout.
 PRESTART_FAILURE_REPORT_TIMEOUT_SECONDS = 15
+# A job-take costs ~0.5 s with jobs queued, however many it asks for, so a full
+# worker waits for every slot to free and takes a full batch. This bounds the
+# wait so one long job can't hold the other slots idle, and so set_scale still
+# runs as often as it did under the old fixed sleep.
+FULL_WAIT_SECONDS = 1
 
 
 def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
@@ -58,6 +63,8 @@ class JobScaler:
         self._shutdown_event = asyncio.Event()
         # Set by get_jobs after queuing so run_jobs dispatches without polling.
         self._jobs_available = asyncio.Event()
+        # Set when a job leaves the worker so a full get_jobs re-checks for room.
+        self._slot_freed = asyncio.Event()
         self._prestart_ready = asyncio.Event()
         self._prestart_succeeded = False
         self._prestart_error: dict[str, Any] | None = None
@@ -315,8 +322,8 @@ class JobScaler:
 
             jobs_needed = self.current_concurrency - self.current_occupancy()
             if jobs_needed <= 0:
-                log.debug("JobScaler.get_jobs | Queue is full. Retrying soon.")
-                await asyncio.sleep(1)  # don't go rapidly
+                log.debug("JobScaler.get_jobs | Queue is full. Waiting to drain.")
+                await self._wait_until_drained()
                 continue
 
             try:
@@ -370,6 +377,28 @@ class JobScaler:
             finally:
                 # Yield control back to the event loop
                 await asyncio.sleep(0)
+
+    async def _wait_until_drained(self) -> None:
+        """Block until no job is in progress, shutdown begins, or FULL_WAIT_SECONDS pass."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + FULL_WAIT_SECONDS
+        while self.is_alive():
+            # Clear, then re-check: a slot freed after this point re-arms the event.
+            self._slot_freed.clear()
+            remaining = deadline - loop.time()
+            if self.current_occupancy() == 0 or remaining <= 0:
+                return
+            freed = asyncio.create_task(self._slot_freed.wait())
+            stopping = asyncio.create_task(self._shutdown_event.wait())
+            try:
+                await asyncio.wait(
+                    {freed, stopping},
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            finally:
+                freed.cancel()
+                stopping.cancel()
 
     async def run_jobs(self, session: ClientSession):
         """
@@ -550,6 +579,7 @@ class JobScaler:
             # Job is no longer in progress
             self.job_progress.remove(job)
             self.jobs_tasks.pop(job["id"], None)
+            self._slot_freed.set()
 
             log.debug("Finished Job", job["id"])
             _reset_batch_id(batch_id_token)
