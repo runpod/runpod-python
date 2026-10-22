@@ -6,13 +6,15 @@ the local entrypoint, and delete every session endpoint on exit. the
 api is the only source of truth; nothing is persisted locally.
 """
 
+import asyncio
 import logging
 import os as _os
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Set, Union
 
 from .api import AppsApiClient
 from .app import App
 from .errors import AppError
+from .gpu import needs_gpu_catalog
 from .handles import ApiHandle, FunctionHandle
 from .shim import runtime_launcher
 from .spec import ResourceKind, ResourceSpec
@@ -107,7 +109,13 @@ def _cpu_locations(instance_ids: List[str]) -> str:
 GENERATION_ENV = "RUNPOD_DEV_GENERATION"
 
 
-def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
+def _endpoint_input(
+    app: App,
+    spec: ResourceSpec,
+    generation: int = 1,
+    *,
+    pool_members: Optional[Dict[str, Set[str]]] = None,
+) -> Dict:
     """build a live endpoint payload with an atomically bound container config."""
 
     spec.validate()
@@ -179,7 +187,7 @@ def _endpoint_input(app: App, spec: ResourceSpec, generation: int = 1) -> Dict:
     else:
         from .gpu import gpu_ids_value
 
-        payload["gpuIds"] = gpu_ids_value(spec.gpu)
+        payload["gpuIds"] = gpu_ids_value(spec.gpu, pool_members=pool_members)
         payload["gpuCount"] = spec.gpu_count
         if spec.min_cuda_version:
             payload["minCudaVersion"] = spec.min_cuda_version
@@ -274,7 +282,13 @@ class DevSession:
                 if found:
                     self._endpoints[name] = found["id"]
                     self._resource_names[name] = spec.name
-                payload = _endpoint_input(app, spec, self.generation)
+                spec.validate()
+                members = None
+                if needs_gpu_catalog(spec.gpu):
+                    members = await self.api.gpu_pool_members()
+                payload = _endpoint_input(
+                    app, spec, self.generation, pool_members=members or {}
+                )
                 await self._attach_volumes(payload, spec, app)
 
                 hardware = ",".join(spec.cpu or spec.gpu or ["any"])
@@ -288,7 +302,7 @@ class DevSession:
                     log.info("adopted dev endpoint %s (%s)", name, endpoint_id)
                 else:
                     self._emit("provisioning", spec.name, spec.kind.value, hardware)
-                    result = await self.api.save_endpoint(payload)
+                    result = await self._create_tracked(name, spec.name, payload)
                     endpoint_id = result["id"]
                     log.info("provisioned dev endpoint %s (%s)", name, endpoint_id)
 
@@ -351,7 +365,13 @@ class DevSession:
 
         # update survivors (config + generation bump) and create additions
         for name, (app, handle) in desired.items():
-            payload = _endpoint_input(app, handle.spec, self.generation)
+            handle.spec.validate()
+            members = None
+            if needs_gpu_catalog(handle.spec.gpu):
+                members = await self.api.gpu_pool_members()
+            payload = _endpoint_input(
+                app, handle.spec, self.generation, pool_members=members or {}
+            )
             await self._attach_volumes(payload, handle.spec, app)
 
             existing_id = self._endpoints.get(name)
@@ -360,8 +380,9 @@ class DevSession:
 
             if existing_id:
                 payload["id"] = existing_id
-
-            result = await self.api.save_endpoint(payload)
+                result = await self.api.save_endpoint(payload)
+            else:
+                result = await self._create_tracked(name, handle.spec.name, payload)
             endpoint_id = result["id"]
 
             self._endpoints[name] = endpoint_id
@@ -392,6 +413,28 @@ class DevSession:
                 endpoint_id,
                 self.generation,
             )
+
+    async def _create_tracked(self, name: str, resource: str, payload: Dict) -> Dict:
+        """create an endpoint, recording it even if the session is
+        cancelled mid-request, so teardown deletes it."""
+        create = asyncio.ensure_future(self.api.save_endpoint(payload))
+        try:
+            return await asyncio.shield(create)
+        except asyncio.CancelledError:
+            await self._record_late_create(create, name, resource)
+            raise
+
+    async def _record_late_create(
+        self, create: "asyncio.Future[Dict]", name: str, resource: str
+    ) -> None:
+        """wait for a create the session was cancelled during, and record
+        the endpoint it made."""
+        try:
+            result = await create
+        except Exception:  # noqa: BLE001 - the create failed; nothing to track
+            return
+        self._endpoints[name] = result["id"]
+        self._resource_names[name] = resource
 
     async def stop(self, events: Optional[object] = None) -> None:
         """delete every endpoint this session owns.

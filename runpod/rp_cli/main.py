@@ -8,6 +8,7 @@ output, never for help rendering.
 
 import asyncio
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -405,11 +406,18 @@ def dev(module, once):
                     pass
             await asyncio.sleep(0.5)
 
+    # set by a second stop signal: teardown stops waiting for a running
+    # entrypoint
+    force_stop = asyncio.Event()
+    # once teardown starts, signals leave it to finish
+    tearing_down = False
+
     async def _run_entrypoint_cancellable(fn) -> None:
         """run user code without blocking the event loop.
 
         cancellation waits for the entrypoint to finish so its remote
-        calls cannot race with session teardown.
+        calls cannot race with session teardown, unless a second stop
+        signal forces teardown first.
         """
         loop = asyncio.get_running_loop()
         done: asyncio.Future[None] = loop.create_future()
@@ -422,6 +430,13 @@ def dev(module, once):
             else:
                 done.set_exception(exc)
 
+        def _report(exc: "BaseException | None") -> None:
+            try:
+                loop.call_soon_threadsafe(_finish, exc)
+            except RuntimeError:
+                # a forced stop closed the loop while this entrypoint ran
+                pass
+
         def _runner() -> None:
             try:
                 run_entrypoint(fn)
@@ -430,24 +445,72 @@ def dev(module, once):
             except (Exception, KeyboardInterrupt, SystemExit) as exc:
                 # bind the exception now: `as exc` is unbound once the
                 # except block exits, before the loop callback runs
-                loop.call_soon_threadsafe(_finish, exc)
+                _report(exc)
             else:
-                loop.call_soon_threadsafe(_finish, None)
+                _report(None)
 
-        threading.Thread(target=_runner).start()
+        # daemon: a forced stop must not leave process exit waiting on
+        # a long remote call
+        threading.Thread(target=_runner, daemon=True).start()
         try:
             return await asyncio.shield(done)
         except asyncio.CancelledError:
-            await done
+            await _settle_after_stop(done)
             raise
 
+    async def _settle_after_stop(done: "asyncio.Future[None]") -> None:
+        """after a stop, wait for the still-running entrypoint so its remote
+        calls cannot race teardown, unless a second signal forces the stop."""
+        if done.done():
+            _discard_result(done)
+            return
+        forced = asyncio.ensure_future(force_stop.wait())
+        await asyncio.wait({done, forced}, return_when=asyncio.FIRST_COMPLETED)
+        forced.cancel()
+        done.add_done_callback(_discard_result)
+
+    def _install_stop_signals() -> None:
+        """stop cleanly on sigint and sigterm.
+
+        python only turns sigint into KeyboardInterrupt when it was not
+        ignored at startup, and shells start background jobs with sigint
+        ignored; sigterm has no handler at all. without these a stopped
+        session would leave its endpoints running. the first signal
+        cancels the session (teardown deletes the endpoints), the second
+        stops waiting for a running entrypoint. signals during teardown
+        are ignored so every endpoint still gets deleted.
+        """
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        stopping = False
+
+        def _on_signal() -> None:
+            nonlocal stopping
+            if tearing_down:
+                # cancelling teardown would skip the remaining deletes
+                return
+            if stopping:
+                force_stop.set()
+            else:
+                stopping = True
+                task.cancel()
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, _on_signal)
+            except (NotImplementedError, RuntimeError, ValueError):
+                # windows event loops have no signal handlers; ctrl-c
+                # still raises KeyboardInterrupt there
+                pass
+
     async def _session() -> int:
-        nonlocal apps, entrypoint
+        nonlocal apps, entrypoint, tearing_down
         ui.set_name_width(_all_resource_names(apps))
         session = DevSession(apps, events=ui.DevEvents())
         watcher = FileWatcher([module.parent])
 
         ui.dev_banner([a.name for a in apps], str(module.name))
+        _install_stop_signals()
         try:
             await session.start()
             ui.resources_table(_table_rows(session))
@@ -472,6 +535,7 @@ def dev(module, once):
                     ui.set_name_width(_all_resource_names(apps))
                     await session.refresh(apps)
         finally:
+            tearing_down = True
             events = ui.CleanupEvents()
             try:
                 await session.stop(events=events)
@@ -498,6 +562,13 @@ def completion(shell):
 
     complete = get_completion_class(shell)(cli, {}, "rp", "_RP_COMPLETE")
     click.echo(complete.source())
+
+
+def _discard_result(future: "asyncio.Future[None]") -> None:
+    """mark an abandoned entrypoint's error as retrieved, so asyncio does
+    not log it as never retrieved."""
+    if not future.cancelled():
+        future.exception()
 
 
 # ------------------------------------------------------------------ logs

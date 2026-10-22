@@ -17,6 +17,7 @@ import asyncio
 import os
 import re
 import shutil
+import sys
 import time
 from urllib.parse import urlsplit
 
@@ -37,6 +38,31 @@ MIN_CUDA_VERSION = "11.8"
 NETWORK_CHECK_TIMEOUT = 5
 GPU_BENCHMARK_TIMEOUT = 2
 CUDA_VERSION_PROBE_TIMEOUT = 5
+
+
+GPU_FRAMEWORKS = ("torch", "cupy")
+
+
+def _loaded_module(name: str):
+    """
+    Return a module the handler has already imported, without importing it.
+
+    Importing torch costs ~1.5s on a cold worker. The torch and CuPy checks
+    reuse whatever the handler loaded; a framework it has not loaded is
+    treated as unavailable, and the gpu_test binary still verifies the GPU.
+
+    Raises:
+        ImportError: If the handler has not imported the module.
+    """
+    module = sys.modules.get(name)
+    if module is None:
+        raise ImportError(f"{name} not loaded by the handler")
+    return module
+
+
+def _handler_loaded_gpu_framework() -> bool:
+    """True if the handler has imported torch or CuPy."""
+    return any(sys.modules.get(name) is not None for name in GPU_FRAMEWORKS)
 
 
 def configure() -> None:
@@ -347,11 +373,19 @@ async def _check_cuda_initialization() -> None:
 
     Tests actual device initialization, memory access, and device properties.
     This catches issues where CUDA appears available but fails at runtime.
-    Skips silently on CPU-only workers.
+    Skips silently on CPU-only workers and when the handler has not
+    imported PyTorch or CuPy.
 
     Raises:
         RuntimeError: If CUDA initialization or device access fails
     """
+    if not _handler_loaded_gpu_framework():
+        log.debug(
+            "Handler has not loaded PyTorch or CuPy, skipping CUDA initialization "
+            "check (the gpu_test binary covers device allocation)"
+        )
+        return
+
     # Skip on CPU-only workers
     if not gpu_available():
         log.debug("No GPU detected, skipping CUDA initialization check")
@@ -359,7 +393,7 @@ async def _check_cuda_initialization() -> None:
 
     # Try PyTorch first (most common)
     try:
-        import torch
+        torch = _loaded_module("torch")
 
         if not torch.cuda.is_available():
             log.debug("CUDA not available in PyTorch, skipping initialization check")
@@ -403,7 +437,7 @@ async def _check_cuda_initialization() -> None:
 
     # Fallback: try CuPy
     try:
-        import cupy as cp
+        cp = _loaded_module("cupy")
 
         # Reset CuPy state
         cp.cuda.Device().synchronize()
@@ -441,11 +475,18 @@ async def _check_gpu_compute_benchmark() -> None:
     Quick GPU compute benchmark using matrix multiplication.
 
     Tests basic tensor operations to ensure GPU is functional and responsive.
-    Skips silently on CPU-only workers.
+    Skips silently on CPU-only workers and when the handler has not
+    imported PyTorch or CuPy.
 
     Raises:
         RuntimeError: If GPU compute fails or is too slow
     """
+    if not _handler_loaded_gpu_framework():
+        log.debug(
+            "Handler has not loaded PyTorch or CuPy, skipping GPU compute benchmark"
+        )
+        return
+
     # Skip on CPU-only workers
     if not gpu_available():
         log.debug("No GPU detected, skipping GPU compute benchmark")
@@ -453,7 +494,7 @@ async def _check_gpu_compute_benchmark() -> None:
 
     # Try PyTorch first
     try:
-        import torch
+        torch = _loaded_module("torch")
 
         if not torch.cuda.is_available():
             log.debug("CUDA not available in PyTorch, skipping benchmark")
@@ -492,7 +533,7 @@ async def _check_gpu_compute_benchmark() -> None:
 
     # Fallback: try CuPy
     try:
-        import cupy as cp
+        cp = _loaded_module("cupy")
 
         size = 1024
         start_time = time.perf_counter()
@@ -536,9 +577,10 @@ def auto_register_system_checks() -> None:
     Registers memory, disk, and network checks for all workers.
     Registers CUDA version, initialization, and GPU benchmark checks only if GPU is detected.
 
-    The two checks that import torch and allocate on the device are marked
+    The two checks that use torch and allocate on the device are marked
     @defer_to_worker_start so the import-time pass cannot create a CUDA context
-    before the handler module runs.
+    before the handler module runs. They only use a framework the handler has
+    already imported, so they never add a torch import to cold start.
     """
     configure()
     log.debug("Registering system resource fitness checks")
