@@ -2,6 +2,7 @@
 
 import logging
 import json
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
@@ -43,6 +44,7 @@ class Volume(ABC):
     @property
     def path(self) -> Path:
         """the unique mount path for this volume in the current worker."""
+        _bind_mounts_from_env()
         paths = _mount_bindings.get((self.kind, self.reference), ())
         if not paths:
             raise VolumeError(
@@ -130,6 +132,27 @@ def normalize_mounts(mounts: Optional[Mapping[str, Volume]]) -> Dict[str, Volume
 
 
 _mount_bindings: Mapping[Tuple[str, str], Tuple[Path, ...]] = MappingProxyType({})
+_mounts_configured = False
+
+
+def _bind_mounts_from_env() -> None:
+    """bind mounts from RUNPOD_MOUNTS unless the worker runtime already did.
+
+    the runtime calls _configure_mounts before user code, but images
+    released before that hook never do. deployed workers run this
+    vendored package, so reading the provisioning env here keeps
+    vol.path working on those images. no-op without the env.
+    """
+    if _mounts_configured:
+        return
+    raw = os.environ.get("RUNPOD_MOUNTS")
+    if not raw:
+        return
+    try:
+        bindings = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise VolumeError("RUNPOD_MOUNTS must contain a valid JSON array") from exc
+    _configure_mounts(bindings)
 
 
 def _configure_mounts(bindings: List[Dict[str, str]]) -> None:
@@ -153,10 +176,13 @@ def _configure_mounts(bindings: List[Dict[str, str]]) -> None:
             paths = resolved.setdefault(key, [])
             if path not in paths:
                 paths.append(path)
-    global _mount_bindings
+    global _mount_bindings, _mounts_configured
+    # publish the bindings before the flag: a thread that sees the flag
+    # must not read the previous, empty bindings
     _mount_bindings = MappingProxyType(
         {key: tuple(paths) for key, paths in resolved.items()}
     )
+    _mounts_configured = True
 
 
 class VolumeResolver:
