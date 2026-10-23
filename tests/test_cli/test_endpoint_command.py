@@ -656,6 +656,75 @@ def test_edit_file_shows_patch_and_applies(api, tmp_path):
     assert "updated" in out
 
 
+@pytest.mark.parametrize(
+    "options, changes",
+    [
+        (["--name", "renamed"], {"name": "renamed"}),
+        (
+            ["--min-workers", "1"],
+            {"workers": {"min": 1, "max": 3, "idleTimeout": 5}},
+        ),
+        (
+            ["--max-workers", "5"],
+            {"workers": {"min": 0, "max": 5, "idleTimeout": 5}},
+        ),
+        (
+            ["--idle-timeout-seconds", "30"],
+            {"workers": {"min": 0, "max": 3, "idleTimeout": 30}},
+        ),
+        (
+            ["--queue-delay-seconds", "8"],
+            {"scaling": {"type": "QUEUE_DELAY", "queueDelay": 8}},
+        ),
+        (["--request-timeout-seconds", "60"], {"timeout": 60000}),
+        (["--flashboot", "off"], {"flashboot": "OFF"}),
+        (
+            ["--name", "renamed", "--flashboot", "off"],
+            {"name": "renamed", "flashboot": "OFF"},
+        ),
+    ],
+)
+@pytest.mark.parametrize("command", ["edit", "update"])
+def test_runtime_only_changes_skip_rollout(api, tmp_path, command, options, changes):
+    api.routes[("GET", "/v2/serverless/ep1/releases")] = AssertionError(
+        "runtime-only changes must not query releases"
+    )
+    if command == "edit":
+        path = tmp_path / "doc.json"
+        path.write_text(_doc(**changes))
+        result = invoke("edit", "ep1", "--file", str(path), "--yes")
+    else:
+        result = invoke("update", "ep1", *options, "--wait", "--json")
+
+    assert result.exit_code == 0, result.exception or result.output
+    if command == "update":
+        assert json.loads(result.stdout) == dict(GPU_ENDPOINT, **changes)
+    assert api.bodies("PATCH") == [changes]
+    assert all(path != "/v2/serverless/ep1/releases" for _, path, _, _ in api.calls)
+    assert "no new release observed" not in result.output
+
+
+def test_mixed_edit_waits_for_delayed_release(api, tmp_path, monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(ep.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        ep.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+    )
+    api.routes[("GET", "/v2/serverless/ep1/releases")] = lambda *_: {
+        "endpointVersion": 3 if clock[0] < 12 else 4,
+        "rollout": {"inProgress": False},
+    }
+    changes = {"image": "img:2", "workers": {"min": 1, "max": 3, "idleTimeout": 5}}
+    path = tmp_path / "doc.json"
+    path.write_text(_doc(**changes))
+
+    out = ok("edit", "ep1", "--file", str(path), "--yes")
+
+    assert api.bodies("PATCH") == [changes]
+    assert clock[0] == 12
+    assert "release v4 is live" in out
+
+
 def test_edit_clears_cuda_floor_with_empty_string():
     before = config.mutable(LB_ENDPOINT)
     after = copy.deepcopy(before)
@@ -713,7 +782,7 @@ def test_edit_rejects_switching_cpu_to_gpu():
 def test_edit_in_editor_reopens_on_error_then_follows(api, monkeypatch):
     monkeypatch.setattr(ep, "interactive", lambda: True)
     monkeypatch.setattr(output, "interactive", lambda: True)
-    edits = iter(['{"bogus": 1}', _doc(name="renamed")])
+    edits = iter(['{"bogus": 1}', _doc(name="renamed", image="img:2")])
     seen = []
 
     def fake_edit(text, extension):
@@ -728,7 +797,7 @@ def test_edit_in_editor_reopens_on_error_then_follows(api, monkeypatch):
     out = ok("edit", "ep1", input="y\ny\n")
     assert "unknown field 'bogus'" in out
     assert seen[1] == '{"bogus": 1}'
-    assert api.bodies("PATCH") == [{"name": "renamed"}]
+    assert api.bodies("PATCH") == [{"name": "renamed", "image": "img:2"}]
     assert "release v4 is live" in out
 
 

@@ -398,6 +398,8 @@ def _follow_rollout(
 def _apply(
     endpoint_id: str, patch: dict, follow: bool, timeout: float, as_json: bool
 ) -> None:
+    if patch.keys() <= {"name", "workers", "scaling", "timeout", "flashboot"}:
+        follow = False
     before = None
     if follow:
         try:
@@ -790,7 +792,8 @@ def edit_endpoint(endpoint_id, document, yes, no_follow, timeout, as_json):
     """Edit an endpoint's configuration in $EDITOR.
 
     Opens the mutable configuration as JSON, validates it, shows the
-    patch, and after confirmation applies it and follows the rollout.
+    patch, and after confirmation applies it and follows any worker rollout.
+    runtime-only changes return without polling for a release.
     Ctrl-C while following detaches without undoing anything. Fields
     removed from the document stay unchanged.
     """
