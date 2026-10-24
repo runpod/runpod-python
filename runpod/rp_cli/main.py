@@ -1104,12 +1104,12 @@ def undeploy(app_name, env_name, yes):
 
 
 def _mount_groups() -> None:
-    from runpod.cli.groups.pod.commands import pod_cli
     from runpod.cli.groups.ssh.commands import ssh_cli
     from runpod.rp_cli.catalog import catalog
+    from runpod.rp_cli.pod import pod
     from runpod.rp_cli.volume import volume
 
-    for command in (ssh_cli, pod_cli, catalog, volume):
+    for command in (ssh_cli, pod, catalog, volume):
         cli.add_command(command)
 
 
