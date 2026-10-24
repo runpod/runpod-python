@@ -26,6 +26,14 @@ rp login              # authenticate once
 
 Requires Python 3.10+. Installing the package also installs the `rp` CLI.
 
+For headless sign-in, run `rp login --agent --email you@example.com` and enter
+the six-digit code sent to your email at the hidden prompt. Keep the command
+running while you retrieve the code. This flow does not open a browser and
+stores the API key in `~/.runpod/config.toml`; use `--profile NAME` for a named
+credential profile. Email sign-in requires an API deployment with signup
+authentication attempts enabled. Accounts that require SSO or MFA, or belong
+to an organization, must sign in through the console and use `rp login --api-key`.
+
 ## Example
 
 ```python
