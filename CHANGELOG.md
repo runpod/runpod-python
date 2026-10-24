@@ -14,6 +14,22 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.0.1](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.0.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **apps:** bind volume mounts from RUNPOD_MOUNTS when the runtime did not ([#626](https://github.com/runpod/runpod-python/issues/626)) ([fc4a6c7](https://github.com/runpod/runpod-python/commit/fc4a6c73c3915625d65df63416db835d0b927b8f))
+* **apps:** keep transitive torch out of GPU artifacts ([#623](https://github.com/runpod/runpod-python/issues/623)) ([25515f0](https://github.com/runpod/runpod-python/commit/25515f02a2e3ea36035c856e564106ccb8760b7f))
+* **apps:** pin requested gpu devices instead of their whole pool ([#624](https://github.com/runpod/runpod-python/issues/624)) ([432c55b](https://github.com/runpod/runpod-python/commit/432c55b8a24b5bccbe37955392f9e1a72bad475e))
+* **cli:** delete dev endpoints when rp flash dev is stopped by a signal ([#625](https://github.com/runpod/runpod-python/issues/625)) ([f866ec3](https://github.com/runpod/runpod-python/commit/f866ec3d2117b697a2534286509674657f37511f))
+
+
+### Performance Improvements
+
+* **serverless:** range-parallel VolumeCache hydrate ([#621](https://github.com/runpod/runpod-python/issues/621)) ([29704a4](https://github.com/runpod/runpod-python/commit/29704a49ab591eaca9a83d7d2eef935d9d787eb2))
+* **serverless:** take a full batch once drained ([#646](https://github.com/runpod/runpod-python/issues/646)) ([397c37d](https://github.com/runpod/runpod-python/commit/397c37d3d2a04aaa2eb3c8a83cdc359e230bcb6e))
+
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
 
