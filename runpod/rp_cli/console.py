@@ -233,11 +233,12 @@ def resources_table(rows: Iterable[tuple]) -> None:
     w_name = max(len(r[0]) for r in rows)
     w_hw = max(len(r[2]) for r in rows)
     for name, kind, hardware, endpoint_id in rows:
-        tail = (
-            "[dim]per-call[/dim]"
-            if not endpoint_id or endpoint_id == "per-call"
-            else endpoint_link(endpoint_id)
-        )
+        if endpoint_id == "registered":
+            tail = "[dim]registered / per-call[/dim]"
+        elif not endpoint_id or endpoint_id == "per-call":
+            tail = "[dim]per-call[/dim]"
+        else:
+            tail = endpoint_link(endpoint_id)
         console.print(
             f"  [white]{name:<{w_name}}[/white]"
             f"  {kind_badge(kind)}"

@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pathspec import GitIgnoreSpec
 
-import runpod
-
 from .api import AppsApiClient
 from .app import App
 from .build import (
@@ -137,6 +135,17 @@ def build_manifest(
             )
 
         entry = spec.to_manifest()
+        if spec.kind is ResourceKind.TASK:
+            from .images import image_for_spec
+
+            entry["imageName"] = image_for_spec(spec, python_version=python_version)
+            entry["customImage"] = bool(spec.image)
+            for mount, volume in zip(entry.get("mounts", []), spec.mounts.values()):
+                mount["create"] = volume.create
+                if volume.kind == "network":
+                    mount["size"] = volume.size
+                    if volume.datacenter is not None:
+                        mount["datacenter"] = volume.datacenter
 
         fn = (
             getattr(handle, "_fn", None)
@@ -160,6 +169,26 @@ def build_manifest(
         manifest["excludedPackages"] = excluded_packages
 
     return manifest
+
+
+async def _prepare_task_resources(
+    app: App, manifest: Dict[str, Any], client: AppsApiClient, events=None
+) -> None:
+    from .registry import resolve_registry_auth
+    from .volume import VolumeResolver
+
+    resolver = VolumeResolver(client, events=events)
+    specs = [handle.spec for handle in app.resources.values()]
+    for resource in manifest["resources"]:
+        if resource["kind"] != "task":
+            continue
+        spec = app.resources[resource["name"]].spec
+        bindings = await resolver.resolve_mounts(spec.mounts, specs)
+        for mount, binding in zip(resource.get("mounts", []), bindings):
+            mount["id"] = binding["id"]
+        registry_id = await resolve_registry_auth(spec.registry_auth, api=client)
+        if registry_id:
+            resource["registryAuth"] = registry_id
 
 
 def _load_ignores(path: Path) -> GitIgnoreSpec:
@@ -300,20 +329,31 @@ def _deployed_endpoint_input(
     from .secret import render_env
 
     spec.validate()
-    template_env = {
-        "FLASH_RESOURCE_NAME": spec.name,
-        # version-triggering: a new build recreates all workers
-        "RUNPOD_BUILD_ID": build_id,
-        **render_env(spec.env),
-        "FLASH_ENVIRONMENT": env_name or app.env,
+    resource_env = render_env(spec.env)
+    reserved = {
+        "RUNPOD_API_KEY",
+        "RUNPOD_AI_API_KEY",
+        "RUNPOD_ENDPOINT_ID",
+        "RUNPOD_POD_ID",
+        "RUNPOD_TASK_TOKEN",
+        "RUNPOD_TASK_PORT",
+        "FLASH_BUILD_ARTIFACT_PATH",
+        "RUNPOD_RUNTIME_KIND",
+        "RUNPOD_DEV_APP",
+        "RUNPOD_DEV_RESOURCE",
+        "RUNPOD_DEV_SESSION",
     }
-
-    # cross-resource calls from inside a worker go through the sentinel,
-    # which authenticates with the account api key; without it any
-    # .remote() from worker code would fail
-    api_key = runpod.api_key
-    if api_key and "RUNPOD_API_KEY" not in template_env:
-        template_env["RUNPOD_API_KEY"] = api_key
+    if reserved.intersection(resource_env):
+        raise InvalidResourceError(
+            "production endpoint env contains reserved runtime fields"
+        )
+    template_env = {
+        **resource_env,
+        "FLASH_APP_NAME": app.name,
+        "FLASH_ENVIRONMENT": env_name or app.env,
+        "FLASH_RESOURCE_NAME": spec.name,
+        "RUNPOD_BUILD_ID": build_id,
+    }
 
     # nested tasks use the same runtime and sdk channels as the endpoint
     for key in (
@@ -537,6 +577,7 @@ async def deploy_app(
         python_version=python_version,
         excluded_packages=build.excluded,
     )
+    await _prepare_task_resources(app, manifest, client, events)
     _phase(events, "package")
     tar_path = package_project(project_root, manifest, env_dir=build.env_dir)
     tar_size = tar_path.stat().st_size
@@ -568,6 +609,20 @@ async def deploy_app(
         upload["uploadUrl"], str(tar_path), progress=upload_progress
     )
     build = await client.finalize_artifact_upload(app_id, upload["objectKey"], manifest)
+    definitions = build.get("resourceSpec")
+    tasks = {r["name"] for r in manifest["resources"] if r["kind"] == "task"}
+    if (
+        not isinstance(definitions, dict)
+        or not isinstance(definitions.get("tasks"), dict)
+        or set(definitions["tasks"]) != tasks
+        or any(
+            not isinstance(task, dict) or not task
+            for task in definitions["tasks"].values()
+        )
+    ):
+        raise RuntimeError(
+            "backend did not acknowledge the registered task definitions"
+        )
     log.info("uploaded build %s", build["id"])
 
     await client.deploy_build(environment["id"], build["id"])

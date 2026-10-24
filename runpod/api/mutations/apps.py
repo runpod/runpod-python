@@ -88,7 +88,7 @@ mutation PrepareArtifactUpload($input: PrepareFlashArtifactUploadInput!) {
 
 MUTATION_FINALIZE_ARTIFACT_UPLOAD = """
 mutation FinalizeArtifactUpload($input: FinalizeFlashArtifactUploadInput!) {
-    finalizeFlashArtifactUpload(input: $input) { id manifest }
+    finalizeFlashArtifactUpload(input: $input) { id manifest resourceSpec }
 }
 """
 

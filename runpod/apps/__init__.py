@@ -15,7 +15,7 @@ from .job import Job
 from .markers import delete, get, init, patch, post, put
 from .schedule import schedule
 from .spec import ResourceKind, ResourceSpec, RouteSpec
-from .stubs import Api, Queue
+from .stubs import Api, Queue, Task
 from .model import Model
 from .secret import Secret
 from .volume import GlobalVolume, NetworkVolume, Volume
@@ -34,6 +34,7 @@ __all__ = [
     "Model",
     "NetworkVolume",
     "Queue",
+    "Task",
     "Secret",
     "Volume",
     "RemoteExecutionError",

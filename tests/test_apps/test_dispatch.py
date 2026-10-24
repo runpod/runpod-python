@@ -207,6 +207,9 @@ class TestRemoteDispatch:
     def test_worker_executes_own_body(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-1")
         monkeypatch.setenv("FLASH_RESOURCE_NAME", "q")
+        monkeypatch.setenv("FLASH_APP_NAME", "my-app")
+        monkeypatch.setenv("FLASH_ENVIRONMENT", "production")
+        monkeypatch.setenv("RUNPOD_BUILD_ID", "build-1")
         app = App("my-app")
 
         @app.queue(name="q")
@@ -251,6 +254,9 @@ asyncio.run(main())
     def test_worker_calls_sibling_via_sentinel(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-1")
         monkeypatch.setenv("FLASH_RESOURCE_NAME", "other")
+        monkeypatch.setenv("FLASH_APP_NAME", "my-app")
+        monkeypatch.setenv("FLASH_ENVIRONMENT", "production")
+        monkeypatch.setenv("RUNPOD_BUILD_ID", "build-1")
         app = App("my-app")
 
         @app.queue(name="q")

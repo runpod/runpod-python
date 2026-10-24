@@ -259,6 +259,12 @@ class App:
         """resolve a resource spec to an invocation target."""
         spec.validate()
         if spec.kind is ResourceKind.TASK:
+            from .context import deployed_identity
+            from .targets import DeployedTaskTarget
+
+            identity = deployed_identity()
+            if identity is not None:
+                return DeployedTaskTarget(self.name, identity[1], spec.name)
             handle = self._resources.get(spec.name)
             fn = getattr(handle, "_fn", None)
             return PodTarget(
