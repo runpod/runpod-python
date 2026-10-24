@@ -26,7 +26,7 @@ _FLASH_UPDATE_CHECK_EXCLUDED = frozenset({"dev"})
 def cli(ctx):
     """Runpod CLI: manage Flash apps, endpoints, and pods.
 
-    Using an AI agent? Point it to https://docs.runpod.io/agent-setup.md
+    For AI agents: setup instructions for the Runpod skills and MCP server are at https://agents.runpod.io/
     """
     if ctx.invoked_subcommand not in _UPDATE_CHECK_EXCLUDED:
         from runpod.rp_cli.update import start_background_check
