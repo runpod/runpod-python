@@ -35,7 +35,29 @@ def _transfer_options(func):
     return func
 
 
-def _run_transfer(direction, reference, source, target, opts) -> None:
+class _ProgressRenderer:
+    """draws one bar per file in flight and prints each finished file."""
+
+    def __init__(self, bar, action_label):
+        self._bar = bar
+        self._action_label = action_label
+        self._tasks = {}
+
+    def __call__(self, event, path, nbytes):
+        if event == "start":
+            self._tasks[path] = self._bar.add_task(Path(path).name, total=nbytes)
+            return
+        task = self._tasks.get(path)
+        if task is None:
+            return
+        if event in ("advance", "reuse"):
+            self._bar.advance(task, nbytes)
+        elif event == "done":
+            self._bar.remove_task(self._tasks.pop(path))
+            self._bar.console.print(f"  {self._action_label} {path}")
+
+
+def _progress_bar():
     from rich.console import Console
     from rich.progress import (
         BarColumn,
@@ -45,53 +67,56 @@ def _run_transfer(direction, reference, source, target, opts) -> None:
         TransferSpeedColumn,
     )
 
-    from runpod import network_volume_transfer as nvt
-    from runpod.apps import NetworkVolume
-
-    tasks = {}
-    with Progress(
+    return Progress(
         TextColumn("{task.description}"),
         BarColumn(),
         DownloadColumn(),
         TransferSpeedColumn(),
         console=Console(stderr=True),
         transient=True,
-    ) as bar:
+    )
 
-        def progress(event, path, nbytes):
-            if event == "start":
-                tasks[path] = bar.add_task(Path(path).name, total=nbytes)
-            elif event in ("advance", "reuse") and path in tasks:
-                bar.advance(tasks[path], nbytes)
-            elif event == "done" and path in tasks:
-                bar.remove_task(tasks.pop(path))
-                bar.console.print(f"  {direction} {path}")
 
-        target_volume = NetworkVolume(reference, create=False)
-        func = target_volume.upload if direction == "uploaded" else target_volume.download
-        try:
-            summary = func(
-                source,
-                target,
-                access_key=opts["s3_access_key"],
-                secret_key=opts["s3_secret_key"],
-                endpoint_url=opts["endpoint_url"],
-                concurrency=opts["concurrency"],
-                progress=progress,
-                force=opts["force"],
-            )
-        except KeyboardInterrupt:
-            click.echo("interrupted; re-run the same command to resume", err=True)
-            sys.exit(130)
-        except Exception as exc:  # noqa: BLE001 - surface transfer errors cleanly
-            hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
-            raise click.ClickException(f"{exc}{hint}") from exc
+def _invoke_transfer(transfer_method, source, target, opts, progress):
+    """run the transfer, turning failures into cli errors with a resume hint
+    when re-running would resume."""
+    from runpod import network_volume_transfer as nvt
 
+    try:
+        return transfer_method(
+            source,
+            target,
+            access_key=opts["s3_access_key"],
+            secret_key=opts["s3_secret_key"],
+            endpoint_url=opts["endpoint_url"],
+            concurrency=opts["concurrency"],
+            progress=progress,
+            force=opts["force"],
+        )
+    except KeyboardInterrupt:
+        click.echo("interrupted; re-run the same command to resume", err=True)
+        sys.exit(130)
+    except Exception as exc:  # noqa: BLE001 - surface transfer errors cleanly
+        hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
+        raise click.ClickException(f"{exc}{hint}") from exc
+
+
+def _run_transfer(action_label, transfer_method, source, target, opts) -> None:
+    with _progress_bar() as bar:
+        summary = _invoke_transfer(
+            transfer_method, source, target, opts, _ProgressRenderer(bar, action_label)
+        )
     click.echo(
-        f"{direction} {summary['files_transferred']} file(s), "
+        f"{action_label} {summary['files_transferred']} file(s), "
         f"{summary['bytes_transferred']} bytes; "
         f"skipped {summary['files_skipped']} unchanged"
     )
+
+
+def _volume(reference):
+    from runpod.apps import NetworkVolume
+
+    return NetworkVolume(reference, create=False)
 
 
 @volume.command(name="upload")
@@ -107,7 +132,7 @@ def volume_upload(volume_ref, local_path, remote_path, **opts):
     has the same size and is not older are skipped; --force sends them
     anyway.
     """
-    _run_transfer("uploaded", volume_ref, local_path, remote_path, opts)
+    _run_transfer("uploaded", _volume(volume_ref).upload, local_path, remote_path, opts)
 
 
 @volume.command(name="download")
@@ -123,4 +148,4 @@ def volume_download(volume_ref, remote_path, local_path, **opts):
     size and not older than the remote copy are skipped; --force fetches
     them anyway.
     """
-    _run_transfer("downloaded", volume_ref, remote_path, local_path, opts)
+    _run_transfer("downloaded", _volume(volume_ref).download, remote_path, local_path, opts)

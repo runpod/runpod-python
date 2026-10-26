@@ -388,6 +388,26 @@ def test_folder_upload_default_prefix_and_failure_report(tmp_path):
     assert "data/ok.txt" in fake.objects
 
 
+def test_folder_failure_is_resumable_only_when_every_failure_is(tmp_path):
+    fake = FakeS3()
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "cut.txt").write_bytes(b"1")
+    (root / "denied.txt").write_bytes(b"2")
+    errors = {
+        "data/cut.txt": _client_error("ServiceUnavailable", 503),
+        "data/denied.txt": _client_error("AccessDenied", 403),
+    }
+    fake.fail = lambda op, kw: errors.get(kw.get("Key")) if op == "put_object" else None
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="2 file") as mixed:
+        _transfer(fake, tmp_path).upload(root, None)
+    assert not nvt.is_resumable(mixed.value)
+    del errors["data/denied.txt"]
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="1 file") as cut:
+        _transfer(fake, tmp_path).upload(root, None)
+    assert nvt.is_resumable(cut.value)
+
+
 def test_single_file_upload_skips_unchanged(tmp_path):
     fake = FakeS3()
     src = tmp_path / "f.txt"
@@ -625,7 +645,7 @@ def test_make_transfer_requires_s3_keys(monkeypatch):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws")
     with pytest.raises(nvt.NetworkVolumeTransferError, match="RUNPOD_S3_ACCESS_KEY"):
-        nvt.upload("vol", ".")
+        nvt._make_transfer("vol", None, None, None, 4, None)
 
 
 def test_make_transfer_builds_datacenter_client(monkeypatch):
@@ -716,6 +736,7 @@ def test_cli_upload_prints_summary(tmp_path):
     src.write_text("x")
 
     def fake_upload(volume, source, target, **kwargs):
+        volume = volume.reference
         progress = kwargs["progress"]
         progress("start", source, 1)
         progress("advance", source, 1)
@@ -723,7 +744,7 @@ def test_cli_upload_prints_summary(tmp_path):
         assert volume == "models" and kwargs["concurrency"] == 2
         return {"files_transferred": 1, "files_skipped": 0, "bytes_transferred": 1}
 
-    with patch.object(nvt, "upload", side_effect=fake_upload):
+    with patch.object(runpod.NetworkVolume, "upload", autospec=True, side_effect=fake_upload):
         result = CliRunner().invoke(
             cli,
             ["volume", "upload", "models", str(src), "--concurrency", "2"],
@@ -735,7 +756,7 @@ def test_cli_upload_prints_summary(tmp_path):
 def test_cli_download_failure_says_resume():
     from runpod.rp_cli.main import cli
 
-    with patch.object(nvt, "download", side_effect=ConnectionResetError("boom")):
+    with patch.object(runpod.NetworkVolume, "download", side_effect=ConnectionResetError("boom")):
         result = CliRunner().invoke(cli, ["volume", "download", "vol", "a/b"])
     assert result.exit_code != 0
     assert "boom" in result.output
@@ -745,7 +766,7 @@ def test_cli_download_failure_says_resume():
 def test_cli_ctrl_c_exits_130_with_resume_hint():
     from runpod.rp_cli.main import cli
 
-    with patch.object(nvt, "upload", side_effect=KeyboardInterrupt):
+    with patch.object(runpod.NetworkVolume, "upload", side_effect=KeyboardInterrupt):
         result = CliRunner().invoke(cli, ["volume", "upload", "vol", "."])
     assert result.exit_code == 130
     assert "interrupted; re-run the same command to resume" in result.output
@@ -755,7 +776,7 @@ def test_cli_unresolvable_endpoint_has_no_resume_hint():
     from runpod.rp_cli.main import cli
 
     err = nvt.NetworkVolumeTransferError("the s3 endpoint s3api-x.invalid does not resolve")
-    with patch.object(nvt, "download", side_effect=err):
+    with patch.object(runpod.NetworkVolume, "download", side_effect=err):
         result = CliRunner().invoke(cli, ["volume", "download", "vol", "a/b"])
     assert result.exit_code == 1
     assert "does not resolve" in result.output
@@ -765,7 +786,7 @@ def test_cli_unresolvable_endpoint_has_no_resume_hint():
 def test_cli_missing_path_has_no_resume_hint():
     from runpod.rp_cli.main import cli
 
-    with patch.object(nvt, "download", side_effect=FileNotFoundError("no such file")):
+    with patch.object(runpod.NetworkVolume, "download", side_effect=FileNotFoundError("no such file")):
         result = CliRunner().invoke(cli, ["volume", "download", "vol", "a/b"])
     assert result.exit_code != 0
     assert "no such file" in result.output
@@ -858,7 +879,14 @@ def test_download_ignores_sidecar_of_another_key(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "other", ["d/x.rpdownload", "d/x.rpdownload.json", "d/x.rpdownload/y", "d/X.RPDOWNLOAD"]
+    "other",
+    [
+        "d/x.rpdownload",
+        "d/x.rpdownload.json",
+        "d/x.rpdownload.json.tmp",
+        "d/x.rpdownload/y",
+        "d/X.RPDOWNLOAD",
+    ],
 )
 def test_download_refuses_partial_name_collision(tmp_path, other):
     fake = FakeS3()

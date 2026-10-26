@@ -114,17 +114,10 @@ class NetworkVolume(Volume):
         """
         from runpod import network_volume_transfer as nvt
 
-        return nvt.upload(
-            self.reference,
-            local_path,
-            remote_path,
-            access_key=access_key,
-            secret_key=secret_key,
-            endpoint_url=endpoint_url,
-            concurrency=concurrency,
-            progress=progress,
-            force=force,
+        transfer = nvt._make_transfer(
+            self.reference, access_key, secret_key, endpoint_url, concurrency, progress, force
         )
+        return transfer.upload(Path(local_path), remote_path)
 
     def download(
         self,
@@ -151,17 +144,11 @@ class NetworkVolume(Volume):
         """
         from runpod import network_volume_transfer as nvt
 
-        return nvt.download(
-            self.reference,
-            remote_path,
-            local_path,
-            access_key=access_key,
-            secret_key=secret_key,
-            endpoint_url=endpoint_url,
-            concurrency=concurrency,
-            progress=progress,
-            force=force,
+        transfer = nvt._make_transfer(
+            self.reference, access_key, secret_key, endpoint_url, concurrency, progress, force
         )
+        # passed through as given: Path() would drop a trailing "/"
+        return transfer.download(remote_path, local_path)
 
 
 class GlobalVolume(Volume):
