@@ -758,12 +758,16 @@ def test_download_ignores_sidecar_of_another_key(tmp_path):
     assert dest.read_bytes() == DATA
 
 
-def test_download_refuses_partial_name_collision(tmp_path):
+@pytest.mark.parametrize(
+    "other", ["d/x.rpdownload", "d/x.rpdownload.json", "d/x.rpdownload/y", "d/X.RPDOWNLOAD"]
+)
+def test_download_refuses_partial_name_collision(tmp_path, other):
     fake = FakeS3()
     fake.put("d/x", b"x")
-    fake.put("d/x.rpdownload", b"y")
+    fake.put(other, b"y")
     with pytest.raises(nvt.NetworkVolumeTransferError, match="partial download"):
         _transfer(fake, tmp_path).download("d/", tmp_path / "out")
+    assert not fake.ops("get_object")
 
 
 @pytest.mark.parametrize("op", ["upload", "download"])
@@ -807,4 +811,64 @@ def test_requests_in_flight_never_exceed_concurrency(tmp_path):
     for i in range(4):
         (folder / f"f{i}.bin").write_bytes(DATA)
     _transfer(fake, tmp_path, concurrency=2).upload(folder, "data")
+    assert active["peak"] <= 2
+
+
+def test_ambiguous_complete_without_verifiable_etag_fails(tmp_path):
+    fake = FakeS3(md5_etags=False)
+    src = tmp_path / "big.bin"
+    src.write_bytes(DATA)
+    fake.put("big.bin", b"o" * len(DATA), modified=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    fake.fail = lambda op, kw: (
+        _client_error("InternalError", 524) if op == "complete_multipart_upload" else None
+    )
+    with pytest.raises(ClientError):
+        _transfer(fake, tmp_path).upload(src, "big.bin")
+
+
+def test_single_put_detects_change_between_retries(tmp_path):
+    fake = FakeS3()
+    src = tmp_path / "small.txt"
+    src.write_bytes(b"original")
+    attempts = []
+
+    def change_then_fail(op, kw):
+        if op == "put_object" and not attempts:
+            attempts.append(1)
+            src.write_bytes(b"CHANGED!")
+            later = src.stat().st_mtime + 60
+            os.utime(src, (later, later))
+            return _client_error("ServiceUnavailable", 503)
+        return None
+
+    fake.fail = change_then_fail
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="changed during upload"):
+        _transfer(fake, tmp_path).upload(src, "small.txt")
+
+
+def test_all_requests_share_the_concurrency_limit(tmp_path):
+    import threading
+    import time as _time
+
+    fake = FakeS3()
+    active = {"now": 0, "peak": 0}
+    lock = threading.Lock()
+    original_call = fake._call
+
+    def tracked_call(op, **kwargs):
+        with lock:
+            active["now"] += 1
+            active["peak"] = max(active["peak"], active["now"])
+        _time.sleep(0.005)
+        with lock:
+            active["now"] -= 1
+        return original_call(op, **kwargs)
+
+    fake._call = tracked_call
+    folder = tmp_path / "data"
+    folder.mkdir()
+    for i in range(8):
+        (folder / f"f{i}.bin").write_bytes(DATA + bytes([i]))
+    _transfer(fake, tmp_path, concurrency=2).upload(folder, "data")
+    _transfer(fake, tmp_path, concurrency=2).download("data/", tmp_path / "out")
     assert active["peak"] <= 2

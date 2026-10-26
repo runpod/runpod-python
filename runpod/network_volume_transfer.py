@@ -298,7 +298,9 @@ class _Transfer:
         """
         try:
             return _with_retries(
-                lambda: self.client.head_object(Bucket=self.bucket, Key=key)
+                lambda: self._request(
+                    lambda: self.client.head_object(Bucket=self.bucket, Key=key)
+                )
             )
         except Exception as exc:  # noqa: BLE001
             if _is_not_found(exc) or (directory_ok and _error_code(exc)[1] == 400):
@@ -310,7 +312,9 @@ class _Transfer:
         kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
         while True:
             try:
-                page = _with_retries(lambda: self.client.list_objects_v2(**kwargs))
+                page = _with_retries(
+                    lambda: self._request(lambda: self.client.list_objects_v2(**kwargs))
+                )
             except Exception as exc:  # noqa: BLE001
                 if _is_not_found(exc):
                     return objects
@@ -325,7 +329,9 @@ class _Transfer:
         parts: List[Dict[str, Any]] = []
         kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Key": key, "UploadId": upload_id}
         while True:
-            page = _with_retries(lambda: self.client.list_parts(**kwargs))
+            page = _with_retries(
+                lambda: self._request(lambda: self.client.list_parts(**kwargs))
+            )
             parts.extend(page.get("Parts") or [])
             marker = page.get("NextPartNumberMarker")
             if not page.get("IsTruncated") or not marker:
@@ -347,6 +353,14 @@ class _Transfer:
                     )
                 )
             )
+            # a retry rereads the file; if it changed meanwhile, the object
+            # may not be the version that was measured
+            now = local.stat()
+            if now.st_size != size or now.st_mtime_ns != stat.st_mtime_ns:
+                raise NetworkVolumeTransferError(
+                    f"{local} changed during upload; run the command again to upload the new version",
+                    resumable=True,
+                )
             self._emit("advance", label, size)
         else:
             self._multipart_upload(local, key, size, stat.st_mtime_ns, label)
@@ -408,7 +422,9 @@ class _Transfer:
 
         if upload_id is None:
             created = _with_retries(
-                lambda: self.client.create_multipart_upload(Bucket=self.bucket, Key=key)
+                lambda: self._request(
+                    lambda: self.client.create_multipart_upload(Bucket=self.bucket, Key=key)
+                )
             )
             upload_id = created["UploadId"]
             try:
@@ -470,11 +486,13 @@ class _Transfer:
         parts = [{"PartNumber": n, "ETag": done[n]} for n in sorted(done)]
         try:
             _with_retries(
-                lambda: self.client.complete_multipart_upload(
-                    Bucket=self.bucket,
-                    Key=key,
-                    UploadId=upload_id,
-                    MultipartUpload={"Parts": parts},
+                lambda: self._request(
+                    lambda: self.client.complete_multipart_upload(
+                        Bucket=self.bucket,
+                        Key=key,
+                        UploadId=upload_id,
+                        MultipartUpload={"Parts": parts},
+                    )
                 )
             )
         except Exception as exc:  # noqa: BLE001 - re-raised unless it completed
@@ -488,20 +506,25 @@ class _Transfer:
         assembling a large file can outlive the proxy (524) while it still
         finishes server-side, and a retry then finds the upload gone. only
         those ambiguous failures qualify, and only when the object at the key
-        is this upload's: its etag equals the multipart etag of our parts, or,
-        if that cannot be computed, its size matches.
+        is this upload's: its size matches and its etag equals the multipart
+        etag of our parts.
         """
         if not (_is_retryable(exc) or _is_not_found(exc)):
             return False
         head = self.head(key)
         if head is None or int(head.get("ContentLength", -1)) != size:
             return False
-        return not want_etag or _strip_etag(head.get("ETag")) == want_etag
+        # without our multipart etag the object's identity cannot be confirmed
+        return bool(want_etag) and _strip_etag(head.get("ETag")) == want_etag
 
     def _abort(self, key: str, upload_id: str) -> None:
         """discard an upload that can no longer be resumed (best effort)."""
         try:
-            self.client.abort_multipart_upload(Bucket=self.bucket, Key=key, UploadId=upload_id)
+            self._request(
+                lambda: self.client.abort_multipart_upload(
+                    Bucket=self.bucket, Key=key, UploadId=upload_id
+                )
+            )
         except Exception:  # noqa: BLE001
             # a failed abort only leaves orphaned parts behind
             return
@@ -711,16 +734,7 @@ class _Transfer:
             PurePosixPath(prefix).name or self.bucket
         )
         jobs = [(_safe_target(root, obj["Key"][len(list_prefix):]), obj) for obj in objects]
-        # a remote "x.rpdownload" would share its partial file with "x"
-        targets = {dest for dest, _ in jobs}
-        for dest, _ in jobs:
-            for suffix in (".rpdownload", ".rpdownload.json"):
-                twin = dest.with_name(dest.name + suffix)
-                if twin in targets:
-                    raise NetworkVolumeTransferError(
-                        f"cannot download both {dest} and {twin}: "
-                        "the second name is used for the first's partial download"
-                    )
+        _check_partial_names([dest for dest, _ in jobs], root)
         self._run_files(
             [
                 lambda d=d, o=o: self.download_file(
@@ -731,6 +745,29 @@ class _Transfer:
             jobs,
         )
         return self.summary
+
+
+def _check_partial_names(targets: List[Path], root: Path) -> None:
+    """refuse targets where a file's partial or sidecar name is also a target,
+    or a directory a target lives in ("x" beside "x.rpdownload" or
+    "x.rpdownload/y"). names are compared case-folded, since the destination
+    may be case-insensitive; that can refuse a listing a case-sensitive
+    filesystem would take, which is the safe direction."""
+    taken: Dict[str, Path] = {}
+    for target in targets:
+        rel = target.relative_to(root)
+        for path in (rel, *rel.parents):
+            if str(path) != ".":
+                taken[str(path).casefold()] = target
+    for target in targets:
+        rel = target.relative_to(root)
+        for suffix in (".rpdownload", ".rpdownload.json"):
+            twin = str(rel.with_name(rel.name + suffix)).casefold()
+            if twin in taken:
+                raise NetworkVolumeTransferError(
+                    f"cannot download both {target} and {taken[twin]}: "
+                    f"{rel.name + suffix} is used for the first's partial download"
+                )
 
 
 def _safe_target(root: Path, rel: str) -> Path:
