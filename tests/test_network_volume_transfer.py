@@ -64,7 +64,7 @@ class FakeS3:
         self._call("get_object", Key=Key, Range=Range)
         data, _ = self.objects[Key]
         start, end = (int(x) for x in Range.split("=")[1].split("-"))
-        return {"Body": io.BytesIO(data[start : end + 1])}
+        return {"Body": io.BytesIO(data[start : end + 1]), "ETag": self._etag(data)}
 
     def list_objects_v2(self, Bucket, Prefix, ContinuationToken=None):
         self._call("list_objects_v2", Prefix=Prefix, ContinuationToken=ContinuationToken)
@@ -407,6 +407,38 @@ def test_download_restarts_when_remote_changed(tmp_path):
     _transfer(fake, tmp_path).download("big.bin", dest)
     assert len(fake.ops("get_object")) == 5
     assert dest.read_bytes() == DATA[::-1]
+
+
+def test_download_stops_when_remote_replaced_midway(tmp_path):
+    fake = FakeS3()
+    fake.put("big.bin", DATA)
+    dest = tmp_path / "big.bin"
+    original = fake.get_object
+
+    def replace_after_first(**kwargs):
+        response = original(**kwargs)
+        fake.put("big.bin", DATA[::-1])
+        return response
+
+    fake.get_object = replace_after_first
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="changed on the volume") as info:
+        _transfer(fake, tmp_path).download("big.bin", dest)
+    assert info.value.resumable
+    assert not dest.exists()
+
+
+def test_downloaded_folder_uploads_back_as_unchanged(tmp_path):
+    fake = FakeS3()
+    old = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    fake.put("data/a.bin", DATA, modified=old)
+    fake.put("data/sub/b.txt", b"b", modified=old)
+    local = tmp_path / "data"
+    _transfer(fake, tmp_path).download("data", local)
+    assert (local / "a.bin").stat().st_mtime == old.timestamp()
+    fake.calls.clear()
+    summary = _transfer(fake, tmp_path).upload(local, "data")
+    assert summary["files_skipped"] == 2
+    assert not fake.ops("put_object") and not fake.ops("upload_part")
 
 
 def test_download_short_read_is_retried(tmp_path):

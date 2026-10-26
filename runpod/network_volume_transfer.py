@@ -509,7 +509,9 @@ class _Transfer:
 
     # -- download
 
-    def download_file(self, key: str, size: int, etag: str, dest: Path) -> None:
+    def download_file(
+        self, key: str, size: int, etag: str, dest: Path, modified: Any = None
+    ) -> None:
         label = str(dest)
         if dest.is_file() and dest.stat().st_size == size:
             self._emit("skip", label, size)
@@ -554,6 +556,13 @@ class _Transfer:
                 response = self.client.get_object(
                     Bucket=self.bucket, Key=key, Range=f"bytes={start}-{end}"
                 )
+                got = _strip_etag(response.get("ETag"))
+                if etag and got and got != etag:
+                    raise NetworkVolumeTransferError(
+                        f"{key} changed on the volume during download; "
+                        "run the command again to restart it",
+                        resumable=True,
+                    )
                 data = response["Body"].read()
                 if len(data) != end - start + 1:
                     raise _Retryable(f"short read for {key} bytes {start}-{end}")
@@ -586,6 +595,9 @@ class _Transfer:
                 f"{dest}: size mismatch after download", resumable=True
             )
         os.replace(tmp, dest)
+        if modified is not None:
+            # stamp the remote time so uploading the file back counts as unchanged
+            os.utime(dest, (time.time(), modified.timestamp()))
         _remove(sidecar)
         self._emit("done", label)
 
@@ -600,7 +612,11 @@ class _Transfer:
             if dest.is_dir():
                 dest = dest / name
             self.download_file(
-                key, int(head["ContentLength"]), _strip_etag(head.get("ETag")), dest
+                key,
+                int(head["ContentLength"]),
+                _strip_etag(head.get("ETag")),
+                dest,
+                head.get("LastModified"),
             )
             return self.summary
 
@@ -621,7 +637,7 @@ class _Transfer:
         self._run_files(
             [
                 lambda d=d, o=o: self.download_file(
-                    o["Key"], int(o["Size"]), _strip_etag(o.get("ETag")), d
+                    o["Key"], int(o["Size"]), _strip_etag(o.get("ETag")), d, o.get("LastModified")
                 )
                 for d, o in jobs
             ],
