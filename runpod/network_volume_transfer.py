@@ -330,6 +330,9 @@ class _Transfer:
         if self._stop.is_set():
             raise _Stopped("interrupted")
         with self._slots:
+            # checked again: an interrupt may land while waiting for the slot
+            if self._stop.is_set():
+                raise _Stopped("interrupted")
             return func()
 
     def _retry(self, func: Callable[[], Any]) -> Any:
@@ -986,7 +989,10 @@ def _make_transfer(
         )
     datacenter = datacenter or _lookup_datacenter(volume_id)
     endpoint = endpoint_url or f"https://s3api-{datacenter.lower()}.runpod.io/"
-    _check_endpoint_resolves(endpoint)
+    if not endpoint_url:
+        # an explicit endpoint (a local stand-in, a custom route) is the
+        # caller's; only the derived datacenter endpoint is checked
+        _check_endpoint_resolves(endpoint)
     concurrency = max(1, int(concurrency))
     config = Config(
         s3={"addressing_style": "path"},
