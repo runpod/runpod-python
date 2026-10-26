@@ -13,10 +13,11 @@ from click.testing import CliRunner
 
 import runpod
 import runpod.network_volume_transfer as nvt
+import runpod.error
 
+# the real helpers, before the autouse fixture stubs them
 REAL_WAIT = nvt._wait
 REAL_ENDPOINT_CHECK = nvt._check_endpoint_resolves
-import runpod.error
 
 
 def _client_error(code, status, op="Op"):
@@ -1023,6 +1024,8 @@ def test_retry_backoff_ends_when_stopped(monkeypatch):
     import time as _time
 
     monkeypatch.setattr(nvt, "_wait", REAL_WAIT)
+    # the real sleep too, so a revert to an uninterruptible sleep is caught
+    monkeypatch.setattr(nvt, "_sleep", _time.sleep)
     stop = threading.Event()
     calls = []
 
@@ -1148,18 +1151,26 @@ def test_ctrl_c_stops_files_in_flight(tmp_path):
     for i in range(6):
         (folder / f"f{i}.bin").write_bytes(DATA + bytes([i]))
     calls = []
+    lock = __import__("threading").Lock()
     original = fake.upload_part
+    transfer = _transfer(fake, tmp_path, concurrency=2)
 
-    def interrupt_once(**kwargs):
-        calls.append(1)
-        if len(calls) == 1:
+    def interrupt_first(**kwargs):
+        with lock:
+            calls.append(1)
+            first = len(calls) == 1
+        if first:
             raise KeyboardInterrupt
+        # every other part waits for the interrupt to land, so what runs
+        # after it is deterministic: only parts already in flight finish
+        transfer._stop.wait(5)
         return original(**kwargs)
 
-    fake.upload_part = interrupt_once
-    transfer = _transfer(fake, tmp_path, concurrency=2)
+    fake.upload_part = interrupt_first
     with pytest.raises(KeyboardInterrupt):
         transfer.upload(folder, "data")
     assert transfer._stop.is_set()
-    # 6 files x 5 parts would be 30 parts; workers stop at their next request
-    assert len(calls) < 10
+    # 6 files x 5 parts would be 30 parts. the interrupted part, plus at most
+    # one part per request slot that started before the interrupt landed;
+    # nothing starts after it
+    assert len(calls) <= 3
