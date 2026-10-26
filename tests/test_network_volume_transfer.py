@@ -11,7 +11,9 @@ import pytest
 from botocore.exceptions import ClientError, ReadTimeoutError
 from click.testing import CliRunner
 
-from runpod import network_volume_transfer as nvt
+import runpod
+import runpod.network_volume_transfer as nvt
+import runpod.error
 
 
 def _client_error(code, status, op="Op"):
@@ -538,9 +540,7 @@ def test_is_resumable(exc, expected):
 
 
 def test_is_resumable_runpod_api_errors():
-    from runpod import error
-
-    assert not nvt.is_resumable(error.AuthenticationError("bad key"))
+    assert not nvt.is_resumable(runpod.error.AuthenticationError("bad key"))
 
 
 def test_folder_failure_resumable_only_if_a_file_was(tmp_path):
@@ -623,8 +623,6 @@ def test_public_functions_delegate(tmp_path):
 
 
 def test_lazy_exports():
-    import runpod
-
     assert runpod.upload_to_network_volume is nvt.upload
     assert runpod.download_from_network_volume is nvt.download
 

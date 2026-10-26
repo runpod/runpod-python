@@ -175,10 +175,7 @@ def _read_json(path: Path) -> Optional[Dict[str, Any]]:
 
 
 def _remove(path: Path) -> None:
-    try:
-        path.unlink()
-    except FileNotFoundError:
-        pass
+    path.unlink(missing_ok=True)
 
 
 def _read_range(path: Path, offset: int, length: int) -> bytes:
@@ -402,7 +399,8 @@ class _Transfer:
                     done = self._resume_parts(local, key, state, size, part_size)
                     upload_id = state["upload_id"]
                 except LookupError:
-                    pass
+                    # the server no longer has this upload: start a new one
+                    upload_id = None
             else:
                 self._abort(key, state["upload_id"])
             if upload_id is None:
@@ -504,8 +502,9 @@ class _Transfer:
         """discard an upload that can no longer be resumed (best effort)."""
         try:
             self.client.abort_multipart_upload(Bucket=self.bucket, Key=key, UploadId=upload_id)
-        except Exception:  # noqa: BLE001 - leaves orphaned parts at worst
-            pass
+        except Exception:  # noqa: BLE001
+            # a failed abort only leaves orphaned parts behind
+            return
 
     def _unchanged_remote(self, remote: Optional[Dict[str, Any]], local: Path) -> bool:
         if not remote:
