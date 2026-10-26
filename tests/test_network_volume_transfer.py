@@ -454,6 +454,69 @@ def test_folder_download_filters_and_defaults(tmp_path, monkeypatch):
     assert summary["files_transferred"] == 2
 
 
+def test_folder_download_when_head_on_directory_is_400(tmp_path):
+    fake = FakeS3()
+    fake.put("models/a.bin", b"a")
+    original = fake.head_object
+
+    def head(**kwargs):
+        if kwargs["Key"] == "models":
+            raise _client_error("BadRequest", 400, "HeadObject")
+        return original(**kwargs)
+
+    fake.head_object = head
+    summary = _transfer(fake, tmp_path).download("models", tmp_path / "dl")
+    assert (tmp_path / "dl" / "a.bin").read_bytes() == b"a"
+    assert summary["files_transferred"] == 1
+
+
+def test_head_400_outside_download_is_an_error(tmp_path):
+    fake = FakeS3()
+    fake.fail = lambda op, kw: _client_error("BadRequest", 400) if op == "head_object" else None
+    src = tmp_path / "f.txt"
+    src.write_bytes(b"x")
+    with pytest.raises(ClientError):
+        _transfer(fake, tmp_path).upload(src, "f.txt")
+
+
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        (FileNotFoundError("x"), False),
+        (_client_error("AccessDenied", 403), False),
+        (_client_error("InvalidAccessKeyId", 401), False),
+        (_client_error("NoSuchKey", 404), False),
+        (nvt.NetworkVolumeTransferError("keys required"), False),
+        (nvt.NetworkVolumeTransferError("cut", resumable=True), True),
+        (_client_error("524", 524), True),
+        (ReadTimeoutError(endpoint_url="https://s3"), True),
+    ],
+)
+def test_is_resumable(exc, expected):
+    assert nvt.is_resumable(exc) is expected
+
+
+def test_is_resumable_runpod_api_errors():
+    from runpod import error
+
+    assert not nvt.is_resumable(error.AuthenticationError("bad key"))
+
+
+def test_folder_failure_resumable_only_if_a_file_was(tmp_path):
+    fake = FakeS3()
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.txt").write_bytes(b"1")
+    fake.fail = lambda op, kw: _client_error("AccessDenied", 403) if op == "put_object" else None
+    with pytest.raises(nvt.NetworkVolumeTransferError) as denied:
+        _transfer(fake, tmp_path).upload(root, None)
+    assert denied.value.resumable is False
+    fake.fail = lambda op, kw: ConnectionResetError("reset") if op == "put_object" else None
+    with pytest.raises(nvt.NetworkVolumeTransferError) as reset:
+        _transfer(fake, tmp_path).upload(root, None)
+    assert reset.value.resumable is True
+
+
 def test_folder_download_rejects_path_traversal(tmp_path):
     fake = FakeS3()
     fake.put("models/ok.bin", b"a")
@@ -554,8 +617,18 @@ def test_cli_upload_prints_summary(tmp_path):
 def test_cli_download_failure_says_resume():
     from runpod.rp_cli.main import cli
 
-    with patch.object(nvt, "download", side_effect=RuntimeError("boom")):
+    with patch.object(nvt, "download", side_effect=ConnectionResetError("boom")):
         result = CliRunner().invoke(cli, ["network-volume", "download", "vol", "a/b"])
     assert result.exit_code != 0
     assert "boom" in result.output
     assert "re-run the same command to resume" in result.output
+
+
+def test_cli_missing_path_has_no_resume_hint():
+    from runpod.rp_cli.main import cli
+
+    with patch.object(nvt, "download", side_effect=FileNotFoundError("no such file")):
+        result = CliRunner().invoke(cli, ["network-volume", "download", "vol", "a/b"])
+    assert result.exit_code != 0
+    assert "no such file" in result.output
+    assert "resume" not in result.output
