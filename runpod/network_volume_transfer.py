@@ -1,0 +1,722 @@
+"""resumable file and folder transfers to and from network volumes.
+
+transfers go through the runpod s3-compatible api. the bucket is the
+network volume id and the endpoint is per datacenter.
+
+uploads above 64 MiB use multipart. the upload id is kept in a small
+state file under ~/.runpod/transfers, so re-running an interrupted
+upload sends only the parts the server does not already hold. downloads
+fetch 64 MiB ranges in parallel into `<dest>.rpdownload`, recording
+finished ranges in a sidecar json, so a re-run fetches only what is
+missing. folder transfers skip files that are already present and
+unchanged.
+"""
+
+import hashlib
+import json
+import math
+import os
+import random
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path, PurePosixPath
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+MIB = 1024 * 1024
+SINGLE_PUT_MAX = 64 * MIB
+DEFAULT_PART_SIZE = 64 * MIB
+MAX_PART_SIZE = 500 * MIB  # runpod's maximum multipart part size
+MAX_PARTS = 10000
+DOWNLOAD_CHUNK_SIZE = 64 * MIB
+RETRY_ATTEMPTS = 8
+UPLOADS_DIR = ".s3compat_uploads"
+
+ACCESS_KEY_ENV = "RUNPOD_S3_ACCESS_KEY"
+SECRET_KEY_ENV = "RUNPOD_S3_SECRET_KEY"
+S3_KEYS_URL = "https://console.runpod.io/user/settings"
+
+# progress(event, path, nbytes). events: "start" (nbytes = file size),
+# "advance" (nbytes = delta), "skip" (nbytes = file size), "done".
+Progress = Callable[[str, str, int], None]
+
+_sleep = time.sleep
+
+
+class NetworkVolumeTransferError(RuntimeError):
+    """a transfer failed. re-running the same call resumes it."""
+
+
+class _Retryable(Exception):
+    """a transient failure raised by this module (e.g. a short read)."""
+
+
+def _state_dir() -> Path:
+    return Path(os.path.expanduser("~/.runpod/transfers"))
+
+
+# --------------------------------------------------------------- helpers
+
+
+def part_size_for(size: int) -> int:
+    """part size for a multipart upload of `size` bytes."""
+    part_size = DEFAULT_PART_SIZE
+    if math.ceil(size / part_size) > MAX_PARTS:
+        part_size = math.ceil(math.ceil(size / MAX_PARTS) / MIB) * MIB
+    if part_size > MAX_PART_SIZE:
+        raise NetworkVolumeTransferError(
+            f"file of {size} bytes needs parts above the 500 MiB limit"
+        )
+    return part_size
+
+
+def _error_code(exc: Exception) -> Tuple[str, int]:
+    response = getattr(exc, "response", None) or {}
+    code = str(response.get("Error", {}).get("Code", ""))
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0
+    return code, int(status)
+
+
+def _is_not_found(exc: Exception) -> bool:
+    code, status = _error_code(exc)
+    return status == 404 or code in ("404", "NoSuchKey", "NotFound")
+
+
+def _is_retryable(exc: Exception) -> bool:
+    from botocore.exceptions import (  # pylint: disable=import-outside-toplevel
+        ClientError,
+        ConnectionError as BotoConnectionError,
+        HTTPClientError,
+        IncompleteReadError,
+        ResponseStreamingError,
+    )
+
+    if isinstance(exc, _Retryable):
+        return True
+    if isinstance(
+        exc,
+        (
+            BotoConnectionError,
+            HTTPClientError,
+            IncompleteReadError,
+            ResponseStreamingError,
+            ConnectionError,
+            TimeoutError,
+        ),
+    ):
+        return True
+    if isinstance(exc, ClientError):
+        code, status = _error_code(exc)
+        if status == 429 or status >= 500:
+            return True
+        return code in ("SlowDown", "RequestTimeout", "InternalError", "524")
+    return False
+
+
+def _with_retries(func: Callable[[], Any], attempts: int = RETRY_ATTEMPTS) -> Any:
+    """call func, retrying transient failures with exponential backoff."""
+    for attempt in range(attempts):
+        try:
+            return func()
+        except Exception as exc:  # noqa: BLE001 - filtered by _is_retryable
+            if attempt == attempts - 1 or not _is_retryable(exc):
+                raise
+            _sleep(min(2**attempt, 30) + random.uniform(0, 1))
+    raise AssertionError("unreachable")
+
+
+def _write_json_atomic(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(data, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def _read_json(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _remove(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _read_range(path: Path, offset: int, length: int) -> bytes:
+    with open(path, "rb") as handle:
+        handle.seek(offset)
+        return handle.read(length)
+
+
+def _md5_hex(path: Path, offset: int, length: int) -> str:
+    digest = hashlib.md5()  # noqa: S324 - etag comparison, not security
+    with open(path, "rb") as handle:
+        handle.seek(offset)
+        remaining = length
+        while remaining > 0:
+            block = handle.read(min(8 * MIB, remaining))
+            if not block:
+                break
+            digest.update(block)
+            remaining -= len(block)
+    return digest.hexdigest()
+
+
+def _is_md5_etag(etag: str) -> bool:
+    return len(etag) == 32 and all(c in "0123456789abcdef" for c in etag.lower())
+
+
+def _run_pool(tasks: List[Callable[[], Any]], concurrency: int) -> List[Any]:
+    """run tasks on a thread pool. the first failure cancels the rest."""
+    results = []
+    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+        futures = [pool.submit(task) for task in tasks]
+        try:
+            for future in as_completed(futures):
+                results.append(future.result())
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
+    return results
+
+
+def _strip_etag(etag: Any) -> str:
+    return str(etag or "").strip('"')
+
+
+# ------------------------------------------------------------- transfers
+
+
+class _Transfer:
+    """one bucket on one endpoint. the public functions build this."""
+
+    def __init__(
+        self,
+        client: Any,
+        bucket: str,
+        endpoint: str,
+        concurrency: int = 4,
+        progress: Optional[Progress] = None,
+        state_dir: Optional[Path] = None,
+    ):
+        self.client = client
+        self.bucket = bucket
+        self.endpoint = endpoint
+        self.concurrency = max(1, int(concurrency))
+        self._progress = progress
+        self.state_dir = state_dir or _state_dir()
+        self._lock = threading.Lock()
+        self.summary = {"files_transferred": 0, "files_skipped": 0, "bytes_transferred": 0}
+
+    # -- bookkeeping
+
+    def _emit(self, event: str, path: str, nbytes: int = 0) -> None:
+        with self._lock:
+            if event == "advance":
+                self.summary["bytes_transferred"] += nbytes
+            elif event == "done":
+                self.summary["files_transferred"] += 1
+            elif event == "skip":
+                self.summary["files_skipped"] += 1
+        if self._progress is not None:
+            self._progress(event, path, nbytes)
+
+    def _state_path(self, key: str, local: Path) -> Path:
+        ident = f"{self.endpoint}|{self.bucket}|{key}|{local.resolve()}"
+        return self.state_dir / (hashlib.sha256(ident.encode()).hexdigest() + ".json")
+
+    # -- remote metadata
+
+    def head(self, key: str) -> Optional[Dict[str, Any]]:
+        try:
+            return _with_retries(
+                lambda: self.client.head_object(Bucket=self.bucket, Key=key)
+            )
+        except Exception as exc:  # noqa: BLE001
+            if _is_not_found(exc):
+                return None
+            raise
+
+    def list_prefix(self, prefix: str) -> List[Dict[str, Any]]:
+        objects: List[Dict[str, Any]] = []
+        kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
+        while True:
+            try:
+                page = _with_retries(lambda: self.client.list_objects_v2(**kwargs))
+            except Exception as exc:  # noqa: BLE001
+                if _is_not_found(exc):
+                    return objects
+                raise
+            objects.extend(page.get("Contents") or [])
+            token = page.get("NextContinuationToken")
+            if not page.get("IsTruncated") or not token:
+                return objects
+            kwargs["ContinuationToken"] = token
+
+    def _list_parts(self, key: str, upload_id: str) -> List[Dict[str, Any]]:
+        parts: List[Dict[str, Any]] = []
+        kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Key": key, "UploadId": upload_id}
+        while True:
+            page = _with_retries(lambda: self.client.list_parts(**kwargs))
+            parts.extend(page.get("Parts") or [])
+            marker = page.get("NextPartNumberMarker")
+            if not page.get("IsTruncated") or not marker:
+                return parts
+            kwargs["PartNumberMarker"] = marker
+
+    # -- upload
+
+    def upload_file(self, local: Path, key: str) -> None:
+        stat = local.stat()
+        size = stat.st_size
+        label = str(local)
+        self._emit("start", label, size)
+        if size <= SINGLE_PUT_MAX:
+            data = local.read_bytes()
+            _with_retries(
+                lambda: self.client.put_object(Bucket=self.bucket, Key=key, Body=data)
+            )
+            self._emit("advance", label, size)
+        else:
+            self._multipart_upload(local, key, size, stat.st_mtime_ns, label)
+        self._emit("done", label)
+
+    def _resume_parts(
+        self, local: Path, key: str, state: Dict[str, Any], size: int, part_size: int
+    ) -> Dict[int, str]:
+        """parts of the saved upload that match the local file."""
+        upload_id = state["upload_id"]
+        try:
+            listed = self._list_parts(key, upload_id)
+        except Exception as exc:  # noqa: BLE001
+            code, _ = _error_code(exc)
+            if code == "NoSuchUpload" or _is_not_found(exc):
+                raise LookupError(upload_id) from exc
+            raise
+        done: Dict[int, str] = {}
+        for part in listed:
+            number = int(part["PartNumber"])
+            offset = (number - 1) * part_size
+            expected = min(part_size, size - offset)
+            if expected <= 0 or int(part.get("Size", -1)) != expected:
+                continue
+            etag = _strip_etag(part.get("ETag"))
+            if _is_md5_etag(etag) and _md5_hex(local, offset, expected) != etag.lower():
+                continue
+            done[number] = part.get("ETag")
+        return done
+
+    def _multipart_upload(
+        self, local: Path, key: str, size: int, mtime_ns: int, label: str
+    ) -> None:
+        part_size = part_size_for(size)
+        count = math.ceil(size / part_size)
+        state_path = self._state_path(key, local)
+        state = _read_json(state_path)
+        upload_id: Optional[str] = None
+        done: Dict[int, str] = {}
+
+        if state and state.get("upload_id"):
+            same = (
+                state.get("file_size") == size
+                and state.get("mtime_ns") == mtime_ns
+                and state.get("part_size") == part_size
+            )
+            if same:
+                try:
+                    done = self._resume_parts(local, key, state, size, part_size)
+                    upload_id = state["upload_id"]
+                except LookupError:
+                    pass
+            else:
+                try:
+                    self.client.abort_multipart_upload(
+                        Bucket=self.bucket, Key=key, UploadId=state["upload_id"]
+                    )
+                except Exception:  # noqa: BLE001 - best effort
+                    pass
+            if upload_id is None:
+                _remove(state_path)
+
+        if upload_id is None:
+            created = _with_retries(
+                lambda: self.client.create_multipart_upload(Bucket=self.bucket, Key=key)
+            )
+            upload_id = created["UploadId"]
+            _write_json_atomic(
+                state_path,
+                {
+                    "upload_id": upload_id,
+                    "part_size": part_size,
+                    "file_size": size,
+                    "mtime_ns": mtime_ns,
+                    "bucket": self.bucket,
+                    "key": key,
+                },
+            )
+
+        already = sum(min(part_size, size - (n - 1) * part_size) for n in done)
+        if already:
+            self._emit("advance", label, already)
+
+        def upload_part(number: int) -> Tuple[int, str]:
+            offset = (number - 1) * part_size
+            length = min(part_size, size - offset)
+
+            def send():
+                body = _read_range(local, offset, length)
+                return self.client.upload_part(
+                    Bucket=self.bucket,
+                    Key=key,
+                    UploadId=upload_id,
+                    PartNumber=number,
+                    Body=body,
+                )
+
+            response = _with_retries(send)
+            self._emit("advance", label, length)
+            return number, response["ETag"]
+
+        todo = [n for n in range(1, count + 1) if n not in done]
+        for number, etag in _run_pool(
+            [lambda n=n: upload_part(n) for n in todo], self.concurrency
+        ):
+            done[number] = etag
+
+        parts = [{"PartNumber": n, "ETag": done[n]} for n in sorted(done)]
+        try:
+            _with_retries(
+                lambda: self.client.complete_multipart_upload(
+                    Bucket=self.bucket,
+                    Key=key,
+                    UploadId=upload_id,
+                    MultipartUpload={"Parts": parts},
+                )
+            )
+        except Exception:
+            # a slow complete can time out after the server finished it
+            head = self.head(key)
+            if head is None or int(head.get("ContentLength", -1)) != size:
+                raise
+        _remove(state_path)
+
+    def _unchanged_remote(self, remote: Optional[Dict[str, Any]], local: Path) -> bool:
+        if not remote:
+            return False
+        stat = local.stat()
+        size = remote.get("Size", remote.get("ContentLength"))
+        modified = remote.get("LastModified")
+        if size is None or int(size) != stat.st_size or modified is None:
+            return False
+        return modified.timestamp() >= stat.st_mtime
+
+    def upload(self, local: Path, remote_path: Optional[str]) -> Dict[str, int]:
+        if not local.exists():
+            raise FileNotFoundError(str(local))
+        if local.is_dir():
+            prefix = (local.resolve().name if remote_path is None else remote_path).strip("/")
+            remote = {
+                obj["Key"]: obj
+                for obj in self.list_prefix(f"{prefix}/" if prefix else "")
+            }
+            jobs = []
+            for path in sorted(p for p in local.rglob("*") if p.is_file()):
+                rel = path.relative_to(local).as_posix()
+                key = f"{prefix}/{rel}" if prefix else rel
+                if self._unchanged_remote(remote.get(key), path):
+                    self._emit("skip", str(path), path.stat().st_size)
+                    continue
+                jobs.append((path, key))
+            self._run_files([lambda p=p, k=k: self.upload_file(p, k) for p, k in jobs], jobs)
+            return self.summary
+
+        if remote_path is None:
+            key = local.name
+        elif remote_path.endswith("/"):
+            key = remote_path.lstrip("/") + local.name
+        else:
+            key = remote_path.lstrip("/")
+        if self._unchanged_remote(self.head(key), local):
+            self._emit("skip", str(local), local.stat().st_size)
+            return self.summary
+        self.upload_file(local, key)
+        return self.summary
+
+    def _run_files(self, tasks: List[Callable[[], Any]], jobs: List[Tuple[Any, Any]]) -> None:
+        """run per-file tasks. every file is attempted; failures are reported together."""
+        failures = []
+
+        def guarded(index: int) -> None:
+            try:
+                tasks[index]()
+            except Exception as exc:  # noqa: BLE001 - collected and re-raised
+                with self._lock:
+                    failures.append(f"{jobs[index][0]}: {exc}")
+
+        _run_pool([lambda i=i: guarded(i) for i in range(len(tasks))], self.concurrency)
+        if failures:
+            raise NetworkVolumeTransferError(
+                f"{len(failures)} file(s) failed:\n  " + "\n  ".join(sorted(failures))
+            )
+
+    # -- download
+
+    def download_file(self, key: str, size: int, etag: str, dest: Path) -> None:
+        label = str(dest)
+        if dest.is_file() and dest.stat().st_size == size:
+            self._emit("skip", label, size)
+            return
+        self._emit("start", label, size)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(dest.name + ".rpdownload")
+        sidecar = dest.with_name(dest.name + ".rpdownload.json")
+        state = _read_json(sidecar)
+        done: set = set()
+        if (
+            state
+            and state.get("size") == size
+            and state.get("etag") == etag
+            and state.get("chunk_size") == DOWNLOAD_CHUNK_SIZE
+            and tmp.is_file()
+            and tmp.stat().st_size == size
+        ):
+            done = {int(i) for i in state.get("done", [])}
+        else:
+            with open(tmp, "wb") as handle:
+                handle.truncate(size)
+            _write_json_atomic(
+                sidecar,
+                {"size": size, "etag": etag, "chunk_size": DOWNLOAD_CHUNK_SIZE, "done": []},
+            )
+
+        count = math.ceil(size / DOWNLOAD_CHUNK_SIZE)
+        already = sum(
+            min(DOWNLOAD_CHUNK_SIZE, size - i * DOWNLOAD_CHUNK_SIZE) for i in done if i < count
+        )
+        if already:
+            self._emit("advance", label, already)
+
+        def fetch(index: int) -> None:
+            start = index * DOWNLOAD_CHUNK_SIZE
+            end = min(start + DOWNLOAD_CHUNK_SIZE, size) - 1
+
+            def get():
+                response = self.client.get_object(
+                    Bucket=self.bucket, Key=key, Range=f"bytes={start}-{end}"
+                )
+                data = response["Body"].read()
+                if len(data) != end - start + 1:
+                    raise _Retryable(f"short read for {key} bytes {start}-{end}")
+                return data
+
+            data = _with_retries(get)
+            with open(tmp, "r+b") as handle:
+                handle.seek(start)
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            with self._lock:
+                done.add(index)
+                _write_json_atomic(
+                    sidecar,
+                    {
+                        "size": size,
+                        "etag": etag,
+                        "chunk_size": DOWNLOAD_CHUNK_SIZE,
+                        "done": sorted(done),
+                    },
+                )
+            self._emit("advance", label, end - start + 1)
+
+        todo = [i for i in range(count) if i not in done]
+        _run_pool([lambda i=i: fetch(i) for i in todo], self.concurrency)
+
+        if tmp.stat().st_size != size:
+            raise NetworkVolumeTransferError(f"{dest}: size mismatch after download")
+        os.replace(tmp, dest)
+        _remove(sidecar)
+        self._emit("done", label)
+
+    def download(self, remote_path: str, local_path: Optional[Path]) -> Dict[str, int]:
+        key = remote_path.lstrip("/")
+        head = None if key == "" or key.endswith("/") else self.head(key)
+        if head is not None:
+            name = PurePosixPath(key).name
+            dest = Path(local_path) if local_path is not None else Path(name)
+            if dest.is_dir():
+                dest = dest / name
+            self.download_file(
+                key, int(head["ContentLength"]), _strip_etag(head.get("ETag")), dest
+            )
+            return self.summary
+
+        prefix = key.rstrip("/")
+        list_prefix = f"{prefix}/" if prefix else ""
+        objects = [
+            obj
+            for obj in self.list_prefix(list_prefix)
+            if not obj["Key"].endswith("/")
+            and UPLOADS_DIR not in PurePosixPath(obj["Key"]).parts
+        ]
+        if not objects:
+            raise FileNotFoundError(f"no such file or directory on the volume: {remote_path}")
+        root = Path(local_path) if local_path is not None else Path(
+            PurePosixPath(prefix).name or self.bucket
+        )
+        jobs = [(_safe_target(root, obj["Key"][len(list_prefix):]), obj) for obj in objects]
+        self._run_files(
+            [
+                lambda d=d, o=o: self.download_file(
+                    o["Key"], int(o["Size"]), _strip_etag(o.get("ETag")), d
+                )
+                for d, o in jobs
+            ],
+            jobs,
+        )
+        return self.summary
+
+
+def _safe_target(root: Path, rel: str) -> Path:
+    """local path for a remote relative key, refusing anything outside root."""
+    parts = PurePosixPath(rel).parts
+    if (
+        not rel
+        or rel.startswith("/")
+        or "\\" in rel
+        or any(part in ("..", "") for part in parts)
+        or (parts and ":" in parts[0])
+    ):
+        raise NetworkVolumeTransferError(f"refusing unsafe remote path: {rel!r}")
+    target = root.joinpath(*parts)
+    resolved_root = root.resolve()
+    if resolved_root not in target.resolve().parents:
+        raise NetworkVolumeTransferError(f"refusing unsafe remote path: {rel!r}")
+    return target
+
+
+# ---------------------------------------------------------------- client
+
+
+def _lookup_datacenter(volume_id: str) -> str:
+    from runpod.api.rest import run_rest_request  # pylint: disable=import-outside-toplevel
+
+    data = run_rest_request("GET", f"/v2/network-volumes/{volume_id}") or {}
+    datacenter = data.get("dataCenter") or data.get("dataCenterId")
+    if not datacenter:
+        raise NetworkVolumeTransferError(
+            f"could not find the datacenter of network volume {volume_id}"
+        )
+    return str(datacenter)
+
+
+def _make_transfer(
+    volume_id: str,
+    datacenter: Optional[str],
+    access_key: Optional[str],
+    secret_key: Optional[str],
+    endpoint_url: Optional[str],
+    concurrency: int,
+    progress: Optional[Progress],
+) -> _Transfer:
+    import boto3  # pylint: disable=import-outside-toplevel
+    from botocore.config import Config  # pylint: disable=import-outside-toplevel
+
+    access_key = access_key or os.environ.get(ACCESS_KEY_ENV)
+    secret_key = secret_key or os.environ.get(SECRET_KEY_ENV)
+    if not access_key or not secret_key:
+        raise NetworkVolumeTransferError(
+            f"s3 api keys required: set {ACCESS_KEY_ENV} and {SECRET_KEY_ENV} "
+            f"(create keys at {S3_KEYS_URL})"
+        )
+    datacenter = datacenter or _lookup_datacenter(volume_id)
+    endpoint = endpoint_url or f"https://s3api-{datacenter.lower()}.runpod.io/"
+    concurrency = max(1, int(concurrency))
+    config = Config(
+        s3={"addressing_style": "path"},
+        request_checksum_calculation="when_required",
+        response_checksum_validation="when_required",
+        retries={"max_attempts": 10, "mode": "standard"},
+        connect_timeout=60,
+        read_timeout=3600,
+        max_pool_connections=max(10, concurrency * concurrency),
+    )
+    client = boto3.session.Session().client(
+        "s3",
+        region_name=datacenter,
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=config,
+    )
+    return _Transfer(client, volume_id, endpoint, concurrency, progress)
+
+
+def upload(
+    volume_id: str,
+    local_path,
+    remote_path: Optional[str] = None,
+    *,
+    datacenter: Optional[str] = None,
+    access_key: Optional[str] = None,
+    secret_key: Optional[str] = None,
+    endpoint_url: Optional[str] = None,
+    concurrency: int = 4,
+    progress: Optional[Progress] = None,
+) -> Dict[str, int]:
+    """upload a file or folder to a network volume.
+
+    `remote_path` defaults to the local basename. a folder's contents go
+    under `remote_path/`. for a file, a `remote_path` ending in "/" keeps
+    the local file name. unchanged files (same size, remote not older)
+    are skipped, and an interrupted multipart upload resumes on re-run.
+
+    s3 keys come from the arguments or RUNPOD_S3_ACCESS_KEY and
+    RUNPOD_S3_SECRET_KEY. without `datacenter`, the volume's datacenter is
+    looked up with the runpod api key.
+
+    returns {files_transferred, files_skipped, bytes_transferred}.
+    """
+    transfer = _make_transfer(
+        volume_id, datacenter, access_key, secret_key, endpoint_url, concurrency, progress
+    )
+    return transfer.upload(Path(local_path), remote_path)
+
+
+def download(
+    volume_id: str,
+    remote_path: str,
+    local_path=None,
+    *,
+    datacenter: Optional[str] = None,
+    access_key: Optional[str] = None,
+    secret_key: Optional[str] = None,
+    endpoint_url: Optional[str] = None,
+    concurrency: int = 4,
+    progress: Optional[Progress] = None,
+) -> Dict[str, int]:
+    """download a file or folder from a network volume.
+
+    a `remote_path` ending in "/" (or one that only exists as a prefix) is
+    a folder. `local_path` defaults to the remote basename. local files of
+    the same size are skipped, and partial downloads resume on re-run.
+
+    returns {files_transferred, files_skipped, bytes_transferred}.
+    """
+    transfer = _make_transfer(
+        volume_id, datacenter, access_key, secret_key, endpoint_url, concurrency, progress
+    )
+    return transfer.download(remote_path, None if local_path is None else Path(local_path))
+
+
+upload_to_network_volume = upload
+download_from_network_volume = download
