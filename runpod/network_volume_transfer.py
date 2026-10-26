@@ -205,6 +205,19 @@ def _is_md5_etag(etag: str) -> bool:
     return len(etag) == 32 and all(c in "0123456789abcdef" for c in etag.lower())
 
 
+def _multipart_etag(parts: List[Dict[str, Any]]) -> str:
+    """the etag s3 (and runpod, verified) gives an object assembled from
+    parts: md5 of the parts' binary md5s, then "-<count>". "" when a part
+    etag is not an md5."""
+    digest = hashlib.md5()
+    for part in parts:
+        etag = _strip_etag(part["ETag"])
+        if not _is_md5_etag(etag):
+            return ""
+        digest.update(bytes.fromhex(etag))
+    return f"{digest.hexdigest()}-{len(parts)}"
+
+
 def _run_pool(tasks: List[Callable[[], Any]], concurrency: int) -> List[Any]:
     """run tasks on a thread pool. the first failure cancels the rest."""
     results = []
@@ -218,6 +231,12 @@ def _run_pool(tasks: List[Callable[[], Any]], concurrency: int) -> List[Any]:
                 future.cancel()
             raise
     return results
+
+
+def _check_remote_path(remote_path: Optional[str]) -> None:
+    """refuse remote paths with '..' segments before anything is sent."""
+    if remote_path and ".." in remote_path.replace("\\", "/").split("/"):
+        raise ValueError(f"remote path {remote_path!r} must not contain '..'")
 
 
 def _strip_etag(etag: Any) -> str:
@@ -246,9 +265,16 @@ class _Transfer:
         self._progress = progress
         self.state_dir = state_dir or _state_dir()
         self._lock = threading.Lock()
+        # bounds requests in flight across all files: folder transfers run
+        # files in parallel and each large file runs its parts in parallel
+        self._slots = threading.BoundedSemaphore(self.concurrency)
         self.summary = {"files_transferred": 0, "files_skipped": 0, "bytes_transferred": 0}
 
     # -- bookkeeping
+
+    def _request(self, func: Callable[[], Any]) -> Any:
+        with self._slots:
+            return func()
 
     def _emit(self, event: str, path: str, nbytes: int = 0) -> None:
         with self._lock:
@@ -317,9 +343,12 @@ class _Transfer:
         label = str(local)
         self._emit("start", label, size)
         if size <= SINGLE_PUT_MAX:
-            data = local.read_bytes()
             _with_retries(
-                lambda: self.client.put_object(Bucket=self.bucket, Key=key, Body=data)
+                lambda: self._request(
+                    lambda: self.client.put_object(
+                        Bucket=self.bucket, Key=key, Body=local.read_bytes()
+                    )
+                )
             )
             self._emit("advance", label, size)
         else:
@@ -345,8 +374,9 @@ class _Transfer:
             expected = min(part_size, size - offset)
             if expected <= 0 or int(part.get("Size", -1)) != expected:
                 continue
+            # a part whose content cannot be verified is uploaded again
             etag = _strip_etag(part.get("ETag"))
-            if _is_md5_etag(etag) and _md5_hex(local, offset, expected) != etag.lower():
+            if not _is_md5_etag(etag) or _md5_hex(local, offset, expected) != etag.lower():
                 continue
             done[number] = part.get("ETag")
         return done
@@ -374,12 +404,7 @@ class _Transfer:
                 except LookupError:
                     pass
             else:
-                try:
-                    self.client.abort_multipart_upload(
-                        Bucket=self.bucket, Key=key, UploadId=state["upload_id"]
-                    )
-                except Exception:  # noqa: BLE001 - best effort
-                    pass
+                self._abort(key, state["upload_id"])
             if upload_id is None:
                 _remove(state_path)
 
@@ -388,17 +413,22 @@ class _Transfer:
                 lambda: self.client.create_multipart_upload(Bucket=self.bucket, Key=key)
             )
             upload_id = created["UploadId"]
-            _write_json_atomic(
-                state_path,
-                {
-                    "upload_id": upload_id,
-                    "part_size": part_size,
-                    "file_size": size,
-                    "mtime_ns": mtime_ns,
-                    "bucket": self.bucket,
-                    "key": key,
-                },
-            )
+            try:
+                _write_json_atomic(
+                    state_path,
+                    {
+                        "upload_id": upload_id,
+                        "part_size": part_size,
+                        "file_size": size,
+                        "mtime_ns": mtime_ns,
+                        "bucket": self.bucket,
+                        "key": key,
+                    },
+                )
+            except OSError:
+                # without saved state no re-run can find this upload again
+                self._abort(key, upload_id)
+                raise
 
         already = sum(min(part_size, size - (n - 1) * part_size) for n in done)
         if already:
@@ -418,7 +448,7 @@ class _Transfer:
                     Body=body,
                 )
 
-            response = _with_retries(send)
+            response = _with_retries(lambda: self._request(send))
             self._emit("advance", label, length)
             return number, response["ETag"]
 
@@ -427,6 +457,17 @@ class _Transfer:
             [lambda n=n: upload_part(n) for n in todo], self.concurrency
         ):
             done[number] = etag
+
+        # the parts were read over the whole upload; if the file moved under
+        # them, they may mix two versions of it
+        now = local.stat()
+        if now.st_size != size or now.st_mtime_ns != mtime_ns:
+            self._abort(key, upload_id)
+            _remove(state_path)
+            raise NetworkVolumeTransferError(
+                f"{local} changed during upload; run the command again to upload the new version",
+                resumable=True,
+            )
 
         parts = [{"PartNumber": n, "ETag": done[n]} for n in sorted(done)]
         try:
@@ -438,12 +479,33 @@ class _Transfer:
                     MultipartUpload={"Parts": parts},
                 )
             )
-        except Exception:
-            # a slow complete can time out after the server finished it
-            head = self.head(key)
-            if head is None or int(head.get("ContentLength", -1)) != size:
+        except Exception as exc:  # noqa: BLE001 - re-raised unless it completed
+            if not self._completed_anyway(exc, key, size, _multipart_etag(parts)):
                 raise
         _remove(state_path)
+
+    def _completed_anyway(self, exc: Exception, key: str, size: int, want_etag: str) -> bool:
+        """whether a failed complete took effect anyway.
+
+        assembling a large file can outlive the proxy (524) while it still
+        finishes server-side, and a retry then finds the upload gone. only
+        those ambiguous failures qualify, and only when the object at the key
+        is this upload's: its etag equals the multipart etag of our parts, or,
+        if that cannot be computed, its size matches.
+        """
+        if not (_is_retryable(exc) or _is_not_found(exc)):
+            return False
+        head = self.head(key)
+        if head is None or int(head.get("ContentLength", -1)) != size:
+            return False
+        return not want_etag or _strip_etag(head.get("ETag")) == want_etag
+
+    def _abort(self, key: str, upload_id: str) -> None:
+        """discard an upload that can no longer be resumed (best effort)."""
+        try:
+            self.client.abort_multipart_upload(Bucket=self.bucket, Key=key, UploadId=upload_id)
+        except Exception:  # noqa: BLE001 - leaves orphaned parts at worst
+            pass
 
     def _unchanged_remote(self, remote: Optional[Dict[str, Any]], local: Path) -> bool:
         if not remote:
@@ -456,6 +518,7 @@ class _Transfer:
         return modified.timestamp() >= stat.st_mtime
 
     def upload(self, local: Path, remote_path: Optional[str]) -> Dict[str, int]:
+        _check_remote_path(remote_path)
         if not local.exists():
             raise FileNotFoundError(str(local))
         if local.is_dir():
@@ -513,7 +576,13 @@ class _Transfer:
         self, key: str, size: int, etag: str, dest: Path, modified: Any = None
     ) -> None:
         label = str(dest)
-        if dest.is_file() and dest.stat().st_size == size:
+        # downloads stamp the remote time, so an unchanged file is the same
+        # size and not older than the remote copy
+        if (
+            dest.is_file()
+            and dest.stat().st_size == size
+            and (modified is None or modified.timestamp() <= dest.stat().st_mtime)
+        ):
             self._emit("skip", label, size)
             return
         self._emit("start", label, size)
@@ -526,6 +595,7 @@ class _Transfer:
         # is "<md5>-<parts>", never the md5 of the file.
         if (
             state
+            and state.get("key") == key
             and state.get("size") == size
             and state.get("etag") == etag
             and state.get("chunk_size") == DOWNLOAD_CHUNK_SIZE
@@ -538,7 +608,13 @@ class _Transfer:
                 handle.truncate(size)
             _write_json_atomic(
                 sidecar,
-                {"size": size, "etag": etag, "chunk_size": DOWNLOAD_CHUNK_SIZE, "done": []},
+                {
+                    "key": key,
+                    "size": size,
+                    "etag": etag,
+                    "chunk_size": DOWNLOAD_CHUNK_SIZE,
+                    "done": [],
+                },
             )
 
         count = math.ceil(size / DOWNLOAD_CHUNK_SIZE)
@@ -568,7 +644,7 @@ class _Transfer:
                     raise _Retryable(f"short read for {key} bytes {start}-{end}")
                 return data
 
-            data = _with_retries(get)
+            data = _with_retries(lambda: self._request(get))
             with open(tmp, "r+b") as handle:
                 handle.seek(start)
                 handle.write(data)
@@ -579,6 +655,7 @@ class _Transfer:
                 _write_json_atomic(
                     sidecar,
                     {
+                        "key": key,
                         "size": size,
                         "etag": etag,
                         "chunk_size": DOWNLOAD_CHUNK_SIZE,
@@ -602,6 +679,7 @@ class _Transfer:
         self._emit("done", label)
 
     def download(self, remote_path: str, local_path: Optional[Path]) -> Dict[str, int]:
+        _check_remote_path(remote_path)
         key = remote_path.lstrip("/")
         head = (
             None if key == "" or key.endswith("/") else self.head(key, directory_ok=True)
@@ -634,6 +712,16 @@ class _Transfer:
             PurePosixPath(prefix).name or self.bucket
         )
         jobs = [(_safe_target(root, obj["Key"][len(list_prefix):]), obj) for obj in objects]
+        # a remote "x.rpdownload" would share its partial file with "x"
+        targets = {dest for dest, _ in jobs}
+        for dest, _ in jobs:
+            for suffix in (".rpdownload", ".rpdownload.json"):
+                twin = dest.with_name(dest.name + suffix)
+                if twin in targets:
+                    raise NetworkVolumeTransferError(
+                        f"cannot download both {dest} and {twin}: "
+                        "the second name is used for the first's partial download"
+                    )
         self._run_files(
             [
                 lambda d=d, o=o: self.download_file(
@@ -708,7 +796,9 @@ def _make_transfer(
         retries={"max_attempts": 10, "mode": "standard"},
         connect_timeout=60,
         read_timeout=3600,
-        max_pool_connections=max(10, concurrency * concurrency),
+        # transfer requests share `concurrency` slots; metadata calls from
+        # the file workers can run alongside them
+        max_pool_connections=max(10, 2 * concurrency),
     )
     client = boto3.session.Session().client(
         "s3",
@@ -768,7 +858,8 @@ def download(
 
     a `remote_path` ending in "/" (or one that only exists as a prefix) is
     a folder. `local_path` defaults to the remote basename. local files of
-    the same size are skipped, and partial downloads resume on re-run.
+    the same size and not older than the remote copy are skipped (downloads
+    stamp the remote time on the file), and partial downloads resume on re-run.
 
     returns {files_transferred, files_skipped, bytes_transferred}.
     """
