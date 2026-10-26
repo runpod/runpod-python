@@ -107,9 +107,6 @@ def _is_retryable(exc: Exception) -> bool:
 
     if isinstance(exc, _Retryable):
         return True
-    if _is_dns_failure(exc):
-        # a host that does not resolve is a wrong datacenter, not a blip
-        return False
     if isinstance(
         exc,
         (
@@ -130,23 +127,6 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
-def _is_dns_failure(exc: BaseException) -> bool:
-    """whether `exc` (or an error it wraps) is a host name that does not resolve."""
-    seen = 0
-    stack = [exc]
-    while stack and seen < 20:
-        err = stack.pop()
-        seen += 1
-        if isinstance(err, socket.gaierror):
-            return True
-        kwargs = getattr(err, "kwargs", None)
-        wrapped = [err.__cause__, err.__context__, getattr(err, "reason", None)]
-        if isinstance(kwargs, dict):
-            wrapped.append(kwargs.get("error"))
-        stack.extend(w for w in wrapped if isinstance(w, BaseException))
-    return False
-
-
 def is_resumable(exc: BaseException) -> bool:
     """whether re-running the same transfer can get past `exc`.
 
@@ -159,18 +139,37 @@ def is_resumable(exc: BaseException) -> bool:
         return True
     if isinstance(exc, NetworkVolumeTransferError):
         return exc.resumable
+    # final-looking errors a re-run gets past: the multipart upload vanished
+    # (e.g. after a complete whose 524 hid that it finished), or a range that
+    # no longer fits an object that changed mid-download
+    code, status = _error_code(exc)
+    if code == "NoSuchUpload" or status == 416:
+        return True
     return _is_retryable(exc)
 
 
-def _with_retries(func: Callable[[], Any], attempts: int = RETRY_ATTEMPTS) -> Any:
-    """call func, retrying transient failures with exponential backoff."""
+def _wait(delay: float, stop: Optional[threading.Event] = None) -> None:
+    """sleep for a retry backoff, cut short when `stop` is set."""
+    if stop is None:
+        _sleep(delay)
+    else:
+        stop.wait(delay)
+
+
+def _with_retries(
+    func: Callable[[], Any],
+    attempts: int = RETRY_ATTEMPTS,
+    stop: Optional[threading.Event] = None,
+) -> Any:
+    """call func, retrying transient failures with exponential backoff. a set
+    `stop` (ctrl-c) ends a backoff early; the next attempt then raises."""
     for attempt in range(attempts):
         try:
             return func()
         except Exception as exc:  # noqa: BLE001 - filtered by _is_retryable
             if attempt == attempts - 1 or not _is_retryable(exc):
                 raise
-            _sleep(min(2**attempt, 30) + random.uniform(0, 1))
+            _wait(min(2**attempt, 30) + random.uniform(0, 1), stop)
     raise AssertionError("unreachable")
 
 
@@ -182,6 +181,18 @@ def _write_json_atomic(path: Path, data: Dict[str, Any]) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(tmp, path)
+    # sync the directory too, so the rename survives a power loss (best
+    # effort: not every platform can open a directory)
+    try:
+        fd = os.open(path.parent, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _read_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -320,6 +331,9 @@ class _Transfer:
         with self._slots:
             return func()
 
+    def _retry(self, func: Callable[[], Any]) -> Any:
+        return _with_retries(func, stop=self._stop)
+
     def _pool(self, tasks: List[Callable[[], Any]]) -> List[Any]:
         return _run_pool(tasks, self.concurrency, self._stop)
 
@@ -347,7 +361,7 @@ class _Transfer:
         HeadObject on a directory with 400 rather than 404.
         """
         try:
-            return _with_retries(
+            return self._retry(
                 lambda: self._request(
                     lambda: self.client.head_object(Bucket=self.bucket, Key=key)
                 )
@@ -362,7 +376,7 @@ class _Transfer:
         kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
         while True:
             try:
-                page = _with_retries(
+                page = self._retry(
                     lambda: self._request(lambda: self.client.list_objects_v2(**kwargs))
                 )
             except Exception as exc:  # noqa: BLE001
@@ -375,11 +389,26 @@ class _Transfer:
                 return objects
             kwargs["ContinuationToken"] = token
 
+    def _is_folder(self, key: str) -> bool:
+        """whether something is listed under `key/` (runpod lists even an
+        empty folder's own marker)."""
+        try:
+            page = self._retry(
+                lambda: self._request(
+                    lambda: self.client.list_objects_v2(
+                        Bucket=self.bucket, Prefix=f"{key}/", MaxKeys=1
+                    )
+                )
+            )
+        except Exception:  # noqa: BLE001 - unknown: report the original error
+            return False
+        return bool(page.get("Contents"))
+
     def _list_parts(self, key: str, upload_id: str) -> List[Dict[str, Any]]:
         parts: List[Dict[str, Any]] = []
         kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Key": key, "UploadId": upload_id}
         while True:
-            page = _with_retries(
+            page = self._retry(
                 lambda: self._request(lambda: self.client.list_parts(**kwargs))
             )
             parts.extend(page.get("Parts") or [])
@@ -396,7 +425,7 @@ class _Transfer:
         label = str(local)
         self._emit("start", label, size)
         if size <= SINGLE_PUT_MAX:
-            _with_retries(
+            self._retry(
                 lambda: self._request(
                     lambda: self.client.put_object(
                         Bucket=self.bucket, Key=key, Body=local.read_bytes()
@@ -406,17 +435,20 @@ class _Transfer:
             # a retry rereads the file; if it changed meanwhile, the object
             # may hold either version and is newer than the local edit, so a
             # re-run would skip it. remove it so the re-run sends the file.
-            now = local.stat()
+            try:
+                now = local.stat()
+            except OSError as exc:
+                # gone or unreadable: the object is what was read, keep it
+                raise NetworkVolumeTransferError(f"{local} is gone after its upload: {exc}") from exc
             if now.st_size != size or now.st_mtime_ns != stat.st_mtime_ns:
                 try:
-                    _with_retries(
-                        lambda: self._request(
-                            lambda: self.client.delete_object(Bucket=self.bucket, Key=key)
-                        )
-                    )
-                except Exception:  # noqa: BLE001
-                    # --force on the re-run still sends it
-                    pass
+                    # not via self._retry: this cleanup runs even after ctrl-c
+                    _with_retries(lambda: self.client.delete_object(Bucket=self.bucket, Key=key))
+                except Exception as exc:  # noqa: BLE001
+                    raise NetworkVolumeTransferError(
+                        f"{local} changed during upload and the remote copy could not be "
+                        f"removed ({exc}); re-run with --force"
+                    ) from exc
                 raise NetworkVolumeTransferError(
                     f"{local} changed during upload", resumable=True
                 )
@@ -480,7 +512,7 @@ class _Transfer:
                 _remove(state_path)
 
         if upload_id is None:
-            created = _with_retries(
+            created = self._retry(
                 lambda: self._request(
                     lambda: self.client.create_multipart_upload(Bucket=self.bucket, Key=key)
                 )
@@ -521,7 +553,7 @@ class _Transfer:
                     Body=body,
                 )
 
-            response = _with_retries(lambda: self._request(send))
+            response = self._retry(lambda: self._request(send))
             self._emit("advance", label, length)
             return number, response["ETag"]
 
@@ -535,14 +567,11 @@ class _Transfer:
         if now.st_size != size or now.st_mtime_ns != mtime_ns:
             self._abort(key, upload_id)
             _remove(state_path)
-            raise NetworkVolumeTransferError(
-                f"{local} changed during upload; run the command again to upload the new version",
-                resumable=True,
-            )
+            raise NetworkVolumeTransferError(f"{local} changed during upload", resumable=True)
 
         parts = [{"PartNumber": n, "ETag": done[n]} for n in sorted(done)]
         try:
-            _with_retries(
+            self._retry(
                 lambda: self._request(
                     lambda: self.client.complete_multipart_upload(
                         Bucket=self.bucket,
@@ -607,9 +636,11 @@ class _Transfer:
                 for obj in self.list_prefix(f"{prefix}/" if prefix else "")
             }
             jobs = []
-            for path in sorted(
-                p for p in local.rglob("*") if p.is_file() and not _is_download_leftover(p)
-            ):
+            for path in sorted(p for p in local.rglob("*") if p.is_file()):
+                if _is_download_leftover(path):
+                    # an interrupted download's partial file is not data
+                    self._emit("skip", str(path), path.stat().st_size)
+                    continue
                 rel = path.relative_to(local).as_posix()
                 key = f"{prefix}/{rel}" if prefix else rel
                 if not self.force and self._unchanged_remote(remote.get(key), path):
@@ -628,8 +659,9 @@ class _Transfer:
         try:
             remote = self.head(key)
         except Exception as exc:  # noqa: BLE001
-            # runpod answers a head on a directory with 400
-            if _error_code(exc)[1] == 400:
+            # runpod answers a head on a directory with 400, but a head has no
+            # body, so a 400 for any other reason looks the same: confirm
+            if _error_code(exc)[1] == 400 and self._is_folder(key):
                 raise NetworkVolumeTransferError(
                     f"{key!r} is a folder on the volume; use {key + '/'!r} to upload into it"
                 ) from exc
@@ -738,7 +770,7 @@ class _Transfer:
                     raise _Retryable(f"short read for {key} bytes {start}-{end}")
                 return data
 
-            data = _with_retries(lambda: self._request(get))
+            data = self._retry(lambda: self._request(get))
             with open(tmp, "r+b") as handle:
                 handle.seek(start)
                 handle.write(data)
@@ -833,7 +865,8 @@ def _fold(name: str) -> str:
 def _check_local_names(targets: List[Path], root: Path) -> None:
     """refuse targets that would share a path on disk: two targets that are
     one name on a case-insensitive or normalizing filesystem ("Model.bin" and
-    "model.bin"), or a file whose partial or sidecar name is also a target or
+    "model.bin"), a file whose name is also a folder another file lives in
+    ("a" beside "A/b"), or a file whose partial or sidecar name is also a target or
     a directory a target lives in ("x" beside "x.rpdownload" or
     "x.rpdownload/y"). that can refuse a listing a case-sensitive filesystem
     would take, which is the safe direction."""
@@ -844,13 +877,19 @@ def _check_local_names(targets: List[Path], root: Path) -> None:
         key = _fold(str(rel))
         if key in files:
             raise NetworkVolumeTransferError(
-                f"cannot download both {files[key]} and {target}: "
-                "they are the same file on a case-insensitive filesystem"
+                f"cannot download both {files[key]} and {target}: they would be one "
+                "file on a case-insensitive or normalizing filesystem"
             )
         files[key] = target
         for parent in rel.parents:
             if str(parent) != ".":
                 dirs[_fold(str(parent))] = target
+    for key, target in files.items():
+        if key in dirs:
+            raise NetworkVolumeTransferError(
+                f"cannot download both {target} and {dirs[key]}: "
+                "the first would have to be a file and a folder"
+            )
     for target in targets:
         rel = target.relative_to(root)
         for suffix in (PARTIAL_SUFFIX, SIDECAR_SUFFIX):
@@ -900,6 +939,24 @@ def _lookup_datacenter(volume_id: str) -> str:
     return str(datacenter)
 
 
+def _check_endpoint_resolves(endpoint: str) -> None:
+    """fail fast on a datacenter whose s3 endpoint does not resolve, before
+    any transfer starts. once a transfer is running, a failed lookup is a
+    network drop and is retried like any other."""
+    from urllib.parse import urlparse  # pylint: disable=import-outside-toplevel
+
+    host = urlparse(endpoint).hostname
+    if not host:
+        raise NetworkVolumeTransferError(f"invalid s3 endpoint {endpoint!r}")
+    try:
+        socket.getaddrinfo(host, 443)
+    except socket.gaierror as exc:
+        raise NetworkVolumeTransferError(
+            f"the s3 endpoint {host} does not resolve: check --datacenter (only "
+            "datacenters with the s3 api are supported) or your network connection"
+        ) from exc
+
+
 def _make_transfer(
     volume_id: str,
     datacenter: Optional[str],
@@ -922,6 +979,7 @@ def _make_transfer(
         )
     datacenter = datacenter or _lookup_datacenter(volume_id)
     endpoint = endpoint_url or f"https://s3api-{datacenter.lower()}.runpod.io/"
+    _check_endpoint_resolves(endpoint)
     concurrency = max(1, int(concurrency))
     config = Config(
         s3={"addressing_style": "path"},
