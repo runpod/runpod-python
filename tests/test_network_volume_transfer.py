@@ -25,6 +25,7 @@ class FakeS3:
 
     def __init__(self, md5_etags=True):
         self.objects = {}  # key -> (data, last_modified)
+        self.multipart_etags = {}  # key -> etag of an object assembled from parts
         self.uploads = {}  # upload_id -> {"key": str, "parts": {n: bytes}}
         self.calls = []
         self.fail = None  # fail(op, kwargs) -> exception or None
@@ -45,6 +46,10 @@ class FakeS3:
 
     def put(self, key, data, modified=None):
         self.objects[key] = (data, modified or datetime.now(timezone.utc))
+        self.multipart_etags.pop(key, None)
+
+    def object_etag(self, key):
+        return self.multipart_etags.get(key) or self._etag(self.objects[key][0])
 
     # -- objects
 
@@ -58,13 +63,13 @@ class FakeS3:
         if Key not in self.objects:
             raise _client_error("404", 404, "HeadObject")
         data, modified = self.objects[Key]
-        return {"ContentLength": len(data), "ETag": self._etag(data), "LastModified": modified}
+        return {"ContentLength": len(data), "ETag": self.object_etag(Key), "LastModified": modified}
 
     def get_object(self, Bucket, Key, Range):
         self._call("get_object", Key=Key, Range=Range)
         data, _ = self.objects[Key]
         start, end = (int(x) for x in Range.split("=")[1].split("-"))
-        return {"Body": io.BytesIO(data[start : end + 1]), "ETag": self._etag(data)}
+        return {"Body": io.BytesIO(data[start : end + 1]), "ETag": self.object_etag(Key)}
 
     def list_objects_v2(self, Bucket, Prefix, ContinuationToken=None):
         self._call("list_objects_v2", Prefix=Prefix, ContinuationToken=ContinuationToken)
@@ -77,7 +82,7 @@ class FakeS3:
                 {
                     "Key": k,
                     "Size": len(self.objects[k][0]),
-                    "ETag": self._etag(self.objects[k][0]),
+                    "ETag": self.object_etag(k),
                     "LastModified": self.objects[k][1],
                 }
                 for k in page
@@ -121,8 +126,11 @@ class FakeS3:
     def complete_multipart_upload(self, Bucket, Key, UploadId, MultipartUpload):
         self._call("complete_multipart_upload", UploadId=UploadId)
         upload = self._upload(UploadId)
-        data = b"".join(upload["parts"][p["PartNumber"]] for p in MultipartUpload["Parts"])
-        self.put(Key, data)
+        chunks = [upload["parts"][p["PartNumber"]] for p in MultipartUpload["Parts"]]
+        self.put(Key, b"".join(chunks))
+        if self.md5_etags:
+            digests = b"".join(hashlib.md5(c).digest() for c in chunks)
+            self.multipart_etags[Key] = f'"{hashlib.md5(digests).hexdigest()}-{len(chunks)}"'
         del self.uploads[UploadId]
         return {}
 
@@ -202,7 +210,7 @@ def test_multipart_resume_uploads_only_missing_and_bad_parts(tmp_path):
     assert not list((tmp_path / "state").glob("*.json"))
 
 
-def test_multipart_resume_accepts_non_md5_etag_on_size(tmp_path):
+def test_multipart_resume_reuploads_parts_without_md5_etag(tmp_path):
     fake = FakeS3(md5_etags=False)
     src = tmp_path / "big.bin"
     src.write_bytes(DATA)
@@ -216,7 +224,8 @@ def test_multipart_resume_accepts_non_md5_etag_on_size(tmp_path):
     fake.fail = None
     fake.calls.clear()
     _transfer(fake, tmp_path).upload(src, "big.bin")
-    assert sorted(kw["PartNumber"] for kw in fake.ops("upload_part")) == [5]
+    # parts whose content cannot be verified are sent again
+    assert sorted(kw["PartNumber"] for kw in fake.ops("upload_part")) == [1, 2, 3, 4, 5]
     assert fake.objects["big.bin"][0] == DATA
 
 
@@ -664,3 +673,140 @@ def test_cli_missing_path_has_no_resume_hint():
     assert result.exit_code != 0
     assert "no such file" in result.output
     assert "resume" not in result.output
+
+
+# ------------------------------------------------- review follow-ups
+
+
+@pytest.mark.parametrize(
+    "error",
+    [_client_error("InternalError", 524), _client_error("InvalidPart", 400)],
+    ids=["ambiguous-524-old-object", "definite-failure"],
+)
+def test_failed_complete_does_not_accept_an_old_object(tmp_path, error):
+    fake = FakeS3()
+    src = tmp_path / "big.bin"
+    src.write_bytes(DATA)
+    # an older object of the same size already sits at the key
+    fake.put("big.bin", b"o" * len(DATA), modified=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    fake.fail = lambda op, kw: error if op == "complete_multipart_upload" else None
+    with pytest.raises(ClientError):
+        _transfer(fake, tmp_path).upload(src, "big.bin")
+    assert len(list((tmp_path / "state").glob("*.json"))) == 1
+
+
+def test_local_file_changed_during_upload_aborts(tmp_path):
+    fake = FakeS3()
+    src = tmp_path / "big.bin"
+    src.write_bytes(DATA)
+
+    def rewrite(op, kw):
+        if op == "upload_part" and kw["PartNumber"] == 2:
+            src.write_bytes(b"n" * len(DATA))
+            later = src.stat().st_mtime + 60
+            os.utime(src, (later, later))
+        return None
+
+    fake.fail = rewrite
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="changed during upload"):
+        _transfer(fake, tmp_path).upload(src, "big.bin")
+    assert len(fake.ops("abort_multipart_upload")) == 1
+    assert not fake.ops("complete_multipart_upload")
+    assert not list((tmp_path / "state").glob("*.json"))
+
+
+def test_unsavable_state_aborts_the_upload(tmp_path, monkeypatch):
+    fake = FakeS3()
+    src = tmp_path / "big.bin"
+    src.write_bytes(DATA)
+
+    def no_disk(path, data):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(nvt, "_write_json_atomic", no_disk)
+    with pytest.raises(OSError):
+        _transfer(fake, tmp_path).upload(src, "big.bin")
+    assert len(fake.ops("abort_multipart_upload")) == 1
+
+
+def test_download_refetches_newer_same_size_remote(tmp_path):
+    fake = FakeS3()
+    fake.put("f.txt", b"version-1")
+    dest = tmp_path / "f.txt"
+    _transfer(fake, tmp_path).download("f.txt", dest)
+    fake.put("f.txt", b"version-2", modified=datetime.now(timezone.utc) + timedelta(minutes=1))
+    summary = _transfer(fake, tmp_path).download("f.txt", dest)
+    assert summary["files_transferred"] == 1
+    assert dest.read_bytes() == b"version-2"
+
+
+def test_download_ignores_sidecar_of_another_key(tmp_path):
+    fake = FakeS3()
+    fake.put("b.bin", DATA)
+    dest = tmp_path / "x.bin"
+    (tmp_path / "x.bin.rpdownload").write_bytes(b"z" * len(DATA))
+    (tmp_path / "x.bin.rpdownload.json").write_text(
+        json.dumps(
+            {
+                "key": "a.bin",
+                "size": len(DATA),
+                "etag": nvt._strip_etag(fake.object_etag("b.bin")),
+                "chunk_size": nvt.DOWNLOAD_CHUNK_SIZE,
+                "done": [0, 1, 2, 3, 4],
+            }
+        )
+    )
+    _transfer(fake, tmp_path).download("b.bin", dest)
+    assert dest.read_bytes() == DATA
+
+
+def test_download_refuses_partial_name_collision(tmp_path):
+    fake = FakeS3()
+    fake.put("d/x", b"x")
+    fake.put("d/x.rpdownload", b"y")
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="partial download"):
+        _transfer(fake, tmp_path).download("d/", tmp_path / "out")
+
+
+@pytest.mark.parametrize("op", ["upload", "download"])
+def test_dotdot_remote_path_rejected(tmp_path, op):
+    fake = FakeS3()
+    src = tmp_path / "f.txt"
+    src.write_bytes(b"x")
+    transfer = _transfer(fake, tmp_path)
+    with pytest.raises(ValueError, match=r"\.\."):
+        if op == "upload":
+            transfer.upload(src, "a/../b")
+        else:
+            transfer.download("a/../b", tmp_path / "out")
+    assert not fake.calls
+    assert not nvt.is_resumable(ValueError("x"))
+
+
+def test_requests_in_flight_never_exceed_concurrency(tmp_path):
+    import threading
+    import time as _time
+
+    fake = FakeS3()
+    active = {"now": 0, "peak": 0}
+    lock = threading.Lock()
+    original = fake.upload_part
+
+    def tracked(**kwargs):
+        with lock:
+            active["now"] += 1
+            active["peak"] = max(active["peak"], active["now"])
+        _time.sleep(0.01)
+        try:
+            return original(**kwargs)
+        finally:
+            with lock:
+                active["now"] -= 1
+
+    fake.upload_part = tracked
+    folder = tmp_path / "data"
+    folder.mkdir()
+    for i in range(4):
+        (folder / f"f{i}.bin").write_bytes(DATA)
+    _transfer(fake, tmp_path, concurrency=2).upload(folder, "data")
+    assert active["peak"] <= 2
