@@ -749,6 +749,7 @@ class _Transfer:
             return
         self._emit("start", job.label, size)
         dest.parent.mkdir(parents=True, exist_ok=True)
+        job.refuse_linked_work_files()
         job.completed_chunks = job.load_or_init()
         reused = sum(job.chunk_length(i) for i in job.completed_chunks)
         if reused:
@@ -871,6 +872,16 @@ class _Download:
         self.sidecar = dest.with_name(dest.name + SIDECAR_SUFFIX)
         self.count = math.ceil(size / DOWNLOAD_CHUNK_SIZE)
         self.completed_chunks: set = set()
+
+    def refuse_linked_work_files(self) -> None:
+        """refuse a partial, sidecar, or sidecar temp file that exists as
+        anything but a regular file: a symlink would aim the write elsewhere."""
+        for suffix in TRANSFER_SUFFIXES:
+            path = self.dest.with_name(self.dest.name + suffix)
+            if path.is_symlink() or (path.exists() and not path.is_file()):
+                raise NetworkVolumeTransferError(
+                    f"{path} exists and is not a regular file; remove it and rerun"
+                )
 
     def chunk_length(self, index: int) -> int:
         return min(DOWNLOAD_CHUNK_SIZE, self.size - index * DOWNLOAD_CHUNK_SIZE)
