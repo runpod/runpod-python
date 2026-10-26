@@ -1258,3 +1258,24 @@ def test_ctrl_c_stops_files_in_flight(tmp_path):
     # one part per request slot that started before the interrupt landed;
     # nothing starts after it
     assert len(calls) <= 3
+
+
+def test_discarded_chunks_drop_the_sidecar_first(tmp_path):
+    dest = tmp_path / "f.bin"
+    job = nvt._Download("f.bin", len(DATA), "e", dest, None)
+    # a sidecar that vouches for every chunk beside a partial of the wrong size
+    job.sidecar.write_text(json.dumps(
+        {"key": "f.bin", "size": len(DATA), "etag": "e", "chunk_size": nvt.DOWNLOAD_CHUNK_SIZE, "done": list(range(job.count))}
+    ))
+    job.tmp.write_bytes(b"short")
+    sidecar_seen = []
+    real_open = open
+
+    def watch_open(path, *args, **kwargs):
+        if path == job.tmp:
+            sidecar_seen.append(job.sidecar.exists())
+        return real_open(path, *args, **kwargs)
+
+    with patch("builtins.open", watch_open):
+        assert job.load_or_init() == set()
+    assert sidecar_seen == [False]

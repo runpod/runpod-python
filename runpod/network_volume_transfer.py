@@ -880,6 +880,9 @@ class _Download:
         state = _read_json(self.sidecar)
         if self._resumes(state):
             return {int(i) for i in state.get("done", []) if 0 <= int(i) < self.count}
+        # drop the old sidecar first: a stop between emptying the partial and
+        # saving fresh state must not leave it vouching for discarded chunks
+        _remove(self.sidecar)
         with open(self.tmp, "wb") as handle:
             handle.truncate(self.size)
         self.save_state()
