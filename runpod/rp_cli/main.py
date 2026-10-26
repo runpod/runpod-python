@@ -1164,9 +1164,8 @@ def _run_transfer(direction, volume_id, source, target, opts) -> None:
                 progress=progress,
             )
         except Exception as exc:  # noqa: BLE001 - surface transfer errors cleanly
-            raise click.ClickException(
-                f"{exc}\nre-run the same command to resume"
-            ) from exc
+            hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
+            raise click.ClickException(f"{exc}{hint}") from exc
 
     click.echo(
         f"{direction} {summary['files_transferred']} file(s), "

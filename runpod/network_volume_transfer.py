@@ -44,7 +44,11 @@ _sleep = time.sleep
 
 
 class NetworkVolumeTransferError(RuntimeError):
-    """a transfer failed. re-running the same call resumes it."""
+    """a transfer failed. `resumable` says whether re-running can help."""
+
+    def __init__(self, message: str, resumable: bool = False):
+        super().__init__(message)
+        self.resumable = resumable
 
 
 class _Retryable(Exception):
@@ -111,6 +115,32 @@ def _is_retryable(exc: Exception) -> bool:
             return True
         return code in ("SlowDown", "RequestTimeout", "InternalError", "524")
     return False
+
+
+def is_resumable(exc: BaseException) -> bool:
+    """whether re-running the same transfer can get past `exc`.
+
+    missing paths, bad credentials, and refused requests fail the same way
+    on every run. interrupted and transient failures resume.
+    """
+    if isinstance(exc, NetworkVolumeTransferError):
+        return exc.resumable
+    if isinstance(exc, (FileNotFoundError, PermissionError, ValueError)):
+        return False
+    from runpod import error  # pylint: disable=import-outside-toplevel
+
+    if isinstance(exc, (error.AuthenticationError, error.QueryError)):
+        return False
+    code, status = _error_code(exc)
+    if status in (400, 401, 403, 404) or code in (
+        "AccessDenied",
+        "InvalidAccessKeyId",
+        "SignatureDoesNotMatch",
+        "NoSuchBucket",
+        "NoSuchKey",
+    ):
+        return False
+    return True
 
 
 def _with_retries(func: Callable[[], Any], attempts: int = RETRY_ATTEMPTS) -> Any:
@@ -237,13 +267,18 @@ class _Transfer:
 
     # -- remote metadata
 
-    def head(self, key: str) -> Optional[Dict[str, Any]]:
+    def head(self, key: str, directory_ok: bool = False) -> Optional[Dict[str, Any]]:
+        """object metadata, or None when there is no file at `key`.
+
+        with `directory_ok`, a 400 also means "not a file": runpod answers
+        HeadObject on a directory with 400 rather than 404.
+        """
         try:
             return _with_retries(
                 lambda: self.client.head_object(Bucket=self.bucket, Key=key)
             )
         except Exception as exc:  # noqa: BLE001
-            if _is_not_found(exc):
+            if _is_not_found(exc) or (directory_ok and _error_code(exc)[1] == 400):
                 return None
             raise
 
@@ -455,6 +490,7 @@ class _Transfer:
     def _run_files(self, tasks: List[Callable[[], Any]], jobs: List[Tuple[Any, Any]]) -> None:
         """run per-file tasks. every file is attempted; failures are reported together."""
         failures = []
+        resumable = []
 
         def guarded(index: int) -> None:
             try:
@@ -462,11 +498,13 @@ class _Transfer:
             except Exception as exc:  # noqa: BLE001 - collected and re-raised
                 with self._lock:
                     failures.append(f"{jobs[index][0]}: {exc}")
+                    resumable.append(is_resumable(exc))
 
         _run_pool([lambda i=i: guarded(i) for i in range(len(tasks))], self.concurrency)
         if failures:
             raise NetworkVolumeTransferError(
-                f"{len(failures)} file(s) failed:\n  " + "\n  ".join(sorted(failures))
+                f"{len(failures)} file(s) failed:\n  " + "\n  ".join(sorted(failures)),
+                resumable=any(resumable),
             )
 
     # -- download
@@ -482,6 +520,8 @@ class _Transfer:
         sidecar = dest.with_name(dest.name + ".rpdownload.json")
         state = _read_json(sidecar)
         done: set = set()
+        # the etag is only compared for equality. a multipart object's etag
+        # is "<md5>-<parts>", never the md5 of the file.
         if (
             state
             and state.get("size") == size
@@ -542,14 +582,18 @@ class _Transfer:
         _run_pool([lambda i=i: fetch(i) for i in todo], self.concurrency)
 
         if tmp.stat().st_size != size:
-            raise NetworkVolumeTransferError(f"{dest}: size mismatch after download")
+            raise NetworkVolumeTransferError(
+                f"{dest}: size mismatch after download", resumable=True
+            )
         os.replace(tmp, dest)
         _remove(sidecar)
         self._emit("done", label)
 
     def download(self, remote_path: str, local_path: Optional[Path]) -> Dict[str, int]:
         key = remote_path.lstrip("/")
-        head = None if key == "" or key.endswith("/") else self.head(key)
+        head = (
+            None if key == "" or key.endswith("/") else self.head(key, directory_ok=True)
+        )
         if head is not None:
             name = PurePosixPath(key).name
             dest = Path(local_path) if local_path is not None else Path(name)
