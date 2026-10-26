@@ -1095,7 +1095,9 @@ def network_volume():
 
     Uses the S3-compatible API. Set RUNPOD_S3_ACCESS_KEY and
     RUNPOD_S3_SECRET_KEY (create keys at console.runpod.io/user/settings).
-    Re-run an interrupted command to resume it.
+    Re-run an interrupted command to resume it. Parts of an upload that is
+    never re-run stay in the volume's hidden .s3compat_uploads folder and
+    count toward its size.
     """
 
 
@@ -1111,7 +1113,11 @@ def _transfer_options(func):
         click.option("--endpoint-url", default=None, hidden=True),
         click.option(
             "--concurrency", default=4, show_default=True, type=click.IntRange(1, 64),
-            help="Parallel parts, chunks, or files.",
+            help="Parallel requests.",
+        ),
+        click.option(
+            "--force", is_flag=True,
+            help="Transfer every file, even ones the size and time check calls unchanged.",
         ),
     ]
     for option in reversed(options):
@@ -1144,7 +1150,7 @@ def _run_transfer(direction, volume_id, source, target, opts) -> None:
         def progress(event, path, nbytes):
             if event == "start":
                 tasks[path] = bar.add_task(Path(path).name, total=nbytes)
-            elif event == "advance" and path in tasks:
+            elif event in ("advance", "reuse") and path in tasks:
                 bar.advance(tasks[path], nbytes)
             elif event == "done" and path in tasks:
                 bar.remove_task(tasks.pop(path))
@@ -1162,9 +1168,15 @@ def _run_transfer(direction, volume_id, source, target, opts) -> None:
                 endpoint_url=opts["endpoint_url"],
                 concurrency=opts["concurrency"],
                 progress=progress,
+                force=opts["force"],
             )
+        except KeyboardInterrupt:
+            click.echo("interrupted; re-run the same command to resume", err=True)
+            sys.exit(130)
         except Exception as exc:  # noqa: BLE001 - surface transfer errors cleanly
             hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
+            if nvt._is_dns_failure(exc):  # pylint: disable=protected-access
+                hint = "\nthe s3 endpoint does not resolve: check --datacenter"
             raise click.ClickException(f"{exc}{hint}") from exc
 
     click.echo(
@@ -1183,7 +1195,8 @@ def network_volume_upload(volume_id, local_path, remote_path, **opts):
     """Upload a file or folder to a network volume.
 
     REMOTE_PATH defaults to the local name. A folder's contents go under
-    REMOTE_PATH/. Unchanged files are skipped.
+    REMOTE_PATH/. Files whose remote copy has the same size and is not older
+    are skipped; --force sends them anyway.
     """
     _run_transfer("uploaded", volume_id, local_path, remote_path, opts)
 
@@ -1197,7 +1210,8 @@ def network_volume_download(volume_id, remote_path, local_path, **opts):
     """Download a file or folder from a network volume.
 
     A REMOTE_PATH ending in / is a folder. LOCAL_PATH defaults to the
-    remote name. Local files of the same size are skipped.
+    remote name. Local files of the same size and not older than the
+    remote copy are skipped; --force fetches them anyway.
     """
     _run_transfer("downloaded", volume_id, remote_path, local_path, opts)
 

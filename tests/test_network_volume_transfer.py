@@ -136,6 +136,12 @@ class FakeS3:
         del self.uploads[UploadId]
         return {}
 
+    def delete_object(self, Bucket, Key):
+        self._call("delete_object", Key=Key)
+        self.objects.pop(Key, None)
+        self.multipart_etags.pop(Key, None)
+        return {}
+
     def abort_multipart_upload(self, Bucket, Key, UploadId):
         self._call("abort_multipart_upload", UploadId=UploadId)
         self.uploads.pop(UploadId, None)
@@ -208,7 +214,8 @@ def test_multipart_resume_uploads_only_missing_and_bad_parts(tmp_path):
     assert sorted(kw["PartNumber"] for kw in fake.ops("upload_part")) == [2, 5]
     assert not fake.ops("create_multipart_upload")
     assert fake.objects["big.bin"][0] == DATA
-    assert summary["bytes_transferred"] == len(DATA)
+    # only the resent parts (2 and 5) count as transferred
+    assert summary["bytes_transferred"] == 16
     assert not list((tmp_path / "state").glob("*.json"))
 
 
@@ -400,7 +407,8 @@ def test_download_resumes_from_sidecar(tmp_path):
     assert dest.read_bytes() == DATA
     assert not (tmp_path / "out" / "big.bin.rpdownload.json").exists()
     assert not (tmp_path / "out" / "big.bin.rpdownload").exists()
-    assert summary["bytes_transferred"] == len(DATA)
+    # only the missing chunk counts as transferred
+    assert summary["bytes_transferred"] == 8
 
 
 def test_download_restarts_when_remote_changed(tmp_path):
@@ -487,13 +495,13 @@ def test_folder_download_filters_and_defaults(tmp_path, monkeypatch):
     fake.put("models/a.bin", b"a")
     fake.put("models/sub/", b"")
     fake.put("models/sub/b.bin", b"bb")
-    fake.put("models/.s3compat_uploads/x", b"junk")
+    fake.put(f"models/{nvt.UPLOADS_DIR}/x", b"junk")
     fake.put("other/c.bin", b"c")
     monkeypatch.chdir(tmp_path)
     summary = _transfer(fake, tmp_path, concurrency=2).download("models", None)
     assert (tmp_path / "models" / "a.bin").read_bytes() == b"a"
     assert (tmp_path / "models" / "sub" / "b.bin").read_bytes() == b"bb"
-    assert not (tmp_path / "models" / ".s3compat_uploads").exists()
+    assert not (tmp_path / "models" / nvt.UPLOADS_DIR).exists()
     assert summary["files_transferred"] == 2
 
 
@@ -513,13 +521,15 @@ def test_folder_download_when_head_on_directory_is_400(tmp_path):
     assert summary["files_transferred"] == 1
 
 
-def test_head_400_outside_download_is_an_error(tmp_path):
+def test_upload_onto_remote_folder_is_refused(tmp_path):
     fake = FakeS3()
+    # runpod answers a head on a directory with 400
     fake.fail = lambda op, kw: _client_error("BadRequest", 400) if op == "head_object" else None
     src = tmp_path / "f.txt"
     src.write_bytes(b"x")
-    with pytest.raises(ClientError):
-        _transfer(fake, tmp_path).upload(src, "f.txt")
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="'models/'") as info:
+        _transfer(fake, tmp_path).upload(src, "models")
+    assert not nvt.is_resumable(info.value)
 
 
 @pytest.mark.parametrize(
@@ -533,6 +543,11 @@ def test_head_400_outside_download_is_an_error(tmp_path):
         (nvt.NetworkVolumeTransferError("cut", resumable=True), True),
         (_client_error("524", 524), True),
         (ReadTimeoutError(endpoint_url="https://s3"), True),
+        (KeyboardInterrupt(), True),
+        # unknown or local failures repeat identically on a re-run
+        (RuntimeError("param validation"), False),
+        (OSError(28, "No space left on device"), False),
+        (ValueError("x"), False),
     ],
 )
 def test_is_resumable(exc, expected):
@@ -592,6 +607,9 @@ def test_make_transfer_requires_s3_keys(monkeypatch):
 
 
 def test_make_transfer_builds_datacenter_client(monkeypatch):
+    # a stale local aws profile must not leak into the session
+    for name in ("AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
     monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
     with patch(
@@ -602,9 +620,17 @@ def test_make_transfer_builds_datacenter_client(monkeypatch):
     assert transfer.client.meta.endpoint_url == "https://s3api-eu-ro-1.runpod.io/"
     assert transfer.client.meta.region_name == "EU-RO-1"
     assert transfer.client.meta.config.request_checksum_calculation == "when_required"
+    # _with_retries owns retries
+    assert transfer.client.meta.config.retries["total_max_attempts"] == 1
     credentials = transfer.client._request_signer._credentials
     assert credentials.access_key == "user_x"
     assert transfer.bucket == "vol123"
+
+
+def test_lookup_datacenter_escapes_volume_id():
+    with patch("runpod.api.rest.run_rest_request", return_value={"dataCenter": "EU-RO-1"}) as rest:
+        nvt._lookup_datacenter("a/b?c")
+    rest.assert_called_once_with("GET", "/v2/network-volumes/a%2Fb%3Fc")
 
 
 def test_lookup_datacenter_missing():
@@ -620,6 +646,14 @@ def test_public_functions_delegate(tmp_path):
     with patch.object(nvt, "_make_transfer", return_value=fake_transfer):
         assert nvt.upload("vol", "x", "y")[0] == "up"
         assert nvt.download("vol", "y", "x")[0] == "down"
+
+
+def test_public_download_keeps_trailing_slash(tmp_path, monkeypatch):
+    fake = FakeS3()
+    fake.put("w.bin", b"w")
+    monkeypatch.setattr(nvt, "_make_transfer", lambda *a, **k: _transfer(fake, tmp_path))
+    nvt.download("vol", "w.bin", str(tmp_path / "out") + "/")
+    assert (tmp_path / "out" / "w.bin").read_bytes() == b"w"
 
 
 def test_lazy_exports():
@@ -673,7 +707,7 @@ def test_cli_missing_path_has_no_resume_hint():
     assert "resume" not in result.output
 
 
-# ------------------------------------------------- review follow-ups
+# ------------------------------------------- completion, collisions, limits
 
 
 @pytest.mark.parametrize(
@@ -785,35 +819,6 @@ def test_dotdot_remote_path_rejected(tmp_path, op):
     assert not nvt.is_resumable(ValueError("x"))
 
 
-def test_requests_in_flight_never_exceed_concurrency(tmp_path):
-    import threading
-    import time as _time
-
-    fake = FakeS3()
-    active = {"now": 0, "peak": 0}
-    lock = threading.Lock()
-    original = fake.upload_part
-
-    def tracked(**kwargs):
-        with lock:
-            active["now"] += 1
-            active["peak"] = max(active["peak"], active["now"])
-        _time.sleep(0.01)
-        try:
-            return original(**kwargs)
-        finally:
-            with lock:
-                active["now"] -= 1
-
-    fake.upload_part = tracked
-    folder = tmp_path / "data"
-    folder.mkdir()
-    for i in range(4):
-        (folder / f"f{i}.bin").write_bytes(DATA)
-    _transfer(fake, tmp_path, concurrency=2).upload(folder, "data")
-    assert active["peak"] <= 2
-
-
 def test_ambiguous_complete_without_verifiable_etag_fails(tmp_path):
     fake = FakeS3(md5_etags=False)
     src = tmp_path / "big.bin"
@@ -872,3 +877,145 @@ def test_all_requests_share_the_concurrency_limit(tmp_path):
     _transfer(fake, tmp_path, concurrency=2).upload(folder, "data")
     _transfer(fake, tmp_path, concurrency=2).download("data/", tmp_path / "out")
     assert active["peak"] <= 2
+
+
+def test_dns_failure_is_not_retried_or_resumable():
+    import socket as _socket
+
+    from botocore.exceptions import EndpointConnectionError
+
+    exc = EndpointConnectionError(
+        endpoint_url="https://s3api-xx-9.runpod.io/", error=_socket.gaierror(8, "nodename nor servname")
+    )
+    assert not nvt._is_retryable(exc)
+    assert not nvt.is_resumable(exc)
+    reachable = EndpointConnectionError(
+        endpoint_url="https://s3api-eu-ro-1.runpod.io/", error=ConnectionRefusedError()
+    )
+    assert nvt._is_retryable(reachable)
+
+
+def test_single_put_change_with_older_mtime_is_resent_on_rerun(tmp_path):
+    fake = FakeS3()
+    src = tmp_path / "small.txt"
+    src.write_bytes(b"original")
+    old = src.stat().st_mtime - 3600
+    os.utime(src, (old, old))
+    attempts = []
+
+    def edit_then_fail(op, kw):
+        if op == "put_object" and not attempts:
+            attempts.append(1)
+            # a same-size edit whose mtime is older than the object the retry
+            # writes, so the skip rule alone would keep the object
+            src.write_bytes(b"CHANGED!")
+            past = src.stat().st_mtime - 1800
+            os.utime(src, (past, past))
+            return _client_error("ServiceUnavailable", 503)
+        return None
+
+    fake.fail = edit_then_fail
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="changed during upload"):
+        _transfer(fake, tmp_path).upload(src, "small.txt")
+    assert "small.txt" not in fake.objects
+    fake.fail = None
+    _transfer(fake, tmp_path).upload(src, "small.txt")
+    assert fake.objects["small.txt"][0] == b"CHANGED!"
+
+
+def test_missing_folder_is_not_found_but_empty_volume_is_fine(tmp_path):
+    fake = FakeS3()
+    fake.put("other/x", b"x")
+    with pytest.raises(FileNotFoundError):
+        _transfer(fake, tmp_path).download("missing/", tmp_path / "out")
+    empty = FakeS3()
+    summary = _transfer(empty, tmp_path).download("/", tmp_path / "all")
+    assert summary["files_transferred"] == 0
+
+
+def test_force_transfers_unchanged_files(tmp_path):
+    fake = FakeS3()
+    folder = tmp_path / "data"
+    folder.mkdir()
+    (folder / "a.txt").write_bytes(b"alpha")
+    _transfer(fake, tmp_path).upload(folder, "data")
+    forced = nvt._Transfer(fake, "vol", "https://s3", 1, None, state_dir=tmp_path / "state", force=True)
+    assert forced.upload(folder, "data")["files_transferred"] == 1
+    out = tmp_path / "out"
+    _transfer(fake, tmp_path).download("data/", out)
+    forced = nvt._Transfer(fake, "vol", "https://s3", 1, None, state_dir=tmp_path / "state", force=True)
+    assert forced.download("data/", out)["files_transferred"] == 1
+
+
+@pytest.mark.parametrize(
+    "pair",
+    [("d/Model.bin", "d/model.bin"), ("d/s", "d/\u017f"), ("d/\u00e9", "d/e\u0301")],
+    ids=["case", "unicode-fold", "normalization"],
+)
+def test_download_refuses_targets_sharing_a_local_name(tmp_path, pair):
+    fake = FakeS3()
+    fake.put(pair[0], b"a")
+    fake.put(pair[1], b"b")
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="same file"):
+        _transfer(fake, tmp_path).download("d/", tmp_path / "out")
+    assert not fake.ops("get_object")
+
+
+def test_dot_segment_key_is_refused(tmp_path):
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="unsafe"):
+        nvt._safe_target(tmp_path, "a/./b")
+
+
+def test_download_into_missing_folder_with_trailing_slash(tmp_path):
+    fake = FakeS3()
+    fake.put("w.bin", b"w")
+    _transfer(fake, tmp_path).download("w.bin", str(tmp_path / "out") + "/")
+    assert (tmp_path / "out" / "w.bin").read_bytes() == b"w"
+
+
+def test_folder_upload_skips_download_leftovers(tmp_path):
+    fake = FakeS3()
+    folder = tmp_path / "data"
+    folder.mkdir()
+    (folder / "a.bin").write_bytes(b"a")
+    (folder / "b.bin.rpdownload").write_bytes(b"partial")
+    (folder / "b.bin.rpdownload.json").write_text("{}")
+    summary = _transfer(fake, tmp_path).upload(folder, "data")
+    assert summary["files_transferred"] == 1
+    assert sorted(fake.objects) == ["data/a.bin"]
+
+
+def test_skip_rule_compares_whole_seconds(tmp_path):
+    fake = FakeS3()
+    stamp = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    fake.put("f.txt", b"abc", modified=stamp)
+    local = tmp_path / "f.txt"
+    local.write_bytes(b"abc")
+    # sub-second local precision against a whole-second server date
+    os.utime(local, (stamp.timestamp(), stamp.timestamp() + 0.7))
+    assert _transfer(fake, tmp_path).upload(local, "f.txt")["files_skipped"] == 1
+    assert _transfer(fake, tmp_path).download("f.txt", local)["files_skipped"] == 1
+
+
+def test_ctrl_c_stops_files_in_flight(tmp_path):
+    fake = FakeS3()
+    folder = tmp_path / "data"
+    folder.mkdir()
+    for i in range(6):
+        (folder / f"f{i}.bin").write_bytes(DATA + bytes([i]))
+    calls = []
+    original = fake.upload_part
+
+    def interrupt_once(**kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise KeyboardInterrupt
+        return original(**kwargs)
+
+    fake.upload_part = interrupt_once
+    transfer = _transfer(fake, tmp_path, concurrency=2)
+    with pytest.raises(KeyboardInterrupt):
+        transfer.upload(folder, "data")
+    assert transfer._stop.is_set()
+    # 6 files x 5 parts would be 30 parts; workers stop at their next request
+    assert len(calls) < 10
