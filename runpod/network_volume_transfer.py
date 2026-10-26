@@ -190,7 +190,8 @@ def _write_json_atomic(path: Path, data: Dict[str, Any]) -> None:
     try:
         os.fsync(fd)
     except OSError:
-        pass
+        # some platforms refuse to fsync a directory; the file itself is synced
+        return
     finally:
         os.close(fd)
 
@@ -942,12 +943,18 @@ def _lookup_datacenter(volume_id: str) -> str:
 def _check_endpoint_resolves(endpoint: str) -> None:
     """fail fast on a datacenter whose s3 endpoint does not resolve, before
     any transfer starts. once a transfer is running, a failed lookup is a
-    network drop and is retried like any other."""
+    network drop and is retried like any other. behind an https proxy (which
+    botocore honours from the environment) the proxy resolves the name, so
+    the local lookup is skipped."""
     from urllib.parse import urlparse  # pylint: disable=import-outside-toplevel
+    from urllib.request import getproxies, proxy_bypass  # pylint: disable=import-outside-toplevel
 
-    host = urlparse(endpoint).hostname
+    parsed = urlparse(endpoint)
+    host = parsed.hostname
     if not host:
         raise NetworkVolumeTransferError(f"invalid s3 endpoint {endpoint!r}")
+    if getproxies().get(parsed.scheme or "https") and not proxy_bypass(host):
+        return
     try:
         socket.getaddrinfo(host, 443)
     except socket.gaierror as exc:
