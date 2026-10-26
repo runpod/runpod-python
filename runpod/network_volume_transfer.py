@@ -17,7 +17,9 @@ import json
 import math
 import os
 import random
+import socket
 import threading
+import unicodedata
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path, PurePosixPath
@@ -30,14 +32,18 @@ MAX_PART_SIZE = 500 * MIB  # runpod's maximum multipart part size
 MAX_PARTS = 10000
 DOWNLOAD_CHUNK_SIZE = 64 * MIB
 RETRY_ATTEMPTS = 8
+# runpod's s3 api keeps in-progress multipart parts here (server-created)
 UPLOADS_DIR = ".s3compat_uploads"
+PARTIAL_SUFFIX = ".rpdownload"
+SIDECAR_SUFFIX = ".rpdownload.json"
 
 ACCESS_KEY_ENV = "RUNPOD_S3_ACCESS_KEY"
 SECRET_KEY_ENV = "RUNPOD_S3_SECRET_KEY"
 S3_KEYS_URL = "https://console.runpod.io/user/settings"
 
 # progress(event, path, nbytes). events: "start" (nbytes = file size),
-# "advance" (nbytes = delta), "skip" (nbytes = file size), "done".
+# "advance" (nbytes sent or received), "reuse" (nbytes an earlier run already
+# moved: kept parts or chunks), "skip" (nbytes = file size), "done".
 Progress = Callable[[str, str, int], None]
 
 _sleep = time.sleep
@@ -53,6 +59,10 @@ class NetworkVolumeTransferError(RuntimeError):
 
 class _Retryable(Exception):
     """a transient failure raised by this module (e.g. a short read)."""
+
+
+class _Stopped(Exception):
+    """the transfer was interrupted; raised by workers so they wind down."""
 
 
 def _state_dir() -> Path:
@@ -97,6 +107,9 @@ def _is_retryable(exc: Exception) -> bool:
 
     if isinstance(exc, _Retryable):
         return True
+    if _is_dns_failure(exc):
+        # a host that does not resolve is a wrong datacenter, not a blip
+        return False
     if isinstance(
         exc,
         (
@@ -117,30 +130,36 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
+def _is_dns_failure(exc: BaseException) -> bool:
+    """whether `exc` (or an error it wraps) is a host name that does not resolve."""
+    seen = 0
+    stack = [exc]
+    while stack and seen < 20:
+        err = stack.pop()
+        seen += 1
+        if isinstance(err, socket.gaierror):
+            return True
+        kwargs = getattr(err, "kwargs", None)
+        wrapped = [err.__cause__, err.__context__, getattr(err, "reason", None)]
+        if isinstance(kwargs, dict):
+            wrapped.append(kwargs.get("error"))
+        stack.extend(w for w in wrapped if isinstance(w, BaseException))
+    return False
+
+
 def is_resumable(exc: BaseException) -> bool:
     """whether re-running the same transfer can get past `exc`.
 
-    missing paths, bad credentials, and refused requests fail the same way
-    on every run. interrupted and transient failures resume.
+    an interruption, or a transient failure (network, timeout, 429, 5xx)
+    that outlasted the retries, resumes. anything else (missing paths, bad
+    credentials, a wrong datacenter, local disk errors, invalid input) fails
+    the same way on every run.
     """
+    if isinstance(exc, KeyboardInterrupt):
+        return True
     if isinstance(exc, NetworkVolumeTransferError):
         return exc.resumable
-    if isinstance(exc, (FileNotFoundError, PermissionError, ValueError)):
-        return False
-    from runpod import error  # pylint: disable=import-outside-toplevel
-
-    if isinstance(exc, (error.AuthenticationError, error.QueryError)):
-        return False
-    code, status = _error_code(exc)
-    if status in (400, 401, 403, 404) or code in (
-        "AccessDenied",
-        "InvalidAccessKeyId",
-        "SignatureDoesNotMatch",
-        "NoSuchBucket",
-        "NoSuchKey",
-    ):
-        return False
-    return True
+    return _is_retryable(exc)
 
 
 def _with_retries(func: Callable[[], Any], attempts: int = RETRY_ATTEMPTS) -> Any:
@@ -215,19 +234,40 @@ def _multipart_etag(parts: List[Dict[str, Any]]) -> str:
     return f"{digest.hexdigest()}-{len(parts)}"
 
 
-def _run_pool(tasks: List[Callable[[], Any]], concurrency: int) -> List[Any]:
-    """run tasks on a thread pool. the first failure cancels the rest."""
+def _run_pool(
+    tasks: List[Callable[[], Any]],
+    concurrency: int,
+    stop: Optional[threading.Event] = None,
+) -> List[Any]:
+    """run tasks on a thread pool. the first failure cancels the rest.
+
+    an interrupt (ctrl-c) also sets `stop`, before the pool waits for its
+    running tasks, so workers checking it wind down instead of finishing
+    every file in flight.
+    """
     results = []
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         futures = [pool.submit(task) for task in tasks]
         try:
             for future in as_completed(futures):
                 results.append(future.result())
-        except BaseException:
+        except BaseException as exc:
+            if stop is not None and not isinstance(exc, Exception):
+                stop.set()
             for future in futures:
                 future.cancel()
             raise
     return results
+
+
+def _is_download_leftover(path: Path) -> bool:
+    """a partial download, its sidecar, or the sidecar's temp file."""
+    return path.name.endswith((PARTIAL_SUFFIX, SIDECAR_SUFFIX, SIDECAR_SUFFIX + ".tmp"))
+
+
+def _same_second_or_later(a: float, b: float) -> bool:
+    """a >= b in whole seconds; s3 dates carry no finer precision."""
+    return int(a) >= int(b)
 
 
 def _check_remote_path(remote_path: Optional[str]) -> None:
@@ -254,6 +294,7 @@ class _Transfer:
         concurrency: int = 4,
         progress: Optional[Progress] = None,
         state_dir: Optional[Path] = None,
+        force: bool = False,
     ):
         self.client = client
         self.bucket = bucket
@@ -265,13 +306,22 @@ class _Transfer:
         # bounds requests in flight across all files: folder transfers run
         # files in parallel and each large file runs its parts in parallel
         self._slots = threading.BoundedSemaphore(self.concurrency)
+        # transfer every file, even ones the skip rule calls unchanged
+        self.force = force
+        # set on ctrl-c so every worker winds down
+        self._stop = threading.Event()
         self.summary = {"files_transferred": 0, "files_skipped": 0, "bytes_transferred": 0}
 
     # -- bookkeeping
 
     def _request(self, func: Callable[[], Any]) -> Any:
+        if self._stop.is_set():
+            raise _Stopped("interrupted")
         with self._slots:
             return func()
+
+    def _pool(self, tasks: List[Callable[[], Any]]) -> List[Any]:
+        return _run_pool(tasks, self.concurrency, self._stop)
 
     def _emit(self, event: str, path: str, nbytes: int = 0) -> None:
         with self._lock:
@@ -354,12 +404,21 @@ class _Transfer:
                 )
             )
             # a retry rereads the file; if it changed meanwhile, the object
-            # may not be the version that was measured
+            # may hold either version and is newer than the local edit, so a
+            # re-run would skip it. remove it so the re-run sends the file.
             now = local.stat()
             if now.st_size != size or now.st_mtime_ns != stat.st_mtime_ns:
+                try:
+                    _with_retries(
+                        lambda: self._request(
+                            lambda: self.client.delete_object(Bucket=self.bucket, Key=key)
+                        )
+                    )
+                except Exception:  # noqa: BLE001
+                    # --force on the re-run still sends it
+                    pass
                 raise NetworkVolumeTransferError(
-                    f"{local} changed during upload; run the command again to upload the new version",
-                    resumable=True,
+                    f"{local} changed during upload", resumable=True
                 )
             self._emit("advance", label, size)
         else:
@@ -446,7 +505,7 @@ class _Transfer:
 
         already = sum(min(part_size, size - (n - 1) * part_size) for n in done)
         if already:
-            self._emit("advance", label, already)
+            self._emit("reuse", label, already)
 
         def upload_part(number: int) -> Tuple[int, str]:
             offset = (number - 1) * part_size
@@ -467,9 +526,7 @@ class _Transfer:
             return number, response["ETag"]
 
         todo = [n for n in range(1, count + 1) if n not in done]
-        for number, etag in _run_pool(
-            [lambda n=n: upload_part(n) for n in todo], self.concurrency
-        ):
+        for number, etag in self._pool([lambda n=n: upload_part(n) for n in todo]):
             done[number] = etag
 
         # the parts were read over the whole upload; if the file moved under
@@ -537,7 +594,7 @@ class _Transfer:
         modified = remote.get("LastModified")
         if size is None or int(size) != stat.st_size or modified is None:
             return False
-        return modified.timestamp() >= stat.st_mtime
+        return _same_second_or_later(modified.timestamp(), stat.st_mtime)
 
     def upload(self, local: Path, remote_path: Optional[str]) -> Dict[str, int]:
         _check_remote_path(remote_path)
@@ -550,10 +607,12 @@ class _Transfer:
                 for obj in self.list_prefix(f"{prefix}/" if prefix else "")
             }
             jobs = []
-            for path in sorted(p for p in local.rglob("*") if p.is_file()):
+            for path in sorted(
+                p for p in local.rglob("*") if p.is_file() and not _is_download_leftover(p)
+            ):
                 rel = path.relative_to(local).as_posix()
                 key = f"{prefix}/{rel}" if prefix else rel
-                if self._unchanged_remote(remote.get(key), path):
+                if not self.force and self._unchanged_remote(remote.get(key), path):
                     self._emit("skip", str(path), path.stat().st_size)
                     continue
                 jobs.append((path, key))
@@ -566,7 +625,16 @@ class _Transfer:
             key = remote_path.lstrip("/") + local.name
         else:
             key = remote_path.lstrip("/")
-        if self._unchanged_remote(self.head(key), local):
+        try:
+            remote = self.head(key)
+        except Exception as exc:  # noqa: BLE001
+            # runpod answers a head on a directory with 400
+            if _error_code(exc)[1] == 400:
+                raise NetworkVolumeTransferError(
+                    f"{key!r} is a folder on the volume; use {key + '/'!r} to upload into it"
+                ) from exc
+            raise
+        if not self.force and self._unchanged_remote(remote, local):
             self._emit("skip", str(local), local.stat().st_size)
             return self.summary
         self.upload_file(local, key)
@@ -585,7 +653,7 @@ class _Transfer:
                     failures.append(f"{jobs[index][0]}: {exc}")
                     resumable.append(is_resumable(exc))
 
-        _run_pool([lambda i=i: guarded(i) for i in range(len(tasks))], self.concurrency)
+        self._pool([lambda i=i: guarded(i) for i in range(len(tasks))])
         if failures:
             raise NetworkVolumeTransferError(
                 f"{len(failures)} file(s) failed:\n  " + "\n  ".join(sorted(failures)),
@@ -601,16 +669,20 @@ class _Transfer:
         # downloads stamp the remote time, so an unchanged file is the same
         # size and not older than the remote copy
         if (
-            dest.is_file()
+            not self.force
+            and dest.is_file()
             and dest.stat().st_size == size
-            and (modified is None or modified.timestamp() <= dest.stat().st_mtime)
+            and (
+                modified is None
+                or _same_second_or_later(dest.stat().st_mtime, modified.timestamp())
+            )
         ):
             self._emit("skip", label, size)
             return
         self._emit("start", label, size)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dest.with_name(dest.name + ".rpdownload")
-        sidecar = dest.with_name(dest.name + ".rpdownload.json")
+        tmp = dest.with_name(dest.name + PARTIAL_SUFFIX)
+        sidecar = dest.with_name(dest.name + SIDECAR_SUFFIX)
         state = _read_json(sidecar)
         done: set = set()
         # the etag is only compared for equality. a multipart object's etag
@@ -644,7 +716,7 @@ class _Transfer:
             min(DOWNLOAD_CHUNK_SIZE, size - i * DOWNLOAD_CHUNK_SIZE) for i in done if i < count
         )
         if already:
-            self._emit("advance", label, already)
+            self._emit("reuse", label, already)
 
         def fetch(index: int) -> None:
             start = index * DOWNLOAD_CHUNK_SIZE
@@ -687,7 +759,7 @@ class _Transfer:
             self._emit("advance", label, end - start + 1)
 
         todo = [i for i in range(count) if i not in done]
-        _run_pool([lambda i=i: fetch(i) for i in todo], self.concurrency)
+        self._pool([lambda i=i: fetch(i) for i in todo])
 
         if tmp.stat().st_size != size:
             raise NetworkVolumeTransferError(
@@ -700,7 +772,9 @@ class _Transfer:
         _remove(sidecar)
         self._emit("done", label)
 
-    def download(self, remote_path: str, local_path: Optional[Path]) -> Dict[str, int]:
+    def download(self, remote_path: str, local_path: Any = None) -> Dict[str, int]:
+        """`local_path` is a str or Path; a str ending in "/" is a folder to
+        download into (a Path cannot carry the slash)."""
         _check_remote_path(remote_path)
         key = remote_path.lstrip("/")
         head = (
@@ -709,7 +783,8 @@ class _Transfer:
         if head is not None:
             name = PurePosixPath(key).name
             dest = Path(local_path) if local_path is not None else Path(name)
-            if dest.is_dir():
+            # a trailing slash names a folder to download into, as on upload
+            if dest.is_dir() or str(local_path or "").endswith(("/", os.sep)):
                 dest = dest / name
             self.download_file(
                 key,
@@ -728,13 +803,14 @@ class _Transfer:
             if not obj["Key"].endswith("/")
             and UPLOADS_DIR not in PurePosixPath(obj["Key"]).parts
         ]
-        if not objects:
+        # a typo must not look like an empty folder; the whole volume may be empty
+        if not objects and prefix:
             raise FileNotFoundError(f"no such file or directory on the volume: {remote_path}")
         root = Path(local_path) if local_path is not None else Path(
             PurePosixPath(prefix).name or self.bucket
         )
         jobs = [(_safe_target(root, obj["Key"][len(list_prefix):]), obj) for obj in objects]
-        _check_partial_names([dest for dest, _ in jobs], root)
+        _check_local_names([dest for dest, _ in jobs], root)
         self._run_files(
             [
                 lambda d=d, o=o: self.download_file(
@@ -747,25 +823,42 @@ class _Transfer:
         return self.summary
 
 
-def _check_partial_names(targets: List[Path], root: Path) -> None:
-    """refuse targets where a file's partial or sidecar name is also a target,
-    or a directory a target lives in ("x" beside "x.rpdownload" or
-    "x.rpdownload/y"). names are compared case-folded, since the destination
-    may be case-insensitive; that can refuse a listing a case-sensitive
-    filesystem would take, which is the safe direction."""
-    taken: Dict[str, Path] = {}
+def _fold(name: str) -> str:
+    """the key under which two spellings a filesystem may treat as one name
+    collide: nfc first (apfs compares names normalization-insensitively),
+    then unicode case folding."""
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def _check_local_names(targets: List[Path], root: Path) -> None:
+    """refuse targets that would share a path on disk: two targets that are
+    one name on a case-insensitive or normalizing filesystem ("Model.bin" and
+    "model.bin"), or a file whose partial or sidecar name is also a target or
+    a directory a target lives in ("x" beside "x.rpdownload" or
+    "x.rpdownload/y"). that can refuse a listing a case-sensitive filesystem
+    would take, which is the safe direction."""
+    files: Dict[str, Path] = {}
+    dirs: Dict[str, Path] = {}
     for target in targets:
         rel = target.relative_to(root)
-        for path in (rel, *rel.parents):
-            if str(path) != ".":
-                taken[str(path).casefold()] = target
+        key = _fold(str(rel))
+        if key in files:
+            raise NetworkVolumeTransferError(
+                f"cannot download both {files[key]} and {target}: "
+                "they are the same file on a case-insensitive filesystem"
+            )
+        files[key] = target
+        for parent in rel.parents:
+            if str(parent) != ".":
+                dirs[_fold(str(parent))] = target
     for target in targets:
         rel = target.relative_to(root)
-        for suffix in (".rpdownload", ".rpdownload.json"):
-            twin = str(rel.with_name(rel.name + suffix)).casefold()
-            if twin in taken:
+        for suffix in (PARTIAL_SUFFIX, SIDECAR_SUFFIX):
+            twin = _fold(str(rel.with_name(rel.name + suffix)))
+            other = files.get(twin) or dirs.get(twin)
+            if other is not None:
                 raise NetworkVolumeTransferError(
-                    f"cannot download both {target} and {taken[twin]}: "
+                    f"cannot download both {target} and {other}: "
                     f"{rel.name + suffix} is used for the first's partial download"
                 )
 
@@ -777,6 +870,8 @@ def _safe_target(root: Path, rel: str) -> Path:
         not rel
         or rel.startswith("/")
         or "\\" in rel
+        # PurePosixPath drops "." and empty segments; "a/./b" would alias "a/b"
+        or any(seg in ("..", ".", "") for seg in rel.split("/"))
         or any(part in ("..", "") for part in parts)
         or (parts and ":" in parts[0])
     ):
@@ -794,7 +889,9 @@ def _safe_target(root: Path, rel: str) -> Path:
 def _lookup_datacenter(volume_id: str) -> str:
     from runpod.api.rest import run_rest_request  # pylint: disable=import-outside-toplevel
 
-    data = run_rest_request("GET", f"/v2/network-volumes/{volume_id}") or {}
+    from runpod.api.ctl_commands import _path_segment  # pylint: disable=import-outside-toplevel
+
+    data = run_rest_request("GET", f"/v2/network-volumes/{_path_segment(volume_id)}") or {}
     datacenter = data.get("dataCenter") or data.get("dataCenterId")
     if not datacenter:
         raise NetworkVolumeTransferError(
@@ -811,6 +908,7 @@ def _make_transfer(
     endpoint_url: Optional[str],
     concurrency: int,
     progress: Optional[Progress],
+    force: bool = False,
 ) -> _Transfer:
     import boto3  # pylint: disable=import-outside-toplevel
     from botocore.config import Config  # pylint: disable=import-outside-toplevel
@@ -829,11 +927,15 @@ def _make_transfer(
         s3={"addressing_style": "path"},
         request_checksum_calculation="when_required",
         response_checksum_validation="when_required",
-        retries={"max_attempts": 10, "mode": "standard"},
+        # _with_retries owns retries; botocore's would multiply them and sleep
+        # while holding a concurrency slot
+        retries={"total_max_attempts": 1, "mode": "standard"},
         connect_timeout=60,
-        read_timeout=3600,
-        # transfer requests share `concurrency` slots; metadata calls from
-        # the file workers can run alongside them
+        # a socket read silent this long is a stalled connection (runpod's
+        # proxy answers a slow request with 524 after about 100s)
+        read_timeout=300,
+        # every call holds one of `concurrency` slots; headroom for
+        # connections still being returned to the pool
         max_pool_connections=max(10, 2 * concurrency),
     )
     client = boto3.session.Session().client(
@@ -844,7 +946,7 @@ def _make_transfer(
         aws_secret_access_key=secret_key,
         config=config,
     )
-    return _Transfer(client, volume_id, endpoint, concurrency, progress)
+    return _Transfer(client, volume_id, endpoint, concurrency, progress, force=force)
 
 
 def upload(
@@ -858,13 +960,15 @@ def upload(
     endpoint_url: Optional[str] = None,
     concurrency: int = 4,
     progress: Optional[Progress] = None,
+    force: bool = False,
 ) -> Dict[str, int]:
     """upload a file or folder to a network volume.
 
     `remote_path` defaults to the local basename. a folder's contents go
     under `remote_path/`. for a file, a `remote_path` ending in "/" keeps
-    the local file name. unchanged files (same size, remote not older)
-    are skipped, and an interrupted multipart upload resumes on re-run.
+    the local file name. unchanged files (same size, remote not older, in
+    whole seconds) are skipped unless `force`, and an interrupted multipart
+    upload resumes on re-run.
 
     s3 keys come from the arguments or RUNPOD_S3_ACCESS_KEY and
     RUNPOD_S3_SECRET_KEY. without `datacenter`, the volume's datacenter is
@@ -873,7 +977,7 @@ def upload(
     returns {files_transferred, files_skipped, bytes_transferred}.
     """
     transfer = _make_transfer(
-        volume_id, datacenter, access_key, secret_key, endpoint_url, concurrency, progress
+        volume_id, datacenter, access_key, secret_key, endpoint_url, concurrency, progress, force
     )
     return transfer.upload(Path(local_path), remote_path)
 
@@ -889,20 +993,23 @@ def download(
     endpoint_url: Optional[str] = None,
     concurrency: int = 4,
     progress: Optional[Progress] = None,
+    force: bool = False,
 ) -> Dict[str, int]:
     """download a file or folder from a network volume.
 
     a `remote_path` ending in "/" (or one that only exists as a prefix) is
     a folder. `local_path` defaults to the remote basename. local files of
     the same size and not older than the remote copy are skipped (downloads
-    stamp the remote time on the file), and partial downloads resume on re-run.
+    stamp the remote time on the file) unless `force`, and partial downloads
+    resume on re-run. a `local_path` ending in "/" is a folder to download into.
 
     returns {files_transferred, files_skipped, bytes_transferred}.
     """
     transfer = _make_transfer(
-        volume_id, datacenter, access_key, secret_key, endpoint_url, concurrency, progress
+        volume_id, datacenter, access_key, secret_key, endpoint_url, concurrency, progress, force
     )
-    return transfer.download(remote_path, None if local_path is None else Path(local_path))
+    # passed through as given: Path() would drop a trailing "/"
+    return transfer.download(remote_path, local_path)
 
 
 upload_to_network_volume = upload
