@@ -1175,8 +1175,6 @@ def _run_transfer(direction, volume_id, source, target, opts) -> None:
             sys.exit(130)
         except Exception as exc:  # noqa: BLE001 - surface transfer errors cleanly
             hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
-            if nvt._is_dns_failure(exc):  # pylint: disable=protected-access
-                hint = "\nthe s3 endpoint does not resolve: check --datacenter"
             raise click.ClickException(f"{exc}{hint}") from exc
 
     click.echo(
