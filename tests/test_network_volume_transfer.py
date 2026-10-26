@@ -15,6 +15,7 @@ import runpod
 import runpod.network_volume_transfer as nvt
 
 REAL_WAIT = nvt._wait
+REAL_ENDPOINT_CHECK = nvt._check_endpoint_resolves
 import runpod.error
 
 
@@ -905,11 +906,42 @@ def test_all_requests_share_the_concurrency_limit(tmp_path):
     assert active["peak"] <= 2
 
 
-def test_unresolvable_endpoint_fails_before_the_transfer(monkeypatch):
-    monkeypatch.undo()  # the autouse fixture stubs the check out
+@pytest.fixture
+def endpoint_check(monkeypatch):
+    """the real endpoint check with dns and proxies stubbed (the autouse
+    fixture replaces the check itself)."""
+    import socket as _socket
+
+    monkeypatch.setattr(nvt, "_check_endpoint_resolves", REAL_ENDPOINT_CHECK)
+    for name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    state = {"error": None}
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        if state["error"] is not None:
+            raise state["error"]
+        return [(_socket.AF_INET, _socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(_socket, "getaddrinfo", fake_getaddrinfo)
+    return state
+
+
+def test_unresolvable_endpoint_fails_before_the_transfer(endpoint_check):
+    import socket as _socket
+
+    endpoint_check["error"] = _socket.gaierror(8, "nodename nor servname provided")
     with pytest.raises(nvt.NetworkVolumeTransferError, match="--datacenter"):
-        nvt._check_endpoint_resolves("https://s3api-nope.invalid/")
-    nvt._check_endpoint_resolves("http://127.0.0.1:9/")
+        nvt._check_endpoint_resolves("https://s3api-nope-1.runpod.io/")
+    endpoint_check["error"] = None
+    nvt._check_endpoint_resolves("https://s3api-eu-ro-1.runpod.io/")
+
+
+def test_endpoint_check_skipped_behind_a_proxy(endpoint_check, monkeypatch):
+    import socket as _socket
+
+    endpoint_check["error"] = _socket.gaierror(8, "nodename nor servname provided")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
+    nvt._check_endpoint_resolves("https://s3api-eu-ro-1.runpod.io/")
 
 
 def test_dns_failure_mid_transfer_is_a_network_drop():
