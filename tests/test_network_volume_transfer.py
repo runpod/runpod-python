@@ -1279,3 +1279,19 @@ def test_discarded_chunks_drop_the_sidecar_first(tmp_path):
     with patch("builtins.open", watch_open):
         assert job.load_or_init() == set()
     assert sidecar_seen == [False]
+
+
+@pytest.mark.parametrize("suffix", nvt.TRANSFER_SUFFIXES)
+def test_download_refuses_symlinked_work_files(tmp_path, suffix):
+    fake = FakeS3()
+    fake.put("x", DATA)  # several chunks, so the sidecar path is taken
+    other = tmp_path / "other"
+    other.write_bytes(b"keep me")
+    try:
+        (tmp_path / ("x" + suffix)).symlink_to("other")
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="not a regular file") as info:
+        _transfer(fake, tmp_path).download("x", tmp_path / "x")
+    assert not nvt.is_resumable(info.value)
+    assert other.read_bytes() == b"keep me"
