@@ -1086,6 +1086,123 @@ def undeploy(app_name, env_name, yes):
     )
 
 
+# -------------------------------------------------------- network volumes
+
+
+@cli.group(name="network-volume")
+def network_volume():
+    """Upload and download files on network volumes (resumable).
+
+    Uses the S3-compatible API. Set RUNPOD_S3_ACCESS_KEY and
+    RUNPOD_S3_SECRET_KEY (create keys at console.runpod.io/user/settings).
+    Re-run an interrupted command to resume it.
+    """
+
+
+def _transfer_options(func):
+    options = [
+        click.option(
+            "--datacenter",
+            default=None,
+            help="Volume datacenter, e.g. EU-RO-1 (looked up with your API key if omitted).",
+        ),
+        click.option("--s3-access-key", default=None, help="S3 API access key."),
+        click.option("--s3-secret-key", default=None, help="S3 API secret key."),
+        click.option("--endpoint-url", default=None, hidden=True),
+        click.option(
+            "--concurrency", default=4, show_default=True, type=click.IntRange(1, 64),
+            help="Parallel parts, chunks, or files.",
+        ),
+    ]
+    for option in reversed(options):
+        func = option(func)
+    return func
+
+
+def _run_transfer(direction, volume_id, source, target, opts) -> None:
+    from rich.console import Console
+    from rich.progress import (
+        BarColumn,
+        DownloadColumn,
+        Progress,
+        TextColumn,
+        TransferSpeedColumn,
+    )
+
+    from runpod import network_volume_transfer as nvt
+
+    tasks = {}
+    with Progress(
+        TextColumn("{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        console=Console(stderr=True),
+        transient=True,
+    ) as bar:
+
+        def progress(event, path, nbytes):
+            if event == "start":
+                tasks[path] = bar.add_task(Path(path).name, total=nbytes)
+            elif event == "advance" and path in tasks:
+                bar.advance(tasks[path], nbytes)
+            elif event == "done" and path in tasks:
+                bar.remove_task(tasks.pop(path))
+                bar.console.print(f"  {direction} {path}")
+
+        func = nvt.upload if direction == "uploaded" else nvt.download
+        try:
+            summary = func(
+                volume_id,
+                source,
+                target,
+                datacenter=opts["datacenter"],
+                access_key=opts["s3_access_key"],
+                secret_key=opts["s3_secret_key"],
+                endpoint_url=opts["endpoint_url"],
+                concurrency=opts["concurrency"],
+                progress=progress,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface transfer errors cleanly
+            raise click.ClickException(
+                f"{exc}\nre-run the same command to resume"
+            ) from exc
+
+    click.echo(
+        f"{direction} {summary['files_transferred']} file(s), "
+        f"{summary['bytes_transferred']} bytes; "
+        f"skipped {summary['files_skipped']} unchanged"
+    )
+
+
+@network_volume.command(name="upload")
+@click.argument("volume_id")
+@click.argument("local_path", type=click.Path(exists=True))
+@click.argument("remote_path", required=False)
+@_transfer_options
+def network_volume_upload(volume_id, local_path, remote_path, **opts):
+    """Upload a file or folder to a network volume.
+
+    REMOTE_PATH defaults to the local name. A folder's contents go under
+    REMOTE_PATH/. Unchanged files are skipped.
+    """
+    _run_transfer("uploaded", volume_id, local_path, remote_path, opts)
+
+
+@network_volume.command(name="download")
+@click.argument("volume_id")
+@click.argument("remote_path")
+@click.argument("local_path", required=False)
+@_transfer_options
+def network_volume_download(volume_id, remote_path, local_path, **opts):
+    """Download a file or folder from a network volume.
+
+    A REMOTE_PATH ending in / is a folder. LOCAL_PATH defaults to the
+    remote name. Local files of the same size are skipped.
+    """
+    _run_transfer("downloaded", volume_id, remote_path, local_path, opts)
+
+
 # -------------------------------------------------------- legacy groups
 
 
