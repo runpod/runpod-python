@@ -175,11 +175,15 @@ def _transfer(fake, tmp_path, concurrency=1, events=None):
 _VOLUME = {"id": "vol123", "name": "models", "dataCenterId": "EU-RO-1"}
 
 
-def _volumes_page(*volumes, cursor=None):
-    return {
-        "networkVolumes": list(volumes),
-        "pagination": {"hasNextPage": cursor is not None, "nextCursor": cursor},
-    }
+def _list_volumes(*volumes):
+    """patch the paginated volume listing to return these records."""
+    calls = []
+
+    async def fake(path, collection, **kwargs):
+        calls.append((path, collection))
+        return list(volumes)
+
+    return patch("runpod.api.rest.run_rest_paginated_request_async", fake), calls
 
 
 DATA = bytes(range(40))  # 5 parts / chunks of 8 bytes
@@ -630,9 +634,10 @@ def test_make_transfer_builds_datacenter_client(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
     monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
-    with patch("runpod.api.rest.run_rest_request", return_value=_volumes_page(_VOLUME)) as rest:
+    listing, calls = _list_volumes(_VOLUME)
+    with listing:
         transfer = nvt._make_transfer("models", None, None, None, 4, None)
-    rest.assert_called_once_with("GET", "/v2/network-volumes", params={})
+    assert calls == [("/v2/network-volumes", "networkVolumes")]
     assert transfer.client.meta.endpoint_url == "https://s3api-eu-ro-1.runpod.io/"
     assert transfer.client.meta.region_name == "EU-RO-1"
     assert transfer.client.meta.config.request_checksum_calculation == "when_required"
@@ -643,18 +648,15 @@ def test_make_transfer_builds_datacenter_client(monkeypatch):
     assert transfer.bucket == "vol123"
 
 
-def test_resolve_volume_by_name_across_pages():
-    pages = [
-        _volumes_page({"id": "other", "name": "x", "dataCenterId": "US-KS-2"}, cursor="c1"),
-        _volumes_page(_VOLUME),
-    ]
-    with patch("runpod.api.rest.run_rest_request", side_effect=pages) as rest:
+def test_resolve_volume_by_name():
+    listing, _ = _list_volumes({"id": "other", "name": "x", "dataCenterId": "US-KS-2"}, _VOLUME)
+    with listing:
         assert nvt._resolve_volume("models") == ("vol123", "EU-RO-1")
-    assert rest.call_args_list[1].kwargs["params"] == {"cursor": "c1"}
 
 
 def test_resolve_volume_by_id():
-    with patch("runpod.api.rest.run_rest_request", return_value=_volumes_page(_VOLUME)):
+    listing, _ = _list_volumes(_VOLUME)
+    with listing:
         assert nvt._resolve_volume("vol123") == ("vol123", "EU-RO-1")
 
 
@@ -668,7 +670,8 @@ def test_resolve_volume_by_id():
     ids=["missing", "ambiguous-name", "no-datacenter"],
 )
 def test_resolve_volume_errors(volumes, match):
-    with patch("runpod.api.rest.run_rest_request", return_value=_volumes_page(*volumes)):
+    listing, _ = _list_volumes(*volumes)
+    with listing:
         with pytest.raises(nvt.NetworkVolumeTransferError, match=match):
             nvt._resolve_volume("models")
 
@@ -946,10 +949,14 @@ def endpoint_check(monkeypatch):
     """the real endpoint check with dns and proxies stubbed (the autouse
     fixture replaces the check itself)."""
     import socket as _socket
+    import urllib.request
 
     monkeypatch.setattr(nvt, "_check_endpoint_resolves", REAL_ENDPOINT_CHECK)
     for name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"):
         monkeypatch.delenv(name, raising=False)
+    # proxies from the environment only: macos and windows also read system settings
+    monkeypatch.setattr(urllib.request, "getproxies", urllib.request.getproxies_environment)
+    monkeypatch.setattr(urllib.request, "proxy_bypass", urllib.request.proxy_bypass_environment)
     state = {"error": None}
 
     def fake_getaddrinfo(host, port, *args, **kwargs):
@@ -977,6 +984,19 @@ def test_endpoint_check_skipped_behind_a_proxy(endpoint_check, monkeypatch):
     endpoint_check["error"] = _socket.gaierror(8, "nodename nor servname provided")
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
     nvt._check_endpoint_resolves("https://s3api-eu-ro-1.runpod.io/")
+
+
+def test_explicit_endpoint_skips_the_dns_check(endpoint_check, monkeypatch):
+    import socket as _socket
+
+    monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
+    monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
+    monkeypatch.setattr(nvt, "_resolve_volume", lambda volume: ("vol123", "NOPE-1"))
+    endpoint_check["error"] = _socket.gaierror(8, "nodename nor servname provided")
+    transfer = nvt._make_transfer("vol123", None, None, "http://localhost:9000", 4, None)
+    assert transfer.client.meta.endpoint_url == "http://localhost:9000"
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="does not resolve"):
+        nvt._make_transfer("vol123", None, None, None, 4, None)
 
 
 def test_dns_failure_mid_transfer_is_a_network_drop():
@@ -1185,7 +1205,9 @@ def test_ctrl_c_stops_files_in_flight(tmp_path):
     for i in range(6):
         (folder / f"f{i}.bin").write_bytes(DATA + bytes([i]))
     calls = []
-    lock = __import__("threading").Lock()
+    import threading
+
+    lock = threading.Lock()
     original = fake.upload_part
     transfer = _transfer(fake, tmp_path, concurrency=2)
 

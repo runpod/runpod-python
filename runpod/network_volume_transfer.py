@@ -932,19 +932,11 @@ def _safe_target(root: Path, rel: str) -> Path:
 
 def _resolve_volume(reference: str) -> Tuple[str, str]:
     """the id and datacenter of the network volume with this id or name."""
-    from runpod.api.rest import run_rest_request  # pylint: disable=import-outside-toplevel
+    from runpod.api.rest import run_rest_paginated_request_async  # pylint: disable=import-outside-toplevel
+    from runpod.apps.context import block  # pylint: disable=import-outside-toplevel
     from runpod.apps.utils.lookup import find_by_id_or_name  # pylint: disable=import-outside-toplevel
 
-    volumes: List[Dict[str, Any]] = []
-    params: Dict[str, str] = {}
-    while True:
-        data = run_rest_request("GET", "/v2/network-volumes", params=params) or {}
-        volumes.extend(data.get("networkVolumes") or [])
-        page = data.get("pagination") or {}
-        cursor = page.get("nextCursor")
-        if not page.get("hasNextPage") or not cursor or cursor == params.get("cursor"):
-            break
-        params = {"cursor": cursor}
+    volumes = block(run_rest_paginated_request_async("/v2/network-volumes", "networkVolumes"))
     record = find_by_id_or_name(
         volumes, reference, noun="network volumes", error=NetworkVolumeTransferError
     )
