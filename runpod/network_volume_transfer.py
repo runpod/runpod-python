@@ -1,7 +1,8 @@
 """resumable file and folder transfers to and from network volumes.
 
 transfers go through the runpod s3-compatible api. the bucket is the
-network volume id and the endpoint is per datacenter.
+network volume id and the endpoint is per datacenter. call these
+through NetworkVolume.upload and NetworkVolume.download.
 
 uploads above 64 MiB use multipart. the upload id is kept in a small
 state file under ~/.runpod/transfers, so re-running an interrupted
@@ -929,18 +930,32 @@ def _safe_target(root: Path, rel: str) -> Path:
 # ---------------------------------------------------------------- client
 
 
-def _lookup_datacenter(volume_id: str) -> str:
+def _resolve_volume(reference: str) -> Tuple[str, str]:
+    """the id and datacenter of the network volume with this id or name."""
     from runpod.api.rest import run_rest_request  # pylint: disable=import-outside-toplevel
+    from runpod.apps.utils.lookup import find_by_id_or_name  # pylint: disable=import-outside-toplevel
 
-    from runpod.api.ctl_commands import _path_segment  # pylint: disable=import-outside-toplevel
-
-    data = run_rest_request("GET", f"/v2/network-volumes/{_path_segment(volume_id)}") or {}
-    datacenter = data.get("dataCenter") or data.get("dataCenterId")
+    volumes: List[Dict[str, Any]] = []
+    params: Dict[str, str] = {}
+    while True:
+        data = run_rest_request("GET", "/v2/network-volumes", params=params) or {}
+        volumes.extend(data.get("networkVolumes") or [])
+        page = data.get("pagination") or {}
+        cursor = page.get("nextCursor")
+        if not page.get("hasNextPage") or not cursor or cursor == params.get("cursor"):
+            break
+        params = {"cursor": cursor}
+    record = find_by_id_or_name(
+        volumes, reference, noun="network volumes", error=NetworkVolumeTransferError
+    )
+    if record is None:
+        raise NetworkVolumeTransferError(f"network volume {reference!r} not found")
+    datacenter = record.get("dataCenter") or record.get("dataCenterId")
     if not datacenter:
         raise NetworkVolumeTransferError(
-            f"could not find the datacenter of network volume {volume_id}"
+            f"could not find the datacenter of network volume {reference!r}"
         )
-    return str(datacenter)
+    return record["id"], str(datacenter)
 
 
 def _check_endpoint_resolves(endpoint: str) -> None:
@@ -962,14 +977,13 @@ def _check_endpoint_resolves(endpoint: str) -> None:
         socket.getaddrinfo(host, 443)
     except socket.gaierror as exc:
         raise NetworkVolumeTransferError(
-            f"the s3 endpoint {host} does not resolve: check --datacenter (only "
-            "datacenters with the s3 api are supported) or your network connection"
+            f"the s3 endpoint {host} does not resolve: the volume's datacenter "
+            "may not support the s3 api, or check your network connection"
         ) from exc
 
 
 def _make_transfer(
-    volume_id: str,
-    datacenter: Optional[str],
+    volume: str,
     access_key: Optional[str],
     secret_key: Optional[str],
     endpoint_url: Optional[str],
@@ -987,7 +1001,7 @@ def _make_transfer(
             f"s3 api keys required: set {ACCESS_KEY_ENV} and {SECRET_KEY_ENV} "
             f"(create keys at {S3_KEYS_URL})"
         )
-    datacenter = datacenter or _lookup_datacenter(volume_id)
+    volume_id, datacenter = _resolve_volume(volume)
     endpoint = endpoint_url or f"https://s3api-{datacenter.lower()}.runpod.io/"
     if not endpoint_url:
         # an explicit endpoint (a local stand-in, a custom route) is the
@@ -1021,11 +1035,10 @@ def _make_transfer(
 
 
 def upload(
-    volume_id: str,
+    volume: str,
     local_path,
     remote_path: Optional[str] = None,
     *,
-    datacenter: Optional[str] = None,
     access_key: Optional[str] = None,
     secret_key: Optional[str] = None,
     endpoint_url: Optional[str] = None,
@@ -1033,32 +1046,18 @@ def upload(
     progress: Optional[Progress] = None,
     force: bool = False,
 ) -> Dict[str, int]:
-    """upload a file or folder to a network volume.
-
-    `remote_path` defaults to the local basename. a folder's contents go
-    under `remote_path/`. for a file, a `remote_path` ending in "/" keeps
-    the local file name. unchanged files (same size, remote not older, in
-    whole seconds) are skipped unless `force`, and an interrupted multipart
-    upload resumes on re-run.
-
-    s3 keys come from the arguments or RUNPOD_S3_ACCESS_KEY and
-    RUNPOD_S3_SECRET_KEY. without `datacenter`, the volume's datacenter is
-    looked up with the runpod api key.
-
-    returns {files_transferred, files_skipped, bytes_transferred}.
-    """
+    """backs NetworkVolume.upload, which documents the behaviour."""
     transfer = _make_transfer(
-        volume_id, datacenter, access_key, secret_key, endpoint_url, concurrency, progress, force
+        volume, access_key, secret_key, endpoint_url, concurrency, progress, force
     )
     return transfer.upload(Path(local_path), remote_path)
 
 
 def download(
-    volume_id: str,
+    volume: str,
     remote_path: str,
     local_path=None,
     *,
-    datacenter: Optional[str] = None,
     access_key: Optional[str] = None,
     secret_key: Optional[str] = None,
     endpoint_url: Optional[str] = None,
@@ -1066,22 +1065,9 @@ def download(
     progress: Optional[Progress] = None,
     force: bool = False,
 ) -> Dict[str, int]:
-    """download a file or folder from a network volume.
-
-    a `remote_path` ending in "/" (or one that only exists as a prefix) is
-    a folder. `local_path` defaults to the remote basename. local files of
-    the same size and not older than the remote copy are skipped (downloads
-    stamp the remote time on the file) unless `force`, and partial downloads
-    resume on re-run. a `local_path` ending in "/" is a folder to download into.
-
-    returns {files_transferred, files_skipped, bytes_transferred}.
-    """
+    """backs NetworkVolume.download, which documents the behaviour."""
     transfer = _make_transfer(
-        volume_id, datacenter, access_key, secret_key, endpoint_url, concurrency, progress, force
+        volume, access_key, secret_key, endpoint_url, concurrency, progress, force
     )
     # passed through as given: Path() would drop a trailing "/"
     return transfer.download(remote_path, local_path)
-
-
-upload_to_network_volume = upload
-download_from_network_volume = download

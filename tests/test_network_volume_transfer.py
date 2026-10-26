@@ -172,6 +172,16 @@ def _transfer(fake, tmp_path, concurrency=1, events=None):
     )
 
 
+_VOLUME = {"id": "vol123", "name": "models", "dataCenterId": "EU-RO-1"}
+
+
+def _volumes_page(*volumes, cursor=None):
+    return {
+        "networkVolumes": list(volumes),
+        "pagination": {"hasNextPage": cursor is not None, "nextCursor": cursor},
+    }
+
+
 DATA = bytes(range(40))  # 5 parts / chunks of 8 bytes
 
 
@@ -611,7 +621,7 @@ def test_make_transfer_requires_s3_keys(monkeypatch):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws")
     with pytest.raises(nvt.NetworkVolumeTransferError, match="RUNPOD_S3_ACCESS_KEY"):
-        nvt.upload("vol", ".", datacenter="EU-RO-1")
+        nvt.upload("vol", ".")
 
 
 def test_make_transfer_builds_datacenter_client(monkeypatch):
@@ -620,11 +630,9 @@ def test_make_transfer_builds_datacenter_client(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
     monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
-    with patch(
-        "runpod.api.rest.run_rest_request", return_value={"dataCenter": "EU-RO-1"}
-    ) as rest:
-        transfer = nvt._make_transfer("vol123", None, None, None, None, 4, None)
-    rest.assert_called_once_with("GET", "/v2/network-volumes/vol123")
+    with patch("runpod.api.rest.run_rest_request", return_value=_volumes_page(_VOLUME)) as rest:
+        transfer = nvt._make_transfer("models", None, None, None, 4, None)
+    rest.assert_called_once_with("GET", "/v2/network-volumes", params={})
     assert transfer.client.meta.endpoint_url == "https://s3api-eu-ro-1.runpod.io/"
     assert transfer.client.meta.region_name == "EU-RO-1"
     assert transfer.client.meta.config.request_checksum_calculation == "when_required"
@@ -635,38 +643,64 @@ def test_make_transfer_builds_datacenter_client(monkeypatch):
     assert transfer.bucket == "vol123"
 
 
-def test_lookup_datacenter_escapes_volume_id():
-    with patch("runpod.api.rest.run_rest_request", return_value={"dataCenter": "EU-RO-1"}) as rest:
-        nvt._lookup_datacenter("a/b?c")
-    rest.assert_called_once_with("GET", "/v2/network-volumes/a%2Fb%3Fc")
+def test_resolve_volume_by_name_across_pages():
+    pages = [
+        _volumes_page({"id": "other", "name": "x", "dataCenterId": "US-KS-2"}, cursor="c1"),
+        _volumes_page(_VOLUME),
+    ]
+    with patch("runpod.api.rest.run_rest_request", side_effect=pages) as rest:
+        assert nvt._resolve_volume("models") == ("vol123", "EU-RO-1")
+    assert rest.call_args_list[1].kwargs["params"] == {"cursor": "c1"}
 
 
-def test_lookup_datacenter_missing():
-    with patch("runpod.api.rest.run_rest_request", return_value={}):
-        with pytest.raises(nvt.NetworkVolumeTransferError):
-            nvt._lookup_datacenter("vol")
+def test_resolve_volume_by_id():
+    with patch("runpod.api.rest.run_rest_request", return_value=_volumes_page(_VOLUME)):
+        assert nvt._resolve_volume("vol123") == ("vol123", "EU-RO-1")
 
 
-def test_public_functions_delegate(tmp_path):
+@pytest.mark.parametrize(
+    "volumes, match",
+    [
+        ([], "not found"),
+        ([{**_VOLUME, "id": "a"}, {**_VOLUME, "id": "b"}], "reference by id"),
+        ([{"id": "vol123", "name": "models"}], "datacenter"),
+    ],
+    ids=["missing", "ambiguous-name", "no-datacenter"],
+)
+def test_resolve_volume_errors(volumes, match):
+    with patch("runpod.api.rest.run_rest_request", return_value=_volumes_page(*volumes)):
+        with pytest.raises(nvt.NetworkVolumeTransferError, match=match):
+            nvt._resolve_volume("models")
+
+
+def test_network_volume_methods_delegate():
+    calls = []
     fake_transfer = type(
         "T", (), {"upload": lambda self, l, r: ("up", l, r), "download": lambda self, r, l: ("down", r, l)}
     )()
-    with patch.object(nvt, "_make_transfer", return_value=fake_transfer):
-        assert nvt.upload("vol", "x", "y")[0] == "up"
-        assert nvt.download("vol", "y", "x")[0] == "down"
+
+    def make(*args, **kwargs):
+        calls.append(args)
+        return fake_transfer
+
+    volume = runpod.NetworkVolume("models", create=False)
+    with patch.object(nvt, "_make_transfer", side_effect=make):
+        assert volume.upload("x", "y", concurrency=2)[0] == "up"
+        assert volume.download("y", "x")[0] == "down"
+    assert calls[0][0] == "models" and calls[0][4] == 2
 
 
-def test_public_download_keeps_trailing_slash(tmp_path, monkeypatch):
+def test_network_volume_download_keeps_trailing_slash(tmp_path, monkeypatch):
     fake = FakeS3()
     fake.put("w.bin", b"w")
     monkeypatch.setattr(nvt, "_make_transfer", lambda *a, **k: _transfer(fake, tmp_path))
-    nvt.download("vol", "w.bin", str(tmp_path / "out") + "/")
+    runpod.NetworkVolume("vol").download("w.bin", str(tmp_path / "out") + "/")
     assert (tmp_path / "out" / "w.bin").read_bytes() == b"w"
 
 
-def test_lazy_exports():
-    assert runpod.upload_to_network_volume is nvt.upload
-    assert runpod.download_from_network_volume is nvt.download
+def test_no_module_level_transfer_exports():
+    for name in ("upload_to_network_volume", "download_from_network_volume", "network_volume_transfer"):
+        assert name not in runpod.__all__
 
 
 # ------------------------------------------------------------------- cli
@@ -678,18 +712,18 @@ def test_cli_upload_prints_summary(tmp_path):
     src = tmp_path / "f.txt"
     src.write_text("x")
 
-    def fake_upload(volume_id, source, target, **kwargs):
+    def fake_upload(volume, source, target, **kwargs):
         progress = kwargs["progress"]
         progress("start", source, 1)
         progress("advance", source, 1)
         progress("done", source, 0)
-        assert kwargs["datacenter"] == "EU-RO-1" and kwargs["concurrency"] == 2
+        assert volume == "models" and kwargs["concurrency"] == 2
         return {"files_transferred": 1, "files_skipped": 0, "bytes_transferred": 1}
 
     with patch.object(nvt, "upload", side_effect=fake_upload):
         result = CliRunner().invoke(
             cli,
-            ["network-volume", "upload", "vol", str(src), "--datacenter", "EU-RO-1", "--concurrency", "2"],
+            ["volume", "upload", "models", str(src), "--concurrency", "2"],
         )
     assert result.exit_code == 0, result.output
     assert "uploaded 1 file(s), 1 bytes; skipped 0 unchanged" in result.output
@@ -699,7 +733,7 @@ def test_cli_download_failure_says_resume():
     from runpod.rp_cli.main import cli
 
     with patch.object(nvt, "download", side_effect=ConnectionResetError("boom")):
-        result = CliRunner().invoke(cli, ["network-volume", "download", "vol", "a/b"])
+        result = CliRunner().invoke(cli, ["volume", "download", "vol", "a/b"])
     assert result.exit_code != 0
     assert "boom" in result.output
     assert "re-run the same command to resume" in result.output
@@ -709,7 +743,7 @@ def test_cli_ctrl_c_exits_130_with_resume_hint():
     from runpod.rp_cli.main import cli
 
     with patch.object(nvt, "upload", side_effect=KeyboardInterrupt):
-        result = CliRunner().invoke(cli, ["network-volume", "upload", "vol", "."])
+        result = CliRunner().invoke(cli, ["volume", "upload", "vol", "."])
     assert result.exit_code == 130
     assert "interrupted; re-run the same command to resume" in result.output
 
@@ -717,11 +751,11 @@ def test_cli_ctrl_c_exits_130_with_resume_hint():
 def test_cli_unresolvable_endpoint_has_no_resume_hint():
     from runpod.rp_cli.main import cli
 
-    err = nvt.NetworkVolumeTransferError("the s3 endpoint s3api-x.invalid does not resolve: check --datacenter")
+    err = nvt.NetworkVolumeTransferError("the s3 endpoint s3api-x.invalid does not resolve")
     with patch.object(nvt, "download", side_effect=err):
-        result = CliRunner().invoke(cli, ["network-volume", "download", "vol", "a/b", "--datacenter", "X"])
+        result = CliRunner().invoke(cli, ["volume", "download", "vol", "a/b"])
     assert result.exit_code == 1
-    assert "check --datacenter" in result.output
+    assert "does not resolve" in result.output
     assert "re-run" not in result.output
 
 
@@ -729,7 +763,7 @@ def test_cli_missing_path_has_no_resume_hint():
     from runpod.rp_cli.main import cli
 
     with patch.object(nvt, "download", side_effect=FileNotFoundError("no such file")):
-        result = CliRunner().invoke(cli, ["network-volume", "download", "vol", "a/b"])
+        result = CliRunner().invoke(cli, ["volume", "download", "vol", "a/b"])
     assert result.exit_code != 0
     assert "no such file" in result.output
     assert "resume" not in result.output
@@ -931,7 +965,7 @@ def test_unresolvable_endpoint_fails_before_the_transfer(endpoint_check):
     import socket as _socket
 
     endpoint_check["error"] = _socket.gaierror(8, "nodename nor servname provided")
-    with pytest.raises(nvt.NetworkVolumeTransferError, match="--datacenter"):
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="does not resolve"):
         nvt._check_endpoint_resolves("https://s3api-nope-1.runpod.io/")
     endpoint_check["error"] = None
     nvt._check_endpoint_resolves("https://s3api-eu-ro-1.runpod.io/")
