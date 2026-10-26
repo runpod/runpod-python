@@ -25,8 +25,8 @@ rp pod create
 rp pod connect POD_ID
 
 # Network volume files
-rp network-volume upload VOLUME_ID ./dataset datasets/dataset
-rp network-volume download VOLUME_ID outputs/ ./outputs
+rp volume upload VOLUME ./dataset datasets/dataset
+rp volume download VOLUME outputs/ ./outputs
 ```
 
 ## Overview
@@ -67,17 +67,17 @@ exit with an error and report the endpoint IDs that still need deletion.
 ### Network volume files
 
 ```bash
-rp network-volume upload VOLUME_ID ./model.safetensors models/
-rp network-volume upload VOLUME_ID ./dataset datasets/dataset
-rp network-volume download VOLUME_ID models/model.safetensors
-rp network-volume download VOLUME_ID outputs/ ./outputs
+rp volume upload VOLUME ./model.safetensors models/
+rp volume upload VOLUME ./dataset datasets/dataset
+rp volume download VOLUME models/model.safetensors
+rp volume download VOLUME outputs/ ./outputs
 ```
 
 Transfers use the volume's S3-compatible API, so they need S3 API keys
 (separate from the API key): set `RUNPOD_S3_ACCESS_KEY` and
 `RUNPOD_S3_SECRET_KEY`, or pass `--s3-access-key` / `--s3-secret-key`. The
 volume must be in a [datacenter with the S3 API](https://docs.runpod.io/storage/s3-api).
-Its datacenter is looked up with your API key unless you pass `--datacenter`.
+`VOLUME` is the volume's ID or name, looked up with your API key.
 
 To resume an interrupted transfer, run the same command again. Files that
 are unchanged (same size, destination not older) are skipped, a large upload
@@ -86,5 +86,12 @@ chunks in `<name>.rpdownload`. `--force` transfers every file. Parts of an
 upload that is never resumed stay in the volume's hidden `.s3compat_uploads`
 folder and count toward its size.
 
-The same transfers are available from Python as
-`runpod.upload_to_network_volume` and `runpod.download_from_network_volume`.
+The same transfers are available from Python:
+
+```python
+from runpod import NetworkVolume
+
+volume = NetworkVolume("my-volume")
+volume.upload("./dataset", "datasets/dataset")
+volume.download("outputs/", "./outputs")
+```

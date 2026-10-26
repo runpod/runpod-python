@@ -68,10 +68,6 @@ _LAZY_ATTRS = {
     "patch": "runpod.apps.markers",
     "post": "runpod.apps.markers",
     "put": "runpod.apps.markers",
-    # network volume file transfers
-    "download_from_network_volume": "runpod.network_volume_transfer",
-    "network_volume_transfer": "runpod.network_volume_transfer",
-    "upload_to_network_volume": "runpod.network_volume_transfer",
     # logger
     "RunPodLogger": "runpod.serverless.modules.rp_logger",
     # submodule
