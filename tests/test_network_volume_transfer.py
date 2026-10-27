@@ -1180,3 +1180,42 @@ def test_download_refuses_symlinked_work_files(tmp_path, suffix):
         _transfer(fake, tmp_path).download("x", tmp_path / "x")
     assert not nvt.is_resumable(info.value)
     assert other.read_bytes() == b"keep me"
+
+
+def test_client_retries_the_proxy_524(monkeypatch):
+    import http.server
+    import threading
+
+    hits = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - http.server naming
+            hits.append(self.path)
+            if len(hits) <= 2:
+                self.send_response(524)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = b"<ListBucketResult></ListBucketResult>"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/xml")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
+        monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
+        monkeypatch.setattr(nvt, "_resolve_volume", lambda volume: ("vol123", "EU-RO-1"))
+        monkeypatch.setattr(nvt.random, "uniform", lambda a, b: 0)
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        transfer = nvt._make_transfer("vol123", None, None, endpoint, 1, None)
+        transfer.client.list_objects_v2(Bucket="vol123")
+    finally:
+        server.shutdown()
+    assert len(hits) == 3
