@@ -109,6 +109,44 @@ class TestVolumeRef:
         with pytest.raises(VolumeError):
             NetworkVolume("nv-1").path
 
+    def test_path_binds_from_env_when_runtime_did_not(self, monkeypatch):
+        # runtime images released before the mounts hook never call
+        # _configure_mounts; the vendored sdk reads the env itself
+        monkeypatch.setattr("runpod.apps.volume._mounts_configured", False)
+        monkeypatch.setattr("runpod.apps.volume._mount_bindings", {})
+        monkeypatch.setenv(
+            "RUNPOD_MOUNTS",
+            json.dumps(
+                [
+                    {
+                        "kind": "network",
+                        "reference": "models",
+                        "id": "nv-1",
+                        "path": "/runpod-volume",
+                    }
+                ]
+            ),
+        )
+        assert str(NetworkVolume("models").path) == "/runpod-volume"
+        assert str(NetworkVolume("nv-1").path) == "/runpod-volume"
+
+    def test_runtime_configuration_wins_over_env(self, monkeypatch):
+        monkeypatch.setenv(
+            "RUNPOD_MOUNTS",
+            json.dumps(
+                [{"kind": "network", "reference": "models", "id": "nv-1", "path": "/x"}]
+            ),
+        )
+        # clean_mounts already configured an empty set, as the runtime does
+        with pytest.raises(VolumeError, match="not mounted"):
+            NetworkVolume("models").path
+
+    def test_malformed_mounts_env_raises(self, monkeypatch):
+        monkeypatch.setattr("runpod.apps.volume._mounts_configured", False)
+        monkeypatch.setenv("RUNPOD_MOUNTS", "{not json")
+        with pytest.raises(VolumeError, match="valid JSON"):
+            NetworkVolume("models").path
+
     def test_invalid_configuration_does_not_partially_publish(self, tmp_path):
         (tmp_path / "model").write_text("retained")
         binding = {
