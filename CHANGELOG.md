@@ -4,7 +4,6 @@
 
 ### Features
 
-* `rp volume upload/download` and `NetworkVolume.upload` / `NetworkVolume.download` transfer files and folders over a network volume's S3-compatible API. Re-running an interrupted transfer resumes it: unchanged files are skipped, multipart uploads reuse MD5-verified parts, and downloads keep finished chunks.
 * Apps expose `NetworkVolume` and `GlobalVolume` resources with explicit path-keyed mounts, lazy create-if-missing provisioning, and execution-bound filesystem access. Global volumes use GraphQL for lookup and creation.
 
 ### Bug Fixes
