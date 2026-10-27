@@ -9,8 +9,8 @@ file under ~/.runpod/transfers, so re-running an interrupted upload sends
 only the parts the server does not already hold. downloads fetch 64 MiB
 ranges into `<dest>.rpdownload`, recording finished ranges in a sidecar
 json, so a re-run fetches only what is missing. folder transfers skip
-files that are already present and unchanged. botocore retries failed
-requests.
+files that are already present and unchanged. each client retries failed
+requests through `_Transfer._retry_delay`.
 """
 
 import hashlib
@@ -18,12 +18,15 @@ import json
 import math
 import os
 import random
+import socket
 import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
+
+T = TypeVar("T")
 
 MIB = 1024 * 1024
 SINGLE_PUT_MAX = 64 * MIB
@@ -44,6 +47,10 @@ MAX_ATTEMPTS = 10
 ACCESS_KEY_ENV = "RUNPOD_S3_ACCESS_KEY"
 SECRET_KEY_ENV = "RUNPOD_S3_SECRET_KEY"
 S3_KEYS_URL = "https://console.runpod.io/user/settings"
+S3_DOCS_URL = "https://docs.runpod.io/storage/s3-api"
+NOT_LOGGED_IN = "not logged in: run `rp login` or set RUNPOD_API_KEY"
+# error codes s3 gives for keys it does not accept
+_REJECTED_KEY_CODES = ("InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied")
 
 # progress(event, path, nbytes). events: "start" (nbytes = file size),
 # "advance" (nbytes sent or received), "reuse" (nbytes an earlier run already
@@ -71,11 +78,37 @@ def part_size_for(size: int) -> int:
     return part_size
 
 
-def _error(exc: BaseException) -> Tuple[str, int]:
-    """the s3 error code and http status of a botocore ClientError."""
-    response = getattr(exc, "response", None) or {}
+def _error_fields(response: Dict[str, Any]) -> Tuple[str, int]:
+    """the s3 error code and http status in a parsed botocore response."""
     code = str(response.get("Error", {}).get("Code", ""))
     return code, int(response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0)
+
+
+def _error(exc: BaseException) -> Tuple[str, int]:
+    """the s3 error code and http status of a botocore ClientError."""
+    return _error_fields(getattr(exc, "response", None) or {})
+
+
+def _transient(code: str, status: int) -> bool:
+    """a server answer that may pass on its own: throttling and 5xx,
+    including the 524 runpod's proxy returns when an operation outlives it."""
+    return (
+        status == 429
+        or status >= 500
+        or code in ("SlowDown", "RequestTimeout", "Throttling")
+    )
+
+
+def _keys_rejected(exc: BaseException) -> Optional[NetworkVolumeTransferError]:
+    """the error to raise when s3 refused the keys, or None."""
+    code, status = _error(exc)
+    if status not in (401, 403) and code not in _REJECTED_KEY_CODES:
+        return None
+    return NetworkVolumeTransferError(
+        f"the volume's s3 api rejected the keys ({status or code}): check that "
+        f"{ACCESS_KEY_ENV} and {SECRET_KEY_ENV} are current and belong to this "
+        f"account (create keys at {S3_KEYS_URL})"
+    )
 
 
 def _is_not_found(exc: BaseException) -> bool:
@@ -110,11 +143,7 @@ def is_resumable(exc: BaseException) -> bool:
     # NoSuchUpload: the upload vanished (a complete whose 524 hid that it
     # finished); 416: a range that no longer fits an object that changed
     code, status = _error(exc)
-    return (
-        code in ("NoSuchUpload", "SlowDown", "RequestTimeout")
-        or status in (416, 429)
-        or status >= 500
-    )
+    return code == "NoSuchUpload" or status == 416 or _transient(code, status)
 
 
 def _read_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -135,6 +164,22 @@ def _write_json(path: Path, data: Dict[str, Any]) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(tmp, path)
+    _sync_dir(path.parent)
+
+
+def _sync_dir(path: Path) -> None:
+    """make a rename in path survive a power loss. best effort: windows
+    cannot open a directory."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _md5_hex(path: Path, offset: int, length: int) -> str:
@@ -221,11 +266,48 @@ class _Transfer:
         # set on ctrl-c so queued work stops instead of finishing files in flight
         self._stop = threading.Event()
 
-    def _call(self, method: str, **kwargs: Any) -> Any:
+    def _request(self, work: Callable[[], T]) -> T:
+        """run work, one request plus its body or part read, holding a slot,
+        so `concurrency` also bounds the bytes in flight."""
         with self._slots:
             if self._stop.is_set():
                 raise NetworkVolumeTransferError("interrupted", resumable=True)
-            return getattr(self.client, method)(Bucket=self.bucket, **kwargs)
+            try:
+                return work()
+            except Exception as exc:
+                rejected = _keys_rejected(exc)
+                if rejected is None:
+                    raise
+                raise rejected from exc
+
+    def _client_call(self, method: str, **kwargs: Any) -> Any:
+        return getattr(self.client, method)(Bucket=self.bucket, **kwargs)
+
+    def _call(self, method: str, **kwargs: Any) -> Any:
+        return self._request(lambda: self._client_call(method, **kwargs))
+
+    def _cleanup(self, method: str, **kwargs: Any) -> Any:
+        """a cleanup request (delete, abort). it takes a slot but skips the
+        stop check, so it still runs after ctrl-c."""
+        with self._slots:
+            return self._client_call(method, **kwargs)
+
+    def _retry_delay(
+        self, response=None, caught_exception=None, attempts=1, **_kwargs
+    ) -> Optional[float]:
+        """botocore's needs-retry hook for this transfer's client, whose own
+        retries are off: botocore's standard mode skips 524 and shares one
+        retry quota across a whole run. waits here, so ctrl-c ends the wait,
+        and returns 0 to retry or None not to."""
+        if caught_exception is not None:
+            failed = is_resumable(caught_exception)
+        else:
+            failed = response is not None and _transient(*_error_fields(response[1]))
+        if not failed or attempts >= MAX_ATTEMPTS:
+            return None
+        if self._stop.wait(random.uniform(0, min(20.0, 2.0**attempts))):
+            raise NetworkVolumeTransferError("interrupted", resumable=True)
+        return 0
 
     def _run(self, tasks: List[Callable[[], Any]]) -> List[Any]:
         """run tasks in parallel; the first failure cancels the ones not started."""
@@ -400,7 +482,14 @@ class _Transfer:
         self._emit("done", str(local))
 
     def _single_put(self, local: Path, key: str, stat: os.stat_result) -> None:
-        self._call("put_object", Key=key, Body=local.read_bytes())
+        self._request(
+            lambda: self._client_call("put_object", Key=key, Body=local.read_bytes())
+        )
+        self._keep_if_unchanged(local, key, stat)
+        self._emit("advance", str(local), stat.st_size)
+
+    def _keep_if_unchanged(self, local: Path, key: str, stat: os.stat_result) -> None:
+        """after an upload, check the file did not change while it was read."""
         try:
             now = local.stat()
         except OSError as exc:
@@ -410,15 +499,13 @@ class _Transfer:
             ) from exc
         if not _same_version(stat, now):
             self._delete_changed(local, key)
-        self._emit("advance", str(local), stat.st_size)
 
     def _delete_changed(self, local: Path, key: str) -> None:
         """the file changed while it was read, so the object may hold either
         version and is newer than the local edit; a re-run would skip it.
-        remove it so the re-run sends the file. not via _call: this cleanup
-        runs even after ctrl-c."""
+        remove it so the re-run sends the file."""
         try:
-            self.client.delete_object(Bucket=self.bucket, Key=key)
+            self._cleanup("delete_object", Key=key)
         except Exception as exc:  # noqa: BLE001
             raise NetworkVolumeTransferError(
                 f"{local} changed during upload and the remote copy could not be "
@@ -432,9 +519,7 @@ class _Transfer:
         """discard an upload that can no longer be resumed (best effort: a
         failed abort only leaves orphaned parts behind)."""
         try:
-            self.client.abort_multipart_upload(
-                Bucket=self.bucket, Key=key, UploadId=upload_id
-            )
+            self._cleanup("abort_multipart_upload", Key=key, UploadId=upload_id)
         except Exception:  # noqa: BLE001
             return
 
@@ -526,6 +611,8 @@ class _Upload:
             )
         self._complete()
         self.state_path.unlink(missing_ok=True)
+        # completing can take long enough for an edit to land meanwhile
+        self.t._keep_if_unchanged(self.local, self.key, self.stat)
 
     def _length(self, number: int) -> int:
         return min(self.part_size, self.stat.st_size - (number - 1) * self.part_size)
@@ -603,19 +690,21 @@ class _Upload:
             raise
 
     def _send(self, number: int) -> Tuple[int, str]:
-        length = self._length(number)
+        response = self.t._request(lambda: self._read_and_send(number))
+        self.t._emit("advance", str(self.local), self._length(number))
+        return number, response["ETag"]
+
+    def _read_and_send(self, number: int) -> Dict[str, Any]:
         with open(self.local, "rb") as handle:
             handle.seek((number - 1) * self.part_size)
-            body = handle.read(length)
-        response = self.t._call(
+            body = handle.read(self._length(number))
+        return self.t._client_call(
             "upload_part",
             Key=self.key,
             UploadId=self.upload_id,
             PartNumber=number,
             Body=body,
         )
-        self.t._emit("advance", str(self.local), length)
-        return number, response["ETag"]
 
     def _complete(self) -> None:
         parts = [{"PartNumber": n, "ETag": self.parts[n]} for n in sorted(self.parts)]
@@ -767,28 +856,32 @@ class _Download:
     def _get_range(self, start: int, length: int) -> bytes:
         """botocore retries the request but not the body read, so a dropped
         or short body is fetched again (three tries)."""
-        end = start + length - 1
         for _ in range(3):
-            response = self.t._call(
-                "get_object", Key=self.key, Range=f"bytes={start}-{end}"
-            )
-            if self.etag and _etag(response.get("ETag")) not in ("", self.etag):
-                raise NetworkVolumeTransferError(
-                    f"{self.key} changed on the volume during download; "
-                    "run the command again to restart it",
-                    resumable=True,
-                )
-            try:
-                data = response["Body"].read()
-            except Exception as exc:  # noqa: BLE001 - a dropped stream is retried
-                if not is_resumable(exc):
-                    raise
-                continue
-            if len(data) == length:
+            data = self.t._request(lambda: self._read_range(start, length))
+            if data is not None and len(data) == length:
                 return data
         raise NetworkVolumeTransferError(
-            f"could not read {self.key} bytes {start}-{end}", resumable=True
+            f"could not read {self.key} bytes {start}-{start + length - 1}",
+            resumable=True,
         )
+
+    def _read_range(self, start: int, length: int) -> Optional[bytes]:
+        """one GET and its body read; None when the body dropped."""
+        response = self.t._client_call(
+            "get_object", Key=self.key, Range=f"bytes={start}-{start + length - 1}"
+        )
+        if self.etag and _etag(response.get("ETag")) not in ("", self.etag):
+            raise NetworkVolumeTransferError(
+                f"{self.key} changed on the volume during download; "
+                "run the command again to restart it",
+                resumable=True,
+            )
+        try:
+            return response["Body"].read()
+        except Exception as exc:  # noqa: BLE001 - a dropped stream is retried
+            if not is_resumable(exc):
+                raise
+            return None
 
 
 def _check_local_names(targets: List[Path], root: Path) -> None:
@@ -845,36 +938,134 @@ def _safe_target(root: Path, rel: str) -> Path:
     target = root.joinpath(*segments)
     if root.resolve() not in target.resolve().parents:
         raise NetworkVolumeTransferError(f"refusing unsafe remote path: {rel!r}")
+    # a symlinked folder would let two remote paths share one local file,
+    # which the name collision check cannot see
+    for depth in range(1, len(segments)):
+        if root.joinpath(*segments[:depth]).is_symlink():
+            raise NetworkVolumeTransferError(
+                f"{root.joinpath(*segments[:depth])} is a symlink; "
+                "download into a folder without symlinked subfolders"
+            )
     return target
 
 
 # ---------------------------------------------------------------- client
 
 
+def _list_volumes() -> List[Dict[str, Any]]:
+    """every network volume of the account."""
+    from runpod import error  # pylint: disable=import-outside-toplevel
+    from runpod.api.rest import (  # pylint: disable=import-outside-toplevel
+        run_rest_paginated_request_async,
+    )
+    from runpod.apps.context import block  # pylint: disable=import-outside-toplevel
+
+    try:
+        return block(
+            run_rest_paginated_request_async("/v2/network-volumes", "networkVolumes")
+        )
+    except error.AuthenticationError as exc:
+        raise NetworkVolumeTransferError(NOT_LOGGED_IN) from exc
+
+
 def _resolve_volume(reference: str) -> Tuple[str, str]:
     """the id and datacenter of the network volume with this id or name."""
-    from runpod.api.rest import (
-        run_rest_paginated_request_async,
-    )  # pylint: disable=import-outside-toplevel
-    from runpod.apps.context import block  # pylint: disable=import-outside-toplevel
-    from runpod.apps.utils.lookup import (
+    from runpod.apps.utils.lookup import (  # pylint: disable=import-outside-toplevel
         find_by_id_or_name,
-    )  # pylint: disable=import-outside-toplevel
-
-    volumes = block(
-        run_rest_paginated_request_async("/v2/network-volumes", "networkVolumes")
     )
+
     record = find_by_id_or_name(
-        volumes, reference, noun="network volumes", error=NetworkVolumeTransferError
+        _list_volumes(),
+        reference,
+        noun="network volumes",
+        error=NetworkVolumeTransferError,
     )
     if record is None:
-        raise NetworkVolumeTransferError(f"network volume {reference!r} not found")
+        raise NetworkVolumeTransferError(
+            f"no network volume named {reference!r}: pass a volume id or name "
+            "(see https://console.runpod.io/user/storage)"
+        )
     datacenter = record.get("dataCenter") or record.get("dataCenterId")
     if not datacenter:
         raise NetworkVolumeTransferError(
             f"could not find the datacenter of network volume {reference!r}"
         )
     return record["id"], str(datacenter)
+
+
+def saved_s3_keys() -> Tuple[Optional[str], Optional[str]]:
+    """the s3 keys saved in ~/.runpod/config.toml for the current profile."""
+    import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
+    from runpod.cli.groups.config.functions import (  # pylint: disable=import-outside-toplevel
+        get_credentials,
+    )
+
+    saved = get_credentials(runpod.profile) or {}
+    return saved.get("s3_access_key"), saved.get("s3_secret_key")
+
+
+def find_s3_keys(
+    access_key: Optional[str] = None, secret_key: Optional[str] = None
+) -> Optional[Tuple[str, str]]:
+    """the first complete pair of s3 keys from the arguments, the
+    environment, or the saved config; None when there is none. a pair never
+    mixes sources."""
+    pairs = (
+        (access_key, secret_key),
+        (os.environ.get(ACCESS_KEY_ENV), os.environ.get(SECRET_KEY_ENV)),
+        saved_s3_keys(),
+    )
+    return next(((a, s) for a, s in pairs if a and s), None)
+
+
+def _s3_keys(access_key: Optional[str], secret_key: Optional[str]) -> Tuple[str, str]:
+    keys = find_s3_keys(access_key, secret_key)
+    if keys is None:
+        raise NetworkVolumeTransferError(
+            f"s3 api keys required: set {ACCESS_KEY_ENV} and {SECRET_KEY_ENV} "
+            f"or pass access_key and secret_key (create keys at {S3_KEYS_URL})"
+        )
+    return keys
+
+
+def _check_endpoint(endpoint: str, datacenter: str) -> None:
+    """fail fast on a datacenter without the s3 api: its endpoint does not
+    resolve, and retrying would only delay the error. behind an https proxy
+    the proxy resolves the name, so the check is skipped."""
+    from urllib.parse import urlparse  # pylint: disable=import-outside-toplevel
+    from urllib.request import (  # pylint: disable=import-outside-toplevel
+        getproxies,
+        proxy_bypass,
+    )
+
+    host = urlparse(endpoint).hostname or ""
+    if getproxies().get("https") and not proxy_bypass(host):
+        return
+    try:
+        socket.getaddrinfo(host, 443)
+    except socket.gaierror as exc:
+        raise NetworkVolumeTransferError(
+            f"{datacenter} does not support the s3 api yet ({S3_DOCS_URL}), "
+            f"or {host} is unreachable from this network"
+        ) from exc
+
+
+def _client_config(concurrency: int) -> Any:
+    from botocore.config import Config  # pylint: disable=import-outside-toplevel
+
+    return Config(
+        s3={"addressing_style": "path"},
+        request_checksum_calculation="when_required",
+        response_checksum_validation="when_required",
+        # one try: _Transfer._retry_delay makes every retry decision
+        retries={"mode": "standard", "total_max_attempts": 1},
+        connect_timeout=60,
+        # a socket read silent this long is a stalled connection (runpod's
+        # proxy answers a slow request with 524 after about 100s)
+        read_timeout=300,
+        # headroom over the request bound for connections being returned
+        max_pool_connections=max(10, 2 * concurrency),
+    )
 
 
 def _make_transfer(
@@ -889,47 +1080,21 @@ def _make_transfer(
     """a transfer to the network volume with this id or name. backs
     NetworkVolume.upload and NetworkVolume.download."""
     import boto3  # pylint: disable=import-outside-toplevel
-    from botocore.config import Config  # pylint: disable=import-outside-toplevel
 
-    access_key = access_key or os.environ.get(ACCESS_KEY_ENV)
-    secret_key = secret_key or os.environ.get(SECRET_KEY_ENV)
-    if not access_key or not secret_key:
-        raise NetworkVolumeTransferError(
-            f"s3 api keys required: set {ACCESS_KEY_ENV} and {SECRET_KEY_ENV} "
-            f"(create keys at {S3_KEYS_URL})"
-        )
     volume_id, datacenter = _resolve_volume(volume)
+    access_key, secret_key = _s3_keys(access_key, secret_key)
     endpoint = endpoint_url or f"https://s3api-{datacenter.lower()}.runpod.io/"
+    if not endpoint_url:
+        _check_endpoint(endpoint, datacenter)
     concurrency = max(1, int(concurrency))
-    config = Config(
-        s3={"addressing_style": "path"},
-        request_checksum_calculation="when_required",
-        response_checksum_validation="when_required",
-        # total_max_attempts counts the first try (max_attempts would not)
-        retries={"mode": "standard", "total_max_attempts": MAX_ATTEMPTS},
-        connect_timeout=60,
-        # a socket read silent this long is a stalled connection (runpod's
-        # proxy answers a slow request with 524 after about 100s)
-        read_timeout=300,
-        # headroom over the request bound for connections being returned
-        max_pool_connections=max(10, 2 * concurrency),
-    )
     client = boto3.session.Session().client(
         "s3",
         region_name=datacenter,
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        config=config,
+        config=_client_config(concurrency),
     )
-    client.meta.events.register_first("needs-retry.s3", _retry_proxy_timeout)
-    return _Transfer(client, volume_id, endpoint, concurrency, progress, force=force)
-
-
-def _retry_proxy_timeout(response=None, attempts=1, **_kwargs) -> Optional[float]:
-    """the backoff before retrying a 524, which runpod's proxy returns when an
-    operation outlives it. botocore's standard mode retries 500/502/503/504
-    only; returning None leaves every other response to it."""
-    if response is None or response[0].status_code != 524 or attempts >= MAX_ATTEMPTS:
-        return None
-    return random.uniform(0, min(20.0, 2.0**attempts))
+    transfer = _Transfer(client, volume_id, endpoint, concurrency, progress, force=force)
+    client.meta.events.register_first("needs-retry.s3", transfer._retry_delay)
+    return transfer
