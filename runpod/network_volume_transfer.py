@@ -14,6 +14,7 @@ requests through `_Transfer._retry_delay`.
 """
 
 import hashlib
+import io
 import json
 import math
 import os
@@ -49,6 +50,10 @@ SECRET_KEY_ENV = "RUNPOD_S3_SECRET_KEY"
 S3_KEYS_URL = "https://console.runpod.io/user/settings"
 S3_DOCS_URL = "https://docs.runpod.io/storage/s3-api"
 NOT_LOGGED_IN = "not logged in: run `rp login` or set RUNPOD_API_KEY"
+API_KEY_REJECTED = (
+    "the runpod api rejected the api key (401): run `rp login` again or check "
+    "RUNPOD_API_KEY"
+)
 # error codes s3 gives for keys it does not accept
 _REJECTED_KEY_CODES = ("InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied")
 
@@ -233,6 +238,19 @@ _SUMMARY_FIELDS = {
 }
 
 
+class _StoppableBody(io.BytesIO):
+    """bytes read by the http client in blocks; a read after stop raises."""
+
+    def __init__(self, data: bytes, stop: threading.Event):
+        super().__init__(data)
+        self._stop = stop
+
+    def read(self, size: Optional[int] = -1) -> bytes:
+        if self._stop.is_set():
+            raise NetworkVolumeTransferError("interrupted", resumable=True)
+        return super().read(size)
+
+
 class _Transfer:
     """one bucket on one endpoint. _make_transfer builds this."""
 
@@ -279,6 +297,11 @@ class _Transfer:
                 if rejected is None:
                     raise
                 raise rejected from exc
+
+    def _body(self, data: bytes) -> "_StoppableBody":
+        """a request body that ends the upload once ctrl-c sets the stop flag,
+        instead of sending the rest of a part that can be 64 MiB or more."""
+        return _StoppableBody(data, self._stop)
 
     def _client_call(self, method: str, **kwargs: Any) -> Any:
         return getattr(self.client, method)(Bucket=self.bucket, **kwargs)
@@ -483,7 +506,9 @@ class _Transfer:
 
     def _single_put(self, local: Path, key: str, stat: os.stat_result) -> None:
         self._request(
-            lambda: self._client_call("put_object", Key=key, Body=local.read_bytes())
+            lambda: self._client_call(
+                "put_object", Key=key, Body=self._body(local.read_bytes())
+            )
         )
         self._keep_if_unchanged(local, key, stat)
         self._emit("advance", str(local), stat.st_size)
@@ -703,7 +728,7 @@ class _Upload:
             Key=self.key,
             UploadId=self.upload_id,
             PartNumber=number,
-            Body=body,
+            Body=self.t._body(body),
         )
 
     def _complete(self) -> None:
@@ -965,7 +990,11 @@ def _list_volumes() -> List[Dict[str, Any]]:
             run_rest_paginated_request_async("/v2/network-volumes", "networkVolumes")
         )
     except error.AuthenticationError as exc:
-        raise NetworkVolumeTransferError(NOT_LOGGED_IN) from exc
+        import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
+
+        if not runpod.api_key:
+            raise NetworkVolumeTransferError(NOT_LOGGED_IN) from exc
+        raise NetworkVolumeTransferError(API_KEY_REJECTED) from exc
 
 
 def _resolve_volume(reference: str) -> Tuple[str, str]:

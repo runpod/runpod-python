@@ -21,6 +21,11 @@ def _client_error(code, status, op="Op"):
     )
 
 
+def _payload(body):
+    """the bytes of a request body, read the way botocore reads a file."""
+    return body.read() if hasattr(body, "read") else bytes(body)
+
+
 class FakeS3:
     """the subset of the s3 api the transfer module uses."""
 
@@ -56,8 +61,9 @@ class FakeS3:
 
     def put_object(self, Bucket, Key, Body):
         self._call("put_object", Key=Key)
-        self.put(Key, bytes(Body))
-        return {"ETag": self._etag(bytes(Body))}
+        data = _payload(Body)
+        self.put(Key, data)
+        return {"ETag": self._etag(data)}
 
     def head_object(self, Bucket, Key):
         self._call("head_object", Key=Key)
@@ -108,8 +114,9 @@ class FakeS3:
 
     def upload_part(self, Bucket, Key, UploadId, PartNumber, Body):
         self._call("upload_part", PartNumber=PartNumber)
-        self._upload(UploadId)["parts"][PartNumber] = bytes(Body)
-        return {"ETag": self._etag(bytes(Body))}
+        data = _payload(Body)
+        self._upload(UploadId)["parts"][PartNumber] = data
+        return {"ETag": self._etag(data)}
 
     def list_parts(self, Bucket, Key, UploadId, PartNumberMarker=0):
         self._call("list_parts", UploadId=UploadId, PartNumberMarker=PartNumberMarker)
@@ -1542,3 +1549,26 @@ def test_s3_keys_from_env_skip_the_saved_config(monkeypatch):
 
     monkeypatch.setattr(nvt, "saved_s3_keys", unexpected)
     assert nvt.find_s3_keys() == ("user_x", "rps_x")
+
+
+def test_upload_body_stops_mid_part(tmp_path):
+    transfer = _transfer(FakeS3(), tmp_path)
+    body = transfer._body(b"x" * 100)
+    assert body.read(10) == b"x" * 10
+    transfer._stop.set()
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="interrupted") as info:
+        body.read(10)
+    assert nvt.is_resumable(info.value)
+
+
+@pytest.mark.parametrize(
+    "api_key, message", [(None, "not logged in"), ("rpa_bad", "rejected the api key")]
+)
+def test_api_key_missing_vs_rejected(monkeypatch, api_key, message):
+    async def unauthorized(*args, **kwargs):
+        raise runpod.error.AuthenticationError("Unauthorized request")
+
+    monkeypatch.setattr(runpod, "api_key", api_key)
+    monkeypatch.setattr("runpod.api.rest.run_rest_paginated_request_async", unauthorized)
+    with pytest.raises(nvt.NetworkVolumeTransferError, match=message):
+        nvt._resolve_volume("vol")
