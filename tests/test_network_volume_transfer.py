@@ -1531,3 +1531,14 @@ def test_state_writes_sync_the_folder(tmp_path, monkeypatch):
     assert synced == [tmp_path / "s"]
     real_sync_dir(tmp_path / "s")
     real_sync_dir(tmp_path / "missing")  # best effort: no error
+
+
+def test_s3_keys_from_env_skip_the_saved_config(monkeypatch):
+    monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
+    monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
+
+    def unexpected():
+        raise AssertionError("the saved config was read")
+
+    monkeypatch.setattr(nvt, "saved_s3_keys", unexpected)
+    assert nvt.find_s3_keys() == ("user_x", "rps_x")

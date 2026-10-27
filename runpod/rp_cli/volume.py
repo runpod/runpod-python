@@ -226,8 +226,8 @@ def _transfer(ctx, action_label, method_name, reference, source, target, opts) -
 def volume_upload(ctx, args, **opts):
     """Upload a file or folder to a network volume.
 
-    VOLUME is the volume's id or name; leave it out to pick one. REMOTE_PATH
-    defaults to the local name. A folder's contents go under REMOTE_PATH/.
+    VOLUME is the volume's id or name. Give only LOCAL_PATH to pick the
+    volume from a list. REMOTE_PATH defaults to the local name. A folder's contents go under REMOTE_PATH/.
     Files whose remote copy has the same size and is not older are skipped;
     --force sends them anyway.
     """
@@ -244,8 +244,8 @@ def volume_upload(ctx, args, **opts):
 def volume_download(ctx, args, **opts):
     """Download a file or folder from a network volume.
 
-    VOLUME is the volume's id or name; leave it out to pick one. A
-    REMOTE_PATH ending in / is a folder. LOCAL_PATH defaults to the remote
+    VOLUME is the volume's id or name. Give only REMOTE_PATH to pick the
+    volume from a list. A REMOTE_PATH ending in / is a folder. LOCAL_PATH defaults to the remote
     name. Local files of the same size and not older than the remote copy
     are skipped; --force fetches them anyway.
     """
