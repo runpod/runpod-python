@@ -17,6 +17,7 @@ import hashlib
 import json
 import math
 import os
+import random
 import threading
 import time
 import unicodedata
@@ -36,6 +37,9 @@ PARTIAL_SUFFIX = ".rpdownload"
 SIDECAR_SUFFIX = ".rpdownload.json"
 # every file a download writes next to its target
 TRANSFER_SUFFIXES = (PARTIAL_SUFFIX, SIDECAR_SUFFIX, SIDECAR_SUFFIX + ".tmp")
+
+# tries per request, the first included
+MAX_ATTEMPTS = 10
 
 ACCESS_KEY_ENV = "RUNPOD_S3_ACCESS_KEY"
 SECRET_KEY_ENV = "RUNPOD_S3_SECRET_KEY"
@@ -902,7 +906,7 @@ def _make_transfer(
         request_checksum_calculation="when_required",
         response_checksum_validation="when_required",
         # total_max_attempts counts the first try (max_attempts would not)
-        retries={"mode": "standard", "total_max_attempts": 10},
+        retries={"mode": "standard", "total_max_attempts": MAX_ATTEMPTS},
         connect_timeout=60,
         # a socket read silent this long is a stalled connection (runpod's
         # proxy answers a slow request with 524 after about 100s)
@@ -918,4 +922,14 @@ def _make_transfer(
         aws_secret_access_key=secret_key,
         config=config,
     )
+    client.meta.events.register_first("needs-retry.s3", _retry_proxy_timeout)
     return _Transfer(client, volume_id, endpoint, concurrency, progress, force=force)
+
+
+def _retry_proxy_timeout(response=None, attempts=1, **_kwargs) -> Optional[float]:
+    """the backoff before retrying a 524, which runpod's proxy returns when an
+    operation outlives it. botocore's standard mode retries 500/502/503/504
+    only; returning None leaves every other response to it."""
+    if response is None or response[0].status_code != 524 or attempts >= MAX_ATTEMPTS:
+        return None
+    return random.uniform(0, min(20.0, 2.0**attempts))
