@@ -1,15 +1,15 @@
-aiohttp[speedups] >= 3.14.3
+aiohttp[speedups] >= 3.14.5
 aiohttp-retry >= 2.9.1
 
 backoff >= 2.2.1
-boto3 >= 1.43.111
+boto3 >= 1.43.118
 click >= 8.5.0
 cloudpickle >= 3.1.2
 colorama >= 0.4.6, < 0.4.7
 cryptography >= 50.0.2
-fastapi[all] >= 0.143.0
-packaging >= 24.2
-paramiko >= 5.0.0
+fastapi[all] >= 0.162.0
+packaging >= 26.3
+paramiko >= 5.1.0
 pathspec >= 1.1.1
 prettytable >= 3.18.0
 psutil >= 7.2.2
