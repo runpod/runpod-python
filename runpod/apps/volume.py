@@ -84,6 +84,72 @@ class NetworkVolume(Volume):
     def __repr__(self) -> str:
         return f"<NetworkVolume {self.name!r} size={self.size}GB>"
 
+    def upload(
+        self,
+        local_path,
+        remote_path: Optional[str] = None,
+        *,
+        access_key: Optional[str] = None,
+        secret_key: Optional[str] = None,
+        concurrency: int = 4,
+        progress=None,
+        force: bool = False,
+        endpoint_url: Optional[str] = None,
+    ) -> Dict[str, int]:
+        """upload a file or folder to this volume through its s3 api.
+
+        the volume must exist; it is found by id or name with the runpod
+        api key, which also gives its datacenter. `remote_path` defaults to
+        the local basename. a folder's contents go under `remote_path/`. for
+        a file, a `remote_path` ending in "/" keeps the local file name.
+        unchanged files (same size, remote not older, in whole seconds) are
+        skipped unless `force`, and an interrupted multipart upload resumes
+        on re-run.
+
+        s3 keys come from the arguments or RUNPOD_S3_ACCESS_KEY and
+        RUNPOD_S3_SECRET_KEY. `progress(event, path, nbytes)` receives
+        "start", "advance", "reuse", "skip", and "done" events.
+
+        returns {files_transferred, files_skipped, bytes_transferred}.
+        """
+        from runpod import network_volume_transfer as nvt
+
+        transfer = nvt._make_transfer(
+            self.reference, access_key, secret_key, endpoint_url, concurrency, progress, force
+        )
+        return transfer.upload(Path(local_path), remote_path)
+
+    def download(
+        self,
+        remote_path: str,
+        local_path=None,
+        *,
+        access_key: Optional[str] = None,
+        secret_key: Optional[str] = None,
+        concurrency: int = 4,
+        progress=None,
+        force: bool = False,
+        endpoint_url: Optional[str] = None,
+    ) -> Dict[str, int]:
+        """download a file or folder from this volume through its s3 api.
+
+        a `remote_path` ending in "/" (or one that only exists as a prefix)
+        is a folder. `local_path` defaults to the remote basename; one
+        ending in "/" is a folder to download into. local files of the same
+        size and not older than the remote copy are skipped (downloads stamp
+        the remote time on the file) unless `force`, and partial downloads
+        resume on re-run. keys and `progress` work as in `upload`.
+
+        returns {files_transferred, files_skipped, bytes_transferred}.
+        """
+        from runpod import network_volume_transfer as nvt
+
+        transfer = nvt._make_transfer(
+            self.reference, access_key, secret_key, endpoint_url, concurrency, progress, force
+        )
+        # passed through as given: Path() would drop a trailing "/"
+        return transfer.download(remote_path, local_path)
+
 
 class GlobalVolume(Volume):
     """a global volume resolved by name or id without datacenter placement."""
