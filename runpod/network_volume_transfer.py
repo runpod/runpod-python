@@ -1010,12 +1010,13 @@ def find_s3_keys(
     """the first complete pair of s3 keys from the arguments, the
     environment, or the saved config; None when there is none. a pair never
     mixes sources."""
-    pairs = (
-        (access_key, secret_key),
-        (os.environ.get(ACCESS_KEY_ENV), os.environ.get(SECRET_KEY_ENV)),
-        saved_s3_keys(),
-    )
-    return next(((a, s) for a, s in pairs if a and s), None)
+    if access_key and secret_key:
+        return access_key, secret_key
+    from_env = (os.environ.get(ACCESS_KEY_ENV), os.environ.get(SECRET_KEY_ENV))
+    if all(from_env):
+        return from_env
+    saved = saved_s3_keys()
+    return saved if all(saved) else None
 
 
 def _s3_keys(access_key: Optional[str], secret_key: Optional[str]) -> Tuple[str, str]:

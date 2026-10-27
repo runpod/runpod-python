@@ -49,7 +49,7 @@ def _sha256(path):
     return digest.hexdigest()
 
 
-def test_round_trip_resumes_and_skips(volume, tmp_path):
+def test_round_trip_then_rerun_skips(volume, tmp_path):
     big = tmp_path / "up" / "big.bin"
     big.parent.mkdir()
     # over the 64 MiB single-request limit, so the upload is multipart and the
