@@ -194,3 +194,95 @@ async def test_follow_attaches_new_workers(monkeypatch, capsys):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert "new [container] new" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("endpoint_id", [None, "ep1"])
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 599])
+async def test_follow_retries_transient_http_errors(
+    monkeypatch, capsys, endpoint_id, status
+):
+    resumes, closed = [], []
+    received = asyncio.Event()
+    companion_started = asyncio.Event()
+    monkeypatch.setattr(logs, "RECONNECT_SECONDS", 0.001)
+    monkeypatch.setattr(logs, "WORKER_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(
+        logs,
+        "run_rest_request",
+        lambda *a, **k: {"workers": [{"id": "pod1"}, {"id": "pod2"}]},
+    )
+
+    async def stream(worker, **kwargs):
+        try:
+            if worker == "pod2":
+                companion_started.set()
+                yield event("companion")
+                await asyncio.Event().wait()
+                return
+            resumes.append(kwargs["last_event_id"])
+            if len(resumes) == 1:
+                if endpoint_id:
+                    await companion_started.wait()
+                kwargs["on_event_id"]("cursor1")
+                yield event("first")
+            elif len(resumes) == 2:
+                raise aiohttp.ClientResponseError(
+                    SimpleNamespace(real_url="https://api.runpod.io/v2/pods/pod1/logs"),
+                    (),
+                    status=status,
+                    message="temporarily unavailable",
+                )
+            else:
+                yield event("resumed")
+                received.set()
+                await asyncio.Event().wait()
+        finally:
+            closed.append(worker)
+
+    monkeypatch.setattr(logs, "stream_pod_logs", stream)
+    task = asyncio.create_task(
+        logs._show_logs(
+            None if endpoint_id else "pod1", endpoint_id, (), True, None, 10, None, True
+        )
+    )
+    try:
+        await asyncio.wait_for(received.wait(), 1)
+        assert not task.done()
+        assert resumes == [None, "cursor1", "cursor1"]
+        assert closed == ["pod1", "pod1"]
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert closed.count("pod1") == 3
+    assert closed.count("pod2") == (1 if endpoint_id else 0)
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [row["line"] for row in rows] == (
+        ["companion", "first", "resumed"] if endpoint_id else ["first", "resumed"]
+    )
+
+
+@pytest.mark.parametrize("endpoint_id", [None, "ep1"])
+@pytest.mark.parametrize(
+    "follow,status",
+    [(True, 400), (True, 401), (True, 403), (False, 429), (False, 500), (False, 503)],
+)
+def test_http_errors_that_must_surface(monkeypatch, endpoint_id, follow, status):
+    monkeypatch.setattr(logs, "WORKER_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(
+        logs, "run_rest_request", lambda *a, **k: {"workers": [{"id": "pod1"}]}
+    )
+
+    async def stream(*args, **kwargs):
+        raise aiohttp.ClientResponseError(
+            SimpleNamespace(real_url="https://api.runpod.io/v2/pods/pod1/logs"),
+            (),
+            status=status,
+            message="request failed",
+        )
+        yield
+
+    monkeypatch.setattr(logs, "stream_pod_logs", stream)
+    with pytest.raises(click.ClickException, match="request failed"):
+        logs.show_logs(
+            None if endpoint_id else "pod1", endpoint_id=endpoint_id, follow=follow
+        )

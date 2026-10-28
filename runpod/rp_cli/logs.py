@@ -65,9 +65,10 @@ async def _show_logs(
                     else:
                         records.append((worker, event))
             except aiohttp.ClientResponseError as exc:
-                if not endpoint_id or exc.status != 404:
+                if endpoint_id and exc.status == 404:
+                    return
+                if not follow or not (exc.status == 429 or 500 <= exc.status < 600):
                     raise
-                return
             except (aiohttp.ClientConnectionError, asyncio.TimeoutError):
                 if not follow:
                     raise
