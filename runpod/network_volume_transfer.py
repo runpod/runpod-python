@@ -52,7 +52,7 @@ S3_DOCS_URL = "https://docs.runpod.io/storage/s3-api"
 NOT_LOGGED_IN = "not logged in: run `rp login` or set RUNPOD_API_KEY"
 API_KEY_REJECTED = (
     "the runpod api rejected the api key (401): run `rp login` again or check "
-    "RUNPOD_API_KEY"
+    "RUNPOD_API_KEY or ~/.runpod/config.toml"
 )
 # error codes s3 gives for keys it does not accept
 _REJECTED_KEY_CODES = ("InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied")
@@ -69,6 +69,10 @@ class NetworkVolumeTransferError(RuntimeError):
     def __init__(self, message: str, resumable: bool = False):
         super().__init__(message)
         self.resumable = resumable
+
+
+class RejectedS3Keys(NetworkVolumeTransferError):
+    """The S3 endpoint rejected the supplied credential pair."""
 
 
 def part_size_for(size: int) -> int:
@@ -109,10 +113,11 @@ def _keys_rejected(exc: BaseException) -> Optional[NetworkVolumeTransferError]:
     code, status = _error(exc)
     if status not in (401, 403) and code not in _REJECTED_KEY_CODES:
         return None
-    return NetworkVolumeTransferError(
-        f"the volume's s3 api rejected the keys ({status or code}): check that "
-        f"{ACCESS_KEY_ENV} and {SECRET_KEY_ENV} are current and belong to this "
-        f"account (create keys at {S3_KEYS_URL})"
+    return RejectedS3Keys(
+        f"the volume's s3 api rejected the keys ({status or code}): check "
+        f"--s3-access-key/--s3-secret-key, {ACCESS_KEY_ENV}/{SECRET_KEY_ENV}, "
+        "or s3_access_key/s3_secret_key in ~/.runpod/config.toml "
+        f"(create keys at {S3_KEYS_URL}): {exc}"
     )
 
 

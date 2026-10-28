@@ -106,8 +106,11 @@ class NetworkVolume(Volume):
         skipped unless `force`, and an interrupted multipart upload resumes
         on re-run.
 
-        s3 keys come from the arguments or RUNPOD_S3_ACCESS_KEY and
-        RUNPOD_S3_SECRET_KEY. `progress(event, path, nbytes)` receives
+        s3 keys come from the arguments, RUNPOD_S3_ACCESS_KEY and
+        RUNPOD_S3_SECRET_KEY, or the saved s3_access_key/s3_secret_key in
+        ~/.runpod/config.toml. the CLI prompts for missing keys and can pick
+        a volume from a list when VOLUME is omitted.
+        `progress(event, path, nbytes)` receives
         "start", "advance", "reuse", "skip", and "done" events.
 
         returns {files_transferred, files_skipped, bytes_transferred}.
