@@ -75,7 +75,10 @@ rp volume download VOLUME outputs/ ./outputs
 
 Transfers use the volume's S3-compatible API, so they need S3 API keys
 (separate from the API key): set `RUNPOD_S3_ACCESS_KEY` and
-`RUNPOD_S3_SECRET_KEY`, or pass `--s3-access-key` / `--s3-secret-key`. The
+`RUNPOD_S3_SECRET_KEY`, pass `--s3-access-key` / `--s3-secret-key`, or save
+`s3_access_key` / `s3_secret_key` in `~/.runpod/config.toml`. The CLI prompts
+for missing keys and offers to save them. You can omit `VOLUME` in an
+interactive session to pick a volume from a list. The
 volume must be in a [datacenter with the S3 API](https://docs.runpod.io/storage/s3-api).
 `VOLUME` is the volume's ID or name, looked up with your API key.
 

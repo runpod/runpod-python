@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
+import click
 from botocore.exceptions import ClientError, ReadTimeoutError
 from click.testing import CliRunner
 
@@ -742,6 +743,7 @@ def test_no_module_level_transfer_exports():
 # ------------------------------------------------------------------- cli
 
 
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_upload_prints_summary(tmp_path):
     from runpod.rp_cli.main import cli
 
@@ -766,6 +768,7 @@ def test_cli_upload_prints_summary(tmp_path):
     assert "uploaded 1 file(s), 1 bytes; skipped 0 unchanged" in result.output
 
 
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_download_failure_says_resume():
     from runpod.rp_cli.main import cli
 
@@ -776,6 +779,7 @@ def test_cli_download_failure_says_resume():
     assert "re-run the same command to resume" in result.output
 
 
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_ctrl_c_exits_130_with_resume_hint():
     from runpod.rp_cli.main import cli
 
@@ -785,6 +789,7 @@ def test_cli_ctrl_c_exits_130_with_resume_hint():
     assert "interrupted; re-run the same command to resume" in result.output
 
 
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_final_error_has_no_resume_hint():
     from runpod.rp_cli.main import cli
 
@@ -796,6 +801,7 @@ def test_cli_final_error_has_no_resume_hint():
     assert "re-run" not in result.output
 
 
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_missing_path_has_no_resume_hint():
     from runpod.rp_cli.main import cli
 
@@ -1159,7 +1165,7 @@ def test_ctrl_c_stops_files_in_flight(tmp_path):
         if first:
             raise KeyboardInterrupt
         # every other part waits for the interrupt to land, so what runs
-        # after it is deterministic: only parts already in flight finish
+        # after it is deterministic: parts in flight stop at their next read
         transfer._stop.wait(5)
         return original(**kwargs)
 
@@ -1235,7 +1241,8 @@ def test_client_retries_the_proxy_524(monkeypatch):
             pass
 
     server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
     try:
         monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
         monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
@@ -1246,6 +1253,8 @@ def test_client_retries_the_proxy_524(monkeypatch):
         transfer.client.list_objects_v2(Bucket="vol123")
     finally:
         server.shutdown()
+        server.server_close()
+        server_thread.join()
     assert len(hits) == 3
 
 
@@ -1261,6 +1270,13 @@ def _cli():
 @pytest.fixture
 def interactive(monkeypatch):
     monkeypatch.setattr("runpod.rp_cli.volume._interactive", lambda: True)
+
+
+@pytest.fixture
+def cli_preflight(monkeypatch):
+    """Keep CLI presentation tests independent of the account and DNS."""
+    monkeypatch.setattr(nvt, "_resolve_volume", lambda reference: (reference, "EU-RO-1"))
+    monkeypatch.setattr(nvt, "_check_endpoint", lambda endpoint, datacenter: None)
 
 
 def _fake_transfer(calls):
@@ -1280,6 +1296,7 @@ def test_cli_not_logged_in_says_how_to_log_in(monkeypatch, tmp_path):
     assert "not logged in: run `rp login` or set RUNPOD_API_KEY" in result.output
 
 
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_offers_login_and_continues(monkeypatch, tmp_path, interactive):
     import click as _click
 
@@ -1308,6 +1325,7 @@ def test_cli_declined_login_stops(monkeypatch, tmp_path, interactive):
     assert "not logged in" in result.output
 
 
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_picks_a_volume_when_left_out(monkeypatch, tmp_path, interactive):
     volumes = [
         {"id": "aaa", "name": "first", "size": 10, "dataCenterId": "EU-RO-1"},
@@ -1328,6 +1346,7 @@ def test_cli_without_volume_in_a_script_asks_for_it(tmp_path):
     assert "pass VOLUME first" in result.output
 
 
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_missing_keys_in_a_script_names_every_option(monkeypatch, tmp_path):
     monkeypatch.delenv(nvt.ACCESS_KEY_ENV)
     result = CliRunner().invoke(_cli(), ["volume", "upload", "vol", str(tmp_path)])
@@ -1337,6 +1356,7 @@ def test_cli_missing_keys_in_a_script_names_every_option(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("save", [True, False])
+@pytest.mark.usefixtures("cli_preflight")
 def test_cli_prompts_for_keys_and_offers_to_save(monkeypatch, tmp_path, interactive, save):
     monkeypatch.delenv(nvt.ACCESS_KEY_ENV)
     saved = []
@@ -1355,6 +1375,53 @@ def test_cli_prompts_for_keys_and_offers_to_save(monkeypatch, tmp_path, interact
     assert calls[0][3]["access_key"] == "user_typed" and calls[0][3]["secret_key"] == "rps_typed"
     assert saved == ([("user_typed", "rps_typed")] if save else [])
     assert "rps_typed" not in result.output
+
+
+def test_cli_checks_volume_before_asking_for_keys(monkeypatch, tmp_path, interactive):
+    def missing_volume(reference):
+        raise nvt.NetworkVolumeTransferError("no network volume named 'missing'")
+
+    monkeypatch.setattr(nvt, "_resolve_volume", missing_volume)
+    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys"))
+    result = CliRunner().invoke(_cli(), ["volume", "upload", "missing", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "no network volume named" in result.output
+
+
+def test_cli_checks_endpoint_before_asking_for_keys(monkeypatch, tmp_path, interactive):
+    monkeypatch.setattr(nvt, "_resolve_volume", lambda reference: (reference, "EU-SE-1"))
+
+    def unsupported_endpoint(endpoint, datacenter):
+        raise nvt.NetworkVolumeTransferError("does not support the s3 api")
+
+    monkeypatch.setattr(nvt, "_check_endpoint", unsupported_endpoint)
+    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys"))
+    result = CliRunner().invoke(_cli(), ["volume", "upload", "vol", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "does not support the s3 api" in result.output
+
+
+def test_cli_offers_to_replace_rejected_saved_keys(monkeypatch, interactive):
+    from runpod.rp_cli import volume as volume_cli
+
+    calls = []
+
+    def transfer(source, target, **kwargs):
+        calls.append(kwargs["access_key"])
+        if len(calls) == 1:
+            raise nvt.RejectedS3Keys("rejected the keys")
+        return {"files_transferred": 1}
+
+    monkeypatch.setattr(volume_cli, "_prompt_s3_keys", lambda: ("new", "secret"))
+    opts = {"s3_access_key": "saved", "s3_secret_key": "old", "_saved_keys": True,
+            "endpoint_url": None, "concurrency": 1, "force": False}
+    result = CliRunner().invoke(
+        click.Command("test", callback=lambda: volume_cli._invoke_transfer(
+            transfer, "src", "dst", opts, None
+        )), input="y\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == ["saved", "new"]
 
 
 def test_set_s3_keys_keeps_the_api_key_and_login_keeps_the_s3_keys(monkeypatch, tmp_path):
@@ -1381,6 +1448,8 @@ def test_rejected_keys_say_so_and_do_not_resume(tmp_path, code, status):
     with pytest.raises(nvt.NetworkVolumeTransferError, match="rejected the keys") as info:
         _transfer(fake, tmp_path).upload(src, None)
     assert not nvt.is_resumable(info.value)
+    assert "--s3-access-key" in str(info.value)
+    assert "~/.runpod/config.toml" in str(info.value)
 
 
 def test_datacenter_without_the_s3_api_fails_fast(monkeypatch):
@@ -1559,6 +1628,32 @@ def test_upload_body_stops_mid_part(tmp_path):
     with pytest.raises(nvt.NetworkVolumeTransferError, match="interrupted") as info:
         body.read(10)
     assert nvt.is_resumable(info.value)
+
+
+@pytest.mark.parametrize("multipart", [False, True])
+def test_upload_call_sites_stop_before_sending_body(tmp_path, monkeypatch, multipart):
+    fake = FakeS3()
+    transfer = _transfer(fake, tmp_path)
+    src = tmp_path / "f.bin"
+    src.write_bytes(b"x" * (20 if multipart else 1))
+    if multipart:
+        monkeypatch.setattr(nvt, "SINGLE_PUT_MAX", 8)
+        original = fake.upload_part
+        def interrupted(**kwargs):
+            transfer._stop.set()
+            return original(**kwargs)
+        fake.upload_part = interrupted
+    else:
+        original = fake.put_object
+        def interrupted(**kwargs):
+            transfer._stop.set()
+            return original(**kwargs)
+        fake.put_object = interrupted
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="interrupted") as info:
+        transfer.upload(src, "f.bin")
+    assert nvt.is_resumable(info.value)
+    assert "f.bin" not in fake.objects
+    assert not any(upload["parts"] for upload in fake.uploads.values())
 
 
 @pytest.mark.parametrize(

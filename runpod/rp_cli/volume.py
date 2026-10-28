@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -10,7 +11,8 @@ def volume():
 
     Uses the S3-compatible API, which needs S3 API keys (separate from your
     API key): set RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY, pass the
-    --s3-* flags, or enter them when asked. Re-run an interrupted command to resume it. Parts of an upload that is
+    --s3-* flags, saved config, or enter them when asked. Re-run an interrupted
+    command to resume it. Parts of an upload that is
     never re-run stay in the volume's hidden .s3compat_uploads folder and
     count toward its size.
     """
@@ -83,16 +85,26 @@ def _invoke_transfer(transfer_method, source, target, opts, progress):
     from runpod import network_volume_transfer as nvt
 
     try:
-        return transfer_method(
-            source,
-            target,
-            access_key=opts["s3_access_key"],
-            secret_key=opts["s3_secret_key"],
-            endpoint_url=opts["endpoint_url"],
-            concurrency=opts["concurrency"],
-            progress=progress,
-            force=opts["force"],
-        )
+        for attempt in range(2):
+            try:
+                return transfer_method(
+                    source,
+                    target,
+                    access_key=opts["s3_access_key"],
+                    secret_key=opts["s3_secret_key"],
+                    endpoint_url=opts["endpoint_url"],
+                    concurrency=opts["concurrency"],
+                    progress=progress,
+                    force=opts["force"],
+                )
+            except nvt.RejectedS3Keys:
+                if not opts.get("_saved_keys") or attempt or not _interactive():
+                    raise
+                if not click.confirm(
+                    "saved s3 keys were rejected. enter a new pair?", default=True
+                ):
+                    raise
+                opts["s3_access_key"], opts["s3_secret_key"] = _prompt_s3_keys()
     except KeyboardInterrupt:
         click.echo("interrupted; re-run the same command to resume", err=True)
         sys.exit(130)
@@ -194,7 +206,10 @@ def _ensure_s3_keys(opts) -> None:
     config, prompting for them when none are set."""
     from runpod import network_volume_transfer as nvt
 
+    explicit = bool(opts["s3_access_key"] and opts["s3_secret_key"])
+    env = bool(os.environ.get(nvt.ACCESS_KEY_ENV) and os.environ.get(nvt.SECRET_KEY_ENV))
     keys = nvt.find_s3_keys(opts["s3_access_key"], opts["s3_secret_key"])
+    opts["_saved_keys"] = bool(keys and not explicit and not env)
     opts["s3_access_key"], opts["s3_secret_key"] = keys or _prompt_s3_keys()
 
 
@@ -211,9 +226,16 @@ def _split_args(args, second: str, third: str):
 def _transfer(ctx, action_label, method_name, reference, source, target, opts) -> None:
     """the checks every transfer needs, in order: login, volume, s3 keys."""
     from runpod.apps import NetworkVolume
+    from runpod import network_volume_transfer as nvt
 
     _ensure_logged_in(ctx)
     reference = reference or _pick_volume()
+    try:
+        _, datacenter = nvt._resolve_volume(reference)
+        if not opts["endpoint_url"]:
+            nvt._check_endpoint(f"https://s3api-{datacenter.lower()}.runpod.io/", datacenter)
+    except nvt.NetworkVolumeTransferError as exc:
+        raise click.ClickException(str(exc)) from exc
     _ensure_s3_keys(opts)
     method = getattr(NetworkVolume(reference, create=False), method_name)
     _run_transfer(action_label, method, source, target, opts)
@@ -227,7 +249,8 @@ def volume_upload(ctx, args, **opts):
     """Upload a file or folder to a network volume.
 
     VOLUME is the volume's id or name. Give only LOCAL_PATH to pick the
-    volume from a list. REMOTE_PATH defaults to the local name. A folder's contents go under REMOTE_PATH/.
+    volume from a list. REMOTE_PATH defaults to the local name. A folder's
+    contents go under REMOTE_PATH/.
     Files whose remote copy has the same size and is not older are skipped;
     --force sends them anyway.
     """
