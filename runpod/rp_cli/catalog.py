@@ -3,14 +3,15 @@
 from typing import Optional
 
 import click
+from click.core import ParameterSource
 
 from runpod.rp_cli import compute
 from runpod.rp_cli.api import api_errors
 from runpod.rp_cli.output import json_option, print_json, print_table
 
 
-def _money(value: Optional[float]) -> str:
-    return f"${value:.2f}" if value else "-"
+def _money(value: Optional[float], format_spec: str = ".2f") -> str:
+    return f"${value:{format_spec}}" if value else "-"
 
 
 def _stock(entries: list[dict]) -> str:
@@ -146,7 +147,7 @@ def _cpu_columns(product: str):
         ("GROUP", lambda row: row["group"]),
         ("VCPU", lambda row: "{min}-{max}".format(**row["vcpu"])),
         ("RAM/VCPU", lambda row: f"{row['ramGbPerVcpu']:g}GB"),
-        ("$/VCPU-HR", lambda row: _money(row["price"].get(tier))),
+        ("$/VCPU-HR", lambda row: _money(row["price"].get(tier), ".4g")),
         ("STOCK", lambda row: (row.get("availability") or "NONE").lower()),
         ("DATA CENTERS", lambda row: _stock(row.get("dataCenters") or [])),
     ]
@@ -247,6 +248,29 @@ def catalog(
     """
     if cpu_mode and datacenters:
         raise click.UsageError("use either --cpu or --datacenters")
+    if datacenters:
+        mode = "--datacenters"
+        unsupported = (
+            "product",
+            "count",
+            "vcpu",
+            "cloud",
+            "cuda",
+            "min_vram",
+            "max_price",
+            "available",
+        )
+    elif cpu_mode:
+        mode = "--cpu"
+        unsupported = ("count", "cuda", "min_vram", "max_price")
+    else:
+        mode = "GPU"
+        unsupported = ("vcpu",)
+    ctx = click.get_current_context()
+    for name in unsupported:
+        if ctx.get_parameter_source(name) not in (None, ParameterSource.DEFAULT):
+            option = product.lower() if name == "product" else name.replace("_", "-")
+            raise click.UsageError(f"--{option} cannot be used in {mode} mode")
     if cloud and product == "SERVERLESS":
         raise click.UsageError("--cloud applies to pods only")
     cloud = cloud.lower() if cloud else None

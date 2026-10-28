@@ -223,7 +223,7 @@ class TestCpuCatalog:
         assert result.exit_code == 0, result.output
         assert list_cpus.call_args.kwargs == {"product": "SERVERLESS", "vcpu_count": 8}
         assert result.output.index("cpu3c") < result.output.index("cpu5c")
-        assert "$0.04" in result.output
+        assert "$0.036" in result.output
         assert "2-32" in result.output
 
     def test_query_region_and_available(self):
@@ -235,6 +235,68 @@ class TestCpuCatalog:
     def test_unknown(self):
         result, _, _ = _invoke(["cpu9", "--cpu"])
         assert "unknown cpu 'cpu9'" in result.output
+
+    @pytest.mark.parametrize("product", ["POD", "SERVERLESS"])
+    @pytest.mark.parametrize(
+        "price, expected",
+        [
+            (0.036, "$0.036"),
+            (0.004, "$0.004"),
+            (0.0001234, "$0.0001234"),
+            (0.012345, "$0.01235"),
+            (0, "-"),
+            (None, "-"),
+        ],
+    )
+    def test_per_vcpu_price_precision(self, product, price, expected):
+        from runpod.rp_cli.catalog import _cpu_columns
+
+        tier = "serverlessPerVcpu" if product == "SERVERLESS" else "securePerVcpu"
+        row = dict(CPUS[0], price={tier: price})
+        columns = dict(_cpu_columns(product))
+        assert columns["$/VCPU-HR"](row) == expected
+        result, _, _ = _invoke(["--cpu", f"--{product.lower()}", "--json"], cpus=[row])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)[0]["price"][tier] == price
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+@pytest.mark.parametrize(
+    "mode, options, offending_flag",
+    [
+        (["--cpu"], ["--max-price", "0.02"], "--max-price"),
+        (["--cpu"], ["--max-price", "0"], "--max-price"),
+        (["--cpu"], ["--min-vram", "0"], "--min-vram"),
+        (["--cpu"], ["--cuda", "12.4"], "--cuda"),
+        (["--cpu"], ["--count", "1"], "--count"),
+        (["--cpu", "--serverless"], ["--count", "2"], "--count"),
+        (["--datacenters"], ["--available"], "--available"),
+        (["--datacenters"], ["--serverless"], "--serverless"),
+        (["--datacenters"], ["--pod"], "--pod"),
+        (["--datacenters"], ["--cloud", "secure"], "--cloud"),
+        (["--datacenters"], ["--cuda", "12.4"], "--cuda"),
+        (["--datacenters"], ["--max-price", "0"], "--max-price"),
+        (["--datacenters"], ["--min-vram", "0"], "--min-vram"),
+        (["--datacenters"], ["--count", "1"], "--count"),
+        (["--datacenters"], ["--vcpu", "8"], "--vcpu"),
+        ([], ["--vcpu", "8"], "--vcpu"),
+        (["--serverless"], ["--vcpu", "8"], "--vcpu"),
+    ],
+)
+def test_inapplicable_flags_fail_before_fetch(mode, options, offending_flag, as_json):
+    with (
+        patch("runpod.rp_cli.compute.list_datacenters") as list_datacenters,
+        patch("runpod.rp_cli.compute.list_gpus") as list_gpus,
+        patch("runpod.rp_cli.compute.list_cpus") as list_cpus,
+    ):
+        result = CliRunner().invoke(
+            cli, ["catalog", *mode, *options, *(["--json"] if as_json else [])]
+        )
+    assert result.exit_code == 2, result.output
+    assert f"{offending_flag} cannot be used" in result.output
+    list_gpus.assert_not_called()
+    list_cpus.assert_not_called()
+    list_datacenters.assert_not_called()
 
 
 class TestDatacenterCatalog:
