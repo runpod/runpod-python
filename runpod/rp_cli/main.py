@@ -623,16 +623,34 @@ def logs(pod_id, follow, log_type, tail):
     default=None,
     help="Store this API key directly (skips the browser flow).",
 )
-@click.option("--profile", default="default", show_default=True, help="Credential profile.")
-def login(no_open, api_key_opt, profile):
+@click.option(
+    "--profile", default="default", show_default=True, help="Credential profile."
+)
+@click.option(
+    "--agent",
+    is_flag=True,
+    help="Sign in with an emailed code; requires an interactive terminal, not a browser.",
+)
+@click.option("--email", default=None, help="Email address for --agent sign-in.")
+def login(no_open, api_key_opt, profile, agent, email):
     """Authenticate with Runpod and store the API key.
 
     Opens the Runpod console for browser approval by default; pass
-    --api-key to store a key directly.
+    --api-key to store a key directly. Use --agent --email ADDRESS to
+    receive a verification code by email and enter it at the prompt in an
+    interactive terminal. Keep this process running until sign-in completes;
+    the code must be entered in the same process that requested it.
     """
-    from runpod.apps.auth import LoginError, browser_login
+    from runpod.apps.auth import LoginError, agent_login, browser_login
     from runpod.cli.groups.config.functions import set_credentials
     from runpod.rp_cli import console as ui
+
+    if agent and api_key_opt is not None:
+        raise click.UsageError("--agent cannot be combined with --api-key")
+    if agent and (email is None or not email.strip()):
+        raise click.UsageError("--agent requires --email")
+    if email is not None and not agent:
+        raise click.UsageError("--email requires --agent")
 
     if api_key_opt:
         try:
@@ -650,11 +668,29 @@ def login(no_open, api_key_opt, profile):
         if not no_open:
             click.launch(url)
 
+    code_prompted = False
+
+    def _read_code() -> str:
+        nonlocal code_prompted
+        if code_prompted:
+            click.echo("Verification code rejected. Try again.", err=True)
+        else:
+            click.echo("A verification code was sent to your email.")
+            code_prompted = True
+        while True:
+            code = click.prompt("Verification code", hide_input=True).strip()
+            if len(code) == 6 and code.isascii() and code.isdigit():
+                return code
+            click.echo("Enter the six-digit code from your email.", err=True)
+
     try:
-        with ui.console.status("[dim]waiting for approval ...[/dim]"):
-            api_key = asyncio.run(browser_login(on_url=_show_url))
+        if agent:
+            api_key = asyncio.run(agent_login(email.strip(), read_code=_read_code))
+        else:
+            with ui.console.status("[dim]waiting for approval ...[/dim]"):
+                api_key = asyncio.run(browser_login(on_url=_show_url))
         set_credentials(api_key, profile=profile, overwrite=True)
-    except (LoginError, ValueError) as exc:
+    except (LoginError, ValueError, OSError) as exc:
         _fail(str(exc))
     ui.success("logged in, credentials saved to [dim]~/.runpod/config.toml[/dim]")
 
