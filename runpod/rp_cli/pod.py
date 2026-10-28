@@ -213,7 +213,7 @@ def _container_body(
             raise click.BadParameter(
                 f"'{value}' should look like VALUE[:PATH]", param_hint=flag
             )
-        existing = current.get("mounts", {}).get(kind)
+        existing = (current.get("mounts") or {}).get(kind)
         if kind != "persistent":
             existing = existing[0] if existing else None
         path = path or (existing or {}).get("path")
@@ -725,8 +725,14 @@ def terminate(pod_id, yes):
     from runpod.rp_cli import console as ui
 
     pod_id = _resolve_pod_id(pod_id, "terminate")
-    confirm(f"terminate pod {pod_id}? its disk and persistent volume are deleted", yes)
     with api_errors():
+        if not yes:
+            record = run_rest_request("GET", f"/v2/pods/{pod_id}")
+            confirm(
+                f"terminate pod {pod_id} ({record['name']})? "
+                "its disk and persistent volume are deleted",
+                yes,
+            )
         run_rest_request("DELETE", f"/v2/pods/{pod_id}")
     ui.success(f"terminated pod {pod_id}")
 

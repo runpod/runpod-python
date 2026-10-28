@@ -611,6 +611,20 @@ class TestWait:
 
 
 class TestUpdate:
+    @pytest.mark.parametrize(
+        "kind,value,mount",
+        [
+            ("persistent", "50", {"size": 50, "path": "/workspace"}),
+            ("network", "vol1", [{"volumeId": "vol1", "path": "/workspace"}]),
+            ("global", "gv1", [{"volumeId": "gv1"}]),
+        ],
+    )
+    def test_null_mounts(self, kind, value, mount):
+        api = FakeApi({("GET", "/v2/pods/pod123"): {**POD, "mounts": None}})
+        result = _invoke(["update", "pod123", f"--{kind}-volume", value], api=api)
+        assert result.exit_code == 0, result.output
+        assert api.body("PATCH", "/v2/pods/pod123") == {"mounts": {kind: mount}}
+
     @pytest.mark.parametrize("option", ["--cmd", "--entrypoint"])
     def test_malformed_command_quoting(self, option):
         result = _invoke(["update", "pod123", option, "python 'unclosed"])
@@ -765,6 +779,36 @@ class TestActions:
 
 
 class TestTerminate:
+    @pytest.mark.parametrize("command", ["terminate", "delete"])
+    @pytest.mark.parametrize("answer", ["y", "n"])
+    def test_confirmation_identifies_pod(self, command, answer):
+        result = _invoke([command, "pod123"], interactive=True, input=f"{answer}\n")
+        assert result.exit_code == (0 if answer == "y" else 1), result.output
+        assert "terminate pod pod123 (trainer)?" in result.output
+        assert "its disk and persistent volume are deleted" in result.output
+        assert [call[:2] for call in result.api.calls] == [
+            ("GET", "/v2/pods/pod123"),
+            *([("DELETE", "/v2/pods/pod123")] if answer == "y" else []),
+        ]
+
+    def test_yes_skips_name_lookup(self):
+        result = _invoke(["terminate", "pod123", "--yes"])
+        assert result.exit_code == 0, result.output
+        assert [call[:2] for call in result.api.calls] == [
+            ("DELETE", "/v2/pods/pod123")
+        ]
+
+    def test_lookup_failure_prevents_deletion(self):
+        api = FakeApi(
+            {("GET", "/v2/pods/pod123"): error.QueryError("pod not found", "GET")}
+        )
+        result = _invoke(
+            ["terminate", "pod123"], api=api, interactive=True, input="y\n"
+        )
+        assert result.exit_code == 1
+        assert "Error: pod not found" in result.output
+        assert not api.made("DELETE", "/v2/pods/pod123")
+
     @pytest.mark.parametrize("command", ["terminate", "delete"])
     def test_with_yes(self, command):
         result = _invoke([command, "pod123", "--yes"])
