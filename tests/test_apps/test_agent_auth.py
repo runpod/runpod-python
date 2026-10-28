@@ -133,7 +133,6 @@ def test_start_errors_do_not_prompt_or_follow_redirects(signup_server, status, m
     [
         (403, "console"),
         (404, "expired"),
-        (422, "code rejected"),
         (429, "wait"),
         (503, "HTTP 503"),
         (307, "HTTP 307"),
@@ -145,6 +144,59 @@ def test_verification_errors_are_not_retried(signup_server, status, message):
         asyncio.run(agent_login("owner@example.com", read_code=lambda: "123456"))
     assert len(signup_server["requests"]) == 2
     assert "sensitive-server-detail" not in str(exc.value)
+
+
+@pytest.mark.parametrize("rejections", [1, 4])
+def test_rejected_codes_reuse_attempt_and_verifier(signup_server, rejections):
+    signup_server["responses"][1:1] = [
+        (422, {"detail": "sensitive-server-detail"})
+    ] * rejections
+    codes = [f"{number:06d}" for number in range(rejections + 1)]
+    read_code = MagicMock(side_effect=codes)
+
+    assert (
+        asyncio.run(agent_login("owner@example.com", read_code=read_code)) == "rpa_test"
+    )
+    start, *verifications = signup_server["requests"]
+    assert read_code.call_count == rejections + 1
+    assert len(verifications) == rejections + 1
+    assert start[0] == "/prefix/v2/signup/authentication-attempts"
+    assert {request[0] for request in verifications} == {
+        "/prefix/v2/signup/authentication-attempts/att_test/verify"
+    }
+    assert [request[2]["code"] for request in verifications] == codes
+    verifiers = {request[2]["codeVerifier"] for request in verifications}
+    assert len(verifiers) == 1
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifiers.pop().encode()).digest()
+    )
+    assert start[2]["codeChallenge"] == challenge.decode().rstrip("=")
+    assert all("Idempotency-Key" not in request[1] for request in verifications)
+
+
+@pytest.mark.parametrize("status", [403, 404, 429, 503, 307])
+def test_retry_stops_on_terminal_verification_error(signup_server, status):
+    signup_server["responses"][1:] = [
+        (422, {}),
+        (status, {"detail": "sensitive-server-detail"}),
+    ]
+    read_code = MagicMock(side_effect=["123456", "654321"])
+    with pytest.raises(LoginError) as exc:
+        asyncio.run(agent_login("owner@example.com", read_code=read_code))
+    assert read_code.call_count == 2
+    assert len(signup_server["requests"]) == 3
+    assert "sensitive-server-detail" not in str(exc.value)
+    if status == 404:
+        assert "start login again" in str(exc.value)
+
+
+def test_aborted_retry_does_not_send_another_request(signup_server):
+    signup_server["responses"][1] = (422, {})
+    read_code = MagicMock(side_effect=["123456", EOFError])
+    with pytest.raises(EOFError):
+        asyncio.run(agent_login("owner@example.com", read_code=read_code))
+    assert read_code.call_count == 2
+    assert len(signup_server["requests"]) == 2
 
 
 @pytest.mark.parametrize("payload", [{}, {"attemptId": None}, {"attemptId": 1}, []])

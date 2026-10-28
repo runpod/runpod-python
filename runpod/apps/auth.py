@@ -31,6 +31,10 @@ class LoginError(AppError):
     pass
 
 
+class _VerificationCodeRejected(LoginError):
+    pass
+
+
 async def _post_authentication_attempt(
     session: aiohttp.ClientSession,
     path: str,
@@ -63,7 +67,7 @@ async def _post_authentication_attempt(
                         raise LoginError(
                             "email sign-in request rejected; check --email"
                         )
-                    raise LoginError("verification code rejected; start login again")
+                    raise _VerificationCodeRejected("verification code rejected")
                 if response.status == 429:
                     raise LoginError(
                         "too many login attempts; wait before trying again"
@@ -107,12 +111,17 @@ async def agent_login(email: str, *, read_code: Callable[[], str]) -> str:
         if not isinstance(attempt_id, str) or not attempt_id:
             raise LoginError("auth attempt failed to initialize")
 
-        code = read_code()
-        result = await _post_authentication_attempt(
-            session,
-            f"{path}/{quote(attempt_id, safe='')}/verify",
-            {"code": code, "codeVerifier": verifier},
-        )
+        while True:
+            code = read_code()
+            try:
+                result = await _post_authentication_attempt(
+                    session,
+                    f"{path}/{quote(attempt_id, safe='')}/verify",
+                    {"code": code, "codeVerifier": verifier},
+                )
+            except _VerificationCodeRejected:
+                continue
+            break
         credential = result.get("credential")
         api_key = credential.get("apiKey") if isinstance(credential, dict) else None
         if not isinstance(api_key, str) or not api_key.strip():

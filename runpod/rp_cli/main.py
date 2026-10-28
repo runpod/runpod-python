@@ -613,7 +613,9 @@ def logs(pod_id, follow, log_type, tail):
     "--profile", default="default", show_default=True, help="Credential profile."
 )
 @click.option(
-    "--agent", is_flag=True, help="Sign in with an emailed code, without a browser."
+    "--agent",
+    is_flag=True,
+    help="Sign in with an emailed code; requires an interactive terminal, not a browser.",
 )
 @click.option("--email", default=None, help="Email address for --agent sign-in.")
 def login(no_open, api_key_opt, profile, agent, email):
@@ -621,7 +623,9 @@ def login(no_open, api_key_opt, profile, agent, email):
 
     Opens the Runpod console for browser approval by default; pass
     --api-key to store a key directly. Use --agent --email ADDRESS to
-    receive a verification code by email and enter it at the prompt.
+    receive a verification code by email and enter it at the prompt in an
+    interactive terminal. Keep this process running until sign-in completes;
+    the code must be entered in the same process that requested it.
     """
     from runpod.apps.auth import LoginError, agent_login, browser_login
     from runpod.cli.groups.config.functions import set_credentials
@@ -650,8 +654,15 @@ def login(no_open, api_key_opt, profile, agent, email):
         if not no_open:
             click.launch(url)
 
+    code_prompted = False
+
     def _read_code() -> str:
-        click.echo("A verification code was sent to your email.")
+        nonlocal code_prompted
+        if code_prompted:
+            click.echo("Verification code rejected. Try again.", err=True)
+        else:
+            click.echo("A verification code was sent to your email.")
+            code_prompted = True
         while True:
             code = click.prompt("Verification code", hide_input=True).strip()
             if len(code) == 6 and code.isascii() and code.isdigit():

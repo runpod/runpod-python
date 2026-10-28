@@ -150,3 +150,36 @@ def test_direct_key_login_does_not_start_email_flow(login_env, monkeypatch):
     authenticate.assert_not_called()
     assert functions.get_credentials()["api_key"] == "rpa_direct"
     assert "rpa_direct" not in result.output
+
+
+def test_agent_retry_explains_rejection_without_resending_notice(
+    login_env, monkeypatch
+):
+    async def authenticate(email, *, read_code):
+        assert read_code() == "123456"
+        assert read_code() == "012345"
+        return "rpa_test"
+
+    monkeypatch.setattr("runpod.apps.auth.agent_login", authenticate)
+    result = CliRunner().invoke(
+        cli,
+        ["login", "--agent", "--email", "owner@example.com"],
+        input="123456\n012345\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.count("A verification code was sent") == 1
+    assert result.output.count("Verification code rejected. Try again.") == 1
+    assert result.output.count("Verification code:") == 2
+    assert "123456" not in result.output
+    assert "012345" not in result.output
+    assert "rpa_test" not in result.output
+    assert functions.get_credentials()["api_key"] == "rpa_test"
+
+
+def test_agent_help_explains_interactive_process_requirement(login_env):
+    result = CliRunner().invoke(cli, ["login", "--help"])
+    assert result.exit_code == 0
+    help_text = " ".join(result.output.split())
+    assert "requires an interactive terminal" in help_text
+    assert "Keep this process running until sign-in completes" in help_text
+    assert "same process that requested it" in help_text
