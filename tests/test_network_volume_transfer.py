@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
-import click
 from botocore.exceptions import ClientError, ReadTimeoutError
 from click.testing import CliRunner
 
@@ -1401,25 +1400,24 @@ def test_cli_checks_endpoint_before_asking_for_keys(monkeypatch, tmp_path, inter
     assert "does not support the s3 api" in result.output
 
 
-def test_cli_offers_to_replace_rejected_saved_keys(monkeypatch, interactive):
-    from runpod.rp_cli import volume as volume_cli
-
+@pytest.mark.usefixtures("cli_preflight")
+def test_cli_offers_to_replace_rejected_saved_keys(monkeypatch, interactive, tmp_path):
     calls = []
 
-    def transfer(source, target, **kwargs):
+    def transfer(volume, source, target, **kwargs):
         calls.append(kwargs["access_key"])
         if len(calls) == 1:
             raise nvt.RejectedS3Keys("rejected the keys")
-        return {"files_transferred": 1}
+        return {"files_transferred": 1, "files_skipped": 0, "bytes_transferred": 1}
 
-    monkeypatch.setattr(volume_cli, "_prompt_s3_keys", lambda: ("new", "secret"))
-    opts = {"s3_access_key": "saved", "s3_secret_key": "old", "_saved_keys": True,
-            "endpoint_url": None, "concurrency": 1, "force": False}
-    result = CliRunner().invoke(
-        click.Command("test", callback=lambda: volume_cli._invoke_transfer(
-            transfer, "src", "dst", opts, None
-        )), input="y\n"
-    )
+    monkeypatch.delenv(nvt.ACCESS_KEY_ENV, raising=False)
+    monkeypatch.delenv(nvt.SECRET_KEY_ENV, raising=False)
+    monkeypatch.setattr(nvt, "saved_s3_keys", lambda: ("saved", "old"))
+    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", lambda: ("new", "secret"))
+    with patch.object(runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer):
+        result = CliRunner().invoke(
+            _cli(), ["volume", "upload", "vol", str(tmp_path)], input="y\n"
+        )
     assert result.exit_code == 0, result.output
     assert calls == ["saved", "new"]
 
