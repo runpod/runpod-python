@@ -128,7 +128,7 @@ async def test_deployed_task_reports_consistent_json_error_before_creation(
     target = DeployedTaskTarget("app", "env", "work")
     with patch("runpod.apps.api.run_graphql_query_async", AsyncMock()) as execute:
         with pytest.raises(
-            ValueError, match="^deployed tasks accept only JSON args and kwargs$"
+            ValueError, match="^tasks accept only JSON args and kwargs$"
         ):
             await getattr(target, method)({"args": [value], "kwargs": {}})
         execute.assert_not_awaited()
@@ -150,7 +150,7 @@ async def test_source_tasks_reject_non_json_arguments(monkeypatch, dev, value):
     target = await app._resolve(work.spec)
     assert isinstance(target, PodTarget)
     with pytest.raises(
-        ValueError, match="deployed tasks accept only JSON args and kwargs"
+        ValueError, match="^tasks accept only JSON args and kwargs$"
     ) as exc:
         target.build_payload(work._fn, work.spec, (value,), {})
     assert "private-payload" not in str(exc.value)

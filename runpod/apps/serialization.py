@@ -1,8 +1,8 @@
 """argument and result serialization for remote execution.
 
-args/kwargs cross the wire as base64-encoded cloudpickle strings, the
-format the worker runtime images expect. function source is extracted
-with decorators stripped so the worker can exec it standalone.
+remote calls use finite json-compatible arguments and results. this
+module validates that contract, provides cloudpickle codecs for explicitly
+encoded values, and extracts function source for live workers.
 """
 
 import ast

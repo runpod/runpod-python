@@ -119,7 +119,7 @@ def test_queue_and_task_results_reject_non_finite_json(value):
 )
 async def test_api_json_and_text_responses_share_transport(target, text, expected):
     with (
-        patch("runpod.apps.targets._headers", return_value={}),
+        patch.object(target._client, "_headers", return_value={}),
         patch("runpod.apps.targets.aiohttp.ClientSession") as factory,
     ):
         session = factory.return_value.__aenter__.return_value

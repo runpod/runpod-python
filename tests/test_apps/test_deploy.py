@@ -343,6 +343,12 @@ class TestDeployPipeline:
         }
         api.save_endpoint.return_value = {"id": "ep-1"}
         with _stub_build(tmp_path):
+            with pytest.raises(InvalidResourceError, match="FLASH_ENVIRONMENT"):
+                await deploy_app(app, tmp_path, env_name="prod", api=api)
+            api.get_app_by_name.assert_not_awaited()
+            api.deploy_build.assert_not_awaited()
+            api.save_endpoint.assert_not_awaited()
+            handle.spec.env = {}
             await deploy_app(app, tmp_path, env_name="prod", api=api)
         payload = api.save_endpoint.await_args.args[0]
         worker_env = {

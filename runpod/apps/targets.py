@@ -820,7 +820,7 @@ class LiveTarget(InvocationTarget):
 
 
 def _validate_task_payload(payload: Dict[str, Any]) -> None:
-    message = "deployed tasks accept only JSON args and kwargs"
+    message = "tasks accept only JSON args and kwargs"
     if (
         not isinstance(payload, dict)
         or set(payload) != {"args", "kwargs"}

@@ -155,6 +155,10 @@ async def test_invalid_tasks_fail_before_vendoring_or_remote_calls(tmp_path, opt
         "RUNPOD_DEV_APP",
         "RUNPOD_DEV_RESOURCE",
         "RUNPOD_DEV_SESSION",
+        "FLASH_APP_NAME",
+        "FLASH_ENVIRONMENT",
+        "FLASH_RESOURCE_NAME",
+        "RUNPOD_BUILD_ID",
     ],
 )
 async def test_later_endpoint_reserved_env_fails_before_any_remote_change(

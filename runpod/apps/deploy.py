@@ -126,6 +126,10 @@ def _validate_endpoint_env(env: Dict[str, str]) -> None:
         "RUNPOD_DEV_APP",
         "RUNPOD_DEV_RESOURCE",
         "RUNPOD_DEV_SESSION",
+        "FLASH_APP_NAME",
+        "FLASH_ENVIRONMENT",
+        "FLASH_RESOURCE_NAME",
+        "RUNPOD_BUILD_ID",
     }
     if conflicts := reserved.intersection(env):
         raise InvalidResourceError(
@@ -139,7 +143,6 @@ def build_manifest(
     project_root: Path,
     *,
     python_version: str = DEFAULT_PYTHON_VERSION,
-    excluded_packages: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """serialize an app's resources for the coordinator and workers."""
     resources = []
@@ -216,9 +219,6 @@ def build_manifest(
         "pythonVersion": python_version,
         "resources": resources,
     }
-
-    if excluded_packages:
-        manifest["excludedPackages"] = excluded_packages
 
     return manifest
 
