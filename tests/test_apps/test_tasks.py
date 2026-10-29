@@ -138,7 +138,8 @@ class TestPodTargetPayload:
         payload = target.build_payload(t._fn, t.spec, (5,), {})
         assert payload["function_name"] == "t"
         assert "def t(x):" in payload["function_code"]
-        assert _unb64(payload["args"][0]) == 5
+        assert payload["args"] == [5]
+        assert payload["serialization_format"] == "json"
         assert payload["dependencies"] == ["numpy"]
 
     def test_task_remote_runs_past_one_hour_and_cleans_up(self):

@@ -16,6 +16,7 @@ import aiohttp
 from ..user_agent import USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest, FunctionResponse
+from .serialization import require_json_value
 from .spec import ResourceSpec
 from .utils.events import emit
 from .utils.network import api_key as _api_key
@@ -122,6 +123,7 @@ def merge_job_options(base: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, An
 def unwrap_job_output(data: Dict[str, Any]) -> Any:
     """extract output from a queue response, raising on failure."""
     output = data.get("output", data)
+    require_json_value(output, "queue results must be JSON-serializable")
     if data.get("status") == "FAILED" or data.get("error"):
         err = data.get("error")
         if not err:
@@ -153,6 +155,9 @@ class InvocationTarget(ABC):
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
     ) -> Dict[str, Any]:
+        from .serialization import require_json_args
+
+        require_json_args(fn, args, kwargs)
         return {"input": args_to_input(fn, args, kwargs)}
 
     def unwrap(self, data: Dict[str, Any]) -> Any:
@@ -223,6 +228,7 @@ async def _request_json(
     retry_not_found: bool = False,
 ) -> Dict[str, Any]:
     """http json call with exponential backoff on transient failures."""
+    require_json_value(payload, "remote request body must be JSON-serializable")
     retry_transient = method.upper() in {"GET", "HEAD", "OPTIONS"}
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
@@ -457,6 +463,9 @@ class QueueClient:
             if data.get("status") == "FAILED" or data.get("error"):
                 unwrap_job_output(data)
             for chunk in data.get("stream") or []:
+                require_json_value(
+                    chunk.get("output"), "queue results must be JSON-serializable"
+                )
                 yield chunk.get("output")
             if data.get("status") in FINAL_STATUSES:
                 return
@@ -487,6 +496,7 @@ class QueueClient:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> Any:
         """plain http call through the endpoint's lb subdomain."""
+        require_json_value(body, "api request body must be JSON-serializable")
         url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
         client_timeout = aiohttp.ClientTimeout(total=timeout)
         async with aiohttp.ClientSession(timeout=client_timeout) as session:
@@ -498,9 +508,11 @@ class QueueClient:
                 resp.raise_for_status()
                 text = await resp.text()
         try:
-            return json.loads(text)
+            result = json.loads(text)
         except json.JSONDecodeError:
             return text
+        require_json_value(result, "api results must be JSON-serializable")
+        return result
 
 
 class SentinelTarget(InvocationTarget):
@@ -523,6 +535,9 @@ class SentinelTarget(InvocationTarget):
         )
 
     def _sentinel_headers(self) -> Dict[str, str]:
+        from .utils.network import validate_runtime_target
+
+        validate_runtime_target(self.app_name, self.env_name)
         return _headers(
             {
                 "X-Flash-App": self.app_name,
@@ -679,6 +694,7 @@ class LiveTarget(InvocationTarget):
         return self._unwrap_response(output)
 
     def _unwrap_response(self, output: Any) -> Any:
+        require_json_value(output, "queue results must be JSON-serializable")
         if isinstance(output, dict) and "success" in output:
             response = FunctionResponse.from_output(output)
             if not response.success:
@@ -783,6 +799,7 @@ class LiveTarget(InvocationTarget):
         emit(self.events, "dispatch", self.resource_name, f"{method} {path}")
         start = time.monotonic()
         try:
+            require_json_value(body, "api request body must be JSON-serializable")
             await self._sync_source(timeout)
             result = await self._client.http(method, path, body, timeout=timeout)
         except Exception:
@@ -800,6 +817,19 @@ class LiveTarget(InvocationTarget):
             time.monotonic() - start,
         )
         return result
+
+
+def _validate_task_payload(payload: Dict[str, Any]) -> None:
+    message = "deployed tasks accept only JSON args and kwargs"
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"args", "kwargs"}
+        or not isinstance(payload["args"], list)
+        or not isinstance(payload["kwargs"], dict)
+        or any(not isinstance(key, str) for key in payload["kwargs"])
+    ):
+        raise ValueError(message)
+    require_json_value(payload, message)
 
 
 class _TaskTarget(InvocationTarget):
@@ -914,20 +944,18 @@ class PodTarget(_TaskTarget):
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
     ) -> Dict[str, Any]:
-        from .serialization import (
-            get_function_source,
-            serialize_args,
-            serialize_kwargs,
-        )
+        from .serialization import get_function_source
 
+        _validate_task_payload({"args": list(args), "kwargs": kwargs})
         request = FunctionRequest(
             function_name=fn.__name__,
             function_code=get_function_source(fn),
-            args=serialize_args(args),
-            kwargs=serialize_kwargs(kwargs),
+            args=list(args),
+            kwargs=dict(kwargs),
             dependencies=spec.dependencies,
             system_dependencies=spec.system_dependencies,
             accelerate_downloads=spec.accelerate_downloads,
+            serialization_format=FORMAT_JSON,
         )
         return request.to_input()
 
@@ -945,14 +973,7 @@ class DeployedTaskTarget(_TaskTarget):
     def _execution(self, payload, timeout=None):
         from .tasks import DeployedTaskExecution
 
-        if (
-            set(payload) != {"args", "kwargs"}
-            or not isinstance(payload["args"], list)
-            or not isinstance(payload["kwargs"], dict)
-            or any(not isinstance(key, str) for key in payload["kwargs"])
-        ):
-            raise ValueError("deployed tasks accept only JSON args and kwargs")
-        json.dumps(payload, allow_nan=False)
+        _validate_task_payload(payload)
         return DeployedTaskExecution(
             self.app_name, self.env_name, self.resource_name, timeout=timeout
         )

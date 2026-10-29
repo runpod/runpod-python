@@ -151,7 +151,11 @@ class App:
         accelerate_downloads: bool = True,
         container_disk_gb: Optional[int] = None,
     ) -> Callable[[Callable], FunctionHandle]:
-        """declare ephemeral pod compute from a function."""
+        """declare ephemeral pod compute from a function.
+
+        remote task arguments and results use json in every execution
+        context. use .local() for direct python execution without transport.
+        """
 
         def decorator(fn: Callable) -> FunctionHandle:
             spec = ResourceSpec(

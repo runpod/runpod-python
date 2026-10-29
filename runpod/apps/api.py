@@ -35,6 +35,11 @@ class FlashTaskApiClient:
         return response["data"]
 
     async def create(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        from .utils.network import validate_runtime_target
+
+        validate_runtime_target(
+            task_input.get("flashAppName"), task_input.get("flashEnvironmentName")
+        )
         data = await self._execute(
             """mutation FlashTaskCreate($input: FlashTaskCreateInput!) {
                 flashTaskCreate(input: $input) { podId flashBuildId resourceName }
@@ -609,6 +614,8 @@ class AppsApiClient:
         self, app_id: str, object_key: str, manifest: Dict[str, Any]
     ) -> Dict[str, Any]:
         mutation = app_mutations.MUTATION_FINALIZE_ARTIFACT_UPLOAD
+        if any(r.get("kind") == "task" for r in manifest.get("resources", [])):
+            mutation = app_mutations.MUTATION_FINALIZE_TASK_ARTIFACT_UPLOAD
         data = await self._execute(
             mutation,
             {

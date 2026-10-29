@@ -28,6 +28,16 @@ def runtime_headers() -> Optional[Dict[str, str]]:
     }
 
 
+def validate_runtime_target(app_name: str, env_name: str) -> None:
+    from ..context import deployed_identity
+
+    identity = deployed_identity()
+    if identity is not None and (app_name, env_name) != identity[:2]:
+        raise ValueError(
+            "deployed flash calls require the same app and environment as the worker"
+        )
+
+
 def api_key() -> str:
     key = os.getenv("RUNPOD_API_KEY")
     if not key:

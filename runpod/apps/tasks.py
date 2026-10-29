@@ -443,6 +443,8 @@ class DeployedTaskExecution(_TaskTransport):
         from .api import FlashTaskApiClient
 
         _validate_timeout(timeout)
+        if timeout == 0:
+            raise ValueError("deployed task timeout must be a finite positive number")
         self.app_name = app
         self.env_name = env
         self.resource_name = name
@@ -479,7 +481,11 @@ def unwrap_task_response(response: Dict[str, Any]) -> Any:
         from .serialization import deserialize_result
 
         return deserialize_result(response["result"])
-    return response.get("json_result")
+    from .serialization import require_json_value
+
+    result = response.get("json_result")
+    require_json_value(result, "task results must be JSON-serializable")
+    return result
 
 
 class TaskJob:

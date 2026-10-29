@@ -6,7 +6,7 @@ import os
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pathspec import GitIgnoreSpec
@@ -113,6 +113,27 @@ class DeployResult:
     endpoints: Dict[str, str] = field(default_factory=dict)
 
 
+def _validate_endpoint_env(env: Dict[str, str]) -> None:
+    reserved = {
+        "RUNPOD_API_KEY",
+        "RUNPOD_AI_API_KEY",
+        "RUNPOD_ENDPOINT_ID",
+        "RUNPOD_POD_ID",
+        "RUNPOD_TASK_TOKEN",
+        "RUNPOD_TASK_PORT",
+        "FLASH_BUILD_ARTIFACT_PATH",
+        "RUNPOD_RUNTIME_KIND",
+        "RUNPOD_DEV_APP",
+        "RUNPOD_DEV_RESOURCE",
+        "RUNPOD_DEV_SESSION",
+    }
+    if conflicts := reserved.intersection(env):
+        raise InvalidResourceError(
+            "production endpoint env contains reserved runtime fields: "
+            + ", ".join(sorted(conflicts))
+        )
+
+
 def build_manifest(
     app: App,
     project_root: Path,
@@ -135,9 +156,40 @@ def build_manifest(
             )
 
         entry = spec.to_manifest()
+        if spec.kind in (ResourceKind.QUEUE, ResourceKind.API):
+            _validate_endpoint_env(entry.get("env", {}))
         if spec.kind is ResourceKind.TASK:
             from .images import image_for_spec
 
+            for key in entry.get("env", {}):
+                normalized = key.strip().upper()
+                if normalized.startswith(("RUNPOD_", "FLASH_")) or normalized in {
+                    "PYTHONPATH",
+                    "PYTHONHOME",
+                    "LD_PRELOAD",
+                }:
+                    raise InvalidResourceError(
+                        f"task '{spec.name}' env contains reserved runtime field {key!r}"
+                    )
+            for path in spec.mounts:
+                mount_path = PurePosixPath(path)
+                for reserved in (
+                    "/root/.runpod",
+                    "/runpod-volume",
+                    "/proc",
+                    "/sys",
+                    "/dev",
+                ):
+                    reserved_path = PurePosixPath(reserved)
+                    if (
+                        mount_path == reserved_path
+                        or mount_path in reserved_path.parents
+                        or reserved_path in mount_path.parents
+                    ):
+                        raise InvalidResourceError(
+                            f"task '{spec.name}' mount {path!r} overlaps "
+                            f"reserved runtime path {reserved!r}"
+                        )
             entry["imageName"] = image_for_spec(spec, python_version=python_version)
             entry["customImage"] = bool(spec.image)
             for mount, volume in zip(entry.get("mounts", []), spec.mounts.values()):
@@ -172,12 +224,17 @@ def build_manifest(
 
 
 async def _prepare_task_resources(
-    app: App, manifest: Dict[str, Any], client: AppsApiClient, events=None
+    app: App,
+    manifest: Dict[str, Any],
+    client: AppsApiClient,
+    events=None,
+    *,
+    resolver=None,
 ) -> None:
     from .registry import resolve_registry_auth
     from .volume import VolumeResolver
 
-    resolver = VolumeResolver(client, events=events)
+    resolver = resolver or VolumeResolver(client, events=events)
     specs = [handle.spec for handle in app.resources.values()]
     for resource in manifest["resources"]:
         if resource["kind"] != "task":
@@ -330,23 +387,7 @@ def _deployed_endpoint_input(
 
     spec.validate()
     resource_env = render_env(spec.env)
-    reserved = {
-        "RUNPOD_API_KEY",
-        "RUNPOD_AI_API_KEY",
-        "RUNPOD_ENDPOINT_ID",
-        "RUNPOD_POD_ID",
-        "RUNPOD_TASK_TOKEN",
-        "RUNPOD_TASK_PORT",
-        "FLASH_BUILD_ARTIFACT_PATH",
-        "RUNPOD_RUNTIME_KIND",
-        "RUNPOD_DEV_APP",
-        "RUNPOD_DEV_RESOURCE",
-        "RUNPOD_DEV_SESSION",
-    }
-    if reserved.intersection(resource_env):
-        raise InvalidResourceError(
-            "production endpoint env contains reserved runtime fields"
-        )
+    _validate_endpoint_env(resource_env)
     template_env = {
         **resource_env,
         "FLASH_APP_NAME": app.name,
@@ -431,6 +472,8 @@ async def reconcile_endpoints(
     environment: Dict[str, Any],
     build_id: str,
     python_version: str,
+    *,
+    resolver=None,
 ) -> Dict[str, str]:
     """converge the environment's endpoints to the app's resources.
 
@@ -451,7 +494,7 @@ async def reconcile_endpoints(
     from .registry import resolve_registry_auth
     from .volume import VolumeResolver, attach_endpoint_volumes
 
-    resolver = VolumeResolver(client)
+    resolver = resolver or VolumeResolver(client)
     endpoints: Dict[str, str] = {}
     for name, handle in sorted(provisionable.items()):
         members = None
@@ -507,6 +550,7 @@ def build_artifact(
     output: Optional[Path] = None,
 ) -> Path:
     """vendor, build the manifest, and package one app's artifact."""
+    manifest = build_manifest(app, project_root, python_version=python_version)
     _phase(events, "vendor", f"python {python_version}")
     build: BuildResult = build_environment(
         app,
@@ -515,12 +559,8 @@ def build_artifact(
         exclude=exclude,
         events=events,
     )
-    manifest = build_manifest(
-        app,
-        project_root,
-        python_version=python_version,
-        excluded_packages=build.excluded,
-    )
+    if build.excluded:
+        manifest["excludedPackages"] = build.excluded
     _phase(events, "package")
     tar_path = package_project(
         project_root, manifest, output=output, env_dir=build.env_dir
@@ -552,6 +592,8 @@ async def deploy_app(
     for handle in app.resources.values():
         handle.spec.validate()
 
+    manifest = build_manifest(app, project_root, python_version=python_version)
+
     # fail fast on unresolvable secret references (workers would boot
     # with the literal template string otherwise)
     from .secret import secret_names, validate_secrets
@@ -571,13 +613,12 @@ async def deploy_app(
         exclude=exclude,
         events=events,
     )
-    manifest = build_manifest(
-        app,
-        project_root,
-        python_version=python_version,
-        excluded_packages=build.excluded,
-    )
-    await _prepare_task_resources(app, manifest, client, events)
+    if build.excluded:
+        manifest["excludedPackages"] = build.excluded
+    from .volume import VolumeResolver
+
+    resolver = VolumeResolver(client, events=events)
+    await _prepare_task_resources(app, manifest, client, events, resolver=resolver)
     _phase(events, "package")
     tar_path = package_project(project_root, manifest, env_dir=build.env_dir)
     tar_size = tar_path.stat().st_size
@@ -611,7 +652,7 @@ async def deploy_app(
     build = await client.finalize_artifact_upload(app_id, upload["objectKey"], manifest)
     definitions = build.get("resourceSpec")
     tasks = {r["name"] for r in manifest["resources"] if r["kind"] == "task"}
-    if (
+    if tasks and (
         not isinstance(definitions, dict)
         or not isinstance(definitions.get("tasks"), dict)
         or set(definitions["tasks"]) != tasks
@@ -630,7 +671,7 @@ async def deploy_app(
 
     _phase(events, "endpoints")
     endpoints = await reconcile_endpoints(
-        client, app, environment, build["id"], python_version
+        client, app, environment, build["id"], python_version, resolver=resolver
     )
     endpoint_ready = getattr(events, "endpoint_ready", None)
     if endpoint_ready is not None:

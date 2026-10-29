@@ -9,8 +9,10 @@ you the same invocation surface as a local handle:
     external_api = runpod.Api(app="other-app", name="inference")
     external_api.post("/generate", {"prompt": "hi"})
 
-resolution goes through the same server-side sentinel path as deployed
-handles, so a stub is just a handle without a function body.
+queue and api stubs resolve through the sentinel; task stubs use the
+named task api. local clients use account credentials, subject to their
+permissions. deployed workers use runtime credentials and can target
+only their own app and environment, including when using stubs.
 """
 
 import os
