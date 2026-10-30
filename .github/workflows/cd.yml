@@ -28,7 +28,7 @@ jobs:
 
   test-publish:
     if: github.ref == 'refs/heads/staging'
-    runs-on: ubuntu-latest
+    runs-on: runpod-4vCPU-ubuntu-2404 # GitHub-hosted (trusted publishing needs that) with allow-listed static IPs
     environment: test-release
     permissions:
       contents: read
@@ -58,7 +58,7 @@ jobs:
 
   release-please:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -74,7 +74,7 @@ jobs:
     name: PyPI Publish
     needs: release-please
     if: ${{ always() && (needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true')) }}
-    runs-on: ubuntu-latest
+    runs-on: runpod-4vCPU-ubuntu-2404 # GitHub-hosted (trusted publishing needs that) with allow-listed static IPs
     environment:
       name: pypi-production
       url: https://pypi.org/project/runpod/
@@ -109,7 +109,7 @@ jobs:
   linear-sync:
     name: Linear Release Sync
     needs: release-please
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -128,7 +128,7 @@ jobs:
     name: Linear Release Complete
     if: ${{ needs.release-please.outputs.release_created }}
     needs: [release-please, linear-sync]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -148,7 +148,7 @@ jobs:
   #   name: Notify workers
   #   needs: [release-please, pypi-publish]
   #   if: ${{ needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true') }}
-  #   runs-on: ubuntu-latest
+  #   runs-on: blacksmith-2vcpu-ubuntu-2404
   #   strategy:
   #     matrix:
   #       repo:

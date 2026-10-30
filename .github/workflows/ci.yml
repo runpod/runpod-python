@@ -19,7 +19,7 @@ jobs:
 
   test:
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
@@ -57,7 +57,7 @@ jobs:
 
   e2e:
     if: github.event_name != 'schedule' && github.repository == 'runpod/runpod-python'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -90,7 +90,7 @@ jobs:
 
   codeql:
     if: github.event_name == 'schedule' || github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       actions: read
       contents: read
@@ -117,7 +117,7 @@ jobs:
   # ──────────────────────────────────────────────
 
   validation:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: [test, e2e, codeql]
     if: always()
     steps:
