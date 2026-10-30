@@ -1,8 +1,0 @@
-name: runner-probe
-on: pull_request
-jobs:
-  probe:
-    runs-on: runpod-4vCPU-ubuntu-2404
-    timeout-minutes: 5
-    steps:
-      - run: echo "static-IP runner reachable from ${{ github.repository }}"
