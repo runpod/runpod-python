@@ -1,0 +1,20 @@
+name: tag-probe
+on: pull_request
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          R: ${{ github.repository }}
+        run: |
+          probe() {
+            echo "== $1 ($2)"
+            out=$(gh api -i -X POST "repos/$R/git/refs" -f ref="refs/tags/probe-$1-$GITHUB_RUN_ID" -f sha="$2" 2>&1) || true
+            echo "$out" | grep -iE '^HTTP/|x-accepted-github-permissions|"message"' || true
+            gh api -X DELETE "repos/$R/git/refs/tags/probe-$1-$GITHUB_RUN_ID" >/dev/null 2>&1 && echo deleted || true
+          }
+          probe release-200 e3ad2eed5587acd2600538953c28a9257ed73cd5
+          probe rc2 aa721999b9b967ca52e2c71350892df0b5983ed2
