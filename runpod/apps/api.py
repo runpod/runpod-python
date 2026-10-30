@@ -19,6 +19,46 @@ from ..error import QueryError
 _TRANSPORT_RETRIES = 4
 
 
+class FlashTaskApiClient:
+    """named task lifecycle operations with runtime-scoped authentication."""
+
+    async def _execute(self, query: str, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        from .utils.network import api_key, runtime_headers
+
+        headers = runtime_headers()
+        response = await run_graphql_query_async(
+            query,
+            variables={"input": task_input},
+            api_key=(headers["Authorization"][7:] if headers else api_key()),
+            headers=headers,
+        )
+        return response["data"]
+
+    async def create(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        from .utils.network import validate_runtime_target
+
+        validate_runtime_target(
+            task_input.get("flashAppName"), task_input.get("flashEnvironmentName")
+        )
+        data = await self._execute(
+            """mutation FlashTaskCreate($input: FlashTaskCreateInput!) {
+                flashTaskCreate(input: $input) { podId flashBuildId resourceName }
+            }""",
+            task_input,
+        )
+        return data["flashTaskCreate"]
+
+    async def terminate(self, pod_id: str, token: str) -> None:
+        data = await self._execute(
+            """mutation FlashTaskTerminate($input: FlashTaskTerminateInput!) {
+                flashTaskTerminate(input: $input)
+            }""",
+            {"podId": pod_id, "executionToken": token},
+        )
+        if data.get("flashTaskTerminate") is not True:
+            raise RuntimeError("task termination was not acknowledged")
+
+
 def _rest_endpoint_input(endpoint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """translate only saves whose capabilities rest can preserve atomically."""
     fields = {
@@ -574,6 +614,8 @@ class AppsApiClient:
         self, app_id: str, object_key: str, manifest: Dict[str, Any]
     ) -> Dict[str, Any]:
         mutation = app_mutations.MUTATION_FINALIZE_ARTIFACT_UPLOAD
+        if any(r.get("kind") == "task" for r in manifest.get("resources", [])):
+            mutation = app_mutations.MUTATION_FINALIZE_TASK_ARTIFACT_UPLOAD
         data = await self._execute(
             mutation,
             {

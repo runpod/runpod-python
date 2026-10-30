@@ -7,7 +7,7 @@ import os
 import threading
 import time
 from enum import Enum
-from typing import Any, Coroutine
+from typing import Any, Coroutine, Optional, Tuple
 
 log = logging.getLogger(__name__)
 CLEANUP_TIMEOUT = 30.0
@@ -34,6 +34,27 @@ def current_context() -> Context:
     if os.getenv("RUNPOD_DEV_SESSION"):
         return Context.DEV
     return Context.LOCAL
+
+
+def deployed_identity() -> Optional[Tuple[str, str, str]]:
+    """app, environment and resource identity for a deployed worker."""
+    if not (
+        os.getenv("RUNPOD_RUNTIME_KIND") == "task"
+        or os.getenv("RUNPOD_BUILD_ID")
+        or os.getenv("FLASH_APP_NAME")
+        or os.getenv("FLASH_RESOURCE_NAME")
+    ):
+        return None
+    fields = tuple(
+        os.getenv(key)
+        for key in ("FLASH_APP_NAME", "FLASH_ENVIRONMENT", "FLASH_RESOURCE_NAME")
+    )
+    build = os.getenv("RUNPOD_BUILD_ID")
+    if any(not value or value != value.strip() for value in (*fields, build)):
+        raise RuntimeError(
+            "deployed flash requires app, environment, resource and build identity"
+        )
+    return fields
 
 
 def is_local() -> bool:

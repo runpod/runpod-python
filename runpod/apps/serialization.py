@@ -1,8 +1,8 @@
 """argument and result serialization for remote execution.
 
-args/kwargs cross the wire as base64-encoded cloudpickle strings, the
-format the worker runtime images expect. function source is extracted
-with decorators stripped so the worker can exec it standalone.
+remote calls use finite json-compatible arguments and results. this
+module validates that contract, provides cloudpickle codecs for explicitly
+encoded values, and extracts function source for live workers.
 """
 
 import ast
@@ -41,6 +41,15 @@ def deserialize_result(result_b64: str) -> Any:
         ) from exc
 
 
+def require_json_value(value: Any, message: str) -> None:
+    try:
+        import json
+
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError):
+        raise ValueError(message) from None
+
+
 def require_json_args(fn: Callable, args: tuple, kwargs: dict) -> None:
     """reject arguments that cannot cross the queue data plane.
 
@@ -48,16 +57,15 @@ def require_json_args(fn: Callable, args: tuple, kwargs: dict) -> None:
     arguments fail at call time with a pointed error instead of a
     worker-side decode failure.
     """
-    import json
-
     try:
-        json.dumps(list(args))
-        json.dumps(kwargs)
-    except (TypeError, ValueError) as exc:
+        require_json_value(
+            {"args": list(args), "kwargs": kwargs},
+            "remote arguments must be json-serializable",
+        )
+    except ValueError:
         raise TypeError(
-            f"{fn.__name__}() arguments must be json-serializable "
-            f"(queue jobs are plain json): {exc}"
-        ) from exc
+            f"{fn.__name__}() arguments must be json-serializable"
+        ) from None
 
 
 def get_function_source(fn: Callable) -> str:

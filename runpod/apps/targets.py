@@ -16,6 +16,7 @@ import aiohttp
 from ..user_agent import USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest, FunctionResponse
+from .serialization import require_json_value
 from .spec import ResourceSpec
 from .utils.events import emit
 from .utils.network import api_key as _api_key
@@ -39,11 +40,16 @@ def _lb_domain() -> str:
 
 
 def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    from .utils.network import runtime_headers
+
     headers = {
-        "Authorization": f"Bearer {_api_key()}",
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
     }
+    runtime = runtime_headers()
+    headers.update(
+        runtime if runtime is not None else {"Authorization": f"Bearer {_api_key()}"}
+    )
     if extra:
         headers.update(extra)
     return headers
@@ -117,6 +123,7 @@ def merge_job_options(base: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, An
 def unwrap_job_output(data: Dict[str, Any]) -> Any:
     """extract output from a queue response, raising on failure."""
     output = data.get("output", data)
+    require_json_value(output, "queue results must be JSON-serializable")
     if data.get("status") == "FAILED" or data.get("error"):
         err = data.get("error")
         if not err:
@@ -148,6 +155,9 @@ class InvocationTarget(ABC):
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
     ) -> Dict[str, Any]:
+        from .serialization import require_json_args
+
+        require_json_args(fn, args, kwargs)
         return {"input": args_to_input(fn, args, kwargs)}
 
     def unwrap(self, data: Dict[str, Any]) -> Any:
@@ -218,6 +228,7 @@ async def _request_json(
     retry_not_found: bool = False,
 ) -> Dict[str, Any]:
     """http json call with exponential backoff on transient failures."""
+    require_json_value(payload, "remote request body must be JSON-serializable")
     retry_transient = method.upper() in {"GET", "HEAD", "OPTIONS"}
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
@@ -452,6 +463,9 @@ class QueueClient:
             if data.get("status") == "FAILED" or data.get("error"):
                 unwrap_job_output(data)
             for chunk in data.get("stream") or []:
+                require_json_value(
+                    chunk.get("output"), "queue results must be JSON-serializable"
+                )
                 yield chunk.get("output")
             if data.get("status") in FINAL_STATUSES:
                 return
@@ -482,6 +496,7 @@ class QueueClient:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> Any:
         """plain http call through the endpoint's lb subdomain."""
+        require_json_value(body, "api request body must be JSON-serializable")
         url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
         client_timeout = aiohttp.ClientTimeout(total=timeout)
         async with aiohttp.ClientSession(timeout=client_timeout) as session:
@@ -493,9 +508,11 @@ class QueueClient:
                 resp.raise_for_status()
                 text = await resp.text()
         try:
-            return json.loads(text)
+            result = json.loads(text)
         except json.JSONDecodeError:
             return text
+        require_json_value(result, "api results must be JSON-serializable")
+        return result
 
 
 class SentinelTarget(InvocationTarget):
@@ -518,6 +535,9 @@ class SentinelTarget(InvocationTarget):
         )
 
     def _sentinel_headers(self) -> Dict[str, str]:
+        from .utils.network import validate_runtime_target
+
+        validate_runtime_target(self.app_name, self.env_name)
         return _headers(
             {
                 "X-Flash-App": self.app_name,
@@ -674,6 +694,7 @@ class LiveTarget(InvocationTarget):
         return self._unwrap_response(output)
 
     def _unwrap_response(self, output: Any) -> Any:
+        require_json_value(output, "queue results must be JSON-serializable")
         if isinstance(output, dict) and "success" in output:
             response = FunctionResponse.from_output(output)
             if not response.success:
@@ -778,6 +799,7 @@ class LiveTarget(InvocationTarget):
         emit(self.events, "dispatch", self.resource_name, f"{method} {path}")
         start = time.monotonic()
         try:
+            require_json_value(body, "api request body must be JSON-serializable")
             await self._sync_source(timeout)
             result = await self._client.http(method, path, body, timeout=timeout)
         except Exception:
@@ -797,63 +819,41 @@ class LiveTarget(InvocationTarget):
         return result
 
 
-class PodTarget(InvocationTarget):
-    """ephemeral pod execution for @app.task: provision a pod, run the
-    function body, collect the result, terminate.
-
-    tasks run to completion far beyond the queue data plane's sync
-    window, so the transport is a direct http channel to a single-shot
-    runner on the pod (see runpod.apps.tasks).
-    """
-
-    def __init__(
-        self,
-        spec: ResourceSpec,
-        fn: Callable,
-        events: Optional[object] = None,
-        *,
-        specs: Optional[List[ResourceSpec]] = None,
+def _validate_task_payload(payload: Dict[str, Any]) -> None:
+    message = "tasks accept only JSON args and kwargs"
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"args", "kwargs"}
+        or not isinstance(payload["args"], list)
+        or not isinstance(payload["kwargs"], dict)
+        or any(not isinstance(key, str) for key in payload["kwargs"])
     ):
-        self.spec = spec
-        self.fn = fn
-        self.events = events
-        self.specs = specs
+        raise ValueError(message)
+    require_json_value(payload, message)
 
-    def build_payload(
-        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
-    ) -> Dict[str, Any]:
-        from .serialization import (
-            get_function_source,
-            serialize_args,
-            serialize_kwargs,
-        )
 
-        request = FunctionRequest(
-            function_name=fn.__name__,
-            function_code=get_function_source(fn),
-            args=serialize_args(args),
-            kwargs=serialize_kwargs(kwargs),
-            dependencies=spec.dependencies,
-            system_dependencies=spec.system_dependencies,
-            accelerate_downloads=spec.accelerate_downloads,
-        )
-        return request.to_input()
+class _TaskTarget(InvocationTarget):
+    """shared execution, result collection, and cleanup for task targets."""
+
+    @abstractmethod
+    def _execution(self, payload, timeout=None):
+        raise NotImplementedError
 
     async def invoke(
         self, payload: Dict[str, Any], *, timeout: Optional[float] = None
     ) -> Any:
         import time
 
-        from .tasks import TaskExecution, finish_cleanup, unwrap_task_response
+        from .tasks import finish_cleanup, unwrap_task_response
 
-        name = self.spec.name
-        hardware = ",".join(self.spec.cpu or self.spec.gpu or ["any"])
+        name = self.resource_name
+        hardware = self.hardware
         emit(self.events, "dispatch", name)
         emit(self.events, "task_status", name, f"provisioning pod on {hardware}")
         start = time.monotonic()
 
         stream = None
-        execution = TaskExecution(self.spec, specs=self.specs)
+        execution = self._execution(payload, timeout)
         try:
             await execution.start()
             if execution.pod_id:
@@ -899,9 +899,9 @@ class PodTarget(InvocationTarget):
         return result
 
     async def submit(self, payload: Dict[str, Any]) -> Any:
-        from .tasks import TaskExecution, TaskJob, finish_cleanup
+        from .tasks import TaskJob, finish_cleanup
 
-        execution = TaskExecution(self.spec, specs=self.specs)
+        execution = self._execution(payload)
         try:
             await execution.start()
             await execution.wait_ready()
@@ -910,3 +910,73 @@ class PodTarget(InvocationTarget):
             await finish_cleanup(execution.terminate())
             raise
         return TaskJob(execution)
+
+
+class PodTarget(_TaskTarget):
+    """ephemeral pod execution for @app.task: provision a pod, run the
+    function body, collect the result, terminate.
+
+    tasks run to completion far beyond the queue data plane's sync
+    window, so the transport is a direct http channel to a single-shot
+    runner on the pod (see runpod.apps.tasks).
+    """
+
+    def __init__(
+        self,
+        spec: ResourceSpec,
+        fn: Callable,
+        events: Optional[object] = None,
+        *,
+        specs: Optional[List[ResourceSpec]] = None,
+    ):
+        self.spec = spec
+        self.fn = fn
+        self.events = events
+        self.specs = specs
+        self.resource_name = spec.name
+        self.hardware = ",".join(spec.cpu or spec.gpu or ["any"])
+
+    def _execution(self, payload, timeout=None):
+        from .tasks import TaskExecution
+
+        return TaskExecution(self.spec, specs=self.specs)
+
+    def build_payload(
+        self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
+    ) -> Dict[str, Any]:
+        from .serialization import get_function_source
+
+        _validate_task_payload({"args": list(args), "kwargs": kwargs})
+        request = FunctionRequest(
+            function_name=fn.__name__,
+            function_code=get_function_source(fn),
+            args=list(args),
+            kwargs=dict(kwargs),
+            dependencies=spec.dependencies,
+            system_dependencies=spec.system_dependencies,
+            accelerate_downloads=spec.accelerate_downloads,
+            serialization_format=FORMAT_JSON,
+        )
+        return request.to_input()
+
+
+class DeployedTaskTarget(_TaskTarget):
+    """invoke an approved deployed task without transmitting source or specs."""
+
+    def __init__(self, app, env, name, events=None):
+        self.app_name = app
+        self.env_name = env
+        self.resource_name = name
+        self.hardware = "approved resources"
+        self.events = events
+
+    def _execution(self, payload, timeout=None):
+        from .tasks import DeployedTaskExecution
+
+        _validate_task_payload(payload)
+        return DeployedTaskExecution(
+            self.app_name, self.env_name, self.resource_name, timeout=timeout
+        )
+
+    def build_payload(self, fn, spec, args, kwargs):
+        return {"args": list(args), "kwargs": kwargs}

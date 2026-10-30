@@ -151,7 +151,11 @@ class App:
         accelerate_downloads: bool = True,
         container_disk_gb: Optional[int] = None,
     ) -> Callable[[Callable], FunctionHandle]:
-        """declare ephemeral pod compute from a function."""
+        """declare ephemeral pod compute from a function.
+
+        remote task arguments and results use json in every execution
+        context. use .local() for direct python execution without transport.
+        """
 
         def decorator(fn: Callable) -> FunctionHandle:
             spec = ResourceSpec(
@@ -259,6 +263,12 @@ class App:
         """resolve a resource spec to an invocation target."""
         spec.validate()
         if spec.kind is ResourceKind.TASK:
+            from .context import deployed_identity
+            from .targets import DeployedTaskTarget
+
+            identity = deployed_identity()
+            if identity is not None:
+                return DeployedTaskTarget(self.name, identity[1], spec.name)
             handle = self._resources.get(spec.name)
             fn = getattr(handle, "_fn", None)
             return PodTarget(

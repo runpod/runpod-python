@@ -191,7 +191,9 @@ class TestPackaging:
         with tarfile.open(package_project(tmp_path, {})) as tar:
             assert set(tar.getnames()) == {".runpodignore", "runpod_manifest.json"}
         for name in (".env", "private.key", "private.pem", "local.txt", ".aws/"):
-            assert f"excluded source path {name!r} from deployment artifact" in caplog.text
+            assert (
+                f"excluded source path {name!r} from deployment artifact" in caplog.text
+            )
         assert "sensitive-file-contents" not in caplog.text
 
     def test_vendored_env_included_under_env(self, tmp_path):
@@ -280,7 +282,10 @@ class TestDeployPipeline:
             "uploadUrl": "https://upload",
             "objectKey": "key-1",
         }
-        api.finalize_artifact_upload.return_value = {"id": "build-1"}
+        api.finalize_artifact_upload.return_value = {
+            "id": "build-1",
+            "resourceSpec": {"tasks": {}},
+        }
         api.deploy_build.return_value = {"id": "env-1"}
 
         with _stub_build(tmp_path):
@@ -305,7 +310,10 @@ class TestDeployPipeline:
             "uploadUrl": "https://upload",
             "objectKey": "key-1",
         }
-        api.finalize_artifact_upload.return_value = {"id": "build-2"}
+        api.finalize_artifact_upload.return_value = {
+            "id": "build-2",
+            "resourceSpec": {"tasks": {}},
+        }
 
         with _stub_build(tmp_path):
             await deploy_app(app, tmp_path, api=api)
@@ -329,9 +337,18 @@ class TestDeployPipeline:
             "uploadUrl": "https://upload",
             "objectKey": "key-1",
         }
-        api.finalize_artifact_upload.return_value = {"id": "build-1"}
+        api.finalize_artifact_upload.return_value = {
+            "id": "build-1",
+            "resourceSpec": {"tasks": {}},
+        }
         api.save_endpoint.return_value = {"id": "ep-1"}
         with _stub_build(tmp_path):
+            with pytest.raises(InvalidResourceError, match="FLASH_ENVIRONMENT"):
+                await deploy_app(app, tmp_path, env_name="prod", api=api)
+            api.get_app_by_name.assert_not_awaited()
+            api.deploy_build.assert_not_awaited()
+            api.save_endpoint.assert_not_awaited()
+            handle.spec.env = {}
             await deploy_app(app, tmp_path, env_name="prod", api=api)
         payload = api.save_endpoint.await_args.args[0]
         worker_env = {
