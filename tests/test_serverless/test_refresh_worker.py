@@ -556,7 +556,10 @@ WORKER_SCRIPT = textwrap.dedent(
         refresh = job["input"].get("refresh", False)
         return {"echo": job["input"]["n"], "refresh_worker": refresh}
 
-    runpod.serverless.start({"handler": handler, "refresh_worker": %s})
+    # The heartbeat runs in a multiprocessing child; spawn and forkserver
+    # (the Linux default from Python 3.14) re-import this module there.
+    if __name__ == "__main__":
+        runpod.serverless.start({"handler": handler, "refresh_worker": %s})
     """
 )
 
