@@ -334,7 +334,7 @@ class TestRunJob(IsolatedAsyncioTestCase):
 
         job_result = await rp_job.run_job(mock_handler, self.sample_job)
 
-        assert job_result["stopPod"] is True
+        assert job_result == {"stopPod": True}
 
     async def test_job_bool_output(self):
         """
