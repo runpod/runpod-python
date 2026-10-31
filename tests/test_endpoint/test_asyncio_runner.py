@@ -78,6 +78,26 @@ class TestJob(IsolatedAsyncioTestCase):
             assert output == "OUTPUT"
             assert await job.output() == "OUTPUT"
 
+    async def test_output_without_timeout_waits_for_completion(self):
+        """A fresh job can wait for output without an explicit timeout."""
+        response = AsyncMock()
+        response.json.side_effect = [
+            {"status": "IN_PROGRESS"},
+            {"status": "COMPLETED", "output": "OUTPUT"},
+            {"status": "COMPLETED", "output": "OUTPUT"},
+        ]
+        session = AsyncMock()
+        session.get.return_value = response
+        job = Job("endpoint_id", "job_id", session, {})
+
+        with patch(
+            "runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            output = await job.output()
+
+        self.assertEqual(output, "OUTPUT")
+
     async def test_output_timeout(self):
         """
         Tests Job.output with a timeout
