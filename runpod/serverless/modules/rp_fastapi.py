@@ -46,7 +46,7 @@ if os.environ.get("RUNPOD_PROJECT_ID", None) is None:
 
     ℹ️ | Consider developing with our CLI tool to streamline your worker development process.
 
-    >_  wget -qO- cli.runpod.net | sudo bash
+    >_  curl --proto '=https' --proto-redir '=https' -fsSL https://cli.runpod.net | sudo bash
     >_  runpodctl project create
     """
 
