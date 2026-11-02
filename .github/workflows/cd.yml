@@ -28,7 +28,7 @@ jobs:
 
   test-publish:
     if: github.ref == 'refs/heads/staging'
-    runs-on: runpod-4vCPU-ubuntu-2404 # GitHub-hosted (trusted publishing needs that) with allow-listed static IPs
+    runs-on: runpod-4vCPU-ubuntu-2404 # GitHub-hosted, which PyPI trusted publishing needs
     environment: test-release
     permissions:
       contents: read
@@ -74,7 +74,7 @@ jobs:
     name: PyPI Publish
     needs: release-please
     if: ${{ always() && (needs.release-please.outputs.release_created || (github.event_name == 'workflow_dispatch' && inputs.force_publish == 'true')) }}
-    runs-on: runpod-4vCPU-ubuntu-2404 # GitHub-hosted (trusted publishing needs that) with allow-listed static IPs
+    runs-on: runpod-4vCPU-ubuntu-2404 # GitHub-hosted, which PyPI trusted publishing needs
     environment:
       name: pypi-production
       url: https://pypi.org/project/runpod/
