@@ -15,6 +15,7 @@ import runpod
 import runpod.network_volume_transfer as nvt
 import runpod.error
 
+
 def _client_error(code, status, op="Op"):
     return ClientError(
         {"Error": {"Code": code}, "ResponseMetadata": {"HTTPStatusCode": status}}, op
@@ -70,16 +71,25 @@ class FakeS3:
         if Key not in self.objects:
             raise _client_error("404", 404, "HeadObject")
         data, modified = self.objects[Key]
-        return {"ContentLength": len(data), "ETag": self.object_etag(Key), "LastModified": modified}
+        return {
+            "ContentLength": len(data),
+            "ETag": self.object_etag(Key),
+            "LastModified": modified,
+        }
 
     def get_object(self, Bucket, Key, Range):
         self._call("get_object", Key=Key, Range=Range)
         data, _ = self.objects[Key]
         start, end = (int(x) for x in Range.split("=")[1].split("-"))
-        return {"Body": io.BytesIO(data[start : end + 1]), "ETag": self.object_etag(Key)}
+        return {
+            "Body": io.BytesIO(data[start : end + 1]),
+            "ETag": self.object_etag(Key),
+        }
 
     def list_objects_v2(self, Bucket, Prefix, ContinuationToken=None, MaxKeys=None):
-        self._call("list_objects_v2", Prefix=Prefix, ContinuationToken=ContinuationToken)
+        self._call(
+            "list_objects_v2", Prefix=Prefix, ContinuationToken=ContinuationToken
+        )
         keys = sorted(k for k in self.objects if k.startswith(Prefix))
         start = int(ContinuationToken or 0)
         page = keys[start : start + 2]
@@ -125,7 +135,8 @@ class FakeS3:
         page, rest = parts[:2], parts[2:]
         return {
             "Parts": [
-                {"PartNumber": n, "Size": len(d), "ETag": self._etag(d)} for n, d in page
+                {"PartNumber": n, "Size": len(d), "ETag": self._etag(d)}
+                for n, d in page
             ],
             "IsTruncated": bool(rest),
             "NextPartNumberMarker": page[-1][0] if rest else None,
@@ -138,7 +149,9 @@ class FakeS3:
         self.put(Key, b"".join(chunks))
         if self.md5_etags:
             digests = b"".join(hashlib.md5(c).digest() for c in chunks)
-            self.multipart_etags[Key] = f'"{hashlib.md5(digests).hexdigest()}-{len(chunks)}"'
+            self.multipart_etags[Key] = (
+                f'"{hashlib.md5(digests).hexdigest()}-{len(chunks)}"'
+            )
         del self.uploads[UploadId]
         return {}
 
@@ -215,7 +228,11 @@ def test_small_file_uses_put(tmp_path):
     src.write_bytes(b"hello")
     summary = _transfer(fake, tmp_path).upload(src, "dir/")
     assert fake.objects["dir/small.bin"][0] == b"hello"
-    assert summary == {"files_transferred": 1, "files_skipped": 0, "bytes_transferred": 5}
+    assert summary == {
+        "files_transferred": 1,
+        "files_skipped": 0,
+        "bytes_transferred": 5,
+    }
 
 
 def test_multipart_resume_uploads_only_missing_and_bad_parts(tmp_path):
@@ -272,7 +289,9 @@ def test_changed_file_aborts_stale_upload(tmp_path):
     src = tmp_path / "big.bin"
     src.write_bytes(DATA)
     fake.fail = lambda op, kw: (
-        _client_error("InvalidArgument", 400) if op == "upload_part" and kw["PartNumber"] == 2 else None
+        _client_error("InvalidArgument", 400)
+        if op == "upload_part" and kw["PartNumber"] == 2
+        else None
     )
     with pytest.raises(ClientError):
         _transfer(fake, tmp_path).upload(src, "big.bin")
@@ -291,7 +310,9 @@ def test_missing_server_upload_starts_fresh(tmp_path):
     src = tmp_path / "big.bin"
     src.write_bytes(DATA)
     fake.fail = lambda op, kw: (
-        _client_error("InvalidArgument", 400) if op == "upload_part" and kw["PartNumber"] == 2 else None
+        _client_error("InvalidArgument", 400)
+        if op == "upload_part" and kw["PartNumber"] == 2
+        else None
     )
     with pytest.raises(ClientError):
         _transfer(fake, tmp_path).upload(src, "big.bin")
@@ -327,7 +348,9 @@ def test_complete_failure_without_object_keeps_state(tmp_path):
     src = tmp_path / "big.bin"
     src.write_bytes(DATA)
     fake.fail = lambda op, kw: (
-        _client_error("InvalidArgument", 400) if op == "complete_multipart_upload" else None
+        _client_error("InvalidArgument", 400)
+        if op == "complete_multipart_upload"
+        else None
     )
     with pytest.raises(ClientError):
         _transfer(fake, tmp_path).upload(src, "big.bin")
@@ -347,7 +370,10 @@ def test_folder_upload_skips_unchanged(tmp_path):
     fake.put("models/d.txt", b"zz", past)  # same size, older: upload
 
     summary = _transfer(fake, tmp_path, concurrency=2).upload(root, "models")
-    assert sorted(kw["Key"] for kw in fake.ops("put_object")) == ["models/b/c.txt", "models/d.txt"]
+    assert sorted(kw["Key"] for kw in fake.ops("put_object")) == [
+        "models/b/c.txt",
+        "models/d.txt",
+    ]
     assert fake.objects["models/a.txt"][0] == b"xyz"
     assert summary["files_skipped"] == 1 and summary["files_transferred"] == 2
 
@@ -359,7 +385,9 @@ def test_folder_upload_default_prefix_and_failure_report(tmp_path):
     (root / "ok.txt").write_bytes(b"1")
     (root / "bad.txt").write_bytes(b"2")
     fake.fail = lambda op, kw: (
-        _client_error("InvalidArgument", 400) if kw.get("Key") == "data/bad.txt" else None
+        _client_error("InvalidArgument", 400)
+        if kw.get("Key") == "data/bad.txt"
+        else None
     )
     with pytest.raises(nvt.NetworkVolumeTransferError, match="1 file"):
         _transfer(fake, tmp_path).upload(root, None)
@@ -435,7 +463,9 @@ def test_download_restarts_when_remote_changed(tmp_path):
     fake.put("big.bin", DATA)
     dest = tmp_path / "big.bin"
     fake.fail = lambda op, kw: (
-        _client_error("InvalidArgument", 400) if kw.get("Range") == "bytes=16-23" else None
+        _client_error("InvalidArgument", 400)
+        if kw.get("Range") == "bytes=16-23"
+        else None
     )
     with pytest.raises(ClientError):
         _transfer(fake, tmp_path).download("big.bin", dest)
@@ -459,7 +489,9 @@ def test_download_stops_when_remote_replaced_midway(tmp_path):
         return response
 
     fake.get_object = replace_after_first
-    with pytest.raises(nvt.NetworkVolumeTransferError, match="changed on the volume") as info:
+    with pytest.raises(
+        nvt.NetworkVolumeTransferError, match="changed on the volume"
+    ) as info:
         _transfer(fake, tmp_path).download("big.bin", dest)
     assert info.value.resumable
     assert not dest.exists()
@@ -505,8 +537,8 @@ def test_download_dropped_stream_is_fetched_again(tmp_path):
     original = fake.get_object
     dropped = []
 
-    class Dropped:
-        def read(self):
+    class Dropped(io.BytesIO):
+        def read(self, *args):
             raise IncompleteReadError(actual_bytes=1, expected_bytes=8)
 
     def drop_once(**kwargs):
@@ -568,7 +600,9 @@ def test_upload_onto_remote_folder_is_refused(tmp_path):
     fake = FakeS3()
     fake.put("models/a.bin", b"a")
     # runpod answers a head on a directory with 400
-    fake.fail = lambda op, kw: _client_error("BadRequest", 400) if op == "head_object" else None
+    fake.fail = lambda op, kw: (
+        _client_error("BadRequest", 400) if op == "head_object" else None
+    )
     src = tmp_path / "f.txt"
     src.write_bytes(b"x")
     with pytest.raises(nvt.NetworkVolumeTransferError, match="'models/'") as info:
@@ -607,11 +641,15 @@ def test_folder_failure_resumable_only_if_a_file_was(tmp_path):
     root = tmp_path / "data"
     root.mkdir()
     (root / "a.txt").write_bytes(b"1")
-    fake.fail = lambda op, kw: _client_error("InvalidArgument", 400) if op == "put_object" else None
+    fake.fail = lambda op, kw: (
+        _client_error("InvalidArgument", 400) if op == "put_object" else None
+    )
     with pytest.raises(nvt.NetworkVolumeTransferError) as denied:
         _transfer(fake, tmp_path).upload(root, None)
     assert denied.value.resumable is False
-    fake.fail = lambda op, kw: ConnectionResetError("reset") if op == "put_object" else None
+    fake.fail = lambda op, kw: (
+        ConnectionResetError("reset") if op == "put_object" else None
+    )
     with pytest.raises(nvt.NetworkVolumeTransferError) as reset:
         _transfer(fake, tmp_path).upload(root, None)
     assert reset.value.resumable is True
@@ -662,7 +700,12 @@ def test_saved_s3_keys_are_the_last_fallback(monkeypatch):
 
 def test_make_transfer_builds_datacenter_client(monkeypatch):
     # a stale local aws profile must not leak into the session
-    for name in ("AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE"):
+    for name in (
+        "AWS_PROFILE",
+        "AWS_DEFAULT_PROFILE",
+        "AWS_CONFIG_FILE",
+        "AWS_SHARED_CREDENTIALS_FILE",
+    ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
     monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
@@ -675,14 +718,19 @@ def test_make_transfer_builds_datacenter_client(monkeypatch):
     assert transfer.client.meta.region_name == "EU-RO-1"
     assert transfer.client.meta.config.request_checksum_calculation == "when_required"
     # _retry_delay makes every retry decision
-    assert transfer.client.meta.config.retries == {"mode": "standard", "total_max_attempts": 1}
+    assert transfer.client.meta.config.retries == {
+        "mode": "standard",
+        "total_max_attempts": 1,
+    }
     credentials = transfer.client._request_signer._credentials
     assert credentials.access_key == "user_x"
     assert transfer.bucket == "vol123"
 
 
 def test_resolve_volume_by_name():
-    listing, _ = _list_volumes({"id": "other", "name": "x", "dataCenterId": "US-KS-2"}, _VOLUME)
+    listing, _ = _list_volumes(
+        {"id": "other", "name": "x", "dataCenterId": "US-KS-2"}, _VOLUME
+    )
     with listing:
         assert nvt._resolve_volume("models") == ("vol123", "EU-RO-1")
 
@@ -712,7 +760,12 @@ def test_resolve_volume_errors(volumes, match):
 def test_network_volume_methods_delegate():
     calls = []
     fake_transfer = type(
-        "T", (), {"upload": lambda self, l, r: ("up", l, r), "download": lambda self, r, l: ("down", r, l)}
+        "T",
+        (),
+        {
+            "upload": lambda self, l, r: ("up", l, r),
+            "download": lambda self, r, l: ("down", r, l),
+        },
     )()
 
     def make(*args, **kwargs):
@@ -729,13 +782,19 @@ def test_network_volume_methods_delegate():
 def test_network_volume_download_keeps_trailing_slash(tmp_path, monkeypatch):
     fake = FakeS3()
     fake.put("w.bin", b"w")
-    monkeypatch.setattr(nvt, "_make_transfer", lambda *a, **k: _transfer(fake, tmp_path))
+    monkeypatch.setattr(
+        nvt, "_make_transfer", lambda *a, **k: _transfer(fake, tmp_path)
+    )
     runpod.NetworkVolume("vol").download("w.bin", str(tmp_path / "out") + "/")
     assert (tmp_path / "out" / "w.bin").read_bytes() == b"w"
 
 
 def test_no_module_level_transfer_exports():
-    for name in ("upload_to_network_volume", "download_from_network_volume", "network_volume_transfer"):
+    for name in (
+        "upload_to_network_volume",
+        "download_from_network_volume",
+        "network_volume_transfer",
+    ):
         assert name not in runpod.__all__
 
 
@@ -758,7 +817,9 @@ def test_cli_upload_prints_summary(tmp_path):
         assert volume == "models" and kwargs["concurrency"] == 2
         return {"files_transferred": 1, "files_skipped": 0, "bytes_transferred": 1}
 
-    with patch.object(runpod.NetworkVolume, "upload", autospec=True, side_effect=fake_upload):
+    with patch.object(
+        runpod.NetworkVolume, "upload", autospec=True, side_effect=fake_upload
+    ):
         result = CliRunner().invoke(
             cli,
             ["volume", "upload", "models", str(src), "--concurrency", "2"],
@@ -771,7 +832,9 @@ def test_cli_upload_prints_summary(tmp_path):
 def test_cli_download_failure_says_resume():
     from runpod.rp_cli.main import cli
 
-    with patch.object(runpod.NetworkVolume, "download", side_effect=ConnectionResetError("boom")):
+    with patch.object(
+        runpod.NetworkVolume, "download", side_effect=ConnectionResetError("boom")
+    ):
         result = CliRunner().invoke(cli, ["volume", "download", "vol", "a/b"])
     assert result.exit_code != 0
     assert "boom" in result.output
@@ -804,7 +867,9 @@ def test_cli_final_error_has_no_resume_hint():
 def test_cli_missing_path_has_no_resume_hint():
     from runpod.rp_cli.main import cli
 
-    with patch.object(runpod.NetworkVolume, "download", side_effect=FileNotFoundError("no such file")):
+    with patch.object(
+        runpod.NetworkVolume, "download", side_effect=FileNotFoundError("no such file")
+    ):
         result = CliRunner().invoke(cli, ["volume", "download", "vol", "a/b"])
     assert result.exit_code != 0
     assert "no such file" in result.output
@@ -824,7 +889,9 @@ def test_failed_complete_does_not_accept_an_old_object(tmp_path, error):
     src = tmp_path / "big.bin"
     src.write_bytes(DATA)
     # an older object of the same size already sits at the key
-    fake.put("big.bin", b"o" * len(DATA), modified=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    fake.put(
+        "big.bin", b"o" * len(DATA), modified=datetime(2020, 1, 1, tzinfo=timezone.utc)
+    )
     fake.fail = lambda op, kw: error if op == "complete_multipart_upload" else None
     with pytest.raises(ClientError):
         _transfer(fake, tmp_path).upload(src, "big.bin")
@@ -870,7 +937,11 @@ def test_download_refetches_newer_same_size_remote(tmp_path):
     fake.put("f.txt", b"version-1")
     dest = tmp_path / "f.txt"
     _transfer(fake, tmp_path).download("f.txt", dest)
-    fake.put("f.txt", b"version-2", modified=datetime.now(timezone.utc) + timedelta(minutes=1))
+    fake.put(
+        "f.txt",
+        b"version-2",
+        modified=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
     summary = _transfer(fake, tmp_path).download("f.txt", dest)
     assert summary["files_transferred"] == 1
     assert dest.read_bytes() == b"version-2"
@@ -934,9 +1005,13 @@ def test_ambiguous_complete_without_verifiable_etag_fails(tmp_path):
     fake = FakeS3(md5_etags=False)
     src = tmp_path / "big.bin"
     src.write_bytes(DATA)
-    fake.put("big.bin", b"o" * len(DATA), modified=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    fake.put(
+        "big.bin", b"o" * len(DATA), modified=datetime(2020, 1, 1, tzinfo=timezone.utc)
+    )
     fake.fail = lambda op, kw: (
-        _client_error("InternalError", 524) if op == "complete_multipart_upload" else None
+        _client_error("InternalError", 524)
+        if op == "complete_multipart_upload"
+        else None
     )
     with pytest.raises(ClientError):
         _transfer(fake, tmp_path).upload(src, "big.bin")
@@ -976,14 +1051,17 @@ def test_dns_failure_mid_transfer_is_a_network_drop():
     from botocore.exceptions import EndpointConnectionError
 
     exc = EndpointConnectionError(
-        endpoint_url="https://s3api-eu-ro-1.runpod.io/", error=_socket.gaierror(8, "nodename nor servname")
+        endpoint_url="https://s3api-eu-ro-1.runpod.io/",
+        error=_socket.gaierror(8, "nodename nor servname"),
     )
     assert nvt.is_resumable(exc)
 
 
 def test_head_400_that_is_not_a_folder_is_reported_as_is(tmp_path):
     fake = FakeS3()
-    fake.fail = lambda op, kw: _client_error("BadRequest", 400) if op == "head_object" else None
+    fake.fail = lambda op, kw: (
+        _client_error("BadRequest", 400) if op == "head_object" else None
+    )
     src = tmp_path / "f.txt"
     src.write_bytes(b"x")
     with pytest.raises(ClientError):
@@ -1022,7 +1100,9 @@ def test_failed_delete_after_change_asks_for_force(tmp_path):
         return result
 
     fake.put_object = put_then_edit
-    fake.fail = lambda op, kw: _client_error("InvalidArgument", 400) if op == "delete_object" else None
+    fake.fail = lambda op, kw: (
+        _client_error("InvalidArgument", 400) if op == "delete_object" else None
+    )
     with pytest.raises(nvt.NetworkVolumeTransferError, match="--force") as info:
         _transfer(fake, tmp_path).upload(src, "small.txt")
     assert not nvt.is_resumable(info.value)
@@ -1061,7 +1141,9 @@ def test_single_put_change_with_older_mtime_is_resent_on_rerun(tmp_path):
         return result
 
     fake.put_object = put_then_edit
-    with pytest.raises(nvt.NetworkVolumeTransferError, match="changed during upload") as info:
+    with pytest.raises(
+        nvt.NetworkVolumeTransferError, match="changed during upload"
+    ) as info:
         _transfer(fake, tmp_path).upload(src, "small.txt")
     assert info.value.resumable
     assert "small.txt" not in fake.objects
@@ -1086,11 +1168,15 @@ def test_force_transfers_unchanged_files(tmp_path):
     folder.mkdir()
     (folder / "a.txt").write_bytes(b"alpha")
     _transfer(fake, tmp_path).upload(folder, "data")
-    forced = nvt._Transfer(fake, "vol", "https://s3", 1, None, state_dir=tmp_path / "state", force=True)
+    forced = nvt._Transfer(
+        fake, "vol", "https://s3", 1, None, state_dir=tmp_path / "state", force=True
+    )
     assert forced.upload(folder, "data")["files_transferred"] == 1
     out = tmp_path / "out"
     _transfer(fake, tmp_path).download("data/", out)
-    forced = nvt._Transfer(fake, "vol", "https://s3", 1, None, state_dir=tmp_path / "state", force=True)
+    forced = nvt._Transfer(
+        fake, "vol", "https://s3", 1, None, state_dir=tmp_path / "state", force=True
+    )
     assert forced.download("data/", out)["files_transferred"] == 1
 
 
@@ -1180,11 +1266,21 @@ def test_ctrl_c_stops_files_in_flight(tmp_path):
 
 def test_discarded_chunks_drop_the_sidecar_first(tmp_path):
     dest = tmp_path / "f.bin"
-    job = nvt._Download(_transfer(FakeS3(), tmp_path), "f.bin", len(DATA), {"ETag": "e"}, dest)
+    job = nvt._Download(
+        _transfer(FakeS3(), tmp_path), "f.bin", len(DATA), {"ETag": "e"}, dest
+    )
     # a sidecar that vouches for every chunk beside a partial of the wrong size
-    job.sidecar.write_text(json.dumps(
-        {"key": "f.bin", "size": len(DATA), "etag": "e", "chunk_size": nvt.DOWNLOAD_CHUNK_SIZE, "done": list(range(job.count))}
-    ))
+    job.sidecar.write_text(
+        json.dumps(
+            {
+                "key": "f.bin",
+                "size": len(DATA),
+                "etag": "e",
+                "chunk_size": nvt.DOWNLOAD_CHUNK_SIZE,
+                "done": list(range(job.count)),
+            }
+        )
+    )
     job.partial.write_bytes(b"short")
     sidecar_seen = []
     real_open = open
@@ -1209,7 +1305,9 @@ def test_download_refuses_symlinked_work_files(tmp_path, suffix):
         (tmp_path / ("x" + suffix)).symlink_to("other")
     except OSError as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
-    with pytest.raises(nvt.NetworkVolumeTransferError, match="not a regular file") as info:
+    with pytest.raises(
+        nvt.NetworkVolumeTransferError, match="not a regular file"
+    ) as info:
         _transfer(fake, tmp_path).download("x", tmp_path / "x")
     assert not nvt.is_resumable(info.value)
     assert other.read_bytes() == b"keep me"
@@ -1245,7 +1343,9 @@ def test_client_retries_the_proxy_524(monkeypatch):
     try:
         monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
         monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
-        monkeypatch.setattr(nvt, "_resolve_volume", lambda volume: ("vol123", "EU-RO-1"))
+        monkeypatch.setattr(
+            nvt, "_resolve_volume", lambda volume: ("vol123", "EU-RO-1")
+        )
         monkeypatch.setattr(nvt.random, "uniform", lambda a, b: 0)
         endpoint = f"http://127.0.0.1:{server.server_port}"
         transfer = nvt._make_transfer("vol123", None, None, endpoint, 1, None)
@@ -1274,7 +1374,9 @@ def interactive(monkeypatch):
 @pytest.fixture
 def cli_preflight(monkeypatch):
     """Keep CLI presentation tests independent of the account and DNS."""
-    monkeypatch.setattr(nvt, "_resolve_volume", lambda reference: (reference, "EU-RO-1"))
+    monkeypatch.setattr(
+        nvt, "_resolve_volume", lambda reference: (reference, "EU-RO-1")
+    )
     monkeypatch.setattr(nvt, "_check_endpoint", lambda endpoint, datacenter: None)
 
 
@@ -1310,8 +1412,12 @@ def test_cli_offers_login_and_continues(monkeypatch, tmp_path, interactive):
         lambda profile="default": {"api_key": "rpa_new"},
     )
     calls = []
-    with patch.object(runpod.NetworkVolume, "upload", autospec=True, side_effect=_fake_transfer(calls)):
-        result = CliRunner().invoke(_cli(), ["volume", "upload", "vol", str(tmp_path)], input="y\n")
+    with patch.object(
+        runpod.NetworkVolume, "upload", autospec=True, side_effect=_fake_transfer(calls)
+    ):
+        result = CliRunner().invoke(
+            _cli(), ["volume", "upload", "vol", str(tmp_path)], input="y\n"
+        )
     assert result.exit_code == 0, result.output
     assert "log in now?" in result.output
     assert len(logins) == 1 and runpod.api_key == "rpa_new" and calls
@@ -1319,7 +1425,9 @@ def test_cli_offers_login_and_continues(monkeypatch, tmp_path, interactive):
 
 def test_cli_declined_login_stops(monkeypatch, tmp_path, interactive):
     monkeypatch.setattr(runpod, "api_key", None)
-    result = CliRunner().invoke(_cli(), ["volume", "upload", "vol", str(tmp_path)], input="n\n")
+    result = CliRunner().invoke(
+        _cli(), ["volume", "upload", "vol", str(tmp_path)], input="n\n"
+    )
     assert result.exit_code == 1
     assert "not logged in" in result.output
 
@@ -1332,8 +1440,12 @@ def test_cli_picks_a_volume_when_left_out(monkeypatch, tmp_path, interactive):
     ]
     monkeypatch.setattr(nvt, "_list_volumes", lambda: volumes)
     calls = []
-    with patch.object(runpod.NetworkVolume, "upload", autospec=True, side_effect=_fake_transfer(calls)):
-        result = CliRunner().invoke(_cli(), ["volume", "upload", str(tmp_path)], input="2\n")
+    with patch.object(
+        runpod.NetworkVolume, "upload", autospec=True, side_effect=_fake_transfer(calls)
+    ):
+        result = CliRunner().invoke(
+            _cli(), ["volume", "upload", str(tmp_path)], input="2\n"
+        )
     assert result.exit_code == 0, result.output
     assert "2. second  bbb  20 GB  US-KS-2" in result.output
     assert calls[0][0] == "bbb" and calls[0][1] == str(tmp_path) and calls[0][2] is None
@@ -1350,13 +1462,20 @@ def test_cli_missing_keys_in_a_script_names_every_option(monkeypatch, tmp_path):
     monkeypatch.delenv(nvt.ACCESS_KEY_ENV)
     result = CliRunner().invoke(_cli(), ["volume", "upload", "vol", str(tmp_path)])
     assert result.exit_code == 1
-    for hint in ("separate from your api key", "RUNPOD_S3_ACCESS_KEY", "--s3-access-key", nvt.S3_KEYS_URL):
+    for hint in (
+        "separate from your api key",
+        "RUNPOD_S3_ACCESS_KEY",
+        "--s3-access-key",
+        nvt.S3_KEYS_URL,
+    ):
         assert hint in result.output
 
 
 @pytest.mark.parametrize("save", [True, False])
 @pytest.mark.usefixtures("cli_preflight")
-def test_cli_prompts_for_keys_and_offers_to_save(monkeypatch, tmp_path, interactive, save):
+def test_cli_prompts_for_keys_and_offers_to_save(
+    monkeypatch, tmp_path, interactive, save
+):
     monkeypatch.delenv(nvt.ACCESS_KEY_ENV)
     saved = []
     monkeypatch.setattr(
@@ -1364,14 +1483,19 @@ def test_cli_prompts_for_keys_and_offers_to_save(monkeypatch, tmp_path, interact
         lambda access, secret, profile="default": saved.append((access, secret)),
     )
     calls = []
-    with patch.object(runpod.NetworkVolume, "upload", autospec=True, side_effect=_fake_transfer(calls)):
+    with patch.object(
+        runpod.NetworkVolume, "upload", autospec=True, side_effect=_fake_transfer(calls)
+    ):
         result = CliRunner().invoke(
             _cli(),
             ["volume", "upload", "vol", str(tmp_path)],
             input=f"user_typed\nrps_typed\n{'y' if save else 'n'}\n",
         )
     assert result.exit_code == 0, result.output
-    assert calls[0][3]["access_key"] == "user_typed" and calls[0][3]["secret_key"] == "rps_typed"
+    assert (
+        calls[0][3]["access_key"] == "user_typed"
+        and calls[0][3]["secret_key"] == "rps_typed"
+    )
     assert saved == ([("user_typed", "rps_typed")] if save else [])
     assert "rps_typed" not in result.output
 
@@ -1381,20 +1505,26 @@ def test_cli_checks_volume_before_asking_for_keys(monkeypatch, tmp_path, interac
         raise nvt.NetworkVolumeTransferError("no network volume named 'missing'")
 
     monkeypatch.setattr(nvt, "_resolve_volume", missing_volume)
-    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys"))
+    monkeypatch.setattr(
+        "runpod.rp_cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys")
+    )
     result = CliRunner().invoke(_cli(), ["volume", "upload", "missing", str(tmp_path)])
     assert result.exit_code == 1
     assert "no network volume named" in result.output
 
 
 def test_cli_checks_endpoint_before_asking_for_keys(monkeypatch, tmp_path, interactive):
-    monkeypatch.setattr(nvt, "_resolve_volume", lambda reference: (reference, "EU-SE-1"))
+    monkeypatch.setattr(
+        nvt, "_resolve_volume", lambda reference: (reference, "EU-SE-1")
+    )
 
     def unsupported_endpoint(endpoint, datacenter):
         raise nvt.NetworkVolumeTransferError("does not support the s3 api")
 
     monkeypatch.setattr(nvt, "_check_endpoint", unsupported_endpoint)
-    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys"))
+    monkeypatch.setattr(
+        "runpod.rp_cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys")
+    )
     result = CliRunner().invoke(_cli(), ["volume", "upload", "vol", str(tmp_path)])
     assert result.exit_code == 1
     assert "does not support the s3 api" in result.output
@@ -1413,8 +1543,12 @@ def test_cli_offers_to_replace_rejected_saved_keys(monkeypatch, interactive, tmp
     monkeypatch.delenv(nvt.ACCESS_KEY_ENV, raising=False)
     monkeypatch.delenv(nvt.SECRET_KEY_ENV, raising=False)
     monkeypatch.setattr(nvt, "saved_s3_keys", lambda: ("saved", "old"))
-    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", lambda: ("new", "secret"))
-    with patch.object(runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer):
+    monkeypatch.setattr(
+        "runpod.rp_cli.volume._prompt_s3_keys", lambda: ("new", "secret")
+    )
+    with patch.object(
+        runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer
+    ):
         result = CliRunner().invoke(
             _cli(), ["volume", "upload", "vol", str(tmp_path)], input="y\n"
         )
@@ -1422,7 +1556,9 @@ def test_cli_offers_to_replace_rejected_saved_keys(monkeypatch, interactive, tmp
     assert calls == ["saved", "new"]
 
 
-def test_set_s3_keys_keeps_the_api_key_and_login_keeps_the_s3_keys(monkeypatch, tmp_path):
+def test_set_s3_keys_keeps_the_api_key_and_login_keeps_the_s3_keys(
+    monkeypatch, tmp_path
+):
     from runpod.cli.groups.config import functions
 
     monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(tmp_path / "config.toml"))
@@ -1437,13 +1573,18 @@ def test_set_s3_keys_keeps_the_api_key_and_login_keeps_the_s3_keys(monkeypatch, 
     assert oct(os.stat(tmp_path / "config.toml").st_mode & 0o777) == "0o600"
 
 
-@pytest.mark.parametrize("code, status", [("403", 403), ("InvalidAccessKeyId", 403), ("SignatureDoesNotMatch", 403)])
+@pytest.mark.parametrize(
+    "code, status",
+    [("403", 403), ("InvalidAccessKeyId", 403), ("SignatureDoesNotMatch", 403)],
+)
 def test_rejected_keys_say_so_and_do_not_resume(tmp_path, code, status):
     fake = FakeS3()
     fake.fail = lambda op, kw: _client_error(code, status, "HeadObject")
     src = tmp_path / "f.txt"
     src.write_text("x")
-    with pytest.raises(nvt.NetworkVolumeTransferError, match="rejected the keys") as info:
+    with pytest.raises(
+        nvt.NetworkVolumeTransferError, match="rejected the keys"
+    ) as info:
         _transfer(fake, tmp_path).upload(src, None)
     assert not nvt.is_resumable(info.value)
     assert "--s3-access-key" in str(info.value)
@@ -1461,11 +1602,15 @@ def test_datacenter_without_the_s3_api_fails_fast(monkeypatch):
         raise _socket.gaierror(8, "nodename nor servname provided")
 
     monkeypatch.setattr(_socket, "getaddrinfo", no_such_host)
-    with pytest.raises(nvt.NetworkVolumeTransferError, match="EU-SE-1 does not support the s3 api yet") as info:
+    with pytest.raises(
+        nvt.NetworkVolumeTransferError, match="EU-SE-1 does not support the s3 api yet"
+    ) as info:
         nvt._check_endpoint("https://s3api-eu-se-1.runpod.io/", "EU-SE-1")
     assert not nvt.is_resumable(info.value)
     # behind a proxy the proxy resolves the name
-    monkeypatch.setattr("urllib.request.getproxies", lambda: {"https": "http://proxy:3128"})
+    monkeypatch.setattr(
+        "urllib.request.getproxies", lambda: {"https": "http://proxy:3128"}
+    )
     monkeypatch.setattr("urllib.request.proxy_bypass", lambda host: False)
     nvt._check_endpoint("https://s3api-eu-se-1.runpod.io/", "EU-SE-1")
 
@@ -1495,11 +1640,19 @@ def test_retry_delay_decides_every_retry(monkeypatch, tmp_path):
     assert transfer._retry_delay(response=_response(524, "InternalError")) == 0
     assert transfer._retry_delay(response=_response(503)) == 0
     assert transfer._retry_delay(response=_response(429, "SlowDown")) == 0
-    assert transfer._retry_delay(caught_exception=EndpointConnectionError(endpoint_url="x")) == 0
+    assert (
+        transfer._retry_delay(
+            caught_exception=EndpointConnectionError(endpoint_url="x")
+        )
+        == 0
+    )
     assert transfer._retry_delay(response=_response(200)) is None
     assert transfer._retry_delay(response=_response(404, "NoSuchUpload")) is None
     assert transfer._retry_delay(response=_response(403, "AccessDenied")) is None
-    assert transfer._retry_delay(response=_response(503), attempts=nvt.MAX_ATTEMPTS) is None
+    assert (
+        transfer._retry_delay(response=_response(503), attempts=nvt.MAX_ATTEMPTS)
+        is None
+    )
 
 
 def test_ctrl_c_ends_a_retry_wait(tmp_path):
@@ -1527,6 +1680,9 @@ def test_body_reads_hold_a_request_slot(tmp_path):
             def read(self):
                 held.append(transfer._slots._value == 0)
                 return body.read()
+
+            def close(self):
+                body.close()
 
         return {**response, "Body": Body()}
 
@@ -1557,7 +1713,10 @@ def test_cleanup_takes_a_slot_even_after_ctrl_c(tmp_path):
     transfer = _transfer(fake, tmp_path, concurrency=1)
     held = []
     original_abort = fake.abort_multipart_upload
-    fake.abort_multipart_upload = lambda **kw: (held.append(transfer._slots._value == 0), original_abort(**kw))
+    fake.abort_multipart_upload = lambda **kw: (
+        held.append(transfer._slots._value == 0),
+        original_abort(**kw),
+    )
     transfer._stop.set()
     transfer._abort("k", "u")
     assert held == [True]
@@ -1576,7 +1735,9 @@ def test_edit_during_complete_removes_the_object(tmp_path):
         return None
 
     fake.fail = edit_during_complete
-    with pytest.raises(nvt.NetworkVolumeTransferError, match="changed during upload") as info:
+    with pytest.raises(
+        nvt.NetworkVolumeTransferError, match="changed during upload"
+    ) as info:
         _transfer(fake, tmp_path).upload(src, "big.bin")
     assert info.value.resumable
     assert "big.bin" not in fake.objects
@@ -1637,15 +1798,19 @@ def test_upload_call_sites_stop_before_sending_body(tmp_path, monkeypatch, multi
     if multipart:
         monkeypatch.setattr(nvt, "SINGLE_PUT_MAX", 8)
         original = fake.upload_part
+
         def interrupted(**kwargs):
             transfer._stop.set()
             return original(**kwargs)
+
         fake.upload_part = interrupted
     else:
         original = fake.put_object
+
         def interrupted(**kwargs):
             transfer._stop.set()
             return original(**kwargs)
+
         fake.put_object = interrupted
     with pytest.raises(nvt.NetworkVolumeTransferError, match="interrupted") as info:
         transfer.upload(src, "f.bin")
@@ -1662,6 +1827,83 @@ def test_api_key_missing_vs_rejected(monkeypatch, api_key, message):
         raise runpod.error.AuthenticationError("Unauthorized request")
 
     monkeypatch.setattr(runpod, "api_key", api_key)
-    monkeypatch.setattr("runpod.api.rest.run_rest_paginated_request_async", unauthorized)
+    monkeypatch.setattr(
+        "runpod.api.rest.run_rest_paginated_request_async", unauthorized
+    )
     with pytest.raises(nvt.NetworkVolumeTransferError, match=message):
         nvt._resolve_volume("vol")
+
+
+@pytest.mark.parametrize("next_token", [None, "", "repeated"])
+@pytest.mark.parametrize(
+    "method, items, marker, arg",
+    [
+        ("list_objects_v2", "Contents", "NextContinuationToken", "ContinuationToken"),
+        ("list_parts", "Parts", "NextPartNumberMarker", "PartNumberMarker"),
+    ],
+)
+def test_incomplete_listing_fails_without_looping(
+    tmp_path, next_token, method, items, marker, arg
+):
+    fake = FakeS3()
+    calls = []
+
+    def page(**kwargs):
+        calls.append(kwargs)
+        assert len(calls) <= 2, "pagination did not stop"
+        return {items: [], "IsTruncated": True, marker: next_token}
+
+    setattr(fake, method, page)
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="pagination") as info:
+        _transfer(fake, tmp_path)._pages(method, items, marker, arg)
+    assert info.value.resumable
+
+
+@pytest.mark.parametrize("mode", ["success", "changed", "dropped"])
+def test_download_closes_response_bodies(tmp_path, mode):
+    from botocore.exceptions import IncompleteReadError
+
+    fake = FakeS3()
+    fake.put("f.bin", b"payload")
+    original = fake.get_object
+    bodies = []
+
+    class Body(io.BytesIO):
+        def read(self, *args):
+            if mode == "dropped" and len(bodies) == 1:
+                raise IncompleteReadError(actual_bytes=1, expected_bytes=7)
+            return super().read(*args)
+
+    def get(**kwargs):
+        response = original(**kwargs)
+        with response["Body"] as body:
+            response["Body"] = Body(body.read())
+        bodies.append(response["Body"])
+        if mode == "changed":
+            response["ETag"] = '"changed"'
+        return response
+
+    fake.get_object = get
+    dest = tmp_path / "f.bin"
+    if mode == "changed":
+        with pytest.raises(
+            nvt.NetworkVolumeTransferError, match="changed on the volume"
+        ):
+            _transfer(fake, tmp_path).download("f.bin", dest)
+        assert not dest.exists()
+    else:
+        _transfer(fake, tmp_path).download("f.bin", dest)
+        assert dest.read_bytes() == b"payload"
+    assert bodies and all(body.closed for body in bodies)
+
+
+def test_folder_transfer_preserves_rejected_keys(tmp_path):
+    fake = FakeS3()
+    fake.fail = lambda op, kw: (
+        _client_error("AccessDenied", 403) if op == "put_object" else None
+    )
+    folder = tmp_path / "source"
+    folder.mkdir()
+    (folder / "f.txt").write_text("data")
+    with pytest.raises(nvt.RejectedS3Keys):
+        _transfer(fake, tmp_path).upload(folder, "data")

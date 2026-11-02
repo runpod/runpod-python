@@ -316,11 +316,15 @@ def _transfer_options(func):
         click.option("--s3-secret-key", default=None, help="S3 API secret key."),
         click.option("--endpoint-url", default=None, hidden=True),
         click.option(
-            "--concurrency", default=4, show_default=True, type=click.IntRange(1, 64),
+            "--concurrency",
+            default=4,
+            show_default=True,
+            type=click.IntRange(1, 64),
             help="Parallel requests.",
         ),
         click.option(
-            "--force", is_flag=True,
+            "--force",
+            is_flag=True,
             help="Transfer every file, even ones the size and time check calls unchanged.",
         ),
     ]
@@ -499,7 +503,9 @@ def _ensure_s3_keys(opts) -> None:
     from runpod import network_volume_transfer as nvt
 
     explicit = bool(opts["s3_access_key"] and opts["s3_secret_key"])
-    env = bool(os.environ.get(nvt.ACCESS_KEY_ENV) and os.environ.get(nvt.SECRET_KEY_ENV))
+    env = bool(
+        os.environ.get(nvt.ACCESS_KEY_ENV) and os.environ.get(nvt.SECRET_KEY_ENV)
+    )
     keys = nvt.find_s3_keys(opts["s3_access_key"], opts["s3_secret_key"])
     opts["_saved_keys"] = bool(keys and not explicit and not env)
     opts["s3_access_key"], opts["s3_secret_key"] = keys or _prompt_s3_keys()
@@ -525,7 +531,9 @@ def _transfer(ctx, action_label, method_name, reference, source, target, opts) -
     try:
         _, datacenter = nvt._resolve_volume(reference)
         if not opts["endpoint_url"]:
-            nvt._check_endpoint(f"https://s3api-{datacenter.lower()}.runpod.io/", datacenter)
+            nvt._check_endpoint(
+                f"https://s3api-{datacenter.lower()}.runpod.io/", datacenter
+            )
     except nvt.NetworkVolumeTransferError as exc:
         raise click.ClickException(str(exc)) from exc
     _ensure_s3_keys(opts)
@@ -534,7 +542,9 @@ def _transfer(ctx, action_label, method_name, reference, source, target, opts) -
 
 
 @volume.command(name="upload")
-@click.argument("args", nargs=-1, required=True, metavar="[VOLUME] LOCAL_PATH [REMOTE_PATH]")
+@click.argument(
+    "args", nargs=-1, required=True, metavar="[VOLUME] LOCAL_PATH [REMOTE_PATH]"
+)
 @_transfer_options
 @click.pass_context
 def volume_upload(ctx, args, **opts):
@@ -553,7 +563,9 @@ def volume_upload(ctx, args, **opts):
 
 
 @volume.command(name="download")
-@click.argument("args", nargs=-1, required=True, metavar="[VOLUME] REMOTE_PATH [LOCAL_PATH]")
+@click.argument(
+    "args", nargs=-1, required=True, metavar="[VOLUME] REMOTE_PATH [LOCAL_PATH]"
+)
 @_transfer_options
 @click.pass_context
 def volume_download(ctx, args, **opts):

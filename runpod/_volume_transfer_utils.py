@@ -22,7 +22,9 @@ def _read_json(path: Path) -> Optional[Dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
-def _write_json(path: Path, data: Dict[str, Any], sync_dir: Callable[[Path], None]) -> None:
+def _write_json(
+    path: Path, data: Dict[str, Any], sync_dir: Callable[[Path], None]
+) -> None:
     """replace path atomically, synced, so a crash leaves the old state or
     the new one."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +96,10 @@ def _check_remote_path(remote_path: Optional[str]) -> None:
 
 
 def _check_local_names(
-    targets: List[Path], root: Path, suffixes: Tuple[str, ...], error_type: type[Exception]
+    targets: List[Path],
+    root: Path,
+    suffixes: Tuple[str, ...],
+    error_type: type[Exception],
 ) -> None:
     """refuse targets that would share a path on disk: two that are one name
     on a case-insensitive or normalizing filesystem ("Model.bin" and

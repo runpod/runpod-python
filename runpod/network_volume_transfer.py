@@ -25,6 +25,7 @@ import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import closing
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
@@ -309,6 +310,9 @@ class _Transfer:
         def guarded(label: Any, task: Callable[[], Any]) -> None:
             try:
                 task()
+            except RejectedS3Keys:
+                # Preserve the type so the CLI can offer to replace saved keys.
+                raise
             except Exception as exc:  # noqa: BLE001 - collected and re-raised
                 with self._lock:
                     failures.append((f"{label}: {exc}", is_resumable(exc)))
@@ -341,8 +345,13 @@ class _Transfer:
         while True:
             page = self._call(method, **kwargs)
             found.extend(page.get(items) or [])
-            if not page.get("IsTruncated") or not page.get(marker):
+            if not page.get("IsTruncated"):
                 return found
+            if not page.get(marker) or page[marker] == kwargs.get(arg):
+                raise NetworkVolumeTransferError(
+                    f"{method} pagination did not advance; retry shortly",
+                    resumable=True,
+                )
             kwargs[arg] = page[marker]
 
     def list_files(self, prefix: str) -> List[Dict[str, Any]]:
@@ -841,18 +850,19 @@ class _Download:
         response = self.t._client_call(
             "get_object", Key=self.key, Range=f"bytes={start}-{start + length - 1}"
         )
-        if self.etag and _etag(response.get("ETag")) not in ("", self.etag):
-            raise NetworkVolumeTransferError(
-                f"{self.key} changed on the volume during download; "
-                "run the command again to restart it",
-                resumable=True,
-            )
-        try:
-            return response["Body"].read()
-        except Exception as exc:  # noqa: BLE001 - a dropped stream is retried
-            if not is_resumable(exc):
-                raise
-            return None
+        with closing(response["Body"]) as body:
+            if self.etag and _etag(response.get("ETag")) not in ("", self.etag):
+                raise NetworkVolumeTransferError(
+                    f"{self.key} changed on the volume during download; "
+                    "run the command again to restart it",
+                    resumable=True,
+                )
+            try:
+                return body.read()
+            except Exception as exc:  # noqa: BLE001 - a dropped stream is retried
+                if not is_resumable(exc):
+                    raise
+                return None
 
 
 def _check_local_names(targets: List[Path], root: Path) -> None:
@@ -1014,6 +1024,8 @@ def _make_transfer(
         aws_secret_access_key=secret_key,
         config=_client_config(concurrency),
     )
-    transfer = _Transfer(client, volume_id, endpoint, concurrency, progress, force=force)
+    transfer = _Transfer(
+        client, volume_id, endpoint, concurrency, progress, force=force
+    )
     client.meta.events.register_first("needs-retry.s3", transfer._retry_delay)
     return transfer
