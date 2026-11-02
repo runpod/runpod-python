@@ -84,6 +84,24 @@ make setup
 make test
 ```
 
+## Remote values
+
+Queue and task calls use JSON for arguments, return values, and streamed
+chunks. Values may contain `None`, booleans, strings, integers, finite
+floats, lists, and dictionaries with string keys. Convert tuples to lists,
+dates to strings, and model objects to JSON-compatible dictionaries before
+calling `.remote()` or `.spawn()`. Store large binary data on a volume or
+in object storage and pass its path or URL.
+
+The same validation applies in live development, deployed workers, and
+same-worker remote calls. Unsupported values, circular references, and
+non-finite numbers produce explicit errors. `.local()` is a direct Python
+call and does not apply the remote serialization contract. Custom ASGI
+applications retain their own HTTP response types.
+
+The SDK and `runpod-sdk-runtime` share the JSON protocol implementation;
+use compatible releases of both packages when building worker images.
+
 ## ⚡ | Serverless Worker (SDK)
 
 This python package can also be used to create a serverless worker that can be deployed to Runpod as a custom endpoint API.

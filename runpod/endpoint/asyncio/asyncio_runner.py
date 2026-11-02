@@ -157,6 +157,9 @@ class Endpoint:
         Returns:
             Newly created job
         """
+        from runpod._serialization import validate_json
+
+        validate_json(endpoint_input, "job input")
         async with self.session.post(
             self.endpoint_url, headers=self.headers, json={"input": endpoint_input}
         ) as resp:

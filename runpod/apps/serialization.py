@@ -1,63 +1,32 @@
-"""argument and result serialization for remote execution.
-
-args/kwargs cross the wire as base64-encoded cloudpickle strings, the
-format the worker runtime images expect. function source is extracted
-with decorators stripped so the worker can exec it standalone.
-"""
+"""json argument validation, response decoding, and function source shipping."""
 
 import ast
-import base64
 import inspect
 import os
 import textwrap
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable
 
-import cloudpickle
-
-
-def serialize_arg(arg: Any) -> str:
-    return base64.b64encode(cloudpickle.dumps(arg)).decode("utf-8")
+from .._serialization import validate_json
+from .errors import RemoteExecutionError
+from .protocol import FunctionResponse
 
 
-def serialize_args(args: tuple) -> List[str]:
-    return [serialize_arg(a) for a in args]
-
-
-def serialize_kwargs(kwargs: dict) -> Dict[str, str]:
-    return {k: serialize_arg(v) for k, v in kwargs.items()}
-
-
-def deserialize_result(result_b64: str) -> Any:
+def unwrap_function_response(output: dict) -> Any:
     try:
-        return cloudpickle.loads(base64.b64decode(result_b64))
-    except ModuleNotFoundError as exc:
-        from .errors import RemoteExecutionError
-
+        response = FunctionResponse.from_output(output)
+    except (TypeError, ValueError) as exc:
+        raise RemoteExecutionError(f"invalid remote response: {exc}") from exc
+    if not response.success:
         raise RemoteExecutionError(
-            f"the remote result contains an object from the "
-            f"'{exc.name}' package, which is not installed locally. "
-            f"return plain python types (e.g. str(...)) or install "
-            f"'{exc.name}' on this machine."
-        ) from exc
+            f"remote execution failed: {response.error or 'unknown'}"
+        )
+    return response.json_result
 
 
 def require_json_args(fn: Callable, args: tuple, kwargs: dict) -> None:
-    """reject arguments that cannot cross the queue data plane.
-
-    queue jobs are json on the wire in every mode, so non-json
-    arguments fail at call time with a pointed error instead of a
-    worker-side decode failure.
-    """
-    import json
-
-    try:
-        json.dumps(list(args))
-        json.dumps(kwargs)
-    except (TypeError, ValueError) as exc:
-        raise TypeError(
-            f"{fn.__name__}() arguments must be json-serializable "
-            f"(queue jobs are plain json): {exc}"
-        ) from exc
+    """validate queue and task arguments before remote execution."""
+    validate_json(list(args), f"{fn.__name__}() arguments")
+    validate_json(kwargs, f"{fn.__name__}() keyword arguments")
 
 
 def get_function_source(fn: Callable) -> str:

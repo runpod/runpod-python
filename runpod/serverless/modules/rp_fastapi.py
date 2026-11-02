@@ -267,7 +267,6 @@ class WorkerAPI:
             "/runsync",
             self._sim_runsync,
             methods=["POST"],
-            response_model_exclude_none=True,
             summary="Mimics the behavior of the runsync endpoint.",
             description=RUNSYNC_DESCRIPTION,
             tags=["Synchronously Submit Request & Get Job Results"],
@@ -285,7 +284,6 @@ class WorkerAPI:
             "/status/{job_id}",
             self._sim_status,
             methods=["POST"],
-            response_model_exclude_none=True,
             summary="Mimics the behavior of the status endpoint.",
             description=STATUS_DESCRIPTION,
             tags=["Check Job Results"],
@@ -348,6 +346,9 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
             async for stream_output in generator_output:
+                if stream_output.get("error"):
+                    job_output = stream_output
+                    break
                 job_output["output"].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
@@ -366,7 +367,7 @@ class WorkerAPI:
             thread.start()
 
         return jsonable_encoder(
-            {"id": job.id, "status": "COMPLETED", "output": job_output["output"]}
+            {"id": job.id, "status": "COMPLETED", "output": job_output.get("output", {})}
         )
 
     # ---------------------------------- stream ---------------------------------- #
@@ -384,6 +385,11 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             stream_accumulator = []
             async for stream_output in generator_output:
+                if stream_output.get("error"):
+                    job_list.remove(job.id)
+                    return jsonable_encoder(
+                        {"id": job_id, "status": "FAILED", "error": stream_output["error"]}
+                    )
                 stream_accumulator.append({"output": stream_output["output"]})
         else:
             return jsonable_encoder(
@@ -423,6 +429,9 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
             async for stream_output in generator_output:
+                if stream_output.get("error"):
+                    job_output = stream_output
+                    break
                 job_output["output"].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
@@ -443,5 +452,5 @@ class WorkerAPI:
             thread.start()
 
         return jsonable_encoder(
-            {"id": job_id, "status": "COMPLETED", "output": job_output["output"]}
+            {"id": job_id, "status": "COMPLETED", "output": job_output.get("output", {})}
         )

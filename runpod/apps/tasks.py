@@ -19,9 +19,9 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
+from .._serialization import validate_json
 from .api import AppsApiClient, is_capacity_error
 from .context import CLEANUP_TIMEOUT
-from .errors import RemoteExecutionError
 from .spec import ResourceSpec
 
 log = logging.getLogger(__name__)
@@ -319,6 +319,7 @@ class TaskExecution:
             or timeout < 0
         ):
             raise ValueError("task timeout must be a finite non-negative number")
+        validate_json(request, "request body")
         url = f"{_proxy_url(self.pod_id)}{path}"
         attempts = 6
         async with aiohttp.ClientSession() as session:
@@ -423,15 +424,9 @@ class TaskExecution:
 
 def unwrap_task_response(response: Dict[str, Any]) -> Any:
     """extract the function result from a runner response."""
-    if not response.get("success"):
-        raise RemoteExecutionError(
-            f"task execution failed: {response.get('error', 'unknown')}"
-        )
-    if response.get("result") is not None:
-        from .serialization import deserialize_result
+    from .serialization import unwrap_function_response
 
-        return deserialize_result(response["result"])
-    return response.get("json_result")
+    return unwrap_function_response(response)
 
 
 class TaskJob:

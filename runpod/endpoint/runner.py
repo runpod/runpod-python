@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
+from runpod._serialization import validate_json
 from runpod.endpoint.helpers import (
     API_KEY_NOT_SET_MSG,
     FINAL_STATES,
@@ -75,6 +76,7 @@ class RunPodClient:
             requests.HTTPError: If the response contains an unsuccessful status code.
         """
         url = f"{self.endpoint_url_base}/{endpoint}"
+        validate_json(data, "request body")
         response = self.rp_session.request(
             method, url, headers=self.headers, json=data, timeout=timeout
         )

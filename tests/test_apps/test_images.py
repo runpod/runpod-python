@@ -63,8 +63,6 @@ class TestLocalPythonVersion:
         assert local_python_version() in SUPPORTED_PYTHON_VERSIONS
 
     def test_unsupported_local_python_fails_loudly(self, monkeypatch):
-        # cloudpickle payloads are version-bound; a silent fallback
-        # would break at deserialization time on the worker
         class FakeVersion:
             major, minor = 3, 9
 

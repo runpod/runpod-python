@@ -13,9 +13,10 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import aiohttp
 
+from .._serialization import validate_json
 from ..user_agent import USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
-from .protocol import FORMAT_JSON, FunctionRequest, FunctionResponse
+from .protocol import FORMAT_JSON, FunctionRequest
 from .spec import ResourceSpec
 from .utils.events import emit
 from .utils.network import api_key as _api_key
@@ -116,6 +117,7 @@ def merge_job_options(base: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, An
 
 def unwrap_job_output(data: Dict[str, Any]) -> Any:
     """extract output from a queue response, raising on failure."""
+    validate_json(data, "job response")
     output = data.get("output", data)
     if data.get("status") == "FAILED" or data.get("error"):
         err = data.get("error")
@@ -148,6 +150,9 @@ class InvocationTarget(ABC):
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
     ) -> Dict[str, Any]:
+        from .serialization import require_json_args
+
+        require_json_args(fn, args, kwargs)
         return {"input": args_to_input(fn, args, kwargs)}
 
     def unwrap(self, data: Dict[str, Any]) -> Any:
@@ -218,6 +223,7 @@ async def _request_json(
     retry_not_found: bool = False,
 ) -> Dict[str, Any]:
     """http json call with exponential backoff on transient failures."""
+    validate_json(payload, "request body")
     retry_transient = method.upper() in {"GET", "HEAD", "OPTIONS"}
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
@@ -452,7 +458,9 @@ class QueueClient:
             if data.get("status") == "FAILED" or data.get("error"):
                 unwrap_job_output(data)
             for chunk in data.get("stream") or []:
-                yield chunk.get("output")
+                output = chunk.get("output")
+                validate_json(output, "stream chunk")
+                yield output
             if data.get("status") in FINAL_STATUSES:
                 return
 
@@ -482,6 +490,7 @@ class QueueClient:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> Any:
         """plain http call through the endpoint's lb subdomain."""
+        validate_json(body, "request body")
         url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
         client_timeout = aiohttp.ClientTimeout(total=timeout)
         async with aiohttp.ClientSession(timeout=client_timeout) as session:
@@ -642,9 +651,6 @@ class LiveTarget(InvocationTarget):
     ) -> Dict[str, Any]:
         from .serialization import get_function_source, require_json_args
 
-        # queue arguments are plain json, the same contract deployed
-        # workers serve; non-json arguments fail here in dev exactly as
-        # they would against a deployed endpoint
         require_json_args(fn, args, kwargs)
         request = FunctionRequest(
             function_name=fn.__name__,
@@ -675,16 +681,10 @@ class LiveTarget(InvocationTarget):
 
     def _unwrap_response(self, output: Any) -> Any:
         if isinstance(output, dict) and "success" in output:
-            response = FunctionResponse.from_output(output)
-            if not response.success:
-                raise RemoteExecutionError(
-                    f"remote execution failed: {response.error or 'unknown'}"
-                )
-            if response.result is not None:
-                from .serialization import deserialize_result
+            from .serialization import unwrap_function_response
 
-                return deserialize_result(response.result)
-            return response.json_result
+            return unwrap_function_response(output)
+        validate_json(output, "remote result")
         return output
 
     def _monitor(self):
@@ -822,20 +822,18 @@ class PodTarget(InvocationTarget):
     def build_payload(
         self, fn: Callable, spec: ResourceSpec, args: tuple, kwargs: dict
     ) -> Dict[str, Any]:
-        from .serialization import (
-            get_function_source,
-            serialize_args,
-            serialize_kwargs,
-        )
+        from .serialization import get_function_source, require_json_args
 
+        require_json_args(fn, args, kwargs)
         request = FunctionRequest(
             function_name=fn.__name__,
             function_code=get_function_source(fn),
-            args=serialize_args(args),
-            kwargs=serialize_kwargs(kwargs),
+            args=list(args),
+            kwargs=dict(kwargs),
             dependencies=spec.dependencies,
             system_dependencies=spec.system_dependencies,
             accelerate_downloads=spec.accelerate_downloads,
+            serialization_format=FORMAT_JSON,
         )
         return request.to_input()
 

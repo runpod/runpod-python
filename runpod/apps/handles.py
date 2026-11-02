@@ -31,6 +31,7 @@ from typing import (
     Type,
 )
 
+from .._serialization import validate_json
 from .context import Context, block, current_context
 from .discovery_state import DiscoveryInvocationError, in_discovery
 from .errors import InvalidResourceError
@@ -38,6 +39,7 @@ from .invoker import Invoker, StreamInvoker
 from .job import Job
 from .markers import INIT_ATTR, is_init, route_of
 from .schedule import SCHEDULE_ATTR
+from .serialization import require_json_args
 from .spec import ResourceKind, ResourceSpec, RouteSpec
 
 if TYPE_CHECKING:
@@ -120,15 +122,34 @@ class FunctionHandle:
 
     def _call_local_sync(self, *args: Any, **kwargs: Any) -> Any:
         result = self._fn(*args, **kwargs)
-        return list(result) if inspect.isgenerator(result) else result
+        if inspect.isgenerator(result):
+            chunks = []
+            for chunk in result:
+                validate_json(chunk, "return value")
+                chunks.append(chunk)
+            result = chunks
+        if not inspect.isawaitable(result) and not inspect.isasyncgen(result):
+            validate_json(result, "return value")
+        return result
 
     @staticmethod
     async def _await_local_result(result: Any) -> Any:
         if inspect.isawaitable(result):
             result = await result
         if inspect.isasyncgen(result):
-            return [chunk async for chunk in result]
-        return list(result) if inspect.isgenerator(result) else result
+            chunks = []
+            async for chunk in result:
+                validate_json(chunk, "return value")
+                chunks.append(chunk)
+            result = chunks
+        elif inspect.isgenerator(result):
+            chunks = []
+            for chunk in result:
+                validate_json(chunk, "return value")
+                chunks.append(chunk)
+            result = chunks
+        validate_json(result, "return value")
+        return result
 
     def _remote_sync(self, *args: Any, **kwargs: Any) -> Any:
         if (
@@ -139,6 +160,7 @@ class FunctionHandle:
         ):
             self._guard_discovery()
             self.spec.validate()
+            require_json_args(self._fn, args, kwargs)
             result = self._call_local_sync(*args, **kwargs)
             if inspect.isawaitable(result) or inspect.isasyncgen(result):
                 return block(self._await_local_result(result))
@@ -148,6 +170,7 @@ class FunctionHandle:
     async def _remote_async(self, *args: Any, **kwargs: Any) -> Any:
         self._guard_discovery()
         self.spec.validate()
+        require_json_args(self._fn, args, kwargs)
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
@@ -169,15 +192,18 @@ class FunctionHandle:
         self._guard_discovery()
         self.spec.validate()
         self._guard_generator()
+        require_json_args(self._fn, args, kwargs)
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
             gen = self._fn(*args, **kwargs)
             if inspect.isasyncgen(gen):
                 async for chunk in gen:
+                    validate_json(chunk, "stream chunk")
                     yield chunk
             else:
                 for chunk in gen:
+                    validate_json(chunk, "stream chunk")
                     yield chunk
             return
 
@@ -208,6 +234,7 @@ class FunctionHandle:
 
     async def _spawn_async(self, *args: Any, **kwargs: Any) -> Any:
         self._guard_discovery()
+        require_json_args(self._fn, args, kwargs)
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
         data = await target.submit(self._apply_options(payload))
