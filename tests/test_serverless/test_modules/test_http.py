@@ -65,6 +65,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 headers={
                     "charset": "utf-8",
                     "Content-Type": "application/x-www-form-urlencoded",
+                    "X-Request-ID": self.job["id"],
                 },
                 raise_for_status=True,
             )
@@ -159,6 +160,7 @@ class TestHTTP(unittest.IsolatedAsyncioTestCase):
                 headers={
                     "charset": "utf-8",
                     "Content-Type": "application/x-www-form-urlencoded",
+                    "X-Request-ID": self.job["id"],
                 },
                 raise_for_status=True,
             )
