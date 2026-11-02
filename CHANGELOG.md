@@ -14,6 +14,31 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.1.0](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.1.0) (2026-10-28)
+
+
+### Features
+
+* add rp catalog for gpu and cpu pricing and stock ([#637](https://github.com/runpod/runpod-python/issues/637)) ([9540b8a](https://github.com/runpod/runpod-python/commit/9540b8afff98b83e33146c4c0c03d6fa07157f62))
+* add rp endpoint command group ([#640](https://github.com/runpod/runpod-python/issues/640)) ([be3f76b](https://github.com/runpod/runpod-python/commit/be3f76b4ade25eb62fcce41ffcd0d50088f8ef31))
+* add rp pod lifecycle commands ([#639](https://github.com/runpod/runpod-python/issues/639)) ([eeffe2a](https://github.com/runpod/runpod-python/commit/eeffe2ae4651eab0fb4250580457d002882cfe7f))
+* add rp volume commands for network and global volumes ([#638](https://github.com/runpod/runpod-python/issues/638)) ([598cb88](https://github.com/runpod/runpod-python/commit/598cb88b2eb00497916a8fa6117064c898d3d884))
+
+
+### Bug Fixes
+
+* **apps:** bind volume mounts from RUNPOD_MOUNTS when the runtime did not ([#626](https://github.com/runpod/runpod-python/issues/626)) ([fc4a6c7](https://github.com/runpod/runpod-python/commit/fc4a6c73c3915625d65df63416db835d0b927b8f))
+* **apps:** keep transitive torch out of GPU artifacts ([#623](https://github.com/runpod/runpod-python/issues/623)) ([25515f0](https://github.com/runpod/runpod-python/commit/25515f02a2e3ea36035c856e564106ccb8760b7f))
+* **apps:** pin requested gpu devices instead of their whole pool ([#624](https://github.com/runpod/runpod-python/issues/624)) ([432c55b](https://github.com/runpod/runpod-python/commit/432c55b8a24b5bccbe37955392f9e1a72bad475e))
+* **cli:** delete dev endpoints when rp flash dev is stopped by a signal ([#625](https://github.com/runpod/runpod-python/issues/625)) ([f866ec3](https://github.com/runpod/runpod-python/commit/f866ec3d2117b697a2534286509674657f37511f))
+* **deps:** pin certifi to &gt;=2026.10.19 for emSign bundle remediation (GHSA-6q48-6c7w-9gw2) ([#659](https://github.com/runpod/runpod-python/issues/659)) ([714a565](https://github.com/runpod/runpod-python/commit/714a565514bae7dd2b6ca355b52e8e76d70d1102))
+
+
+### Performance Improvements
+
+* **serverless:** range-parallel VolumeCache hydrate ([#621](https://github.com/runpod/runpod-python/issues/621)) ([29704a4](https://github.com/runpod/runpod-python/commit/29704a49ab591eaca9a83d7d2eef935d9d787eb2))
+* **serverless:** take a full batch once drained ([#646](https://github.com/runpod/runpod-python/issues/646)) ([397c37d](https://github.com/runpod/runpod-python/commit/397c37d3d2a04aaa2eb3c8a83cdc359e230bcb6e))
+
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
 
