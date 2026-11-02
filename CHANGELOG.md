@@ -1,20 +1,11 @@
 # Changelog
 
-## Unreleased
+## [2.0.0](https://github.com/runpod/runpod-python/compare/v1.12.0...v2.0.0) (2026-10-30)
 
-### Features
 
-* Apps expose `NetworkVolume` and `GlobalVolume` resources with explicit path-keyed mounts, lazy create-if-missing provisioning, and execution-bound filesystem access. Global volumes use GraphQL for lookup and creation.
+### BREAKING CHANGES
 
-### Bug Fixes
-
-* Task calls support indefinite execution with bounded interruption cleanup. Failed deletion retains the pod ID for recovery.
-* Network volume creation intersects catalog storage support with every sharing resource's hardware stock and datacenter constraints. Unsupported explicit pins fail before creation; existing volumes retain their authoritative IDs and datacenters.
-* Global volume attachments require GPU compute for tasks and endpoints.
-* Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
-* Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
-
-## [2.1.0](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.1.0) (2026-10-28)
+* apps SDK, decorator-native GPU compute with live dev sessions and a new rp CLI ([#534](https://github.com/runpod/runpod-python/issues/534)) ([31d81e0](https://github.com/runpod/runpod-python/commit/31d81e092e2b64b583e711b9b4bdb6e5cbf05e86))
 
 
 ### Features
@@ -23,6 +14,11 @@
 * add rp endpoint command group ([#640](https://github.com/runpod/runpod-python/issues/640)) ([be3f76b](https://github.com/runpod/runpod-python/commit/be3f76b4ade25eb62fcce41ffcd0d50088f8ef31))
 * add rp pod lifecycle commands ([#639](https://github.com/runpod/runpod-python/issues/639)) ([eeffe2a](https://github.com/runpod/runpod-python/commit/eeffe2ae4651eab0fb4250580457d002882cfe7f))
 * add rp volume commands for network and global volumes ([#638](https://github.com/runpod/runpod-python/issues/638)) ([598cb88](https://github.com/runpod/runpod-python/commit/598cb88b2eb00497916a8fa6117064c898d3d884))
+* **serverless:** coordinate early health checks once per container ([#578](https://github.com/runpod/runpod-python/issues/578)) ([760aea2](https://github.com/runpod/runpod-python/commit/760aea2cc6c0a8f5739b2a8667f61ae11d49d37b))
+* add agent email login for CON-1115 ([#654](https://github.com/runpod/runpod-python/issues/654)) ([7766b9b](https://github.com/runpod/runpod-python/commit/7766b9b33a3d6df2f2831472512501ab3360adc6))
+* migrate api wrapper to rest v2 ([#584](https://github.com/runpod/runpod-python/issues/584)) ([e80c2f2](https://github.com/runpod/runpod-python/commit/e80c2f237d4b6eb41c50cee7a029a08f2694bc4c))
+* SLS-497 Add explicit prestart hooks to the runpod-python SDK ([#570](https://github.com/runpod/runpod-python/issues/570)) ([70f2de4](https://github.com/runpod/runpod-python/commit/70f2de42f631d550135776d590c3fc7ee562f77f))
+* Apps expose `NetworkVolume` and `GlobalVolume` resources with explicit path-keyed mounts, lazy create-if-missing provisioning, and execution-bound filesystem access. Global volumes use GraphQL for lookup and creation.
 
 
 ### Bug Fixes
@@ -32,12 +28,23 @@
 * **apps:** pin requested gpu devices instead of their whole pool ([#624](https://github.com/runpod/runpod-python/issues/624)) ([432c55b](https://github.com/runpod/runpod-python/commit/432c55b8a24b5bccbe37955392f9e1a72bad475e))
 * **cli:** delete dev endpoints when rp flash dev is stopped by a signal ([#625](https://github.com/runpod/runpod-python/issues/625)) ([f866ec3](https://github.com/runpod/runpod-python/commit/f866ec3d2117b697a2534286509674657f37511f))
 * **deps:** pin certifi to &gt;=2026.10.19 for emSign bundle remediation (GHSA-6q48-6c7w-9gw2) ([#659](https://github.com/runpod/runpod-python/issues/659)) ([714a565](https://github.com/runpod/runpod-python/commit/714a565514bae7dd2b6ca355b52e8e76d70d1102))
+* **serverless:** VolumeCache copies files on volumes that reject utime/chmod ([#620](https://github.com/runpod/runpod-python/issues/620)) ([1d7ae99](https://github.com/runpod/runpod-python/commit/1d7ae99f4e478fa932ec616b0ac7fe18998a78c6))
+* address Apps SDK alpha lifecycle, storage, and packaging reports ([#611](https://github.com/runpod/runpod-python/issues/611)) ([3864d37](https://github.com/runpod/runpod-python/commit/3864d374cba523ecee09f3bc95f073f17a64b970))
+* Task calls support indefinite execution with bounded interruption cleanup. Failed deletion retains the pod ID for recovery.
+* Network volume creation intersects catalog storage support with every sharing resource's hardware stock and datacenter constraints. Unsupported explicit pins fail before creation; existing volumes retain their authoritative IDs and datacenters.
+* Global volume attachments require GPU compute for tasks and endpoints.
+* Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
+* Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
 
 ### Performance Improvements
 
 * **serverless:** range-parallel VolumeCache hydrate ([#621](https://github.com/runpod/runpod-python/issues/621)) ([29704a4](https://github.com/runpod/runpod-python/commit/29704a49ab591eaca9a83d7d2eef935d9d787eb2))
 * **serverless:** take a full batch once drained ([#646](https://github.com/runpod/runpod-python/issues/646)) ([397c37d](https://github.com/runpod/runpod-python/commit/397c37d3d2a04aaa2eb3c8a83cdc359e230bcb6e))
+* **serverless:** defer CPU probe off worker import path ([#629](https://github.com/runpod/runpod-python/issues/629)) ([118ed2e](https://github.com/runpod/runpod-python/commit/118ed2ee747f2758531960efac43be9068cd7008))
+* **serverless:** dispatch queued jobs without polling ([#630](https://github.com/runpod/runpod-python/issues/630)) ([aa72199](https://github.com/runpod/runpod-python/commit/aa721999b9b967ca52e2c71350892df0b5983ed2))
+* **serverless:** never initialize CUDA in the handler process from fitness checks ([#658](https://github.com/runpod/runpod-python/issues/658)) ([ba938cf](https://github.com/runpod/runpod-python/commit/ba938cfa4e9486a2dc2c1d3264334a1f689c7ea5))
+* **serverless:** skip torch fitness checks unless loaded ([#632](https://github.com/runpod/runpod-python/issues/632)) ([52c8c32](https://github.com/runpod/runpod-python/commit/52c8c32304e7b1dbf57b5894c94ea01181af86ef))
 
 ## [1.12.0](https://github.com/runpod/runpod-python/compare/v1.11.0...v1.12.0) (2026-08-10)
 
