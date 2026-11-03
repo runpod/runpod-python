@@ -48,6 +48,10 @@ def _fail(message: str) -> None:
     raise click.ClickException(message)
 
 
+def _stdin_is_tty() -> bool:
+    return sys.stdin.isatty()
+
+
 def _app_source(found, project_root: Path) -> str:
     """the file an app was discovered in, relative to the project."""
     source = getattr(found, "_source_file", None)
@@ -635,11 +639,12 @@ def logs(pod_id, follow, log_type, tail):
 def login(no_open, api_key_opt, profile, agent, email):
     """Authenticate with Runpod and store the API key.
 
-    Opens the Runpod console for browser approval by default; pass
-    --api-key to store a key directly. Use --agent --email ADDRESS to
-    receive a verification code by email and enter it at the prompt in an
-    interactive terminal. Keep this process running until sign-in completes;
-    the code must be entered in the same process that requested it.
+    Opens the Runpod console for browser approval by default, then asks
+    you to paste the API key the console shows; pass --api-key to store a
+    key directly. Use --agent --email ADDRESS to receive a verification
+    code by email and enter it at the prompt in an interactive terminal.
+    Keep this process running until sign-in completes; the code must be
+    entered in the same process that requested it.
     """
     from runpod.apps.auth import LoginError, agent_login, browser_login
     from runpod.cli.groups.config.functions import set_credentials
@@ -660,13 +665,32 @@ def login(no_open, api_key_opt, profile, agent, email):
         ui.success("credentials saved to [dim]~/.runpod/config.toml[/dim]")
         return
 
+    # browser-paste needs a tty to read the key; agent reads a piped code fine.
+    if not agent and not _stdin_is_tty():
+        _fail(
+            "rp login needs an interactive terminal to paste the API key. "
+            "Set RUNPOD_API_KEY, run rp login --api-key YOUR_KEY, or add the "
+            "key to ~/.runpod/config.toml."
+        )
+
     def _show_url(url: str) -> None:
         ui.console.print()
         ui.console.print(" [white]authorize in your browser:[/white]")
         ui.console.print(f" [accent.light][link={url}]{url}[/link][/accent.light]")
+        ui.console.print(
+            " [dim]after approving, copy the API key the console shows[/dim]"
+        )
         ui.console.print()
         if not no_open:
             click.launch(url)
+
+    def _prompt_key() -> str:
+        return click.prompt(
+            "paste API key", hide_input=True, default="", show_default=False
+        )
+
+    def _rejected(reason: str) -> None:
+        ui.console.print(f" [dim]{reason}, try again[/dim]")
 
     code_prompted = False
 
@@ -687,8 +711,11 @@ def login(no_open, api_key_opt, profile, agent, email):
         if agent:
             api_key = asyncio.run(agent_login(email.strip(), read_code=_read_code))
         else:
-            with ui.console.status("[dim]waiting for approval ...[/dim]"):
-                api_key = asyncio.run(browser_login(on_url=_show_url))
+            api_key = asyncio.run(
+                browser_login(
+                    prompt_key=_prompt_key, on_url=_show_url, on_rejected=_rejected
+                )
+            )
         set_credentials(api_key, profile=profile, overwrite=True)
     except (LoginError, ValueError, OSError) as exc:
         _fail(str(exc))

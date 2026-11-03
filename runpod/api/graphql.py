@@ -98,9 +98,8 @@ async def run_graphql_query_async(
         variables: Optional GraphQL variables to send with the query.
         timeout: Total request timeout in seconds.
         anonymous: Send the request without credentials even when a key
-            is available. The browser-login flow requires this: the
-            server only releases the granted key to guest requests, so
-            a stale stored key would make the poll spin forever.
+            is available. Login creates its auth request this way so a
+            stale stored key cannot fail the request.
     """
     import aiohttp  # pylint: disable=import-outside-toplevel
 

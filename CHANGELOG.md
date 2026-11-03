@@ -23,6 +23,7 @@
 
 ### Bug Fixes
 
+* [BREAKING] `rp login` asks you to paste the API key shown in the console after approval. It no longer collects the key by polling the auth request, and it fails fast without an interactive terminal.
 * **apps:** bind volume mounts from RUNPOD_MOUNTS when the runtime did not ([#626](https://github.com/runpod/runpod-python/issues/626)) ([fc4a6c7](https://github.com/runpod/runpod-python/commit/fc4a6c73c3915625d65df63416db835d0b927b8f))
 * **apps:** keep transitive torch out of GPU artifacts ([#623](https://github.com/runpod/runpod-python/issues/623)) ([25515f0](https://github.com/runpod/runpod-python/commit/25515f02a2e3ea36035c856e564106ccb8760b7f))
 * **apps:** pin requested gpu devices instead of their whole pool ([#624](https://github.com/runpod/runpod-python/issues/624)) ([432c55b](https://github.com/runpod/runpod-python/commit/432c55b8a24b5bccbe37955392f9e1a72bad475e))
