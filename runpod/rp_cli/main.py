@@ -718,11 +718,21 @@ def login(no_open, api_key_opt, profile, agent, email):
             )
         set_credentials(api_key, profile=profile, overwrite=True)
     except (LoginError, ValueError, OSError) as exc:
+        from runpod.rp_cli.update import cached_newer_version
+
+        newer = cached_newer_version()
+        upgrade_hint = (
+            f"\n\na newer runpod ({newer}) is available; "
+            "`pip install -U runpod` may fix this."
+            if newer
+            else ""
+        )
         _fail(
             f"{exc}\n\n"
             "if rp login keeps failing, grab a key from "
             "https://console.runpod.io/user/settings and run:\n"
             "  rp login --api-key YOUR_KEY"
+            f"{upgrade_hint}"
         )
     ui.success("logged in, credentials saved to [dim]~/.runpod/config.toml[/dim]")
 

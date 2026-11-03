@@ -126,6 +126,19 @@ def run_install(version: str) -> None:
 # -- passive background check -------------------------------------------
 
 
+def cached_newer_version() -> Optional[str]:
+    """fresh cached latest release only if newer than current; None otherwise."""
+    cache = _read_cache()
+    if not cache or not _cache_fresh(cache):
+        return None
+    latest = cache.get("latest_version")
+    if not latest:
+        return None
+    if compare_versions(parse_version(latest), parse_version(current_version())) > 0:
+        return latest
+    return None
+
+
 def _read_cache() -> Optional[dict]:
     try:
         return json.loads(CACHE_PATH.read_text(encoding="utf-8"))
