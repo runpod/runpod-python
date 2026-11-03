@@ -8,6 +8,7 @@
 
 ### Bug Fixes
 
+* [BREAKING] `rp login` asks you to paste the API key shown in the console after approval. It no longer collects the key by polling the auth request, and it fails fast without an interactive terminal.
 * Task calls support indefinite execution with bounded interruption cleanup. Failed deletion retains the pod ID for recovery.
 * Network volume creation intersects catalog storage support with every sharing resource's hardware stock and datacenter constraints. Unsupported explicit pins fail before creation; existing volumes retain their authoritative IDs and datacenters.
 * Global volume attachments require GPU compute for tasks and endpoints.
