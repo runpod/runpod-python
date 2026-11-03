@@ -35,12 +35,18 @@ async def _transmit(client_session: ClientSession, url, job_data):
         client_session=client_session, retry_options=retry_options
     )
 
+    headers = {
+        "charset": "utf-8",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    
+    webhook_auth = os.environ.get("RUNPOD_WEBHOOK_GET_AUTH") or os.environ.get("RUNPOD_WEBHOOK_HEADER_AUTH") or os.environ.get("RUNPOD_WEBHOOK_AUTHORIZATION")
+    if webhook_auth:
+        headers["Authorization"] = webhook_auth
+
     kwargs = {
         "data": job_data,
-        "headers": {
-            "charset": "utf-8",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
+        "headers": headers,
         "raise_for_status": True,
     }
 
