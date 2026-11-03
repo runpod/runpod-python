@@ -9,6 +9,7 @@ import os
 import paramiko
 
 from runpod.api.ctl_commands import get_user, update_user_settings
+from runpod.api.rest import run_rest_request
 
 SSH_FILES = os.path.expanduser("~/.runpod/ssh")
 
@@ -30,18 +31,12 @@ def get_user_pub_keys():
     """
     Get the current user's SSH keys
     """
-    user = get_user()
-    keys = "" if user["pubKey"] is None else user["pubKey"]
-
-    # Parse the keys
-    keys = keys.split("\n")
-    keys = [key for key in keys if key != ""]
+    keys = run_rest_request("GET", "/v2/account/ssh-keys")["keys"]
 
     key_list = []
     for key in keys:
         key_parts = key.split(" ")
 
-        # Basic validation
         if len(key_parts) < 2:
             continue
 

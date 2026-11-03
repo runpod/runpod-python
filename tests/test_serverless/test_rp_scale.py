@@ -597,3 +597,121 @@ async def test_get_jobs_feeds_workers_end_to_end(job_scaler: PatchScaler):
     assert job_scaler.progress.count == 0
 
     scaler.kill_worker()
+
+
+def _full_worker(job_scaler: PatchScaler, concurrency: int, release: dict[str, asyncio.Event]):
+    """Start get_jobs/run_jobs with `concurrency` jobs that finish when released."""
+    scaler = job_scaler.scaler
+    scaler.current_concurrency = concurrency
+    fetches = []
+    refetched = asyncio.Event()
+
+    async def fetcher(_session, jobs_needed):
+        fetches.append(jobs_needed)
+        if len(fetches) == 1:
+            return [generate_job(job_id) for job_id in release]
+        refetched.set()
+        await asyncio.sleep(10)  # long-poll with nothing queued
+        return []
+
+    async def handler(_session, _config, job):
+        await release[job["id"]].wait()
+
+    scaler.jobs_fetcher = fetcher
+    scaler.jobs_handler = handler
+    tasks = (asyncio.create_task(scaler.get_jobs(AsyncMock())),
+             asyncio.create_task(scaler.run_jobs(None)))
+    return fetches, refetched, tasks
+
+
+async def _stop(job_scaler: PatchScaler, release, tasks):
+    job_scaler.scaler.kill_worker()
+    for event in release.values():
+        event.set()
+    tasks[0].cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_full_worker_takes_a_full_batch_as_soon_as_it_drains(job_scaler: PatchScaler):
+    """A job-take costs ~0.5 s however many jobs it asks for, so a full worker
+    takes again once every slot is free rather than sleeping a fixed second."""
+    release = {f"job-{i}": asyncio.Event() for i in range(4)}
+    fetches, refetched, tasks = _full_worker(job_scaler, 4, release)
+    await asyncio.sleep(0.05)  # all four running; the worker is full
+
+    for event in release.values():
+        event.set()
+
+    await asyncio.wait_for(refetched.wait(), timeout=DISPATCH_DEADLINE)
+    assert fetches == [4, 4]
+    await _stop(job_scaler, release, tasks)
+
+
+@pytest.mark.asyncio
+async def test_full_worker_does_not_take_while_partly_drained(
+    job_scaler: PatchScaler, monkeypatch
+):
+    monkeypatch.setattr(rp_scale, "FULL_WAIT_SECONDS", 10)
+    release = {f"job-{i}": asyncio.Event() for i in range(4)}
+    fetches, refetched, tasks = _full_worker(job_scaler, 4, release)
+    await asyncio.sleep(0.05)
+
+    release["job-0"].set()
+    await asyncio.sleep(0.1)
+
+    assert fetches == [4]
+    await _stop(job_scaler, release, tasks)
+
+
+@pytest.mark.asyncio
+async def test_full_worker_takes_freed_slots_after_the_wait_bound(
+    job_scaler: PatchScaler, monkeypatch
+):
+    """A straggler can't hold the other slots idle longer than the old sleep."""
+    monkeypatch.setattr(rp_scale, "FULL_WAIT_SECONDS", 0.1)
+    release = {f"job-{i}": asyncio.Event() for i in range(4)}
+    fetches, refetched, tasks = _full_worker(job_scaler, 4, release)
+    await asyncio.sleep(0.05)
+
+    for job_id in ("job-0", "job-1", "job-2"):
+        release[job_id].set()
+
+    await asyncio.wait_for(refetched.wait(), timeout=1)
+    assert fetches == [4, 3]
+    await _stop(job_scaler, release, tasks)
+
+
+@pytest.mark.asyncio
+async def test_full_worker_stops_taking_promptly_on_shutdown(job_scaler: PatchScaler):
+    release = {"job-0": asyncio.Event()}
+    fetches, _refetched, tasks = _full_worker(job_scaler, 1, release)
+    await asyncio.sleep(0.05)  # full: get_jobs is waiting to drain
+
+    job_scaler.scaler.kill_worker()
+
+    await asyncio.wait_for(tasks[0], timeout=DISPATCH_DEADLINE)
+    assert fetches == [1]
+    release["job-0"].set()
+    await asyncio.wait_for(tasks[1], timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_zero_concurrency_waits_instead_of_spinning(job_scaler: PatchScaler):
+    """A modifier returning 0 on an empty worker must still yield to the loop."""
+    scaler = job_scaler.scaler
+    calls = []
+
+    def zero_concurrency(_current):
+        calls.append(1)
+        if len(calls) >= 50:
+            scaler.kill_worker()  # bound the spin so the failure is an assert, not a hang
+        return 0
+
+    scaler.concurrency_modifier = zero_concurrency
+    task = asyncio.create_task(scaler.get_jobs(AsyncMock()))
+    await asyncio.sleep(0.05)
+
+    assert len(calls) == 1
+    scaler.kill_worker()
+    await asyncio.wait_for(task, timeout=DISPATCH_DEADLINE)

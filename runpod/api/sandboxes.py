@@ -15,6 +15,7 @@ import aiohttp
 from yarl import URL
 
 from runpod import error
+from runpod.api._rate_limit import _RetryBudget, rate_limits
 from runpod.api.rest import (
     _build_headers,
     _build_url,
@@ -57,7 +58,10 @@ def _sandbox_path(sandbox_id: str) -> str:
 
 
 async def _raise_response_error(
-    response: aiohttp.ClientResponse, method: str, path: str
+    response: aiohttp.ClientResponse,
+    method: str,
+    path: str,
+    retry_after: float | None = None,
 ) -> None:
     if response.status == 401:
         _raise_for_status(response.status, {}, "", method, path)
@@ -84,7 +88,7 @@ async def _raise_response_error(
     except LookupError:
         text = raw.decode("utf-8", errors="replace")
     try:
-        _raise_for_status(response.status, payload, text, method, path)
+        _raise_for_status(response.status, payload, text, method, path, retry_after)
     except error.QueryError as cause:
         if sandbox_id is not None:
             raise SandboxCreationError(sandbox_id, cause) from cause
@@ -151,13 +155,13 @@ class AsyncSandboxLogStream:
         try:
             if self._closed:
                 raise RuntimeError("Sandbox log stream is closed")
-            headers = self._api._headers()
-            headers["Accept"] = "text/event-stream"
+            headers = {"Accept": "text/event-stream"}
             if self._last_event_id is not None:
                 headers["Last-Event-ID"] = self._last_event_id
-            self._response = await self._api._get_session().request(
+            self._response = await self._api._open_response(
                 "GET",
-                self._api._url(self._path, self._params),
+                self._path,
+                params=self._params,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(
                     total=None,
@@ -165,9 +169,7 @@ class AsyncSandboxLogStream:
                     sock_connect=self._api.request_timeout,
                     sock_read=None,
                 ),
-                allow_redirects=False,
             )
-            await _raise_response_error(self._response, "GET", self._path)
             if self._response.content_type != "text/event-stream":
                 raise error.QueryError(
                     "Expected a text/event-stream sandbox log response",
@@ -280,6 +282,8 @@ class AsyncSandboxAPI:
     ``close`` releases streams and sockets, but a later request can open a new
     session. Use the instance from one event loop while its session is active.
     Readiness and retry policies belong to the higher-level sandbox handles.
+    quota reservations share the REST limiter by origin and API key; quota
+    sleeps are bounded by ``request_timeout`` and HTTP requests are not replayed.
     """
 
     def __init__(
@@ -295,9 +299,6 @@ class AsyncSandboxAPI:
         self.request_timeout = request_timeout
         self._session: aiohttp.ClientSession | None = None
         self._streams: set[AsyncSandboxLogStream] = set()
-
-    def _headers(self) -> dict[str, str]:
-        return _build_headers(_resolve_api_key(self.api_key))
 
     def _url(self, path: str, params: list[tuple[str, str]] | None = None) -> URL:
         url = _build_url(path, self.base_url)
@@ -318,6 +319,40 @@ class AsyncSandboxAPI:
                 self._session._retry_connection = False
         return self._session
 
+    async def _open_response(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: list[tuple[str, str]] | None = None,
+        body: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+        timeout: aiohttp.ClientTimeout | None = None,
+    ) -> aiohttp.ClientResponse:
+        key = _resolve_api_key(self.api_key)
+        url = self._url(path, params)
+        budget = _RetryBudget(0, self.request_timeout, f"{method} {path}")
+        with rate_limits.bucket(str(url), key) as bucket:
+            async with bucket.reserve_async(budget) as started_at:
+                response = await self._get_session().request(
+                    method,
+                    url,
+                    headers={**_build_headers(key), **(headers or {})},
+                    json=body,
+                    timeout=timeout
+                    or aiohttp.ClientTimeout(total=self.request_timeout),
+                    allow_redirects=False,
+                )
+                try:
+                    retry_after = bucket.update(
+                        response.status, response.headers, 0, started_at=started_at
+                    )
+                    await _raise_response_error(response, method, path, retry_after)
+                except BaseException:
+                    response.close()
+                    raise
+                return response
+
     async def _request(
         self,
         method: str,
@@ -326,15 +361,9 @@ class AsyncSandboxAPI:
         params: list[tuple[str, str]] | None = None,
         body: Mapping[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        headers = self._headers()
-        async with self._get_session().request(
-            method,
-            self._url(path, params),
-            headers=headers,
-            json=body,
-            allow_redirects=False,
+        async with await self._open_response(
+            method, path, params=params, body=body
         ) as response:
-            await _raise_response_error(response, method, path)
             if response.status == 204:
                 return None
             try:

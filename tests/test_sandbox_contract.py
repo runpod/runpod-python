@@ -3,8 +3,10 @@
 import asyncio
 
 import pytest
+from aiohttp import web
 
 from runpod import AsyncioSandbox, Sandbox
+from runpod.error import QueryError, RateLimitError
 from runpod.sandbox import SandboxInfo
 from tests.test_sandbox import SandboxService, sandbox_peer
 
@@ -112,3 +114,23 @@ def test_snapshot_reads_only_current_fields(fields, expected_image, expected_cpu
     info = SandboxInfo.from_dict(record)
     assert info.image == expected_image
     assert info.cpu_flavor_id == expected_cpu
+
+
+@pytest.mark.asyncio
+async def test_sandbox_rate_limit_error_preserves_details_without_replaying_exec():
+    with sandbox_peer() as peer:
+        async with AsyncioSandbox(**peer.options) as sandbox:
+            peer.exec_responses.append(
+                web.json_response(
+                    {"detail": "sandbox quota exceeded", "errors": ["quota"]},
+                    status=429,
+                )
+            )
+            with pytest.raises(RateLimitError) as raised:
+                await sandbox.exec(["side-effect"])
+            assert isinstance(raised.value, QueryError)
+            assert raised.value.status_code == 429
+            assert raised.value.message == "sandbox quota exceeded"
+            assert raised.value.errors == ["quota"]
+            assert raised.value.query == f"POST /v2/sandboxes/{sandbox.id}/exec"
+            assert peer.executed == [["side-effect"]]

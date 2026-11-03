@@ -44,3 +44,17 @@ class QueryError(RunPodError):
         self.query = query
         self.status_code = status_code
         self.errors = errors or []
+
+
+class RateLimitError(QueryError):
+    """A REST quota exceeds the request's retry or wait budget."""
+
+    def __init__(
+        self,
+        message: str,
+        query: str,
+        retry_after: float,
+        errors: Optional[list[str]] = None,
+    ):
+        super().__init__(message, query, status_code=429, errors=errors)
+        self.retry_after = retry_after

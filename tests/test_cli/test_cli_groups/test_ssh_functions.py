@@ -27,22 +27,49 @@ class TestSSHFunctions(unittest.TestCase):
         with self.assertRaises(ValueError):
             get_ssh_key_fingerprint("invalidkey")
 
-    @patch("runpod.cli.groups.ssh.functions.get_user")
-    def test_get_user_pub_keys(self, mock_get_user):
-        """Test the get_user_pub_keys function"""
-
-        # Create dummy base64 data for our mock SSH keys
+    @patch(
+        "runpod.api.ctl_commands.run_graphql_query",
+        side_effect=AssertionError("GraphQL forbidden"),
+    )
+    @patch("runpod.cli.groups.ssh.functions.run_rest_request")
+    def test_get_user_pub_keys(self, rest, graphql):
         dummy_data1 = base64.b64encode("test data 1".encode("utf-8")).decode("utf-8")
         dummy_data2 = base64.b64encode("test data 2".encode("utf-8")).decode("utf-8")
-
-        mock_get_user.return_value = {
-            "pubKey": f"ssh-rsa {dummy_data1} key1\nssh-rsa {dummy_data2} key2\n1"
-        }
-
+        named = f"ssh-rsa {dummy_data1} key1"
+        unnamed = f"ssh-ed25519 {dummy_data2}"
+        rest.return_value = {"keys": [named, unnamed, "", "invalid"]}
         keys = get_user_pub_keys()
+        self.assertEqual(
+            keys,
+            [
+                {
+                    "type": "ssh-rsa",
+                    "key": dummy_data1,
+                    "fingerprint": get_ssh_key_fingerprint(named),
+                    "name": "key1",
+                },
+                {
+                    "type": "ssh-ed25519",
+                    "key": dummy_data2,
+                    "fingerprint": get_ssh_key_fingerprint(unnamed),
+                    "name": "N/A",
+                },
+            ],
+        )
+        rest.assert_called_once_with("GET", "/v2/account/ssh-keys")
+        graphql.assert_not_called()
 
-        self.assertEqual(len(keys), 2)
-        self.assertEqual(keys[0]["fingerprint"].startswith("SHA256:"), True)
+    @patch(
+        "runpod.api.ctl_commands.run_graphql_query",
+        side_effect=AssertionError("GraphQL forbidden"),
+    )
+    @patch(
+        "runpod.cli.groups.ssh.functions.run_rest_request", return_value={"keys": []}
+    )
+    def test_get_user_pub_keys_empty(self, rest, graphql):
+        self.assertEqual(get_user_pub_keys(), [])
+        rest.assert_called_once_with("GET", "/v2/account/ssh-keys")
+        graphql.assert_not_called()
 
     @patch("runpod.cli.groups.ssh.functions.get_user")
     def test_add_ssh_key_already_exists(self, mock_get_user):

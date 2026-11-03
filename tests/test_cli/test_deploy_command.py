@@ -1,5 +1,6 @@
 """tests for rp flash deploy and rp flash dev command wiring."""
 
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -289,6 +290,192 @@ class TestDev:
 
         assert result.exit_code == 0, result.output
         assert events == ["cancelled", "finished", "deleted"]
+
+    def _signal_session(self, tmp_path, monkeypatch, entrypoint):
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        events = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-active"}
+
+        async def delete(endpoint_id):
+            events.append("deleted")
+            return True
+
+        api.delete_endpoint.side_effect = delete
+        with (
+            patch("runpod.apps.dev.AppsApiClient", return_value=api),
+            patch(
+                "runpod.apps.entrypoint.run_entrypoint",
+                side_effect=lambda fn: entrypoint(events),
+            ),
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module)])
+        return result, events
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_sigterm_deletes_endpoints(self, tmp_path, monkeypatch):
+        import os
+        import signal
+        import time
+
+        def entrypoint(events):
+            os.kill(os.getpid(), signal.SIGTERM)
+            time.sleep(0.1)
+            events.append("finished")
+
+        result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+        assert result.exit_code == 0, result.output
+        assert events == ["finished", "deleted"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    @pytest.mark.parametrize("stop_signal", ["SIGINT", "SIGTERM"])
+    def test_stop_signal_preserves_cancellation_on_entrypoint_failure(
+        self, tmp_path, monkeypatch, stop_signal
+    ):
+        import asyncio
+        import signal
+
+        handlers = {}
+        shield = asyncio.shield
+
+        def install_handler(loop, sig, callback):
+            handlers[sig] = callback
+
+        def stop_on_completion(future):
+            waiter = shield(future)
+            if not isinstance(future, asyncio.Task):
+                future.add_done_callback(
+                    lambda _: handlers[getattr(signal, stop_signal)]()
+                )
+            return waiter
+
+        def entrypoint(events):
+            events.append("failed")
+            raise RuntimeError("entrypoint failed while stopping")
+
+        with (
+            patch.object(
+                asyncio.SelectorEventLoop, "add_signal_handler", install_handler
+            ),
+            patch("asyncio.shield", side_effect=stop_on_completion),
+            patch(
+                "runpod.apps.watch.FileWatcher.changed",
+                side_effect=AssertionError("a stopped session must not resume watching"),
+            ) as changed,
+        ):
+            result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+
+        assert result.exit_code == 0, result.output
+        assert events == ["failed", "deleted"]
+        changed.assert_not_called()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_sigint_cleans_up_even_when_ignored_at_start(self, tmp_path, monkeypatch):
+        import os
+        import signal
+        import time
+
+        # shells start background jobs with sigint ignored
+        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+        def entrypoint(events):
+            os.kill(os.getpid(), signal.SIGINT)
+            time.sleep(0.1)
+            events.append("finished")
+
+        try:
+            result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+        finally:
+            signal.signal(signal.SIGINT, previous)
+        assert result.exit_code == 0, result.output
+        assert events == ["finished", "deleted"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_second_signal_forces_teardown(self, tmp_path, monkeypatch):
+        import os
+        import signal
+        import threading
+
+        release = threading.Event()
+
+        def entrypoint(events):
+            os.kill(os.getpid(), signal.SIGTERM)
+            threading.Timer(0.2, os.kill, (os.getpid(), signal.SIGTERM)).start()
+            # a long remote call that outlives the stop request
+            release.wait(5)
+            events.append("finished")
+
+        try:
+            result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+        finally:
+            release.set()
+        assert result.exit_code == 0, result.output
+        assert events[0] == "deleted"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_signal_during_teardown_still_deletes(self, tmp_path, monkeypatch):
+        import asyncio
+        import os
+        import signal
+
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        events = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-active"}
+
+        async def delete(endpoint_id):
+            os.kill(os.getpid(), signal.SIGTERM)
+            await asyncio.sleep(0.1)
+            events.append(("deleted", endpoint_id))
+            return True
+
+        api.delete_endpoint.side_effect = delete
+        with (
+            patch("runpod.apps.dev.AppsApiClient", return_value=api),
+            patch("runpod.apps.entrypoint.run_entrypoint"),
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        assert result.exit_code == 0, result.output
+        assert events == [("deleted", "ep-active")]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_signal_during_create_deletes_the_new_endpoint(self, tmp_path, monkeypatch):
+        import asyncio
+        import os
+        import signal
+
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deleted = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+
+        async def create(payload):
+            # the platform creates the endpoint before the reply arrives
+            os.kill(os.getpid(), signal.SIGTERM)
+            await asyncio.sleep(0.1)
+            return {"id": "ep-new"}
+
+        async def delete(endpoint_id):
+            deleted.append(endpoint_id)
+            return True
+
+        api.save_endpoint.side_effect = create
+        api.delete_endpoint.side_effect = delete
+        with (
+            patch("runpod.apps.dev.AppsApiClient", return_value=api),
+            patch("runpod.apps.entrypoint.run_entrypoint"),
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module)])
+        assert result.exit_code == 0, result.output
+        assert deleted == ["ep-new"]
 
     def test_module_without_entrypoint(self, tmp_path, monkeypatch):
         module = tmp_path / "main.py"

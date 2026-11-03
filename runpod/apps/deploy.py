@@ -7,7 +7,7 @@ import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pathspec import GitIgnoreSpec
 
@@ -285,6 +285,7 @@ def _deployed_endpoint_input(
     python_version: str,
     *,
     env_name: Optional[str] = None,
+    pool_members: Optional[Dict[str, Set[str]]] = None,
 ) -> Dict[str, Any]:
     """saveEndpoint payload for one deployed queue/api resource.
 
@@ -372,7 +373,7 @@ def _deployed_endpoint_input(
     else:
         from .gpu import gpu_ids_value
 
-        payload["gpuIds"] = gpu_ids_value(spec.gpu)
+        payload["gpuIds"] = gpu_ids_value(spec.gpu, pool_members=pool_members)
         payload["gpuCount"] = spec.gpu_count
         if spec.min_cuda_version:
             payload["minCudaVersion"] = spec.min_cuda_version
@@ -406,12 +407,16 @@ async def reconcile_endpoints(
         if h.spec.kind in (ResourceKind.QUEUE, ResourceKind.API)
     }
 
+    from .gpu import needs_gpu_catalog
     from .registry import resolve_registry_auth
     from .volume import VolumeResolver, attach_endpoint_volumes
 
     resolver = VolumeResolver(client)
     endpoints: Dict[str, str] = {}
     for name, handle in sorted(provisionable.items()):
+        members = None
+        if needs_gpu_catalog(handle.spec.gpu):
+            members = await client.gpu_pool_members()
         payload = _deployed_endpoint_input(
             app,
             handle.spec,
@@ -419,6 +424,7 @@ async def reconcile_endpoints(
             build_id,
             python_version,
             env_name=environment["name"],
+            pool_members=members or {},
         )
         await attach_endpoint_volumes(payload, handle.spec, resolver, app)
         auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
