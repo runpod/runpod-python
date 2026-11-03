@@ -84,6 +84,18 @@ make setup
 make test
 ```
 
+## Remote values
+
+Queue and task calls use finite JSON-compatible arguments, return values,
+and stream chunks. JSON conversion turns tuples into lists and supported
+dictionary keys into strings, including in same-worker remote calls.
+Bytes, custom objects, circular references, and non-finite numbers produce
+explicit errors. `.local()` remains a direct Python call.
+
+Successful function responses contain `json_result`, including for a null
+return value. SDK and worker runtimes share the JSON protocol validators;
+use compatible package releases when building worker images.
+
 ## ⚡ | Serverless Worker (SDK)
 
 This python package can also be used to create a serverless worker that can be deployed to Runpod as a custom endpoint API.

@@ -21,7 +21,6 @@ import aiohttp
 
 from .api import AppsApiClient, is_capacity_error
 from .context import CLEANUP_TIMEOUT
-from .errors import RemoteExecutionError
 from .spec import ResourceSpec
 
 log = logging.getLogger(__name__)
@@ -264,8 +263,11 @@ class _TaskTransport:
         await self._post("/timeout", {"timeout": timeout})
 
     async def _post(self, path: str, request: Dict[str, Any]) -> None:
+        from .serialization import require_json_value
+
         timeout = request.get("timeout")
         _validate_timeout(timeout)
+        require_json_value(request, "task request body must be JSON-serializable")
         url = f"{_proxy_url(self.pod_id)}{path}"
         attempts = 6
         async with aiohttp.ClientSession() as session:
@@ -473,19 +475,10 @@ class DeployedTaskExecution(_TaskTransport):
 
 def unwrap_task_response(response: Dict[str, Any]) -> Any:
     """extract the function result from a runner response."""
-    if not response.get("success"):
-        raise RemoteExecutionError(
-            f"task execution failed: {response.get('error', 'unknown')}"
-        )
-    if response.get("result") is not None:
-        from .serialization import deserialize_result
+    from .serialization import require_json_value, unwrap_function_response
 
-        return deserialize_result(response["result"])
-    from .serialization import require_json_value
-
-    result = response.get("json_result")
-    require_json_value(result, "task results must be JSON-serializable")
-    return result
+    require_json_value(response, "task results must be JSON-serializable")
+    return unwrap_function_response(response)
 
 
 class TaskJob:

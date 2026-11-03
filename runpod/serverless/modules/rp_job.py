@@ -10,6 +10,7 @@ from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union, List
 
 import aiohttp
 
+from runpod._serialization import validate_json
 from runpod.http_client import ClientSession, TooManyRequests
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
@@ -256,12 +257,14 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
 
     with capture(enabled=handler_capture_enabled()) as cap:
         try:
+            validate_json(job.get("input"), "job input")
             handler_return = handler(job)
             job_output = (
                 await handler_return
                 if inspect.isawaitable(handler_return)
                 else handler_return
             )
+            validate_json(job_output, "return value")
 
             log.debug(f"Handler output: {job_output}", job["id"])
 
@@ -281,7 +284,9 @@ async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 run_result = {"output": job_output}
 
-            if run_result.get("output") == {}:
+            if run_result.get("output") == {} and (
+                "error" in run_result or "stopPod" in run_result
+            ):
                 run_result.pop("output")
 
             check_return_size(run_result)  # Checks the size of the return body.
@@ -324,14 +329,17 @@ async def run_job_generator(
 
     with capture(enabled=handler_capture_enabled()) as cap:
         try:
+            validate_json(job.get("input"), "job input")
             job_output = handler(job)
 
             if is_async_gen:
                 async for output_partial in job_output:
+                    validate_json(output_partial, "stream chunk")
                     log.debug(f"Async Generator output: {output_partial}", job["id"])
                     yield {"output": output_partial}
             else:
                 for output_partial in job_output:
+                    validate_json(output_partial, "stream chunk")
                     log.debug(f"Generator output: {output_partial}", job["id"])
                     yield {"output": output_partial}
 
