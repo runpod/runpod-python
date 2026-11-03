@@ -718,7 +718,12 @@ def login(no_open, api_key_opt, profile, agent, email):
             )
         set_credentials(api_key, profile=profile, overwrite=True)
     except (LoginError, ValueError, OSError) as exc:
-        _fail(str(exc))
+        _fail(
+            f"{exc}\n\n"
+            "if rp login keeps failing, grab a key from "
+            "https://console.runpod.io/user/settings and run:\n"
+            "  rp login --api-key YOUR_KEY"
+        )
     ui.success("logged in, credentials saved to [dim]~/.runpod/config.toml[/dim]")
 
 
