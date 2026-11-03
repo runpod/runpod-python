@@ -361,6 +361,7 @@ class TestLoginCommand:
             '[production]\napi_key = "keep-production"\n'
         )
         monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(credentials))
+        monkeypatch.setattr("runpod.rp_cli.main._stdin_is_tty", lambda: True)
         args = ["login"]
         if profile != "default":
             args.extend(["--profile", profile])
@@ -379,10 +380,43 @@ class TestLoginCommand:
     def test_browser_flow_error(self):
         from runpod.apps.auth import LoginError
 
-        with patch(
-            "runpod.apps.auth.browser_login",
-            AsyncMock(side_effect=LoginError("expired")),
+        with (
+            patch("runpod.rp_cli.main._stdin_is_tty", return_value=True),
+            patch(
+                "runpod.apps.auth.browser_login",
+                AsyncMock(side_effect=LoginError("api key was rejected")),
+            ),
         ):
             result = _runner().invoke(cli, ["login", "--no-open"])
         assert result.exit_code == 1
-        assert "expired" in result.output
+        assert "api key was rejected" in result.output
+
+    def test_browser_flow_fails_fast_without_tty(self):
+        login = AsyncMock()
+        with patch("runpod.apps.auth.browser_login", login):
+            result = _runner().invoke(cli, ["login", "--no-open"])
+        assert result.exit_code == 1
+        assert "RUNPOD_API_KEY" in result.output
+        login.assert_not_called()
+
+    def test_browser_flow_prompts_with_hidden_input(self, tmp_path, monkeypatch):
+        from runpod.cli.groups.config import functions
+
+        monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(tmp_path / "c.toml"))
+        api = MagicMock()
+        api.create_auth_request = AsyncMock(return_value={"id": "req-1"})
+        api.verify_api_key = AsyncMock(return_value=True)
+        with (
+            patch("runpod.rp_cli.main._stdin_is_tty", return_value=True),
+            patch("runpod.apps.auth.AppsApiClient", return_value=api),
+            patch(
+                "runpod.rp_cli.main.click.prompt", return_value=" rpa_new "
+            ) as prompt,
+        ):
+            result = _runner().invoke(cli, ["login", "--no-open"])
+
+        assert result.exit_code == 0, result.output
+        assert "flash/login?request=req-1" in result.output
+        assert prompt.call_args[1]["hide_input"] is True
+        assert "rpa_new" not in result.output
+        assert functions.get_credentials("default")["api_key"] == "rpa_new"

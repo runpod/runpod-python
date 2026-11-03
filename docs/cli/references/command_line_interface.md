@@ -34,10 +34,13 @@ rp --help
 ### Authenticate
 
 ```bash
-rp login                        # browser approval
+rp login                        # browser approval, then paste the key
 rp login --api-key YOUR_KEY     # store a key directly
 rp login --profile staging      # save browser credentials in a named profile
 ```
+
+`rp login` opens the console to approve the request. After you approve, the console shows a new API key; paste it at the hidden prompt. The CLI checks the key before saving it.
+`rp login` needs an interactive terminal. In CI or scripts, set `RUNPOD_API_KEY` or use `rp login --api-key`.
 
 Credentials are stored in `~/.runpod/config.toml`.
 Use `--profile NAME` with either login method to update only that profile; the default is `default`.

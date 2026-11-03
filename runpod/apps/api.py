@@ -13,8 +13,9 @@ from ..api.ctl_commands import _cpu_config, _path_segment, _split_values
 from ..api.graphql import run_graphql_query_async
 from ..api.mutations import apps as app_mutations
 from ..api.queries import apps as app_queries
+from ..api.queries import user as user_queries
 from ..api.rest import run_rest_paginated_request_async, run_rest_request_async
-from ..error import QueryError
+from ..error import AuthenticationError, QueryError
 
 _TRANSPORT_RETRIES = 4
 
@@ -594,12 +595,20 @@ class AppsApiClient:
     async def get_auth_request_status(self, request_id: str) -> Dict[str, Any]:
         query = app_queries.QUERY_FLASH_AUTH_REQUEST_STATUS
         data = await self._execute(
-            query,
-            {"flashAuthRequestId": request_id},
-            anonymous=True,
-            retry=True,
+            query, {"flashAuthRequestId": request_id}, anonymous=True
         )
         return data.get("flashAuthRequestStatus") or {}
+
+    async def verify_api_key(self, api_key: str) -> bool:
+        """true when api_key authenticates; transport failures still raise."""
+        try:
+            response = await run_graphql_query_async(
+                user_queries.QUERY_USER, api_key=api_key
+            )
+        except (AuthenticationError, QueryError):
+            return False
+        myself = (response.get("data") or {}).get("myself") or {}
+        return bool(myself.get("id"))
 
     async def prepare_artifact_upload(
         self, app_id: str, tarball_size: int

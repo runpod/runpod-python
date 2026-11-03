@@ -5,6 +5,8 @@ on:
     branches: [main]
   push:
     branches: [main]
+  schedule:
+    - cron: "15 1 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -16,7 +18,8 @@ jobs:
   # ──────────────────────────────────────────────
 
   test:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
@@ -53,8 +56,8 @@ jobs:
           if-no-files-found: error
 
   e2e:
-    if: github.repository == 'runpod/runpod-python'
-    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' && github.repository == 'runpod/runpod-python'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -85,18 +88,42 @@ jobs:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_SDK_GIT_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
+  codeql:
+    if: github.event_name == 'schedule' || github.event_name == 'pull_request'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4.39.1
+        with:
+          languages: python
+          queries: security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4.39.1
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4.39.1
+        with:
+          category: "/language:python"
+
   # ──────────────────────────────────────────────
   # Validation gate
   # ──────────────────────────────────────────────
 
   validation:
-    runs-on: ubuntu-latest
-    needs: [test, e2e]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    needs: [test, e2e, codeql]
     if: always()
     steps:
       - name: Check all jobs succeeded
         run: |
-          results=("${{ needs.test.result }}" "${{ needs.e2e.result }}")
+          results=("${{ needs.test.result }}" "${{ needs.e2e.result }}" "${{ needs.codeql.result }}")
           for result in "${results[@]}"; do
             if [[ "$result" != "success" && "$result" != "skipped" ]]; then
               echo "One or more quality checks failed (got: $result)"

@@ -65,6 +65,22 @@ def _handler_loaded_gpu_framework() -> bool:
     return any(sys.modules.get(name) is not None for name in GPU_FRAMEWORKS)
 
 
+def _torch_without_cuda_context(torch) -> bool:
+    """
+    True if the handler imported torch but has not created a CUDA context.
+
+    The torch checks must never be the first to initialize CUDA in the handler
+    process. An engine built in this process afterwards (vLLM's in-process
+    AsyncLLM/LLM) sees "CUDA is initialized" and spawns its workers instead of
+    forking, re-importing the engine and torch in every child (10.6-11.5 s per
+    cold start measured with vLLM v0.30.0). This gate runs before
+    torch.cuda.is_available(), whose default cudaGetDeviceCount path also
+    initializes the driver and poisons later forks. When the handler has
+    already created a context the checks cost nothing extra.
+    """
+    return not torch.cuda.is_initialized()
+
+
 def configure() -> None:
     """Read current fitness settings; setup errors are handled by the runner."""
     global \
@@ -395,6 +411,14 @@ async def _check_cuda_initialization() -> None:
     try:
         torch = _loaded_module("torch")
 
+        if _torch_without_cuda_context(torch):
+            log.debug(
+                "Handler has not created a CUDA context, skipping CUDA initialization "
+                "check so the engine can still fork (the gpu_test binary, where it "
+                "runs, covers device allocation)"
+            )
+            return
+
         if not torch.cuda.is_available():
             log.debug("CUDA not available in PyTorch, skipping initialization check")
             return
@@ -496,6 +520,13 @@ async def _check_gpu_compute_benchmark() -> None:
     try:
         torch = _loaded_module("torch")
 
+        if _torch_without_cuda_context(torch):
+            log.debug(
+                "Handler has not created a CUDA context, skipping GPU compute "
+                "benchmark so the engine can still fork"
+            )
+            return
+
         if not torch.cuda.is_available():
             log.debug("CUDA not available in PyTorch, skipping benchmark")
             return
@@ -580,7 +611,8 @@ def auto_register_system_checks() -> None:
     The two checks that use torch and allocate on the device are marked
     @defer_to_worker_start so the import-time pass cannot create a CUDA context
     before the handler module runs. They only use a framework the handler has
-    already imported, so they never add a torch import to cold start.
+    already imported, and only run when the handler has already created a CUDA
+    context, so they never add a torch import or a CUDA context to cold start.
     """
     configure()
     log.debug("Registering system resource fitness checks")
