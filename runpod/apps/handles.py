@@ -20,7 +20,6 @@ with the resource:
 
 import asyncio
 import inspect
-import json
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -32,6 +31,7 @@ from typing import (
     Type,
 )
 
+from .._serialization import normalize_json
 from .context import Context, block, current_context
 from .discovery_state import DiscoveryInvocationError, in_discovery
 from .errors import InvalidResourceError
@@ -39,7 +39,6 @@ from .invoker import Invoker, StreamInvoker
 from .job import Job
 from .markers import INIT_ATTR, is_init, route_of
 from .schedule import SCHEDULE_ATTR
-from .serialization import require_json_value
 from .spec import ResourceKind, ResourceSpec, RouteSpec
 
 if TYPE_CHECKING:
@@ -126,10 +125,12 @@ class FunctionHandle:
 
     @staticmethod
     def _json_value(value: Any) -> Any:
-        require_json_value(
-            value, "remote arguments and results must be JSON-serializable"
-        )
-        return json.loads(json.dumps(value, allow_nan=False))
+        try:
+            return normalize_json(value)
+        except TypeError:
+            raise ValueError(
+                "remote arguments and results must be JSON-serializable"
+            ) from None
 
     @staticmethod
     async def _await_local_result(result: Any) -> Any:

@@ -15,7 +15,7 @@ import aiohttp
 
 from ..user_agent import USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
-from .protocol import FORMAT_JSON, FunctionRequest, FunctionResponse
+from .protocol import FORMAT_JSON, FunctionRequest
 from .serialization import require_json_value
 from .spec import ResourceSpec
 from .utils.events import emit
@@ -696,16 +696,9 @@ class LiveTarget(InvocationTarget):
     def _unwrap_response(self, output: Any) -> Any:
         require_json_value(output, "queue results must be JSON-serializable")
         if isinstance(output, dict) and "success" in output:
-            response = FunctionResponse.from_output(output)
-            if not response.success:
-                raise RemoteExecutionError(
-                    f"remote execution failed: {response.error or 'unknown'}"
-                )
-            if response.result is not None:
-                from .serialization import deserialize_result
+            from .serialization import unwrap_function_response
 
-                return deserialize_result(response.result)
-            return response.json_result
+            return unwrap_function_response(output)
         return output
 
     def _monitor(self):

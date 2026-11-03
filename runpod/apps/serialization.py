@@ -1,52 +1,37 @@
 """argument and result serialization for remote execution.
 
 remote calls use finite json-compatible arguments and results. this
-module validates that contract, provides cloudpickle codecs for explicitly
-encoded values, and extracts function source for live workers.
+module validates that contract, decodes json response envelopes, and extracts
+function source for live workers.
 """
 
 import ast
-import base64
 import inspect
 import os
 import textwrap
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable
 
-import cloudpickle
-
-
-def serialize_arg(arg: Any) -> str:
-    return base64.b64encode(cloudpickle.dumps(arg)).decode("utf-8")
+from .._serialization import validate_json
+from .errors import RemoteExecutionError
+from .protocol import FunctionResponse
 
 
-def serialize_args(args: tuple) -> List[str]:
-    return [serialize_arg(a) for a in args]
-
-
-def serialize_kwargs(kwargs: dict) -> Dict[str, str]:
-    return {k: serialize_arg(v) for k, v in kwargs.items()}
-
-
-def deserialize_result(result_b64: str) -> Any:
+def unwrap_function_response(output: dict) -> Any:
     try:
-        return cloudpickle.loads(base64.b64decode(result_b64))
-    except ModuleNotFoundError as exc:
-        from .errors import RemoteExecutionError
-
+        response = FunctionResponse.from_output(output)
+    except (TypeError, ValueError) as exc:
+        raise RemoteExecutionError(f"invalid remote response: {exc}") from exc
+    if not response.success:
         raise RemoteExecutionError(
-            f"the remote result contains an object from the "
-            f"'{exc.name}' package, which is not installed locally. "
-            f"return plain python types (e.g. str(...)) or install "
-            f"'{exc.name}' on this machine."
-        ) from exc
+            f"remote execution failed: {response.error or 'unknown'}"
+        )
+    return response.json_result
 
 
 def require_json_value(value: Any, message: str) -> None:
     try:
-        import json
-
-        json.dumps(value, allow_nan=False)
-    except (TypeError, ValueError):
+        validate_json(value)
+    except TypeError:
         raise ValueError(message) from None
 
 
