@@ -378,15 +378,15 @@ def _progress_bar():
 def _cli_error(exc: Exception) -> click.ClickException:
     """a transfer failure as a cli error, with a resume hint when re-running
     would resume."""
-    import runpod.network_volume_transfer as nvt
-
     from botocore.exceptions import EndpointConnectionError
+
+    import runpod.network_volume_transfer as nvt
 
     hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
     if isinstance(exc, EndpointConnectionError):
-        hint += (
+        hint = (
             "\nif the volume's datacenter does not support the s3 api yet, "
-            f"see {nvt.S3_DOCS_URL}"
+            f"see {nvt.S3_DOCS_URL}; otherwise re-run the same command to resume"
         )
     return click.ClickException(f"{exc}{hint}")
 

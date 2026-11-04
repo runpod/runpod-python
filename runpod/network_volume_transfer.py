@@ -10,8 +10,10 @@ only the parts the server does not already hold. downloads fetch 64 MiB
 ranges into `<dest>.rpdownload`, recording finished ranges in a sidecar
 json, so a re-run fetches only what is missing. folder transfers skip
 files that are already present and unchanged. botocore's standard retry mode
-retries failed requests; a failure that outlasts it ends the run, and a re-run
-resumes.
+retries connection errors, 500/502/503/504 and throttling, up to 10 tries,
+drawing on one retry quota per client that a long stretch of failures can
+drain. any other failure, or one that outlasts the retries, ends the run as
+resumable when a re-run can get past it.
 
 filesystem state, checksums, and destination path checks live in the private
 `_volume_transfer_utils` module; this module coordinates requests and resume.

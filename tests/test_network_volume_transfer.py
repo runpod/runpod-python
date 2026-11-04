@@ -12,6 +12,7 @@ from botocore.exceptions import ClientError, ReadTimeoutError
 from click.testing import CliRunner
 
 import runpod
+import runpod._volume_transfer_utils as utils
 import runpod.network_volume_transfer as nvt
 import runpod.error
 
@@ -1617,6 +1618,9 @@ def test_cli_points_an_unreachable_endpoint_at_the_s3_docs(monkeypatch, tmp_path
         )
     assert result.exit_code == 1
     assert nvt.S3_DOCS_URL in result.output
+    # one either/or line, not a resume hint that leads
+    assert result.output.count("re-run the same command to resume") == 1
+    assert "otherwise re-run" in result.output
 
 
 def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
@@ -1830,8 +1834,6 @@ def test_download_refuses_a_symlinked_subfolder(tmp_path):
 
 
 def test_state_writes_sync_the_folder(tmp_path, monkeypatch):
-    from runpod import _volume_transfer_utils as utils
-
     real_sync_dir = utils._sync_dir
     synced = []
     monkeypatch.setattr(utils, "_sync_dir", synced.append)
