@@ -29,8 +29,13 @@ from contextlib import closing
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
-from ._volume_transfer_utils import (
-    _check_local_names as _check_download_names,
+from ._volume_transfer_utils import (  # noqa: F401 - re-exported names
+    MIB,
+    PARTIAL_SUFFIX,
+    SIDECAR_SUFFIX,
+    TRANSFER_SUFFIXES,
+    NetworkVolumeTransferError,
+    _check_local_names,
     _check_remote_path,
     _etag,
     _is_md5,
@@ -38,15 +43,14 @@ from ._volume_transfer_utils import (
     _multipart_etag,
     _not_older,
     _read_json,
-    _safe_target as _download_target,
+    _safe_target,
     _same_version,
     _sync_dir,
-    _write_json as _persist_json,
+    _write_json,
 )
 
 T = TypeVar("T")
 
-MIB = 1024 * 1024
 SINGLE_PUT_MAX = 64 * MIB
 DEFAULT_PART_SIZE = 64 * MIB
 MAX_PART_SIZE = 500 * MIB  # runpod's maximum multipart part size
@@ -54,10 +58,6 @@ MAX_PARTS = 10000
 DOWNLOAD_CHUNK_SIZE = 64 * MIB
 # runpod's s3 api keeps in-progress multipart parts here (server-created)
 UPLOADS_DIR = ".s3compat_uploads"
-PARTIAL_SUFFIX = ".rpdownload"
-SIDECAR_SUFFIX = ".rpdownload.json"
-# every file a download writes next to its target
-TRANSFER_SUFFIXES = (PARTIAL_SUFFIX, SIDECAR_SUFFIX, SIDECAR_SUFFIX + ".tmp")
 
 # tries per request, the first included
 MAX_ATTEMPTS = 10
@@ -78,14 +78,6 @@ _REJECTED_KEY_CODES = ("InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDen
 # "advance" (nbytes sent or received), "reuse" (nbytes an earlier run already
 # moved: kept parts or chunks), "skip" (nbytes = file size), "done".
 Progress = Callable[[str, str, int], None]
-
-
-class NetworkVolumeTransferError(RuntimeError):
-    """a transfer failed. `resumable` says whether re-running can help."""
-
-    def __init__(self, message: str, resumable: bool = False):
-        super().__init__(message)
-        self.resumable = resumable
 
 
 class RejectedS3Keys(NetworkVolumeTransferError):
@@ -171,10 +163,6 @@ def is_resumable(exc: BaseException) -> bool:
     # finished); 416: a range that no longer fits an object that changed
     code, status = _error(exc)
     return code == "NoSuchUpload" or status == 416 or _transient(code, status)
-
-
-def _write_json(path: Path, data: Dict[str, Any]) -> None:
-    _persist_json(path, data, _sync_dir)
 
 
 # the summary counter each progress event advances
@@ -865,14 +853,6 @@ class _Download:
                 return None
 
 
-def _check_local_names(targets: List[Path], root: Path) -> None:
-    _check_download_names(targets, root, TRANSFER_SUFFIXES, NetworkVolumeTransferError)
-
-
-def _safe_target(root: Path, rel: str) -> Path:
-    return _download_target(root, rel, NetworkVolumeTransferError)
-
-
 # ---------------------------------------------------------------- client
 
 
@@ -889,9 +869,9 @@ def _list_volumes() -> List[Dict[str, Any]]:
             run_rest_paginated_request_async("/v2/network-volumes", "networkVolumes")
         )
     except error.AuthenticationError as exc:
-        import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
+        from runpod import api_key  # pylint: disable=import-outside-toplevel
 
-        if not runpod.api_key:
+        if not api_key:
             raise NetworkVolumeTransferError(NOT_LOGGED_IN) from exc
         raise NetworkVolumeTransferError(API_KEY_REJECTED) from exc
 
@@ -923,12 +903,12 @@ def _resolve_volume(reference: str) -> Tuple[str, str]:
 
 def saved_s3_keys() -> Tuple[Optional[str], Optional[str]]:
     """the s3 keys saved in ~/.runpod/config.toml for the current profile."""
-    import runpod  # pylint: disable=import-outside-toplevel,cyclic-import
+    from runpod import profile  # pylint: disable=import-outside-toplevel
     from runpod.cli.groups.config.functions import (  # pylint: disable=import-outside-toplevel
         get_credentials,
     )
 
-    saved = get_credentials(runpod.profile) or {}
+    saved = get_credentials(profile) or {}
     return saved.get("s3_access_key"), saved.get("s3_secret_key")
 
 
@@ -997,6 +977,17 @@ def _client_config(concurrency: int) -> Any:
     )
 
 
+def _locate(reference: str, endpoint_url: Optional[str] = None) -> Tuple[str, str, str]:
+    """the id, datacenter, and s3 endpoint of the network volume with this
+    id or name. fails fast when the datacenter has no s3 api."""
+    volume_id, datacenter = _resolve_volume(reference)
+    if endpoint_url:
+        return volume_id, datacenter, endpoint_url
+    endpoint = f"https://s3api-{datacenter.lower()}.runpod.io/"
+    _check_endpoint(endpoint, datacenter)
+    return volume_id, datacenter, endpoint
+
+
 def _make_transfer(
     volume: str,
     access_key: Optional[str],
@@ -1005,16 +996,15 @@ def _make_transfer(
     concurrency: int,
     progress: Optional[Progress],
     force: bool = False,
+    location: Optional[Tuple[str, str, str]] = None,
 ) -> _Transfer:
     """a transfer to the network volume with this id or name. backs
-    NetworkVolume.upload and NetworkVolume.download."""
+    NetworkVolume.upload and NetworkVolume.download. `location` is a
+    result of `_locate` the caller already holds."""
     import boto3  # pylint: disable=import-outside-toplevel
 
-    volume_id, datacenter = _resolve_volume(volume)
+    volume_id, datacenter, endpoint = location or _locate(volume, endpoint_url)
     access_key, secret_key = _s3_keys(access_key, secret_key)
-    endpoint = endpoint_url or f"https://s3api-{datacenter.lower()}.runpod.io/"
-    if not endpoint_url:
-        _check_endpoint(endpoint, datacenter)
     concurrency = max(1, int(concurrency))
     client = boto3.session.Session().client(
         "s3",

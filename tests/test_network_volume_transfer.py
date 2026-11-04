@@ -773,15 +773,26 @@ def test_network_volume_methods_delegate():
         return fake_transfer
 
     volume = runpod.NetworkVolume("models", create=False)
-    with patch.object(nvt, "_make_transfer", side_effect=make):
+    located = []
+
+    def locate(reference, endpoint_url=None):
+        located.append(reference)
+        return ("vol123", "EU-RO-1", "https://s3api-eu-ro-1.runpod.io/")
+
+    with patch.object(nvt, "_locate", side_effect=locate), patch.object(
+        nvt, "_make_transfer", side_effect=make
+    ):
         assert volume.upload("x", "y", concurrency=2)[0] == "up"
         assert volume.download("y", "x")[0] == "down"
     assert calls[0][0] == "models" and calls[0][4] == 2
+    # one lookup serves both transfers on the same instance
+    assert located == ["models"]
 
 
 def test_network_volume_download_keeps_trailing_slash(tmp_path, monkeypatch):
     fake = FakeS3()
     fake.put("w.bin", b"w")
+    monkeypatch.setattr(nvt, "_locate", lambda *a: ("vol", "EU-RO-1", "https://x/"))
     monkeypatch.setattr(
         nvt, "_make_transfer", lambda *a, **k: _transfer(fake, tmp_path)
     )
@@ -1556,6 +1567,86 @@ def test_cli_offers_to_replace_rejected_saved_keys(monkeypatch, interactive, tmp
     assert calls == ["saved", "new"]
 
 
+@pytest.mark.usefixtures("cli_preflight")
+def test_cli_prompts_for_new_keys_with_the_progress_bar_closed(
+    monkeypatch, interactive, tmp_path
+):
+    import contextlib
+
+    bar_open = []
+    prompted_while_open = []
+
+    @contextlib.contextmanager
+    def fake_bar():
+        bar_open.append(True)
+        try:
+            yield type("Bar", (), {"console": None})()
+        finally:
+            bar_open.pop()
+
+    def prompt():
+        prompted_while_open.append(bool(bar_open))
+        return ("new", "secret")
+
+    calls = []
+
+    def transfer(volume, source, target, **kwargs):
+        calls.append(kwargs["access_key"])
+        if len(calls) == 1:
+            raise nvt.RejectedS3Keys("rejected the keys")
+        return {"files_transferred": 1, "files_skipped": 0, "bytes_transferred": 1}
+
+    monkeypatch.delenv(nvt.ACCESS_KEY_ENV, raising=False)
+    monkeypatch.delenv(nvt.SECRET_KEY_ENV, raising=False)
+    monkeypatch.setattr(nvt, "saved_s3_keys", lambda: ("saved", "old"))
+    monkeypatch.setattr("runpod.rp_cli.volume._progress_bar", fake_bar)
+    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", prompt)
+    with patch.object(
+        runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer
+    ):
+        result = CliRunner().invoke(
+            _cli(), ["volume", "upload", "vol", str(tmp_path)], input="y\n"
+        )
+    assert result.exit_code == 0, result.output
+    assert calls == ["saved", "new"]
+    assert prompted_while_open == [False]
+
+
+def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
+    resolved = []
+    built = []
+
+    def resolve(reference):
+        resolved.append(reference)
+        return "vol123", "EU-RO-1"
+
+    def make(volume, *args, location=None, **kwargs):
+        built.append(location)
+        return type(
+            "T",
+            (),
+            {
+                "upload": lambda self, l, r: {
+                    "files_transferred": 1,
+                    "files_skipped": 0,
+                    "bytes_transferred": 1,
+                }
+            },
+        )()
+
+    monkeypatch.setattr(nvt, "_resolve_volume", resolve)
+    monkeypatch.setattr(nvt, "_check_endpoint", lambda endpoint, datacenter: None)
+    monkeypatch.setattr(nvt, "_make_transfer", make)
+    result = CliRunner().invoke(
+        _cli(),
+        ["volume", "upload", "models", str(tmp_path), "--s3-access-key", "a",
+         "--s3-secret-key", "b"],
+    )
+    assert result.exit_code == 0, result.output
+    assert resolved == ["models"]
+    assert built == [("vol123", "EU-RO-1", "https://s3api-eu-ro-1.runpod.io/")]
+
+
 def test_set_s3_keys_keeps_the_api_key_and_login_keeps_the_s3_keys(
     monkeypatch, tmp_path
 ):
@@ -1761,7 +1852,9 @@ def test_download_refuses_a_symlinked_subfolder(tmp_path):
 def test_state_writes_sync_the_folder(tmp_path, monkeypatch):
     real_sync_dir = nvt._sync_dir
     synced = []
-    monkeypatch.setattr(nvt, "_sync_dir", synced.append)
+    monkeypatch.setattr(
+        "runpod._volume_transfer_utils._sync_dir", synced.append
+    )
     nvt._write_json(tmp_path / "s" / "state.json", {"a": 1})
     assert synced == [tmp_path / "s"]
     real_sync_dir(tmp_path / "s")

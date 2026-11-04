@@ -76,6 +76,7 @@ class NetworkVolume(Volume):
         self.size = size
         self.datacenter = datacenter
         self.create = create
+        self._s3_located: Optional[Tuple[Optional[str], Tuple[str, str, str]]] = None
 
     @property
     def name(self) -> str:
@@ -83,6 +84,15 @@ class NetworkVolume(Volume):
 
     def __repr__(self) -> str:
         return f"<NetworkVolume {self.name!r} size={self.size}GB>"
+
+    def _s3_location(self, endpoint_url: Optional[str] = None) -> Tuple[str, str, str]:
+        """the volume's id, datacenter, and s3 endpoint, looked up once per
+        instance and endpoint override."""
+        if self._s3_located is None or self._s3_located[0] != endpoint_url:
+            from runpod import network_volume_transfer as nvt
+
+            self._s3_located = (endpoint_url, nvt._locate(self.reference, endpoint_url))
+        return self._s3_located[1]
 
     def upload(
         self,
@@ -108,9 +118,7 @@ class NetworkVolume(Volume):
 
         s3 keys come from the arguments, RUNPOD_S3_ACCESS_KEY and
         RUNPOD_S3_SECRET_KEY, or the saved s3_access_key/s3_secret_key in
-        ~/.runpod/config.toml. the CLI prompts for missing keys and can pick
-        a volume from a list when VOLUME is omitted.
-        `progress(event, path, nbytes)` receives
+        ~/.runpod/config.toml. `progress(event, path, nbytes)` receives
         "start", "advance", "reuse", "skip", and "done" events.
 
         returns {files_transferred, files_skipped, bytes_transferred}.
@@ -118,7 +126,14 @@ class NetworkVolume(Volume):
         from runpod import network_volume_transfer as nvt
 
         transfer = nvt._make_transfer(
-            self.reference, access_key, secret_key, endpoint_url, concurrency, progress, force
+            self.reference,
+            access_key,
+            secret_key,
+            endpoint_url,
+            concurrency,
+            progress,
+            force,
+            location=self._s3_location(endpoint_url),
         )
         return transfer.upload(Path(local_path), remote_path)
 
@@ -148,7 +163,14 @@ class NetworkVolume(Volume):
         from runpod import network_volume_transfer as nvt
 
         transfer = nvt._make_transfer(
-            self.reference, access_key, secret_key, endpoint_url, concurrency, progress, force
+            self.reference,
+            access_key,
+            secret_key,
+            endpoint_url,
+            concurrency,
+            progress,
+            force,
+            location=self._s3_location(endpoint_url),
         )
         # passed through as given: Path() would drop a trailing "/"
         return transfer.download(remote_path, local_path)

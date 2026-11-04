@@ -1,7 +1,7 @@
 """Filesystem and checksum helpers for resumable transfers.
 
 This private module keeps disk state and path safety details out of the S3
-request orchestration. The public error type remains in network_volume_transfer.
+request orchestration. network_volume_transfer re-exports the error type.
 """
 
 import hashlib
@@ -9,9 +9,21 @@ import json
 import os
 import unicodedata
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 MIB = 1024 * 1024
+PARTIAL_SUFFIX = ".rpdownload"
+SIDECAR_SUFFIX = ".rpdownload.json"
+# every file a download writes next to its target
+TRANSFER_SUFFIXES = (PARTIAL_SUFFIX, SIDECAR_SUFFIX, SIDECAR_SUFFIX + ".tmp")
+
+
+class NetworkVolumeTransferError(RuntimeError):
+    """a transfer failed. `resumable` says whether re-running can help."""
+
+    def __init__(self, message: str, resumable: bool = False):
+        super().__init__(message)
+        self.resumable = resumable
 
 
 def _read_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -22,9 +34,7 @@ def _read_json(path: Path) -> Optional[Dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
-def _write_json(
-    path: Path, data: Dict[str, Any], sync_dir: Callable[[Path], None]
-) -> None:
+def _write_json(path: Path, data: Dict[str, Any]) -> None:
     """replace path atomically, synced, so a crash leaves the old state or
     the new one."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -34,7 +44,7 @@ def _write_json(
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(tmp, path)
-    sync_dir(path.parent)
+    _sync_dir(path.parent)
 
 
 def _sync_dir(path: Path) -> None:
@@ -47,6 +57,7 @@ def _sync_dir(path: Path) -> None:
     try:
         os.fsync(fd)
     except OSError:
+        # some filesystems refuse fsync on a directory; the rename stands
         pass
     finally:
         os.close(fd)
@@ -95,12 +106,7 @@ def _check_remote_path(remote_path: Optional[str]) -> None:
         raise ValueError(f"remote path {remote_path!r} must not contain '..'")
 
 
-def _check_local_names(
-    targets: List[Path],
-    root: Path,
-    suffixes: Tuple[str, ...],
-    error_type: type[Exception],
-) -> None:
+def _check_local_names(targets: List[Path], root: Path) -> None:
     """refuse targets that would share a path on disk: two that are one name
     on a case-insensitive or normalizing filesystem ("Model.bin" and
     "model.bin"), a file whose name is also a folder another file lives in
@@ -118,7 +124,7 @@ def _check_local_names(
     dirs: Dict[str, PurePosixPath] = {}
     for rel in rels:
         if fold(rel) in files:
-            raise error_type(
+            raise NetworkVolumeTransferError(
                 f"cannot download both {files[fold(rel)]} and {rel}: they would be one "
                 "file on a case-insensitive or normalizing filesystem"
             )
@@ -126,21 +132,21 @@ def _check_local_names(
         dirs.update({fold(parent): rel for parent in rel.parents if str(parent) != "."})
     for rel in rels:
         if fold(rel) in dirs:
-            raise error_type(
+            raise NetworkVolumeTransferError(
                 f"cannot download both {rel} and {dirs[fold(rel)]}: "
                 "the first would have to be a file and a folder"
             )
-        for suffix in suffixes:
+        for suffix in TRANSFER_SUFFIXES:
             twin = fold(rel.with_name(rel.name + suffix))
             other = files.get(twin) or dirs.get(twin)
             if other is not None:
-                raise error_type(
+                raise NetworkVolumeTransferError(
                     f"cannot download both {rel} and {other}: "
                     f"{rel.name + suffix} is used for the first's partial download"
                 )
 
 
-def _safe_target(root: Path, rel: str, error_type: type[Exception]) -> Path:
+def _safe_target(root: Path, rel: str) -> Path:
     """local path for a remote relative key, refusing anything outside root.
     "." and empty segments are refused too: "a/./b" would alias "a/b"."""
     segments = rel.split("/")
@@ -150,15 +156,15 @@ def _safe_target(root: Path, rel: str, error_type: type[Exception]) -> Path:
         or any(seg in ("..", ".", "") for seg in segments)
         or ":" in segments[0]
     ):
-        raise error_type(f"refusing unsafe remote path: {rel!r}")
+        raise NetworkVolumeTransferError(f"refusing unsafe remote path: {rel!r}")
     target = root.joinpath(*segments)
     if root.resolve() not in target.resolve().parents:
-        raise error_type(f"refusing unsafe remote path: {rel!r}")
+        raise NetworkVolumeTransferError(f"refusing unsafe remote path: {rel!r}")
     # a symlinked folder would let two remote paths share one local file,
     # which the name collision check cannot see
     for depth in range(1, len(segments)):
         if root.joinpath(*segments[:depth]).is_symlink():
-            raise error_type(
+            raise NetworkVolumeTransferError(
                 f"{root.joinpath(*segments[:depth])} is a symlink; "
                 "download into a folder without symlinked subfolders"
             )

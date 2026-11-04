@@ -375,45 +375,64 @@ def _progress_bar():
     )
 
 
-def _invoke_transfer(transfer_method, source, target, opts, progress):
-    """run the transfer, turning failures into cli errors with a resume hint
-    when re-running would resume."""
-    from runpod import network_volume_transfer as nvt
+def _cli_error(exc: Exception) -> click.ClickException:
+    """a transfer failure as a cli error, with a resume hint when re-running
+    would resume."""
+    import runpod.network_volume_transfer as nvt
+
+    hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
+    return click.ClickException(f"{exc}{hint}")
+
+
+def _invoke_transfer(transfer_method, source, target, opts, progress, retry_keys):
+    """run the transfer, turning failures into cli errors. a rejection of
+    saved keys propagates when `retry_keys`, so the caller can prompt."""
+    import runpod.network_volume_transfer as nvt
 
     try:
-        for attempt in range(2):
-            try:
-                return transfer_method(
-                    source,
-                    target,
-                    access_key=opts["s3_access_key"],
-                    secret_key=opts["s3_secret_key"],
-                    endpoint_url=opts["endpoint_url"],
-                    concurrency=opts["concurrency"],
-                    progress=progress,
-                    force=opts["force"],
-                )
-            except nvt.RejectedS3Keys:
-                if not opts.get("_saved_keys") or attempt or not _interactive():
-                    raise
-                if not click.confirm(
-                    "saved s3 keys were rejected. enter a new pair?", default=True
-                ):
-                    raise
-                opts["s3_access_key"], opts["s3_secret_key"] = _prompt_s3_keys()
+        return transfer_method(
+            source,
+            target,
+            access_key=opts["s3_access_key"],
+            secret_key=opts["s3_secret_key"],
+            endpoint_url=opts["endpoint_url"],
+            concurrency=opts["concurrency"],
+            progress=progress,
+            force=opts["force"],
+        )
     except KeyboardInterrupt:
         click.echo("interrupted; re-run the same command to resume", err=True)
-        sys.exit(130)
+        raise SystemExit(130) from None
     except Exception as exc:  # noqa: BLE001 - surface transfer errors cleanly
-        hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
-        raise click.ClickException(f"{exc}{hint}") from exc
+        if retry_keys and isinstance(exc, nvt.RejectedS3Keys):
+            raise
+        raise _cli_error(exc) from exc
 
 
 def _run_transfer(action_label, transfer_method, source, target, opts) -> None:
-    with _progress_bar() as bar:
-        summary = _invoke_transfer(
-            transfer_method, source, target, opts, _ProgressRenderer(bar, action_label)
-        )
+    import runpod.network_volume_transfer as nvt
+
+    retry_keys = bool(opts.get("_saved_keys")) and _interactive()
+    while True:
+        try:
+            with _progress_bar() as bar:
+                summary = _invoke_transfer(
+                    transfer_method,
+                    source,
+                    target,
+                    opts,
+                    _ProgressRenderer(bar, action_label),
+                    retry_keys,
+                )
+            break
+        except nvt.RejectedS3Keys as exc:
+            # the bar is closed here, so the prompts draw cleanly
+            retry_keys = False
+            if not click.confirm(
+                "saved s3 keys were rejected. enter a new pair?", default=True
+            ):
+                raise _cli_error(exc) from exc
+            opts["s3_access_key"], opts["s3_secret_key"] = _prompt_s3_keys()
     click.echo(
         f"{action_label} {summary['files_transferred']} file(s), "
         f"{summary['bytes_transferred']} bytes; "
@@ -429,7 +448,7 @@ def _ensure_logged_in(ctx) -> None:
     """offer the browser login when no api key is set; the volume lookup
     needs one."""
     import runpod
-    from runpod import network_volume_transfer as nvt
+    import runpod.network_volume_transfer as nvt
     from runpod.cli.groups.config.functions import get_credentials
     from runpod.rp_cli.main import login
 
@@ -447,7 +466,7 @@ def _ensure_logged_in(ctx) -> None:
 
 def _pick_volume() -> str:
     """let the user choose one of their network volumes by number."""
-    from runpod import network_volume_transfer as nvt
+    import runpod.network_volume_transfer as nvt
 
     if not _interactive():
         raise click.UsageError("pass VOLUME first (a network volume id or name)")
@@ -469,7 +488,7 @@ def _pick_volume() -> str:
 
 
 def _missing_keys_message() -> str:
-    from runpod import network_volume_transfer as nvt
+    import runpod.network_volume_transfer as nvt
 
     return (
         "s3 api keys required (separate from your api key): set "
@@ -481,7 +500,7 @@ def _missing_keys_message() -> str:
 def _prompt_s3_keys():
     """ask for the s3 keys, offering to save them for next time."""
     import runpod
-    from runpod import network_volume_transfer as nvt
+    import runpod.network_volume_transfer as nvt
     from runpod.cli.groups.config.functions import set_s3_keys
 
     if not _interactive():
@@ -500,7 +519,7 @@ def _prompt_s3_keys():
 def _ensure_s3_keys(opts) -> None:
     """fill in the s3 keys from the flags, the environment, or the saved
     config, prompting for them when none are set."""
-    from runpod import network_volume_transfer as nvt
+    import runpod.network_volume_transfer as nvt
 
     explicit = bool(opts["s3_access_key"] and opts["s3_secret_key"])
     env = bool(
@@ -524,20 +543,17 @@ def _split_args(args, second: str, third: str):
 def _transfer(ctx, action_label, method_name, reference, source, target, opts) -> None:
     """the checks every transfer needs, in order: login, volume, s3 keys."""
     from runpod.apps import NetworkVolume
-    from runpod import network_volume_transfer as nvt
+    import runpod.network_volume_transfer as nvt
 
     _ensure_logged_in(ctx)
-    reference = reference or _pick_volume()
+    target_volume = NetworkVolume(reference or _pick_volume(), create=False)
     try:
-        _, datacenter = nvt._resolve_volume(reference)
-        if not opts["endpoint_url"]:
-            nvt._check_endpoint(
-                f"https://s3api-{datacenter.lower()}.runpod.io/", datacenter
-            )
+        # the volume caches this lookup, so the transfer does not repeat it
+        target_volume._s3_location(opts["endpoint_url"])
     except nvt.NetworkVolumeTransferError as exc:
         raise click.ClickException(str(exc)) from exc
     _ensure_s3_keys(opts)
-    method = getattr(NetworkVolume(reference, create=False), method_name)
+    method = getattr(target_volume, method_name)
     _run_transfer(action_label, method, source, target, opts)
 
 
