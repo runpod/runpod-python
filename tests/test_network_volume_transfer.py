@@ -1641,6 +1641,22 @@ def test_cli_rejects_a_blank_volume_cleanly(tmp_path):
     assert "non-empty" in result.output
 
 
+def test_network_volume_caches_one_location_per_endpoint(monkeypatch):
+    located = []
+
+    def locate(reference, endpoint_url=None):
+        located.append(endpoint_url)
+        return ("vol123", "EU-RO-1", endpoint_url or "https://default/")
+
+    monkeypatch.setattr(nvt, "_locate", locate)
+    volume = runpod.NetworkVolume("models", create=False)
+    assert volume._s3_location("https://a/")[2] == "https://a/"
+    assert volume._s3_location("https://b/")[2] == "https://b/"
+    assert volume._s3_location("https://a/")[2] == "https://a/"
+    assert volume._s3_location()[2] == "https://default/"
+    assert located == ["https://a/", "https://b/", None]
+
+
 def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
     resolved = []
     built = []

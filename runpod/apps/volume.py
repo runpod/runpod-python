@@ -76,7 +76,7 @@ class NetworkVolume(Volume):
         self.size = size
         self.datacenter = datacenter
         self.create = create
-        self._s3_located: Optional[Tuple[Optional[str], Tuple[str, str, str]]] = None
+        self._s3_locations: Dict[Optional[str], Tuple[str, str, str]] = {}
 
     @property
     def name(self) -> str:
@@ -87,12 +87,15 @@ class NetworkVolume(Volume):
 
     def _s3_location(self, endpoint_url: Optional[str] = None) -> Tuple[str, str, str]:
         """the volume's id, datacenter, and s3 endpoint, looked up once per
-        instance and endpoint override."""
-        if self._s3_located is None or self._s3_located[0] != endpoint_url:
+        instance and endpoint override. safe across threads: each call
+        returns the location for its own endpoint_url."""
+        location = self._s3_locations.get(endpoint_url)
+        if location is None:
             from runpod import network_volume_transfer as nvt
 
-            self._s3_located = (endpoint_url, nvt._locate(self.reference, endpoint_url))
-        return self._s3_located[1]
+            location = nvt._locate(self.reference, endpoint_url)
+            self._s3_locations[endpoint_url] = location
+        return location
 
     def upload(
         self,
