@@ -3,7 +3,7 @@ aiohttp-retry >= 2.9.1
 
 backoff >= 2.2.1
 boto3 >= 1.43.118
-certifi >= 2026.10.19
+certifi >= 2026.10.23
 click >= 8.5.0
 colorama >= 0.4.6, < 0.4.7
 cryptography >= 50.0.2
