@@ -9,6 +9,7 @@ api is the only source of truth; nothing is persisted locally.
 import asyncio
 import logging
 import os as _os
+import secrets
 from typing import Dict, List, Optional, Set, Union
 
 from .api import AppsApiClient
@@ -115,8 +116,13 @@ def _endpoint_input(
     generation: int = 1,
     *,
     pool_members: Optional[Dict[str, Set[str]]] = None,
+    template_name: Optional[str] = None,
 ) -> Dict:
-    """build a live endpoint payload with an atomically bound container config."""
+    """build a live endpoint payload with an atomically bound container config.
+
+    template_name names the bound template; without it the api client
+    falls back to the endpoint name.
+    """
 
     spec.validate()
     resource_env = _render_env(spec.env)
@@ -163,6 +169,8 @@ def _endpoint_input(
         },
     }
 
+    if template_name:
+        payload["template"]["name"] = template_name
     if spec.flashboot:
         payload["flashBootType"] = "FLASHBOOT"
 
@@ -223,6 +231,14 @@ class DevSession:
         self._payloads: Dict[str, Dict] = {}
         # volumes resolve once per session (placement is stable)
         self._volume_resolver = None
+        # template names are unique per owner, and a deleted endpoint keeps
+        # its template for a while, so a fixed name collides when the same
+        # app starts again soon after. endpoint names stay fixed for adoption.
+        self._template_token = secrets.token_hex(3)
+
+    def _template_name(self, endpoint_name: str) -> str:
+        """this session's name for an endpoint's bound template."""
+        return f"{endpoint_name}-{self._template_token}"
 
     def _emit(self, event: str, *args) -> None:
         emit(self.events, event, *args)
@@ -287,7 +303,11 @@ class DevSession:
                 if needs_gpu_catalog(spec.gpu):
                     members = await self.api.gpu_pool_members()
                 payload = _endpoint_input(
-                    app, spec, self.generation, pool_members=members or {}
+                    app,
+                    spec,
+                    self.generation,
+                    pool_members=members or {},
+                    template_name=self._template_name(name),
                 )
                 await self._attach_volumes(payload, spec, app)
 
@@ -370,7 +390,11 @@ class DevSession:
             if needs_gpu_catalog(handle.spec.gpu):
                 members = await self.api.gpu_pool_members()
             payload = _endpoint_input(
-                app, handle.spec, self.generation, pool_members=members or {}
+                app,
+                handle.spec,
+                self.generation,
+                pool_members=members or {},
+                template_name=self._template_name(name),
             )
             await self._attach_volumes(payload, handle.spec, app)
 
