@@ -31,6 +31,7 @@ from typing import (
     Type,
 )
 
+from .._serialization import normalize_json
 from .context import Context, block, current_context
 from .discovery_state import DiscoveryInvocationError, in_discovery
 from .errors import InvalidResourceError
@@ -123,6 +124,15 @@ class FunctionHandle:
         return list(result) if inspect.isgenerator(result) else result
 
     @staticmethod
+    def _json_value(value: Any) -> Any:
+        try:
+            return normalize_json(value)
+        except TypeError:
+            raise ValueError(
+                "remote arguments and results must be JSON-serializable"
+            ) from None
+
+    @staticmethod
     async def _await_local_result(result: Any) -> Any:
         if inspect.isawaitable(result):
             result = await result
@@ -139,10 +149,11 @@ class FunctionHandle:
         ):
             self._guard_discovery()
             self.spec.validate()
+            args, kwargs = self._json_value([args, kwargs])
             result = self._call_local_sync(*args, **kwargs)
             if inspect.isawaitable(result) or inspect.isasyncgen(result):
-                return block(self._await_local_result(result))
-            return result
+                result = block(self._await_local_result(result))
+            return self._json_value(result)
         return block(self._remote_async(*args, **kwargs))
 
     async def _remote_async(self, *args: Any, **kwargs: Any) -> Any:
@@ -151,13 +162,14 @@ class FunctionHandle:
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
+            args, kwargs = self._json_value([args, kwargs])
             if inspect.iscoroutinefunction(self._fn) or inspect.isasyncgenfunction(
                 self._fn
             ):
                 result = self._fn(*args, **kwargs)
             else:
                 result = await asyncio.to_thread(self._call_local_sync, *args, **kwargs)
-            return await self._await_local_result(result)
+            return self._json_value(await self._await_local_result(result))
 
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
@@ -172,13 +184,14 @@ class FunctionHandle:
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
+            args, kwargs = self._json_value([args, kwargs])
             gen = self._fn(*args, **kwargs)
             if inspect.isasyncgen(gen):
                 async for chunk in gen:
-                    yield chunk
+                    yield self._json_value(chunk)
             else:
                 for chunk in gen:
-                    yield chunk
+                    yield self._json_value(chunk)
             return
 
         target = await self._app._resolve(self.spec)
@@ -233,6 +246,15 @@ class FunctionHandle:
     def _is_current_worker(self) -> bool:
         import os
 
+        from .context import deployed_identity
+
+        identity = deployed_identity()
+        if identity is not None:
+            return (
+                self.spec.kind is not ResourceKind.TASK
+                and identity[0] == self._app.name
+                and identity[2] == self.spec.name
+            )
         if dev_app := os.getenv("RUNPOD_DEV_APP"):
             return (
                 dev_app == self._app.name
