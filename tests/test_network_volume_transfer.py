@@ -1635,6 +1635,12 @@ def test_cli_reports_a_failed_key_save_cleanly(monkeypatch, interactive, tmp_pat
     assert not isinstance(result.exception, PermissionError)
 
 
+def test_cli_rejects_a_blank_volume_cleanly(tmp_path):
+    result = CliRunner().invoke(_cli(), ["volume", "download", "   ", "f"])
+    assert result.exit_code == 1
+    assert "non-empty" in result.output
+
+
 def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
     resolved = []
     built = []

@@ -548,14 +548,16 @@ def _split_args(args, second: str, third: str):
 def _transfer(ctx, action_label, method_name, reference, source, target, opts) -> None:
     """the checks every transfer needs, in order: login, volume, s3 keys."""
     from runpod.apps import NetworkVolume
+    from runpod.apps.volume import VolumeError
     import runpod.network_volume_transfer as nvt
 
     _ensure_logged_in(ctx)
-    target_volume = NetworkVolume(reference or _pick_volume(), create=False)
+    reference = reference or _pick_volume()
     try:
+        target_volume = NetworkVolume(reference, create=False)
         # the volume caches this lookup, so the transfer does not repeat it
         target_volume._s3_location(opts["endpoint_url"])
-    except nvt.NetworkVolumeTransferError as exc:
+    except (nvt.NetworkVolumeTransferError, VolumeError) as exc:
         raise click.ClickException(str(exc)) from exc
     _ensure_s3_keys(opts)
     method = getattr(target_volume, method_name)
