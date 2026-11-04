@@ -207,6 +207,9 @@ class TestRemoteDispatch:
     def test_worker_executes_own_body(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-1")
         monkeypatch.setenv("FLASH_RESOURCE_NAME", "q")
+        monkeypatch.setenv("FLASH_APP_NAME", "my-app")
+        monkeypatch.setenv("FLASH_ENVIRONMENT", "production")
+        monkeypatch.setenv("RUNPOD_BUILD_ID", "build-1")
         app = App("my-app")
 
         @app.queue(name="q")
@@ -251,6 +254,9 @@ asyncio.run(main())
     def test_worker_calls_sibling_via_sentinel(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "ep-1")
         monkeypatch.setenv("FLASH_RESOURCE_NAME", "other")
+        monkeypatch.setenv("FLASH_APP_NAME", "my-app")
+        monkeypatch.setenv("FLASH_ENVIRONMENT", "production")
+        monkeypatch.setenv("RUNPOD_BUILD_ID", "build-1")
         app = App("my-app")
 
         @app.queue(name="q")
@@ -546,19 +552,29 @@ class TestModuleSourceShipping:
         finally:
             sys.modules.pop("shipmod", None)
 
-    def test_missing_module_on_deserialize_is_actionable(self):
+    def test_pickled_result_is_rejected_without_importing_remote_modules(
+        self, monkeypatch
+    ):
         import base64
+        import builtins
+        import pickle
 
-        import cloudpickle
-        import pytest
-
-        from runpod.apps.errors import RemoteExecutionError
-        from runpod.apps.serialization import deserialize_result
+        from runpod.apps.serialization import unwrap_function_response
 
         class FakePickle:
             def __reduce__(self):
                 return (__import__, ("nonexistent_pkg_xyz",))
 
-        payload = base64.b64encode(cloudpickle.dumps(FakePickle())).decode()
-        with pytest.raises(RemoteExecutionError, match="nonexistent_pkg_xyz"):
-            deserialize_result(payload)
+        payload = base64.b64encode(pickle.dumps(FakePickle())).decode()
+        real_import = builtins.__import__
+        imported = []
+
+        def track_import(name, *args, **kwargs):
+            if name == "nonexistent_pkg_xyz":
+                imported.append(name)
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", track_import)
+        with pytest.raises(RemoteExecutionError, match="must use json_result"):
+            unwrap_function_response({"success": True, "result": payload})
+        assert imported == []

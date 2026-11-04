@@ -15,12 +15,10 @@ import aiohttp
 from yarl import URL
 
 from runpod import error
-from runpod.api._rate_limit import _RetryBudget, rate_limits
 from runpod.api.rest import (
-    _build_headers,
     _build_url,
+    _open_rest_response_async,
     _raise_for_status,
-    _resolve_api_key,
 )
 
 _SANDBOX_PATH = "/v2/sandboxes"
@@ -329,29 +327,25 @@ class AsyncSandboxAPI:
         headers: Mapping[str, str] | None = None,
         timeout: aiohttp.ClientTimeout | None = None,
     ) -> aiohttp.ClientResponse:
-        key = _resolve_api_key(self.api_key)
-        url = self._url(path, params)
-        budget = _RetryBudget(0, self.request_timeout, f"{method} {path}")
-        with rate_limits.bucket(str(url), key) as bucket:
-            async with bucket.reserve_async(budget) as started_at:
-                response = await self._get_session().request(
-                    method,
-                    url,
-                    headers={**_build_headers(key), **(headers or {})},
-                    json=body,
-                    timeout=timeout
-                    or aiohttp.ClientTimeout(total=self.request_timeout),
-                    allow_redirects=False,
-                )
-                try:
-                    retry_after = bucket.update(
-                        response.status, response.headers, 0, started_at=started_at
-                    )
-                    await _raise_response_error(response, method, path, retry_after)
-                except BaseException:
-                    response.close()
-                    raise
-                return response
+        response, retry_after = await _open_rest_response_async(
+            method,
+            path,
+            session=self._get_session(),
+            api_key=self.api_key,
+            url=self._url(path, params),
+            json=body,
+            headers=headers,
+            timeout=timeout or aiohttp.ClientTimeout(total=self.request_timeout),
+            max_retries=0,
+            max_rate_limit_wait=self.request_timeout,
+            allow_redirects=False,
+        )
+        try:
+            await _raise_response_error(response, method, path, retry_after)
+        except BaseException:
+            response.close()
+            raise
+        return response
 
     async def _request(
         self,

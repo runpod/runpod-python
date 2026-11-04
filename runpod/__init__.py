@@ -56,6 +56,7 @@ _LAZY_ATTRS = {
     "Model": "runpod.apps",
     "NetworkVolume": "runpod.apps",
     "Queue": "runpod.apps",
+    "Task": "runpod.apps",
     "Secret": "runpod.apps",
     "Volume": "runpod.apps",
     "is_local": "runpod.apps",

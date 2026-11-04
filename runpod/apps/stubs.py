@@ -9,8 +9,10 @@ you the same invocation surface as a local handle:
     external_api = runpod.Api(app="other-app", name="inference")
     external_api.post("/generate", {"prompt": "hi"})
 
-resolution goes through the same server-side sentinel path as deployed
-handles, so a stub is just a handle without a function body.
+queue and api stubs resolve through the sentinel; task stubs use the
+named task api. local clients use account credentials, subject to their
+permissions. deployed workers use runtime credentials and can target
+only their own app and environment, including when using stubs.
 """
 
 import os
@@ -121,6 +123,33 @@ class Queue(_StubBase):
     def __repr__(self) -> str:
         ref = self.resource_name or self.resource_id
         return f"<Queue stub {self.app_name}/{ref}>"
+
+
+class Task(_StubBase):
+    """client for an approved task deployed in a flash environment."""
+
+    def __init__(self, *, app: str, name: str, env: Optional[str] = None):
+        super().__init__(app=app, name=name, env=env)
+        if not app or not name:
+            raise ValueError("task app and name must be non-empty")
+        self.remote = Invoker(self._remote_async)
+        self.spawn = Invoker(self._spawn_async)
+
+    def _target(self):
+        from .targets import DeployedTaskTarget
+
+        return DeployedTaskTarget(self.app_name, self.env, self.resource_name)
+
+    async def _remote_async(self, *args: Any, **kwargs: Any) -> Any:
+        target = self._target()
+        return await target.invoke(target.build_payload(None, None, args, kwargs))
+
+    async def _spawn_async(self, *args: Any, **kwargs: Any) -> Any:
+        target = self._target()
+        return await target.submit(target.build_payload(None, None, args, kwargs))
+
+    def __repr__(self):
+        return f"<Task stub {self.app_name}/{self.resource_name}>"
 
 
 class _StubRouteCaller:

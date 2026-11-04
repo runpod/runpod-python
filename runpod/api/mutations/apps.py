@@ -92,6 +92,12 @@ mutation FinalizeArtifactUpload($input: FinalizeFlashArtifactUploadInput!) {
 }
 """
 
+MUTATION_FINALIZE_TASK_ARTIFACT_UPLOAD = """
+mutation FinalizeArtifactUpload($input: FinalizeFlashArtifactUploadInput!) {
+    finalizeFlashArtifactUpload(input: $input) { id manifest resourceSpec }
+}
+"""
+
 MUTATION_DEPLOY_BUILD = """
 mutation deployBuildToEnvironment($input: DeployBuildToEnvironmentInput!) {
     deployBuildToEnvironment(input: $input) { id name }

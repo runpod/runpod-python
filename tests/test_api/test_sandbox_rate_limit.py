@@ -16,7 +16,8 @@ from tests.test_sandbox import sandbox_peer
 
 @pytest.fixture
 def peer(monkeypatch):
-    assert rest.rate_limits is sandboxes.rate_limits is rate_limits
+    assert rest.rate_limits is rate_limits
+    assert sandboxes._open_rest_response_async is rest._open_rest_response_async
     monkeypatch.setattr(rate_limits, "buckets", {})
     with sandbox_peer() as service:
         monkeypatch.setenv("RUNPOD_API_BASE_URL", service.options["base_url"])

@@ -3,9 +3,9 @@
 import asyncio
 import base64
 import json
+import pickle
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import cloudpickle
 import pytest
 
 from runpod.apps import App
@@ -29,14 +29,6 @@ def clean_registry():
     _clear_registry()
     yield
     _clear_registry()
-
-
-def _b64(value):
-    return base64.b64encode(cloudpickle.dumps(value)).decode("utf-8")
-
-
-def _unb64(value):
-    return cloudpickle.loads(base64.b64decode(value))
 
 
 class TestPodInput:
@@ -113,8 +105,10 @@ class TestPodInput:
 
 
 class TestUnwrapTaskResponse:
-    def test_success_cloudpickle(self):
-        assert unwrap_task_response({"success": True, "result": _b64(42)}) == 42
+    def test_pickled_result_is_rejected(self):
+        payload = base64.b64encode(pickle.dumps(42)).decode("utf-8")
+        with pytest.raises(RemoteExecutionError, match="must use json_result"):
+            unwrap_task_response({"success": True, "result": payload})
 
     def test_success_json(self):
         assert unwrap_task_response({"success": True, "json_result": {"a": 1}}) == {
@@ -138,7 +132,8 @@ class TestPodTargetPayload:
         payload = target.build_payload(t._fn, t.spec, (5,), {})
         assert payload["function_name"] == "t"
         assert "def t(x):" in payload["function_code"]
-        assert _unb64(payload["args"][0]) == 5
+        assert payload["args"] == [5]
+        assert payload["serialization_format"] == "json"
         assert payload["dependencies"] == ["numpy"]
 
     def test_task_remote_runs_past_one_hour_and_cleans_up(self):
@@ -159,7 +154,7 @@ class TestPodTargetPayload:
             if clock[0] == 0:
                 clock[0] = 7200.0
                 return None
-            return {"success": True, "result": _b64(10)}
+            return {"success": True, "json_result": 10}
 
         async def delete(pod_id):
             pods.remove(pod_id)

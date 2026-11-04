@@ -50,7 +50,6 @@ RUNTIME_REQUIREMENTS = (
     "aiohttp[speedups]",
     "aiohttp-retry",
     "backoff",
-    "cloudpickle",
     "py-cpuinfo",
     "requests",
     "tomli",
