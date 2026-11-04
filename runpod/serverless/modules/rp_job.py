@@ -238,6 +238,7 @@ async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dic
 
     # Send the job result back to JOB_DONE_URL
     await send_result(session, job_result, job, is_stream=is_stream)
+    return job_result
 
 
 async def run_job(handler: Callable, job: Dict[str, Any]) -> Dict[str, Any]:
