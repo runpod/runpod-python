@@ -1740,6 +1740,21 @@ def test_ctrl_c_stops_botocore_retries(monkeypatch):
         thread.join()
 
 
+def test_full_volume_is_not_reported_as_rejected_keys(tmp_path):
+    fake = FakeS3()
+    src = tmp_path / "big.bin"
+    src.write_bytes(b"x" * (nvt.SINGLE_PUT_MAX + 1))
+
+    def full(**kwargs):
+        raise _client_error("QuotaExceeded", 403, "CompleteMultipartUpload")
+
+    fake.complete_multipart_upload = full
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="volume is full") as info:
+        _transfer(fake, tmp_path).upload(src, None)
+    assert not isinstance(info.value, nvt.RejectedS3Keys)
+    assert "rp volume expand" in str(info.value)
+
+
 def test_body_reads_hold_a_request_slot(tmp_path):
     fake = FakeS3()
     fake.put("big.bin", DATA)

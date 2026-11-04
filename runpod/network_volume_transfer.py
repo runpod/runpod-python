@@ -113,9 +113,17 @@ def _transient(code: str, status: int) -> bool:
     )
 
 
-def _keys_rejected(exc: BaseException) -> Optional[NetworkVolumeTransferError]:
-    """the error to raise when s3 refused the keys, or None."""
+def _explained(exc: BaseException) -> Optional[NetworkVolumeTransferError]:
+    """a clearer error for a full volume or refused keys, or None."""
     code, status = _error(exc)
+    if code == "QuotaExceeded":
+        # runpod answers 403, but the keys are fine: the volume is full
+        return NetworkVolumeTransferError(
+            "the network volume is full. a multipart upload's parts and the "
+            "assembled file both count toward its size until the upload "
+            "completes. expand it (`rp volume expand`) and re-run to resume: "
+            f"{exc}"
+        )
     if status not in (401, 403) and code not in _REJECTED_KEY_CODES:
         return None
     return RejectedS3Keys(
@@ -227,10 +235,10 @@ class _Transfer:
             try:
                 return work()
             except Exception as exc:
-                rejected = _keys_rejected(exc)
-                if rejected is None:
+                explained = _explained(exc)
+                if explained is None:
                     raise
-                raise rejected from exc
+                raise explained from exc
 
     def _body(self, data: bytes) -> "_StoppableBody":
         """a request body that ends the upload once ctrl-c sets the stop flag,
