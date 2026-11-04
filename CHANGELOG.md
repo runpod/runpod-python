@@ -15,6 +15,19 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.1.0](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.1.0) (2026-11-03)
+
+
+### Features
+
+* rp login prompts for the api key instead of polling ([#675](https://github.com/runpod/runpod-python/issues/675)) ([2217b6d](https://github.com/runpod/runpod-python/commit/2217b6d15a0554e2652506068f438d740392ad37))
+
+
+### Bug Fixes
+
+* coordinate REST API rate limits and bound retries ([#618](https://github.com/runpod/runpod-python/issues/618)) ([d6ce9a8](https://github.com/runpod/runpod-python/commit/d6ce9a8c572ac117f0641846f45dadaa40954e57))
+* require https for documented cli installation ([#674](https://github.com/runpod/runpod-python/issues/674)) ([946afb4](https://github.com/runpod/runpod-python/commit/946afb4ea45ac526c81106783faeac73caf17ee6))
+
 ## [2.1.0](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.1.0) (2026-10-28)
 
 
