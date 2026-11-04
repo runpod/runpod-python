@@ -1895,11 +1895,11 @@ def test_download_refuses_a_symlinked_subfolder(tmp_path):
 
 
 def test_state_writes_sync_the_folder(tmp_path, monkeypatch):
-    real_sync_dir = nvt._sync_dir
+    from runpod import _volume_transfer_utils as utils
+
+    real_sync_dir = utils._sync_dir
     synced = []
-    monkeypatch.setattr(
-        "runpod._volume_transfer_utils._sync_dir", synced.append
-    )
+    monkeypatch.setattr(utils, "_sync_dir", synced.append)
     nvt._write_json(tmp_path / "s" / "state.json", {"a": 1})
     assert synced == [tmp_path / "s"]
     real_sync_dir(tmp_path / "s")

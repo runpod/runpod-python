@@ -45,7 +45,6 @@ from ._volume_transfer_utils import (  # noqa: F401 - re-exported names
     _read_json,
     _safe_target,
     _same_version,
-    _sync_dir,
     _write_json,
 )
 
