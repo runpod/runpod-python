@@ -119,9 +119,9 @@ def _explained(exc: BaseException) -> Optional[NetworkVolumeTransferError]:
     if code == "QuotaExceeded":
         # runpod answers 403, but the keys are fine: the volume is full
         return NetworkVolumeTransferError(
-            "the network volume is full. a multipart upload's parts and the "
-            "assembled file both count toward its size until the upload "
-            "completes. expand it (`rp volume expand`) and re-run to resume: "
+            "the network volume is full (parts of an unfinished multipart "
+            "upload count toward its size too). expand it with "
+            "`rp volume expand <volume> --size +N` and re-run to resume: "
             f"{exc}"
         )
     if status not in (401, 403) and code not in _REJECTED_KEY_CODES:
