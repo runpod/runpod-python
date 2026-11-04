@@ -159,6 +159,9 @@ def is_resumable(exc: BaseException) -> bool:
     return code == "NoSuchUpload" or status == 416 or _transient(code, status)
 
 
+# requests that still go out after ctrl-c
+_CLEANUP_OPERATIONS = (".DeleteObject", ".AbortMultipartUpload")
+
 # the summary counter each progress event advances
 _SUMMARY_FIELDS = {
     "advance": "bytes_transferred",
@@ -243,6 +246,13 @@ class _Transfer:
         stop check, so it still runs after ctrl-c."""
         with self._slots:
             return self._client_call(method, **kwargs)
+
+    def _stop_before_send(self, event_name: str = "", **_kwargs: Any) -> None:
+        """botocore's before-send hook: once ctrl-c sets the stop flag, the
+        next attempt of a retried request raises instead of going out.
+        cleanup requests still run."""
+        if self._stop.is_set() and not event_name.endswith(_CLEANUP_OPERATIONS):
+            raise NetworkVolumeTransferError("interrupted", resumable=True)
 
     def _run(self, tasks: List[Callable[[], Any]]) -> List[Any]:
         """run tasks in parallel; the first failure cancels the ones not started."""
@@ -957,4 +967,5 @@ def _make_transfer(
     transfer = _Transfer(
         client, volume_id, endpoint, concurrency, progress, force=force
     )
+    client.meta.events.register("before-send.s3", transfer._stop_before_send)
     return transfer

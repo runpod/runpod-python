@@ -1688,6 +1688,54 @@ def test_rejected_keys_say_so_and_do_not_resume(tmp_path, code, status):
     assert "~/.runpod/config.toml" in str(info.value)
 
 
+def test_ctrl_c_stops_botocore_retries(monkeypatch):
+    import http.server
+    import threading
+
+    hits = []
+    transfer_box = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - http.server naming
+            hits.append(self.path)
+            # ctrl-c lands while the first attempt is failing
+            transfer_box[0]._stop.set()
+            self.send_response(503)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def do_DELETE(self):  # noqa: N802 - http.server naming
+            hits.append(self.path)
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "a")
+        monkeypatch.setenv(nvt.SECRET_KEY_ENV, "b")
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        transfer = nvt._make_transfer(
+            "vol", None, None, endpoint, 1, None, location=("vol", "EU-RO-1", endpoint)
+        )
+        transfer_box.append(transfer)
+        with pytest.raises(nvt.NetworkVolumeTransferError, match="interrupted"):
+            transfer.client.list_objects_v2(Bucket="vol")
+        assert len(hits) == 1
+        # cleanup still goes out after ctrl-c
+        hits.clear()
+        transfer.client.delete_object(Bucket="vol", Key="k")
+        assert len(hits) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
 def test_body_reads_hold_a_request_slot(tmp_path):
     fake = FakeS3()
     fake.put("big.bin", DATA)
