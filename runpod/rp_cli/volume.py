@@ -432,7 +432,12 @@ def _run_transfer(action_label, transfer_method, source, target, opts) -> None:
                 "saved s3 keys were rejected. enter a new pair?", default=True
             ):
                 raise _cli_error(exc) from exc
-            opts["s3_access_key"], opts["s3_secret_key"] = _prompt_s3_keys()
+            try:
+                opts["s3_access_key"], opts["s3_secret_key"] = _prompt_s3_keys()
+            except (click.ClickException, click.Abort):
+                raise
+            except Exception as save_exc:  # noqa: BLE001 - saving can fail
+                raise _cli_error(save_exc) from save_exc
     click.echo(
         f"{action_label} {summary['files_transferred']} file(s), "
         f"{summary['bytes_transferred']} bytes; "

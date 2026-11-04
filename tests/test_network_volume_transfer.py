@@ -1612,6 +1612,29 @@ def test_cli_prompts_for_new_keys_with_the_progress_bar_closed(
     assert prompted_while_open == [False]
 
 
+@pytest.mark.usefixtures("cli_preflight")
+def test_cli_reports_a_failed_key_save_cleanly(monkeypatch, interactive, tmp_path):
+    def transfer(volume, source, target, **kwargs):
+        raise nvt.RejectedS3Keys("rejected the keys")
+
+    def unsaved():
+        raise PermissionError("config is read-only")
+
+    monkeypatch.delenv(nvt.ACCESS_KEY_ENV, raising=False)
+    monkeypatch.delenv(nvt.SECRET_KEY_ENV, raising=False)
+    monkeypatch.setattr(nvt, "saved_s3_keys", lambda: ("saved", "old"))
+    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", unsaved)
+    with patch.object(
+        runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer
+    ):
+        result = CliRunner().invoke(
+            _cli(), ["volume", "upload", "vol", str(tmp_path)], input="y\n"
+        )
+    assert result.exit_code == 1
+    assert "config is read-only" in result.output
+    assert not isinstance(result.exception, PermissionError)
+
+
 def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
     resolved = []
     built = []
