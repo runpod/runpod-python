@@ -380,7 +380,14 @@ def _cli_error(exc: Exception) -> click.ClickException:
     would resume."""
     import runpod.network_volume_transfer as nvt
 
+    from botocore.exceptions import EndpointConnectionError
+
     hint = "\nre-run the same command to resume" if nvt.is_resumable(exc) else ""
+    if isinstance(exc, EndpointConnectionError):
+        hint += (
+            "\nif the volume's datacenter does not support the s3 api yet, "
+            f"see {nvt.S3_DOCS_URL}"
+        )
     return click.ClickException(f"{exc}{hint}")
 
 

@@ -9,8 +9,9 @@ file under ~/.runpod/transfers, so re-running an interrupted upload sends
 only the parts the server does not already hold. downloads fetch 64 MiB
 ranges into `<dest>.rpdownload`, recording finished ranges in a sidecar
 json, so a re-run fetches only what is missing. folder transfers skip
-files that are already present and unchanged. each client retries failed
-requests through `_Transfer._retry_delay`.
+files that are already present and unchanged. botocore's standard retry mode
+retries failed requests; a failure that outlasts it ends the run, and a re-run
+resumes.
 
 filesystem state, checksums, and destination path checks live in the private
 `_volume_transfer_utils` module; this module coordinates requests and resume.
@@ -20,8 +21,6 @@ import hashlib
 import io
 import math
 import os
-import random
-import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -58,7 +57,7 @@ DOWNLOAD_CHUNK_SIZE = 64 * MIB
 # runpod's s3 api keeps in-progress multipart parts here (server-created)
 UPLOADS_DIR = ".s3compat_uploads"
 
-# tries per request, the first included
+# tries per request, the first included (botocore standard retry mode)
 MAX_ATTEMPTS = 10
 
 ACCESS_KEY_ENV = "RUNPOD_S3_ACCESS_KEY"
@@ -95,15 +94,11 @@ def part_size_for(size: int) -> int:
     return part_size
 
 
-def _error_fields(response: Dict[str, Any]) -> Tuple[str, int]:
-    """the s3 error code and http status in a parsed botocore response."""
-    code = str(response.get("Error", {}).get("Code", ""))
-    return code, int(response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0)
-
-
 def _error(exc: BaseException) -> Tuple[str, int]:
     """the s3 error code and http status of a botocore ClientError."""
-    return _error_fields(getattr(exc, "response", None) or {})
+    response = getattr(exc, "response", None) or {}
+    code = str(response.get("Error", {}).get("Code", ""))
+    return code, int(response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0)
 
 
 def _transient(code: str, status: int) -> bool:
@@ -248,23 +243,6 @@ class _Transfer:
         stop check, so it still runs after ctrl-c."""
         with self._slots:
             return self._client_call(method, **kwargs)
-
-    def _retry_delay(
-        self, response=None, caught_exception=None, attempts=1, **_kwargs
-    ) -> Optional[float]:
-        """botocore's needs-retry hook for this transfer's client, whose own
-        retries are off: botocore's standard mode skips 524 and shares one
-        retry quota across a whole run. waits here, so ctrl-c ends the wait,
-        and returns 0 to retry or None not to."""
-        if caught_exception is not None:
-            failed = is_resumable(caught_exception)
-        else:
-            failed = response is not None and _transient(*_error_fields(response[1]))
-        if not failed or attempts >= MAX_ATTEMPTS:
-            return None
-        if self._stop.wait(random.uniform(0, min(20.0, 2.0**attempts))):
-            raise NetworkVolumeTransferError("interrupted", resumable=True)
-        return 0
 
     def _run(self, tasks: List[Callable[[], Any]]) -> List[Any]:
         """run tasks in parallel; the first failure cancels the ones not started."""
@@ -808,7 +786,12 @@ class _Download:
     def _fetch(self, index: int) -> None:
         start = index * DOWNLOAD_CHUNK_SIZE
         length = self._length(index)
-        data = self._get_range(start, length)
+        data = self.t._request(lambda: self._read_range(start, length))
+        if len(data) != length:
+            raise NetworkVolumeTransferError(
+                f"short read of {self.key} bytes {start}-{start + length - 1}",
+                resumable=True,
+            )
         with open(self.partial, "r+b") as handle:
             handle.seek(start)
             handle.write(data)
@@ -820,20 +803,9 @@ class _Download:
             _write_json(self.sidecar, self._state())
         self.t._emit("advance", str(self.dest), length)
 
-    def _get_range(self, start: int, length: int) -> bytes:
-        """botocore retries the request but not the body read, so a dropped
-        or short body is fetched again (three tries)."""
-        for _ in range(3):
-            data = self.t._request(lambda: self._read_range(start, length))
-            if data is not None and len(data) == length:
-                return data
-        raise NetworkVolumeTransferError(
-            f"could not read {self.key} bytes {start}-{start + length - 1}",
-            resumable=True,
-        )
-
-    def _read_range(self, start: int, length: int) -> Optional[bytes]:
-        """one GET and its body read; None when the body dropped."""
+    def _read_range(self, start: int, length: int) -> bytes:
+        """one GET and its body read. botocore does not retry a dropped body;
+        that failure is resumable, and a re-run fetches only missing chunks."""
         response = self.t._client_call(
             "get_object", Key=self.key, Range=f"bytes={start}-{start + length - 1}"
         )
@@ -844,12 +816,7 @@ class _Download:
                     "run the command again to restart it",
                     resumable=True,
                 )
-            try:
-                return body.read()
-            except Exception as exc:  # noqa: BLE001 - a dropped stream is retried
-                if not is_resumable(exc):
-                    raise
-                return None
+            return body.read()
 
 
 # ---------------------------------------------------------------- client
@@ -936,28 +903,6 @@ def _s3_keys(access_key: Optional[str], secret_key: Optional[str]) -> Tuple[str,
     return keys
 
 
-def _check_endpoint(endpoint: str, datacenter: str) -> None:
-    """fail fast on a datacenter without the s3 api: its endpoint does not
-    resolve, and retrying would only delay the error. behind an https proxy
-    the proxy resolves the name, so the check is skipped."""
-    from urllib.parse import urlparse  # pylint: disable=import-outside-toplevel
-    from urllib.request import (  # pylint: disable=import-outside-toplevel
-        getproxies,
-        proxy_bypass,
-    )
-
-    host = urlparse(endpoint).hostname or ""
-    if getproxies().get("https") and not proxy_bypass(host):
-        return
-    try:
-        socket.getaddrinfo(host, 443)
-    except socket.gaierror as exc:
-        raise NetworkVolumeTransferError(
-            f"{datacenter} does not support the s3 api yet ({S3_DOCS_URL}), "
-            f"or {host} is unreachable from this network"
-        ) from exc
-
-
 def _client_config(concurrency: int) -> Any:
     from botocore.config import Config  # pylint: disable=import-outside-toplevel
 
@@ -965,8 +910,7 @@ def _client_config(concurrency: int) -> Any:
         s3={"addressing_style": "path"},
         request_checksum_calculation="when_required",
         response_checksum_validation="when_required",
-        # one try: _Transfer._retry_delay makes every retry decision
-        retries={"mode": "standard", "total_max_attempts": 1},
+        retries={"mode": "standard", "total_max_attempts": MAX_ATTEMPTS},
         connect_timeout=60,
         # a socket read silent this long is a stalled connection (runpod's
         # proxy answers a slow request with 524 after about 100s)
@@ -978,12 +922,9 @@ def _client_config(concurrency: int) -> Any:
 
 def _locate(reference: str, endpoint_url: Optional[str] = None) -> Tuple[str, str, str]:
     """the id, datacenter, and s3 endpoint of the network volume with this
-    id or name. fails fast when the datacenter has no s3 api."""
+    id or name."""
     volume_id, datacenter = _resolve_volume(reference)
-    if endpoint_url:
-        return volume_id, datacenter, endpoint_url
-    endpoint = f"https://s3api-{datacenter.lower()}.runpod.io/"
-    _check_endpoint(endpoint, datacenter)
+    endpoint = endpoint_url or f"https://s3api-{datacenter.lower()}.runpod.io/"
     return volume_id, datacenter, endpoint
 
 
@@ -1016,5 +957,4 @@ def _make_transfer(
     transfer = _Transfer(
         client, volume_id, endpoint, concurrency, progress, force=force
     )
-    client.meta.events.register_first("needs-retry.s3", transfer._retry_delay)
     return transfer

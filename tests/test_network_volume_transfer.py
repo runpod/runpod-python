@@ -511,7 +511,7 @@ def test_downloaded_folder_uploads_back_as_unchanged(tmp_path):
     assert not fake.ops("put_object") and not fake.ops("upload_part")
 
 
-def test_download_short_read_is_retried(tmp_path):
+def test_download_short_read_fails_resumable_and_reruns(tmp_path):
     fake = FakeS3()
     fake.put("f.bin", DATA)
     original = fake.get_object
@@ -525,11 +525,14 @@ def test_download_short_read_is_retried(tmp_path):
         return response
 
     fake.get_object = short_once
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="short read") as info:
+        _transfer(fake, tmp_path).download("f.bin", tmp_path / "f.bin")
+    assert nvt.is_resumable(info.value)
     _transfer(fake, tmp_path).download("f.bin", tmp_path / "f.bin")
     assert (tmp_path / "f.bin").read_bytes() == DATA
 
 
-def test_download_dropped_stream_is_fetched_again(tmp_path):
+def test_download_dropped_stream_fails_resumable_and_reruns(tmp_path):
     from botocore.exceptions import IncompleteReadError
 
     fake = FakeS3()
@@ -549,6 +552,9 @@ def test_download_dropped_stream_is_fetched_again(tmp_path):
         return response
 
     fake.get_object = drop_once
+    with pytest.raises(IncompleteReadError) as info:
+        _transfer(fake, tmp_path).download("f.bin", tmp_path / "f.bin")
+    assert nvt.is_resumable(info.value)
     _transfer(fake, tmp_path).download("f.bin", tmp_path / "f.bin")
     assert (tmp_path / "f.bin").read_bytes() == DATA
 
@@ -709,7 +715,6 @@ def test_make_transfer_builds_datacenter_client(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
     monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
-    monkeypatch.setattr(nvt, "_check_endpoint", lambda endpoint, datacenter: None)
     listing, calls = _list_volumes(_VOLUME)
     with listing:
         transfer = nvt._make_transfer("models", None, None, None, 4, None)
@@ -717,10 +722,10 @@ def test_make_transfer_builds_datacenter_client(monkeypatch):
     assert transfer.client.meta.endpoint_url == "https://s3api-eu-ro-1.runpod.io/"
     assert transfer.client.meta.region_name == "EU-RO-1"
     assert transfer.client.meta.config.request_checksum_calculation == "when_required"
-    # _retry_delay makes every retry decision
+    # botocore's standard mode makes every retry decision
     assert transfer.client.meta.config.retries == {
         "mode": "standard",
-        "total_max_attempts": 1,
+        "total_max_attempts": nvt.MAX_ATTEMPTS,
     }
     credentials = transfer.client._request_signer._credentials
     assert credentials.access_key == "user_x"
@@ -1324,50 +1329,6 @@ def test_download_refuses_symlinked_work_files(tmp_path, suffix):
     assert other.read_bytes() == b"keep me"
 
 
-def test_client_retries_the_proxy_524(monkeypatch):
-    import http.server
-    import threading
-
-    hits = []
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802 - http.server naming
-            hits.append(self.path)
-            if len(hits) <= 2:
-                self.send_response(524)
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-                return
-            body = b"<ListBucketResult></ListBucketResult>"
-            self.send_response(200)
-            self.send_header("Content-Type", "application/xml")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *args):
-            pass
-
-    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
-    try:
-        monkeypatch.setenv(nvt.ACCESS_KEY_ENV, "user_x")
-        monkeypatch.setenv(nvt.SECRET_KEY_ENV, "rps_x")
-        monkeypatch.setattr(
-            nvt, "_resolve_volume", lambda volume: ("vol123", "EU-RO-1")
-        )
-        monkeypatch.setattr(nvt.random, "uniform", lambda a, b: 0)
-        endpoint = f"http://127.0.0.1:{server.server_port}"
-        transfer = nvt._make_transfer("vol123", None, None, endpoint, 1, None)
-        transfer.client.list_objects_v2(Bucket="vol123")
-    finally:
-        server.shutdown()
-        server.server_close()
-        server_thread.join()
-    assert len(hits) == 3
-
-
 # ------------------------------------------------- prompts and failure cases
 
 
@@ -1388,7 +1349,6 @@ def cli_preflight(monkeypatch):
     monkeypatch.setattr(
         nvt, "_resolve_volume", lambda reference: (reference, "EU-RO-1")
     )
-    monkeypatch.setattr(nvt, "_check_endpoint", lambda endpoint, datacenter: None)
 
 
 def _fake_transfer(calls):
@@ -1524,23 +1484,6 @@ def test_cli_checks_volume_before_asking_for_keys(monkeypatch, tmp_path, interac
     assert "no network volume named" in result.output
 
 
-def test_cli_checks_endpoint_before_asking_for_keys(monkeypatch, tmp_path, interactive):
-    monkeypatch.setattr(
-        nvt, "_resolve_volume", lambda reference: (reference, "EU-SE-1")
-    )
-
-    def unsupported_endpoint(endpoint, datacenter):
-        raise nvt.NetworkVolumeTransferError("does not support the s3 api")
-
-    monkeypatch.setattr(nvt, "_check_endpoint", unsupported_endpoint)
-    monkeypatch.setattr(
-        "runpod.rp_cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys")
-    )
-    result = CliRunner().invoke(_cli(), ["volume", "upload", "vol", str(tmp_path)])
-    assert result.exit_code == 1
-    assert "does not support the s3 api" in result.output
-
-
 @pytest.mark.usefixtures("cli_preflight")
 def test_cli_offers_to_replace_rejected_saved_keys(monkeypatch, interactive, tmp_path):
     calls = []
@@ -1657,6 +1600,25 @@ def test_network_volume_caches_one_location_per_endpoint(monkeypatch):
     assert located == ["https://a/", "https://b/", None]
 
 
+@pytest.mark.usefixtures("cli_preflight")
+def test_cli_points_an_unreachable_endpoint_at_the_s3_docs(monkeypatch, tmp_path):
+    from botocore.exceptions import EndpointConnectionError
+
+    def transfer(volume, source, target, **kwargs):
+        raise EndpointConnectionError(endpoint_url="https://s3api-eu-se-1.runpod.io/")
+
+    with patch.object(
+        runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer
+    ):
+        result = CliRunner().invoke(
+            _cli(),
+            ["volume", "upload", "vol", str(tmp_path), "--s3-access-key", "a",
+             "--s3-secret-key", "b"],
+        )
+    assert result.exit_code == 1
+    assert nvt.S3_DOCS_URL in result.output
+
+
 def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
     resolved = []
     built = []
@@ -1680,7 +1642,6 @@ def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
         )()
 
     monkeypatch.setattr(nvt, "_resolve_volume", resolve)
-    monkeypatch.setattr(nvt, "_check_endpoint", lambda endpoint, datacenter: None)
     monkeypatch.setattr(nvt, "_make_transfer", make)
     result = CliRunner().invoke(
         _cli(),
@@ -1725,80 +1686,6 @@ def test_rejected_keys_say_so_and_do_not_resume(tmp_path, code, status):
     assert not nvt.is_resumable(info.value)
     assert "--s3-access-key" in str(info.value)
     assert "~/.runpod/config.toml" in str(info.value)
-
-
-def test_datacenter_without_the_s3_api_fails_fast(monkeypatch):
-    import socket as _socket
-
-    for name in ("HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr("urllib.request.getproxies", lambda: {})
-
-    def no_such_host(host, port, *args, **kwargs):
-        raise _socket.gaierror(8, "nodename nor servname provided")
-
-    monkeypatch.setattr(_socket, "getaddrinfo", no_such_host)
-    with pytest.raises(
-        nvt.NetworkVolumeTransferError, match="EU-SE-1 does not support the s3 api yet"
-    ) as info:
-        nvt._check_endpoint("https://s3api-eu-se-1.runpod.io/", "EU-SE-1")
-    assert not nvt.is_resumable(info.value)
-    # behind a proxy the proxy resolves the name
-    monkeypatch.setattr(
-        "urllib.request.getproxies", lambda: {"https": "http://proxy:3128"}
-    )
-    monkeypatch.setattr("urllib.request.proxy_bypass", lambda host: False)
-    nvt._check_endpoint("https://s3api-eu-se-1.runpod.io/", "EU-SE-1")
-
-
-def test_explicit_endpoint_skips_the_datacenter_check(monkeypatch):
-    checked = []
-    monkeypatch.setattr(nvt, "_resolve_volume", lambda volume: ("vol123", "EU-SE-1"))
-    monkeypatch.setattr(nvt, "_check_endpoint", lambda endpoint, dc: checked.append(dc))
-    nvt._make_transfer("vol123", None, None, "http://localhost:9000", 1, None)
-    assert checked == []
-    nvt._make_transfer("vol123", None, None, None, 1, None)
-    assert checked == ["EU-SE-1"]
-
-
-def _response(status, code=""):
-    parsed = {"ResponseMetadata": {"HTTPStatusCode": status}}
-    if code:
-        parsed["Error"] = {"Code": code}
-    return (type("R", (), {"status_code": status})(), parsed)
-
-
-def test_retry_delay_decides_every_retry(monkeypatch, tmp_path):
-    from botocore.exceptions import EndpointConnectionError
-
-    monkeypatch.setattr(nvt.random, "uniform", lambda a, b: 0)
-    transfer = _transfer(FakeS3(), tmp_path)
-    assert transfer._retry_delay(response=_response(524, "InternalError")) == 0
-    assert transfer._retry_delay(response=_response(503)) == 0
-    assert transfer._retry_delay(response=_response(429, "SlowDown")) == 0
-    assert (
-        transfer._retry_delay(
-            caught_exception=EndpointConnectionError(endpoint_url="x")
-        )
-        == 0
-    )
-    assert transfer._retry_delay(response=_response(200)) is None
-    assert transfer._retry_delay(response=_response(404, "NoSuchUpload")) is None
-    assert transfer._retry_delay(response=_response(403, "AccessDenied")) is None
-    assert (
-        transfer._retry_delay(response=_response(503), attempts=nvt.MAX_ATTEMPTS)
-        is None
-    )
-
-
-def test_ctrl_c_ends_a_retry_wait(tmp_path):
-    transfer = _transfer(FakeS3(), tmp_path)
-    transfer._stop.set()
-    with pytest.raises(nvt.NetworkVolumeTransferError, match="interrupted") as info:
-        transfer._retry_delay(response=_response(503))
-    assert info.value.resumable
-    # a successful response is never turned into an error
-    assert transfer._retry_delay(response=_response(200)) is None
 
 
 def test_body_reads_hold_a_request_slot(tmp_path):
@@ -2029,6 +1916,11 @@ def test_download_closes_response_bodies(tmp_path, mode):
         ):
             _transfer(fake, tmp_path).download("f.bin", dest)
         assert not dest.exists()
+    elif mode == "dropped":
+        with pytest.raises(IncompleteReadError):
+            _transfer(fake, tmp_path).download("f.bin", dest)
+        _transfer(fake, tmp_path).download("f.bin", dest)
+        assert dest.read_bytes() == b"payload"
     else:
         _transfer(fake, tmp_path).download("f.bin", dest)
         assert dest.read_bytes() == b"payload"
