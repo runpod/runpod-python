@@ -12,7 +12,6 @@ import pytest
 import requests
 from click.testing import CliRunner
 
-import runpod
 from runpod import error
 from runpod.rp_cli import payments
 from runpod.rp_cli.main import cli
@@ -373,7 +372,7 @@ def test_error_messages_and_tracebacks_do_not_reflect_secrets(command, exc):
 
 
 def test_upstream_problem_details_are_not_reflected(monkeypatch, caplog):
-    monkeypatch.setattr(runpod, "api_key", "key")
+    monkeypatch.setattr("runpod.api_key", "key")
     monkeypatch.setenv("RUNPOD_API_BASE_URL", "https://payments.invalid")
     response = requests.Response()
     response.status_code = 422
