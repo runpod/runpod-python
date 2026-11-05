@@ -377,6 +377,35 @@ class TestLoginCommand:
         assert functions.get_credentials(untouched)["api_key"] == f"old-{untouched}"
         assert functions.get_credentials("production")["api_key"] == "keep-production"
 
+    def test_login_saves_to_profile_from_env(self, tmp_path, monkeypatch):
+        from runpod.cli.groups.config import functions
+
+        credentials = tmp_path / "config.toml"
+        credentials.write_text('[default]\napi_key = "keep-default"\n')
+        monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(credentials))
+        monkeypatch.setenv("RUNPOD_PROFILE", "team")
+
+        result = _runner().invoke(cli, ["login", "--api-key", "new-key"])
+
+        assert result.exit_code == 0, result.output
+        assert functions.get_credentials("team")["api_key"] == "new-key"
+        assert functions.get_credentials("default")["api_key"] == "keep-default"
+
+    def test_login_profile_flag_overrides_env(self, tmp_path, monkeypatch):
+        from runpod.cli.groups.config import functions
+
+        credentials = tmp_path / "config.toml"
+        monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(credentials))
+        monkeypatch.setenv("RUNPOD_PROFILE", "team")
+
+        result = _runner().invoke(
+            cli, ["login", "--profile", "other", "--api-key", "new-key"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert functions.get_credentials("other")["api_key"] == "new-key"
+        assert functions.get_credentials("team") is None
+
     def test_browser_flow_error(self):
         from runpod.apps.auth import LoginError
 

@@ -19,3 +19,9 @@ import runpod
 
 runpod.profile = "my_profile"
 ```
+
+To select a profile without changing code, set the `RUNPOD_PROFILE` environment variable before importing `runpod`:
+
+```bash
+export RUNPOD_PROFILE=my_profile
+```
