@@ -13,6 +13,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import aiohttp
 
+from .._hosts import endpoint_domain
 from ..user_agent import USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest
@@ -34,9 +35,7 @@ FINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"})
 
 def _lb_domain() -> str:
     """host portion of the data-plane base url, for lb subdomain urls."""
-    base = _endpoint_url_base()
-    host = base.split("://", 1)[-1]
-    return host.split("/", 1)[0]
+    return endpoint_domain()
 
 
 def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:

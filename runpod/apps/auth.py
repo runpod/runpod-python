@@ -4,7 +4,6 @@ import asyncio
 import base64
 import datetime as dt
 import hashlib
-import os
 import secrets
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import quote
@@ -12,6 +11,7 @@ from uuid import uuid4
 
 import aiohttp
 
+from runpod._hosts import console_url
 from runpod.api.rest import _build_url
 from runpod.user_agent import USER_AGENT
 
@@ -21,7 +21,6 @@ from ..error import QueryError
 from .api import AppsApiClient
 from .errors import AppError
 
-CONSOLE_URL = os.environ.get("RUNPOD_CONSOLE_URL", "https://console.runpod.io")
 
 MAX_KEY_ATTEMPTS = 3
 
@@ -143,7 +142,7 @@ def _parse_expires_at(value: Optional[str]) -> Optional[dt.datetime]:
 
 
 def auth_url(request_id: str) -> str:
-    return f"{CONSOLE_URL}/flash/login?request={request_id}"
+    return f"{console_url()}/flash/login?request={request_id}"
 
 
 async def _closed_reason(client: AppsApiClient, request_id: str) -> Optional[str]:

@@ -1354,3 +1354,23 @@ def test_completion_inserts_ids(api):
         "EU-RO-1",
         "EU-CZ-1",
     ]
+
+
+def test_load_balancer_without_request_urls_uses_endpoint_domain(monkeypatch):
+    import runpod
+
+    urls = []
+    response = MagicMock(status_code=200, text="pong")
+    response.json.side_effect = ValueError("not json")
+
+    def fake_request(method, url, **kwargs):
+        urls.append(url)
+        return response
+
+    monkeypatch.setattr(runpod, "endpoint_url_base", "https://api.example.test/v2")
+    monkeypatch.setattr(ep.requests, "request", fake_request)
+    monkeypatch.setattr(ep, "api_key", lambda: "test-key")
+
+    ep._call_load_balancer({"id": "lb9"}, "/ping", None, None, 5, True)
+
+    assert urls == ["https://lb9.api.example.test/ping"]

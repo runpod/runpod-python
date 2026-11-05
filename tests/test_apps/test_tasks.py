@@ -717,3 +717,10 @@ class TestCancellationCleanup:
             await TaskJob(execution).wait()
         assert caught.value is failure
         assert execution.pod_id == "pod-recoverable"
+
+
+def test_proxy_url_honors_proxy_domain_override(monkeypatch):
+    from runpod.apps.tasks import TASK_PORT, _proxy_url
+
+    monkeypatch.setenv("RUNPOD_PROXY_DOMAIN", "proxy.example.test")
+    assert _proxy_url("pod1") == f"https://pod1-{TASK_PORT}.proxy.example.test"
