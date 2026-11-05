@@ -9,6 +9,7 @@ from types import TracebackType
 from typing import Any, Literal, Optional, TypeVar
 
 from runpod.api.sandboxes import (
+    AsyncCommandLogStream,
     AsyncSandboxAPI,
     SandboxConflictError,
     SandboxCreationError,
@@ -17,6 +18,11 @@ from runpod.apps.registry import resolve_registry_auth
 from runpod.apps.volume import Volume, VolumeResolver, normalize_mounts, validate_mounts
 from runpod.error import QueryError
 from runpod.sandbox.models import (
+    CommandInfo,
+    CommandLogEnd,
+    CommandLogLine,
+    CommandOutput,
+    CommandStream,
     ExecResult,
     LogEvent,
     LogSource,
@@ -37,6 +43,40 @@ def _timeout(value: float, name: str, *, allow_zero: bool = False) -> float:
             f"{name} must be finite and {'nonnegative' if allow_zero else 'positive'}"
         )
     return value
+
+
+def _argv(command: Sequence[str]) -> tuple[str, ...]:
+    if isinstance(command, (str, bytes)) or not isinstance(command, Sequence):
+        raise TypeError("command must be a nonempty sequence of strings, not a string")
+    if not command or any(not isinstance(argument, str) for argument in command):
+        raise ValueError("command must be a nonempty sequence of strings")
+    return tuple(command)
+
+
+def _cwd(cwd: Optional[str]) -> Optional[str]:
+    if cwd is not None and (not isinstance(cwd, str) or not cwd.startswith("/")):
+        raise ValueError("cwd must be an absolute path")
+    return cwd
+
+
+def _env(env: Optional[Mapping[str, str]]) -> Optional[dict[str, str]]:
+    if env is None:
+        return None
+    if not isinstance(env, Mapping) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in env.items()
+    ):
+        raise TypeError("env must map strings to strings")
+    return dict(env)
+
+
+def _int_in_range(value: Optional[int], name: str, low: int, high: int) -> None:
+    if value is not None and (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not low <= value <= high
+    ):
+        raise ValueError(f"{name} must be an integer from {low} to {high}")
 
 
 def _string_list(
@@ -518,6 +558,8 @@ class AsyncioSandbox:
         startup_timeout: Optional[float] = None,
         timeout_seconds: Optional[int] = None,
         background: bool = False,
+        cwd: Optional[str] = None,
+        env: Optional[Mapping[str, str]] = None,
     ) -> ExecResult:
         """execute argv, retrying only explicit 409 startup rejections.
 
@@ -531,29 +573,28 @@ class AsyncioSandbox:
         ``timeout_seconds`` (1–50) requests a command limit; the backend may
         impose a shorter cap. ``request_timeout`` bounds the client http wait.
         ``background=True`` returns after starting a detached command, not its
-        completion; redirect its output to a file and poll for results.
+        completion; redirect its output to a file and poll for results, or use
+        ``start_command``, which keeps the output.
+
+        ``cwd`` (an absolute path) and ``env`` (layered over the sandbox's own
+        environment) apply to this command only and cannot be combined with
+        ``background``. A sandbox that does not support them yet answers 422.
         """
-        if isinstance(command, (str, bytes)) or not isinstance(command, Sequence):
-            raise TypeError(
-                "command must be a nonempty sequence of strings, not a string"
-            )
-        if not command or any(not isinstance(argument, str) for argument in command):
-            raise ValueError("command must be a nonempty sequence of strings")
-        if timeout_seconds is not None and (
-            isinstance(timeout_seconds, bool)
-            or not isinstance(timeout_seconds, int)
-            or not 1 <= timeout_seconds <= 50
-        ):
-            raise ValueError("timeout_seconds must be an integer from 1 to 50")
+        argv = _argv(command)
+        _int_in_range(timeout_seconds, "timeout_seconds", 1, 50)
         if not isinstance(background, bool):
             raise TypeError("background must be a bool")
-        argv = tuple(command)
+        cwd, env = _cwd(cwd), _env(env)
+        if background and (cwd is not None or env is not None):
+            raise ValueError("cwd and env cannot be combined with background")
         data = await self._ready_operation(
             lambda: self._api.exec(
                 self.id,
                 argv,
                 timeout_seconds=timeout_seconds,
                 background=background,
+                cwd=cwd,
+                env=env,
             ),
             startup_timeout,
         )
@@ -569,6 +610,42 @@ class AsyncioSandbox:
         if check and (result.error is not None or result.exit_code not in (None, 0)):
             raise SandboxExecutionError(self.id, result)
         return result
+
+    async def start_command(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Optional[str] = None,
+        env: Optional[Mapping[str, str]] = None,
+        timeout_seconds: Optional[int] = None,
+        startup_timeout: Optional[float] = None,
+    ) -> "AsyncioSandboxCommand":
+        """Start a long-running command and return once it is running.
+
+        Unlike ``exec``, the command keeps its output, which ``output`` and
+        ``logs`` read back, and runs for up to ``timeout_seconds`` (1–86400,
+        default 3600). Only a 409 ``sandbox_starting`` is retried, until the
+        startup deadline. A sandbox runs at most 8 commands at once; the ninth
+        start raises ``SandboxConflictError`` with code ``command_limit_reached``.
+        A command that could not start is returned with status ``failed`` and
+        its ``error``, not raised. Finished commands stay readable for about
+        20 minutes.
+        """
+        argv = _argv(command)
+        _int_in_range(timeout_seconds, "timeout_seconds", 1, 86400)
+        cwd, env = _cwd(cwd), _env(env)
+        data = await self._ready_operation(
+            lambda: self._api.start_command(
+                self.id, argv, timeout_seconds=timeout_seconds, cwd=cwd, env=env
+            ),
+            startup_timeout,
+        )
+        return AsyncioSandboxCommand(self, CommandInfo.from_dict(data))
+
+    async def get_command(self, command_id: str) -> "AsyncioSandboxCommand":
+        """Fetch a command started earlier in this sandbox."""
+        data = await self._api.get_command(self.id, command_id)
+        return AsyncioSandboxCommand(self, CommandInfo.from_dict(data))
 
     def logs(
         self,
@@ -727,3 +804,167 @@ class AsyncioSandboxLogStream:
         traceback: Optional[TracebackType],
     ) -> None:
         await _cleanup(self.aclose(), self._sandbox._request_timeout, exc)
+
+
+class AsyncioSandboxCommand:
+    """A command started in a sandbox; it uses the sandbox handle's connection."""
+
+    def __init__(self, sandbox: AsyncioSandbox, info: CommandInfo) -> None:
+        self._sandbox = sandbox
+        self._sandbox_id = sandbox.id
+        self._info = info
+
+    @property
+    def info(self) -> CommandInfo:
+        """The latest snapshot; reading it does not fetch."""
+        return self._info
+
+    @property
+    def id(self) -> str:
+        return self._info.id
+
+    @property
+    def status(self) -> str:
+        return self._info.status
+
+    async def refresh(self) -> CommandInfo:
+        """Fetch the command's current status."""
+        self._info = CommandInfo.from_dict(
+            await self._sandbox._api.get_command(self._sandbox_id, self.id)
+        )
+        return self._info
+
+    async def cancel(self) -> CommandInfo:
+        """Request a stop. The returned status can still be ``running``; ``wait`` for the end."""
+        self._info = CommandInfo.from_dict(
+            await self._sandbox._api.cancel_command(self._sandbox_id, self.id)
+        )
+        return self._info
+
+    async def wait(
+        self, *, timeout: Optional[float] = None, poll_interval: float = 1.0
+    ) -> CommandInfo:
+        """Poll until the status is terminal; raise ``TimeoutError`` after ``timeout`` seconds."""
+        poll_interval = _timeout(poll_interval, "poll_interval")
+        loop = asyncio.get_running_loop()
+        deadline = (
+            None
+            if timeout is None
+            else loop.time() + _timeout(timeout, "timeout", allow_zero=True)
+        )
+        while True:
+            info = await self.refresh()
+            if info.done:
+                return info
+            delay = poll_interval
+            if deadline is not None:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"Command {self.id} is still running after {timeout:g}s"
+                    )
+                delay = min(delay, remaining)
+            await asyncio.sleep(delay)
+
+    async def output(
+        self,
+        *,
+        offset: Optional[int] = None,
+        tail: Optional[int] = None,
+        streams: Optional[CommandStream] = None,
+    ) -> CommandOutput:
+        """Read one page of stored output (at most 256 KiB without ``tail``).
+
+        Continue with ``offset=page.next_offset``. ``tail`` reads about the
+        last that many bytes (up to 2 MiB). ``streams`` keeps only stdout or
+        stderr, and is a 409 when ``info.streams_separated`` is false.
+        """
+        _offset(offset)
+        _int_in_range(tail, "tail", 1, 2_097_152)
+        _streams(streams)
+        data = await self._sandbox._api.command_logs(
+            self._sandbox_id, self.id, offset=offset, tail=tail, streams=streams
+        )
+        return CommandOutput.from_dict(data)
+
+    def logs(
+        self,
+        *,
+        offset: Optional[int] = None,
+        streams: Optional[CommandStream] = None,
+    ) -> "AsyncioCommandLogStream":
+        """Stream output lines live until the command ends.
+
+        After iteration, ``end`` holds the outcome. A stream the server ends
+        early (after an hour, or when following output fails) leaves ``end``
+        unset and ``next_offset`` to resume from with a new ``logs`` call.
+        """
+        _offset(offset)
+        _streams(streams)
+        return AsyncioCommandLogStream(
+            self._sandbox._api.command_log_stream(
+                self._sandbox_id, self.id, offset=offset, streams=streams
+            ),
+            self._sandbox._request_timeout,
+        )
+
+
+def _offset(offset: Optional[int]) -> None:
+    if offset is not None and (
+        isinstance(offset, bool) or not isinstance(offset, int) or offset < 0
+    ):
+        raise ValueError("offset must be a non-negative integer")
+
+
+def _streams(streams: Optional[str]) -> None:
+    if streams not in (None, "stdout", "stderr"):
+        raise ValueError("streams must be 'stdout' or 'stderr'")
+
+
+class AsyncioCommandLogStream:
+    """Typed command output lines; close it (or use ``async with``) when stopping early."""
+
+    def __init__(self, stream: AsyncCommandLogStream, request_timeout: float) -> None:
+        self._stream = stream
+        self._request_timeout = request_timeout
+
+    @property
+    def end(self) -> Optional[CommandLogEnd]:
+        """The command's outcome, once the stream has reached its ``end`` event."""
+        end = self._stream.end
+        return CommandLogEnd.from_dict(end) if end is not None else None
+
+    @property
+    def next_offset(self) -> Optional[int]:
+        """Where to resume when the server ended the stream before the command ended."""
+        return self._stream.next_offset
+
+    @property
+    def error(self) -> Optional[str]:
+        """Why the server ended the stream early, when it said."""
+        return self._stream.error
+
+    async def open(self) -> "AsyncioCommandLogStream":
+        """Complete the HTTP handshake without waiting for the first line."""
+        await self._stream.open()
+        return self
+
+    def __aiter__(self) -> "AsyncioCommandLogStream":
+        return self
+
+    async def __anext__(self) -> CommandLogLine:
+        return CommandLogLine.from_dict(await self._stream.__anext__())
+
+    async def aclose(self) -> None:
+        await self._stream.aclose()
+
+    async def __aenter__(self) -> "AsyncioCommandLogStream":
+        return await self.open()
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        await _cleanup(self.aclose(), self._request_timeout, exc)

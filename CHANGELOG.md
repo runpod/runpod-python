@@ -6,6 +6,7 @@
 
 * Apps expose `NetworkVolume` and `GlobalVolume` resources with explicit path-keyed mounts, lazy create-if-missing provisioning, and execution-bound filesystem access. Global volumes use GraphQL for lookup and creation.
 * Sandboxes support shared storage references, structured ports, execution details, command timeouts, detached execution, and lifetime updates through synchronous and asynchronous handles.
+* Sandboxes start long-running commands with `start_command`, then follow, page, wait for and cancel them. `exec` and `start_command` accept a per-command `cwd` and `env`. Sandbox snapshots include `runtime` and `egress_policy`.
 * Deployed Flash calls use endpoint or pod runtime credentials. Release requires deployed support from [RunPod#6686](https://github.com/runpod/RunPod/pull/6686), [ai-api#1176](https://github.com/runpod/ai-api/pull/1176), and [sdk-runtime#4](https://github.com/runpod-workers/sdk-runtime/pull/4).
 
 ### Fixes

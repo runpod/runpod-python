@@ -33,6 +33,11 @@ class SandboxService:
         self.records = {}
         self.requests = []
         self.executed = []
+        self.exec_bodies = []
+        self.commands = {}
+        self.command_bodies = []
+        self.command_statuses = deque()
+        self.command_stream_ending = "end"
         self.exec_statuses = deque()
         self.exec_responses = deque()
         self.log_statuses = deque()
@@ -191,6 +196,8 @@ def sandbox_peer():
             return failure(404, "missing sandbox")
         record = service.records[sandbox_id]
         operation = request.match_info.get("operation")
+        if operation == "commands" or "commandId" in request.match_info:
+            return await handle_command(request, record, body)
         if request.method == "PATCH" or operation == "extend":
             if (
                 operation == "extend"
@@ -222,8 +229,10 @@ def sandbox_peer():
                 type(timeout) is not int
                 or not 1 <= timeout <= 50
                 or type(background) is not bool
+                or (background and ("cwd" in body or "env" in body))
             ):
                 return failure(422, "invalid execution controls")
+            service.exec_bodies.append(body)
             status = service.exec_statuses.popleft() if service.exec_statuses else 200
             if status == 409 or record["state"] in ("FAILED", "TERMINATED"):
                 return failure(409, "container not started", service.conflict_code)
@@ -291,6 +300,75 @@ def sandbox_peer():
             return response
         return web.json_response(record)
 
+    async def handle_command(request, record, body):
+        command_id = request.match_info.get("commandId")
+        if command_id is None:
+            status = (
+                service.command_statuses.popleft() if service.command_statuses else 202
+            )
+            if status == 409:
+                return failure(409, "sandbox busy", service.conflict_code)
+            service.command_bodies.append(body)
+            command = {
+                "id": f"cmd-{len(service.commands) + 1}",
+                "status": "running",
+                "exitCode": None,
+                "error": None,
+                "streamsSeparated": body["command"] != ["merged"],
+                "outputBytes": 0,
+                "truncated": False,
+                "cancelRequested": False,
+            }
+            if body["command"] == ["cannot-start"]:
+                command.update(status="failed", error="executable not found")
+                return web.json_response(command, status=422)
+            service.commands[command["id"]] = (command, body["command"])
+            return web.json_response(command, status=202)
+        if command_id not in service.commands:
+            return failure(404, "missing command")
+        command, argv = service.commands[command_id]
+        if request.path.endswith("/logs"):
+            output = "hello\nworld\n"
+            if request.query.get("streams") and not command["streamsSeparated"]:
+                return failure(409, "streams not separated")
+            if request.query.get("stream") != "true":
+                offset = int(request.query.get("offset", 0))
+                return web.json_response(
+                    {
+                        "offset": offset,
+                        "nextOffset": len(output),
+                        "output": output[offset:],
+                        "eof": True,
+                    }
+                )
+            events = (
+                'data: {"line":"hello","ts":"2026-11-05T12:00:00Z","stream":"stdout"}\n\n'
+                ": heartbeat\n\n"
+                'data: {"line":"wor","partial":true}\n\n'
+            )
+            if service.command_stream_ending == "end":
+                events += (
+                    "event: end\n"
+                    'data: {"status":"exited","exitCode":0,"outputBytes":12,'
+                    '"truncated":false}\n\n'
+                )
+            else:
+                events += 'event: timeout\ndata: {"nextOffset":6}\n\n'
+            events += 'data: {"line":"after the end"}\n\n'
+            response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await response.prepare(request)
+            await response.write(events.encode())
+            return response
+        if request.method == "DELETE":
+            if command["status"] != "running":
+                return web.json_response(command)
+            command.update(status="cancelled", cancelRequested=True)
+            return web.json_response(command, status=202)
+        if command["status"] == "running" and argv != ["sleep"]:
+            command.update(status="exited", exitCode=0, outputBytes=12)
+            return web.json_response({**command, "status": "running", "exitCode": None})
+        return web.json_response(command)
+
     async def serve():
         service.loop = asyncio.get_running_loop()
         app = web.Application()
@@ -302,6 +380,8 @@ def sandbox_peer():
             "/v2/registries",
             "/v2/sandboxes/{id}",
             "/v2/sandboxes/{id}/{operation}",
+            "/v2/sandboxes/{id}/commands/{commandId}",
+            "/v2/sandboxes/{id}/commands/{commandId}/logs",
         ):
             app.router.add_route("*", path, handle)
         runner = web.AppRunner(app, access_log=None, shutdown_timeout=1)
