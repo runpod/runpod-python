@@ -13,10 +13,51 @@ from ..api.ctl_commands import _cpu_config, _path_segment, _split_values
 from ..api.graphql import run_graphql_query_async
 from ..api.mutations import apps as app_mutations
 from ..api.queries import apps as app_queries
+from ..api.queries import user as user_queries
 from ..api.rest import run_rest_paginated_request_async, run_rest_request_async
-from ..error import QueryError
+from ..error import AuthenticationError, QueryError
 
 _TRANSPORT_RETRIES = 4
+
+
+class FlashTaskApiClient:
+    """named task lifecycle operations with runtime-scoped authentication."""
+
+    async def _execute(self, query: str, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        from .utils.network import api_key, runtime_headers
+
+        headers = runtime_headers()
+        response = await run_graphql_query_async(
+            query,
+            variables={"input": task_input},
+            api_key=(headers["Authorization"][7:] if headers else api_key()),
+            headers=headers,
+        )
+        return response["data"]
+
+    async def create(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        from .utils.network import validate_runtime_target
+
+        validate_runtime_target(
+            task_input.get("flashAppName"), task_input.get("flashEnvironmentName")
+        )
+        data = await self._execute(
+            """mutation FlashTaskCreate($input: FlashTaskCreateInput!) {
+                flashTaskCreate(input: $input) { podId flashBuildId resourceName }
+            }""",
+            task_input,
+        )
+        return data["flashTaskCreate"]
+
+    async def terminate(self, pod_id: str, token: str) -> None:
+        data = await self._execute(
+            """mutation FlashTaskTerminate($input: FlashTaskTerminateInput!) {
+                flashTaskTerminate(input: $input)
+            }""",
+            {"podId": pod_id, "executionToken": token},
+        )
+        if data.get("flashTaskTerminate") is not True:
+            raise RuntimeError("task termination was not acknowledged")
 
 
 def _rest_endpoint_input(endpoint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -554,12 +595,20 @@ class AppsApiClient:
     async def get_auth_request_status(self, request_id: str) -> Dict[str, Any]:
         query = app_queries.QUERY_FLASH_AUTH_REQUEST_STATUS
         data = await self._execute(
-            query,
-            {"flashAuthRequestId": request_id},
-            anonymous=True,
-            retry=True,
+            query, {"flashAuthRequestId": request_id}, anonymous=True
         )
         return data.get("flashAuthRequestStatus") or {}
+
+    async def verify_api_key(self, api_key: str) -> bool:
+        """true when api_key authenticates; transport failures still raise."""
+        try:
+            response = await run_graphql_query_async(
+                user_queries.QUERY_USER, api_key=api_key
+            )
+        except (AuthenticationError, QueryError):
+            return False
+        myself = (response.get("data") or {}).get("myself") or {}
+        return bool(myself.get("id"))
 
     async def prepare_artifact_upload(
         self, app_id: str, tarball_size: int
@@ -574,6 +623,8 @@ class AppsApiClient:
         self, app_id: str, object_key: str, manifest: Dict[str, Any]
     ) -> Dict[str, Any]:
         mutation = app_mutations.MUTATION_FINALIZE_ARTIFACT_UPLOAD
+        if any(r.get("kind") == "task" for r in manifest.get("resources", [])):
+            mutation = app_mutations.MUTATION_FINALIZE_TASK_ARTIFACT_UPLOAD
         data = await self._execute(
             mutation,
             {

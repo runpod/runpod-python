@@ -87,6 +87,7 @@ async def run_graphql_query_async(
     variables: Optional[Dict[str, Any]] = None,
     timeout: float = 60.0,
     anonymous: bool = False,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     Async variant of run_graphql_query, sharing the same url, headers,
@@ -98,9 +99,8 @@ async def run_graphql_query_async(
         variables: Optional GraphQL variables to send with the query.
         timeout: Total request timeout in seconds.
         anonymous: Send the request without credentials even when a key
-            is available. The browser-login flow requires this: the
-            server only releases the granted key to guest requests, so
-            a stale stored key would make the poll spin forever.
+            is available. Login creates its auth request this way so a
+            stale stored key cannot fail the request.
     """
     import aiohttp  # pylint: disable=import-outside-toplevel
 
@@ -110,7 +110,7 @@ async def run_graphql_query_async(
     async with aiohttp.ClientSession(timeout=client_timeout) as session:
         async with session.post(
             _graphql_url(),
-            headers=_build_headers(effective_api_key),
+            headers={**_build_headers(effective_api_key), **(headers or {})},
             json=_build_payload(query, variables),
         ) as response:
             if response.status == HTTP_STATUS_UNAUTHORIZED:

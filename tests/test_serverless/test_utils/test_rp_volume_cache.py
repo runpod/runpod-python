@@ -1268,6 +1268,9 @@ def test_hydrate_rejects_source_replaced_between_ranges(tmp_path, monkeypatch):
     mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(cache / "model.safetensors"), "/")
     replacement = mirrored.with_name("replacement")
     replacement.write_bytes(os.urandom(len(payloads["model.safetensors"])))
+    # Identity is size + mtime, so force a distinct mtime instead of relying on timestamp granularity.
+    st = mirrored.stat()
+    os.utime(replacement, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
     real_copy_range = vcmod._copy_range
     calls = []
 
