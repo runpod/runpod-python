@@ -55,6 +55,45 @@ def _sandbox_path(sandbox_id: str) -> str:
     return f"{_SANDBOX_PATH}/{quote(sandbox_id, safe='')}"
 
 
+def _command_path(sandbox_id: str, command_id: str) -> str:
+    return f"{_sandbox_path(sandbox_id)}/commands/{quote(command_id, safe='')}"
+
+
+def _command_body(
+    command: Sequence[str],
+    timeout_seconds: int | None,
+    cwd: str | None,
+    env: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"command": list(command)}
+    if timeout_seconds is not None:
+        body["timeoutSeconds"] = timeout_seconds
+    if cwd is not None:
+        body["cwd"] = cwd
+    if env is not None:
+        body["env"] = dict(env)
+    return body
+
+
+def _command_record(
+    payload: dict[str, Any] | None, method: str, path: str
+) -> dict[str, Any]:
+    if (
+        payload is None
+        or not isinstance(payload.get("id"), str)
+        or not isinstance(payload.get("status"), str)
+    ):
+        raise error.QueryError(
+            "Sandbox command response must contain string 'id' and 'status'",
+            f"{method} {path}",
+        )
+    return payload
+
+
+def _query(**values: Any) -> list[tuple[str, str]]:
+    return [(key, str(value)) for key, value in values.items() if value is not None]
+
+
 async def _raise_response_error(
     response: aiohttp.ClientResponse,
     method: str,
@@ -234,44 +273,91 @@ class AsyncSandboxLogStream:
     async def _events(
         self, response: aiohttp.ClientResponse
     ) -> AsyncIterator[dict[str, Any]]:
-        data: list[str] = []
-        event_type = ""
-        event_id: str | None = None
-        async for line in _sse_lines(response.content):
-            if not line:
-                if event_type == "timeout":
-                    return
-                if event_type not in ("", "message"):
-                    raise error.QueryError(
-                        f"Sandbox log event {event_type!r}: " + "\n".join(data),
-                        f"GET {self._path}",
-                    )
-                if data:
-                    payload = json.loads("\n".join(data))
-                    if not isinstance(payload, dict):
-                        raise ValueError("Sandbox log event must be a JSON object")
-                    yield {
-                        "source": payload["source"],
-                        "line": payload["line"],
-                        "ts": payload["ts"],
-                        "id": event_id,
-                    }
-                data = []
-                event_type = ""
+        async for event_type, data, event_id in _sse_events(response):
+            if event_type == "timeout":
+                return
+            if event_type not in ("", "message"):
+                raise error.QueryError(
+                    f"Sandbox log event {event_type!r}: " + data,
+                    f"GET {self._path}",
+                )
+            if data:
+                payload = json.loads(data)
+                if not isinstance(payload, dict):
+                    raise ValueError("Sandbox log event must be a JSON object")
+                yield {
+                    "source": payload["source"],
+                    "line": payload["line"],
+                    "ts": payload["ts"],
+                    "id": event_id,
+                }
+
+
+class AsyncCommandLogStream(AsyncSandboxLogStream):
+    """Server-sent output of one command; ends at its ``end``, ``timeout`` or ``error`` event.
+
+    The terminal event is kept on the stream: ``end`` holds the command's
+    outcome, while ``timeout`` and ``error`` leave ``next_offset`` (when the
+    server knows it) for a new stream to resume from. No reconnect is attempted.
+    """
+
+    def __init__(
+        self, api: AsyncSandboxAPI, path: str, params: list[tuple[str, str]]
+    ) -> None:
+        super().__init__(api, path, params, None)
+        self.end: dict[str, Any] | None = None
+        self.next_offset: int | None = None
+        self.error: str | None = None
+
+    async def _events(
+        self, response: aiohttp.ClientResponse
+    ) -> AsyncIterator[dict[str, Any]]:
+        async for event_type, data, _ in _sse_events(response):
+            if not data:
                 continue
-            if line.startswith(":"):
-                continue
-            field, separator, value = line.partition(":")
-            if separator and value.startswith(" "):
-                value = value[1:]
-            if field == "data":
-                data.append(value)
-            elif field == "event":
-                event_type = value
-            elif field == "id" and "\x00" not in value:
-                event_id = value
-            # SSE retry directives are intentionally ignored: no reconnects.
-        # Per SSE, EOF does not dispatch an event lacking its blank-line boundary.
+            payload = json.loads(data)
+            if not isinstance(payload, dict):
+                raise ValueError("Command log event must be a JSON object")
+            if event_type in ("", "message"):
+                yield payload
+            elif event_type == "end":
+                self.end = payload
+                return
+            elif event_type in ("timeout", "error"):
+                next_offset = payload.get("nextOffset")
+                self.next_offset = next_offset if isinstance(next_offset, int) else None
+                self.error = payload.get("error") or payload.get("message")
+                return
+            # Other named events are skipped so new server events stay compatible.
+
+
+async def _sse_events(
+    response: aiohttp.ClientResponse,
+) -> AsyncIterator[tuple[str, str, str | None]]:
+    """Yield each dispatched event as ``(type, data, last event id)``."""
+    data: list[str] = []
+    event_type = ""
+    event_id: str | None = None
+    async for line in _sse_lines(response.content):
+        if not line:
+            if data or event_type:
+                yield event_type, "\n".join(data), event_id
+            data = []
+            event_type = ""
+            continue
+        if line.startswith(":"):
+            continue
+        field, separator, value = line.partition(":")
+        if separator and value.startswith(" "):
+            value = value[1:]
+        if field == "data":
+            data.append(value)
+        elif field == "event":
+            event_type = value
+        elif field == "id" and "\x00" not in value:
+            event_id = value
+        # SSE retry directives are intentionally ignored: no reconnects.
+    # Per SSE, EOF does not dispatch an event lacking its blank-line boundary.
 
 
 class AsyncSandboxAPI:
@@ -326,6 +412,7 @@ class AsyncSandboxAPI:
         body: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
         timeout: aiohttp.ClientTimeout | None = None,
+        json_error_status: int | None = None,
     ) -> aiohttp.ClientResponse:
         response, retry_after = await _open_rest_response_async(
             method,
@@ -340,6 +427,11 @@ class AsyncSandboxAPI:
             max_rate_limit_wait=self.request_timeout,
             allow_redirects=False,
         )
+        if (
+            response.status == json_error_status
+            and response.content_type == "application/json"
+        ):
+            return response
         try:
             await _raise_response_error(response, method, path, retry_after)
         except BaseException:
@@ -354,9 +446,14 @@ class AsyncSandboxAPI:
         *,
         params: list[tuple[str, str]] | None = None,
         body: Mapping[str, Any] | None = None,
+        json_error_status: int | None = None,
     ) -> dict[str, Any] | None:
         async with await self._open_response(
-            method, path, params=params, body=body
+            method,
+            path,
+            params=params,
+            body=body,
+            json_error_status=json_error_status,
         ) as response:
             if response.status == 204:
                 return None
@@ -536,11 +633,11 @@ class AsyncSandboxAPI:
         *,
         timeout_seconds: int | None = None,
         background: bool = False,
+        cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         path = f"{_sandbox_path(sandbox_id)}/exec"
-        body: dict[str, Any] = {"command": list(command)}
-        if timeout_seconds is not None:
-            body["timeoutSeconds"] = timeout_seconds
+        body = _command_body(command, timeout_seconds, cwd, env)
         if background:
             body["background"] = True
         payload = await self._request("POST", path, body=body)
@@ -550,6 +647,67 @@ class AsyncSandboxAPI:
                 f"POST {path}",
             )
         return payload
+
+    async def start_command(
+        self,
+        sandbox_id: str,
+        command: Sequence[str],
+        *,
+        timeout_seconds: int | None = None,
+        cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Start a command; a 422 carrying the command (status ``failed``) is returned, not raised."""
+        path = f"{_sandbox_path(sandbox_id)}/commands"
+        payload = await self._request(
+            "POST",
+            path,
+            body=_command_body(command, timeout_seconds, cwd, env),
+            json_error_status=422,
+        )
+        return _command_record(payload, "POST", path)
+
+    async def get_command(self, sandbox_id: str, command_id: str) -> dict[str, Any]:
+        path = _command_path(sandbox_id, command_id)
+        return _command_record(await self._request("GET", path), "GET", path)
+
+    async def cancel_command(self, sandbox_id: str, command_id: str) -> dict[str, Any]:
+        path = _command_path(sandbox_id, command_id)
+        return _command_record(await self._request("DELETE", path), "DELETE", path)
+
+    async def command_logs(
+        self,
+        sandbox_id: str,
+        command_id: str,
+        *,
+        offset: int | None = None,
+        tail: int | None = None,
+        streams: str | None = None,
+    ) -> dict[str, Any]:
+        path = f"{_command_path(sandbox_id, command_id)}/logs"
+        payload = await self._request(
+            "GET", path, params=_query(offset=offset, tail=tail, streams=streams)
+        )
+        if payload is None or not isinstance(payload.get("output"), str):
+            raise error.QueryError(
+                "Command log response must contain a string 'output'", f"GET {path}"
+            )
+        return payload
+
+    def command_log_stream(
+        self,
+        sandbox_id: str,
+        command_id: str,
+        *,
+        offset: int | None = None,
+        streams: str | None = None,
+    ) -> AsyncCommandLogStream:
+        params = [("stream", "true"), *_query(offset=offset, streams=streams)]
+        stream = AsyncCommandLogStream(
+            self, f"{_command_path(sandbox_id, command_id)}/logs", params
+        )
+        self._streams.add(stream)
+        return stream
 
     def logs(
         self,

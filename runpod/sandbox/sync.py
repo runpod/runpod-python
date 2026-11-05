@@ -16,8 +16,18 @@ from typing import (
 )
 
 from runpod.apps.volume import Volume
-from runpod.sandbox.asyncio import AsyncioSandbox, _cleanup
+from runpod.sandbox.asyncio import (
+    AsyncioCommandLogStream,
+    AsyncioSandbox,
+    AsyncioSandboxCommand,
+    _cleanup,
+)
 from .models import (
+    CommandInfo,
+    CommandLogEnd,
+    CommandLogLine,
+    CommandOutput,
+    CommandStream,
     ExecResult,
     LogEvent,
     LogSource,
@@ -256,6 +266,96 @@ class SandboxLogs(Iterator[LogEvent]):
                 self._runner.run(self._stream.aclose())
 
 
+class SandboxCommandLogs(Iterator[CommandLogLine]):
+    """Closeable iterator of a command's output lines; see ``AsyncioCommandLogStream``."""
+
+    def __init__(self, stream: AsyncioCommandLogStream, runner: _LoopRunner) -> None:
+        self._lines = SandboxLogs(stream, runner)
+        self._stream = stream
+
+    @property
+    def end(self) -> Optional[CommandLogEnd]:
+        return self._stream.end
+
+    @property
+    def next_offset(self) -> Optional[int]:
+        return self._stream.next_offset
+
+    @property
+    def error(self) -> Optional[str]:
+        return self._stream.error
+
+    def __enter__(self) -> "SandboxCommandLogs":
+        self._lines.__enter__()
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
+        return self._lines.__exit__(exc_type, exc, traceback)
+
+    def __iter__(self) -> "SandboxCommandLogs":
+        return self
+
+    def __next__(self) -> CommandLogLine:
+        return self._lines.__next__()
+
+    def close(self) -> None:
+        self._lines.close()
+
+
+class SandboxCommand:
+    """A command started in a sandbox, with blocking methods."""
+
+    def __init__(self, command: AsyncioSandboxCommand, runner: _LoopRunner) -> None:
+        self._command = command
+        self._runner = runner
+
+    @property
+    def info(self) -> CommandInfo:
+        return self._command.info
+
+    @property
+    def id(self) -> str:
+        return self._command.id
+
+    @property
+    def status(self) -> str:
+        return self._command.status
+
+    def refresh(self) -> CommandInfo:
+        return self._runner.run(self._command.refresh())
+
+    def cancel(self) -> CommandInfo:
+        return self._runner.run(self._command.cancel())
+
+    def wait(
+        self, *, timeout: Optional[float] = None, poll_interval: float = 1.0
+    ) -> CommandInfo:
+        return self._runner.run(
+            self._command.wait(timeout=timeout, poll_interval=poll_interval)
+        )
+
+    def output(
+        self,
+        *,
+        offset: Optional[int] = None,
+        tail: Optional[int] = None,
+        streams: Optional[CommandStream] = None,
+    ) -> CommandOutput:
+        return self._runner.run(
+            self._command.output(offset=offset, tail=tail, streams=streams)
+        )
+
+    def logs(
+        self,
+        *,
+        offset: Optional[int] = None,
+        streams: Optional[CommandStream] = None,
+    ) -> SandboxCommandLogs:
+        return SandboxCommandLogs(
+            self._command.logs(offset=offset, streams=streams), self._runner
+        )
+
+
 class Sandbox:
     """An isolated CPU sandbox with blocking methods.
 
@@ -478,6 +578,8 @@ class Sandbox:
         startup_timeout: Optional[float] = None,
         timeout_seconds: Optional[int] = None,
         background: bool = False,
+        cwd: Optional[str] = None,
+        env: Optional[Mapping[str, str]] = None,
     ) -> ExecResult:
         """Execute argv, waiting only for explicit startup rejections."""
         return self._runner.run(
@@ -487,7 +589,38 @@ class Sandbox:
                 startup_timeout=startup_timeout,
                 timeout_seconds=timeout_seconds,
                 background=background,
+                cwd=cwd,
+                env=env,
             )
+        )
+
+    def start_command(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Optional[str] = None,
+        env: Optional[Mapping[str, str]] = None,
+        timeout_seconds: Optional[int] = None,
+        startup_timeout: Optional[float] = None,
+    ) -> "SandboxCommand":
+        """Start a long-running command whose output is kept; see ``AsyncioSandbox.start_command``."""
+        return SandboxCommand(
+            self._runner.run(
+                self._sandbox.start_command(
+                    command,
+                    cwd=cwd,
+                    env=env,
+                    timeout_seconds=timeout_seconds,
+                    startup_timeout=startup_timeout,
+                )
+            ),
+            self._runner,
+        )
+
+    def get_command(self, command_id: str) -> "SandboxCommand":
+        """Fetch a command started earlier in this sandbox."""
+        return SandboxCommand(
+            self._runner.run(self._sandbox.get_command(command_id)), self._runner
         )
 
     def logs(

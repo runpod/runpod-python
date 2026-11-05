@@ -158,15 +158,39 @@ Only explicit `sandbox_starting` conflicts are retried within `startup_timeout`.
 Other conflicts, malformed responses, and ambiguous transport failures propagate.
 
 `exec(..., timeout_seconds=30)` requests a command timeout from 1 to 50 seconds.
-The backend currently caps foreground execution at about four seconds.
+The backend can apply a shorter limit, as low as four seconds on some sandboxes.
 `request_timeout` separately limits the client HTTP wait.
-For longer work, use `background=True` and poll for completion. A successful
-detached result confirms that the command started, not that it finished; redirect
-output to a file to retrieve it afterward. These options require backend support
-for `timeoutSeconds` and `background`.
+`cwd="/workspace"` and `env={"NAME": "value"}` apply to one command; `env` is
+layered over the sandbox's own environment. A sandbox that does not support them
+yet answers 422, and nothing runs.
+
+For longer work, start a command and follow it. Its output is kept, it can run
+for up to `timeout_seconds=86400` (one hour by default), and a sandbox runs at
+most eight at once:
+
+```python
+command = sandbox.start_command(["sh", "-c", "pytest -x"], cwd="/workspace")
+with command.logs() as stream:
+    for line in stream:
+        print(line.line)
+print(stream.end)  # CommandLogEnd(status="exited", exit_code=0, ...)
+info = command.wait()  # polls until the status is no longer "running"
+page = command.output()  # stored output, paged by page.next_offset
+```
+
+Read the outcome from `status` (`exited`, `cancelled`, `timedOut`, `failed`,
+`unknown`), not `exit_code`. `cancel()` stops a command; `get_command(id)`
+fetches one started earlier. A stream the server ends early leaves `end` unset
+and `next_offset` to resume from with `logs(offset=...)`. A finished command
+stays readable for about 20 minutes. `AsyncioSandbox` has the same methods,
+awaited, with `async with` and `async for` on the stream.
+
+`exec(..., background=True)` returns once a command has started, without its
+output; redirect output to a file to retrieve it afterward.
 
 `logs(source="container", tail=10)` streams main-process logs; `source="system"`
-selects lifecycle events. Exec output is returned by `exec`. Use `with` and
+selects lifecycle events. Exec output is returned by `exec`, and command output
+by the command's `logs` and `output`. Use `with` and
 regular iteration for synchronous streams, or `async with` and `async for` for
 asynchronous streams. Save an event's `id` as `last_event_id` to resume, or filter
 with `since`.
