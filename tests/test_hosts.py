@@ -2,7 +2,6 @@
 
 import pytest
 
-import runpod
 from runpod import _hosts
 
 
@@ -42,9 +41,9 @@ class TestProxyUrl:
 
 class TestEndpointDomain:
     def test_host_of_endpoint_base(self, monkeypatch):
-        monkeypatch.setattr(runpod, "endpoint_url_base", "https://api.example.test/v2")
+        monkeypatch.setattr("runpod.endpoint_url_base", "https://api.example.test/v2")
         assert _hosts.endpoint_domain() == "api.example.test"
 
     def test_default_endpoint_base(self, monkeypatch):
-        monkeypatch.setattr(runpod, "endpoint_url_base", "https://api.runpod.ai/v2")
+        monkeypatch.setattr("runpod.endpoint_url_base", "https://api.runpod.ai/v2")
         assert _hosts.endpoint_domain() == "api.runpod.ai"
