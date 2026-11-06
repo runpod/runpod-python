@@ -440,3 +440,71 @@ class TestRunJobGenerator(IsolatedAsyncioTestCase):
         assert mock_log.info.call_count == 1
         mock_log.info.assert_called_with("Finished running generator.", "123")
 
+
+class TestHandleJobStreamError(IsolatedAsyncioTestCase):
+    """Tests that generator errors are streamed to the client. (Fixes #397)"""
+
+    @staticmethod
+    async def _noop(*args, **kwargs):
+        pass
+
+    async def test_error_is_streamed_before_break(self):
+        """When a generator yields an error, stream_result must be called with it."""
+
+        def error_gen(job):
+            yield "chunk_1"
+            yield {"error": "GPU OOM"}
+
+        config = {"handler": error_gen}
+        job = {"id": "test-123"}
+        session = Mock()
+
+        stream_calls = []
+
+        async def capture_stream(*args, **kwargs):
+            stream_calls.append(args)
+
+        with patch(
+            "runpod.serverless.modules.rp_job.stream_result", side_effect=capture_stream,
+        ), patch(
+            "runpod.serverless.modules.rp_job.send_result", side_effect=self._noop,
+        ), patch(
+            "runpod.serverless.modules.rp_job.log", new_callable=Mock
+        ):
+            await rp_job.handle_job(session, config, job)
+
+        # stream_result should be called twice: once for "chunk_1", once for the error
+        assert len(stream_calls) == 2
+        streamed_payload = stream_calls[1][1]  # second call, second positional arg
+        assert "error" in streamed_payload
+
+    async def test_nested_error_preserves_extra_fields(self):
+        """Extra fields like refresh_worker should survive error extraction."""
+
+        def error_gen(job):
+            yield {"error": "bad things", "context": "step 47", "refresh_worker": True}
+
+        config = {"handler": error_gen}
+        job = {"id": "test-456"}
+        session = Mock()
+
+        stream_calls = []
+
+        async def capture_stream(*args, **kwargs):
+            stream_calls.append(args)
+
+        with patch(
+            "runpod.serverless.modules.rp_job.stream_result", side_effect=capture_stream,
+        ), patch(
+            "runpod.serverless.modules.rp_job.send_result", side_effect=self._noop,
+        ), patch(
+            "runpod.serverless.modules.rp_job.log", new_callable=Mock
+        ):
+            await rp_job.handle_job(session, config, job)
+
+        assert len(stream_calls) == 1
+        streamed_payload = stream_calls[0][1]
+        assert streamed_payload["error"] == "bad things"
+        assert streamed_payload["context"] == "step 47"
+        assert streamed_payload["refresh_worker"] is True
+
