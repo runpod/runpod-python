@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
+from .._hosts import proxy_url
 from .api import AppsApiClient, is_capacity_error
 from .context import CLEANUP_TIMEOUT
 from .spec import ResourceSpec
@@ -126,7 +127,7 @@ def _device_names(gpu: Optional[List[str]]) -> List[str]:
 
 
 def _proxy_url(pod_id: str) -> str:
-    return f"https://{pod_id}-{TASK_PORT}.proxy.runpod.net"
+    return proxy_url(pod_id, TASK_PORT)
 
 
 def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]:
