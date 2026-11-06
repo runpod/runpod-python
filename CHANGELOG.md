@@ -5,6 +5,13 @@
 ### Features
 
 * Apps expose `NetworkVolume` and `GlobalVolume` resources with explicit path-keyed mounts, lazy create-if-missing provisioning, and execution-bound filesystem access. Global volumes use GraphQL for lookup and creation.
+* Deployed Flash calls use endpoint or pod runtime credentials. Release requires deployed support from [RunPod#6686](https://github.com/runpod/RunPod/pull/6686), [ai-api#1176](https://github.com/runpod/ai-api/pull/1176), and [sdk-runtime#4](https://github.com/runpod-workers/sdk-runtime/pull/4).
+
+### Breaking Changes
+
+* Production endpoint environment variables reserve `RUNPOD_API_KEY` and runtime identity fields. Workers authenticate Flash calls with platform-issued runtime credentials; application credentials must use non-reserved environment names.
+* Deployed workers can invoke Flash resources only within their own app and environment, including through `Queue`, `Api`, and `Task` stubs. Local clients use account credentials subject to their permissions.
+* Remote queues, tasks, and JSON API calls require finite JSON-compatible arguments and results in local, dev, and deployed execution. Dev workers receive source separately from the JSON argument contract. Explicit `.local()` calls run Python directly.
 
 ### Bug Fixes
 
