@@ -120,3 +120,8 @@ class TestBrowserLogin:
         with pytest.raises(LoginError, match="initialize"):
             asyncio.run(browser_login(api=api, prompt_key=lambda: prompted.append(1)))
         assert prompted == []
+
+
+def test_auth_url_honors_console_override_at_call_time(monkeypatch):
+    monkeypatch.setenv("RUNPOD_CONSOLE_URL", "https://console.example.test")
+    assert auth_url("req-1") == "https://console.example.test/flash/login?request=req-1"

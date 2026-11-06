@@ -4,6 +4,7 @@ from typing import Optional
 
 import click
 
+from runpod._hosts import proxy_url
 from runpod.api.rest import run_rest_request
 from runpod.cli.groups.pod.commands import sync_pods
 from runpod.rp_cli import compute
@@ -151,7 +152,7 @@ def _show(pod: dict, as_json: bool) -> None:
         "ssh": (ssh.get("proxy") or {}).get("command"),
         "ssh direct": (ssh.get("direct") or {}).get("command"),
         "urls": [
-            f"https://{pod['id']}-{port.split('/')[0]}.proxy.runpod.net"
+            proxy_url(pod["id"], port.split("/")[0])
             for port in pod.get("ports", [])
             if port.endswith("/http")
         ],
