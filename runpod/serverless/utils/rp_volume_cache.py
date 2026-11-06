@@ -46,11 +46,15 @@ _FORMAT_VERSION = 1
 _MANIFEST_NAME = "manifest.json"
 _SMALL_ARCHIVE_NAME = "small.tar"
 _BIG_SUBDIR = "big"
-# Hydrate copies big files in ranges. Bytes in flight (workers x chunk, 512 MiB
-# here) is what matters: on Global Store's geesefs mount, 64 x 8 MiB reaches the
-# host NIC (~1.1 GiB/s), and much past ~1 GiB in flight fails reads with ENOMEM.
-_HYDRATE_WORKERS = 64
-_HYDRATE_CHUNK_SIZE = 8 * 1024 * 1024
+# Hydrate copies big files in ranges. Bytes in flight (workers x chunk) is what
+# matters: Global Store's geesefs mount fails reads with ENOMEM much past ~1 GiB
+# in flight, so the default chunk is sized to keep the pool within the budget.
+# At 512 MiB, 8 x 64 MiB measured 2-2.8x faster than 64 x 8 MiB on a network
+# volume (7B: ~1420 vs ~730 MiB/s; 3B: ~1000 vs ~360) and within run-to-run
+# noise on Global Store, with no ENOMEM even on a busy 8-GPU host.
+_HYDRATE_WORKERS = 8
+_HYDRATE_BYTES_IN_FLIGHT = 512 * 1024 * 1024
+_HYDRATE_MAX_CHUNK_SIZE = 64 * 1024 * 1024
 # Transient errors an object-store FUSE mount returns under load; retried with
 # jittered exponential backoff (up to ~6s in total) before the file is given up
 # on. Jitter keeps ranges that failed together from retrying in lockstep.
@@ -173,9 +177,11 @@ class VolumeCache:
             Defaults to ``min(32, (os.cpu_count() or 4) * 4)`` (I/O-bound, so
             oversubscribing the CPU count is fine).
         hydrate_workers: Concurrent range reads on hydrate. Defaults to
-            ``max_workers`` when that is set, else 64.
-        hydrate_chunk_size: Bytes per hydrate range. Defaults to 8 MiB. Peak
-            hydrate memory is about ``hydrate_workers * hydrate_chunk_size``.
+            ``max_workers`` when that is set, else 8.
+        hydrate_chunk_size: Bytes per hydrate range. Defaults to 512 MiB
+            divided by ``hydrate_workers``, capped at 64 MiB (64 MiB with the
+            default 8 workers). Peak hydrate memory is about
+            ``hydrate_workers * hydrate_chunk_size``.
 
     Example:
         >>> with VolumeCache(dirs=["/root/.cache/huggingface"]):
@@ -229,7 +235,7 @@ class VolumeCache:
             "hydrate_workers", hydrate_workers, max_workers or _HYDRATE_WORKERS
         )
         self._hydrate_chunk_size = _positive_or_default(
-            "hydrate_chunk_size", hydrate_chunk_size, _HYDRATE_CHUNK_SIZE
+            "hydrate_chunk_size", hydrate_chunk_size, _default_chunk_size(self._hydrate_workers)
         )
 
     @property
@@ -786,6 +792,11 @@ def _copy_metadata(src, dst, mtime=None, *, policy=None):
         shutil.copymode(src, dst)
     except OSError as exc:
         policy.note_failure(dst, "chmod", "default mode", exc)
+
+
+def _default_chunk_size(workers):
+    # Larger pools get smaller ranges so bytes in flight stay within budget.
+    return max(1, min(_HYDRATE_MAX_CHUNK_SIZE, _HYDRATE_BYTES_IN_FLIGHT // workers))
 
 
 def _positive_or_default(name, value, default):

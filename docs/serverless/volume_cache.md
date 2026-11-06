@@ -60,8 +60,8 @@ vc.sync(background=False)           # persist new files back to the volume, inli
 | `volume_path` | `/runpod-volume` | Network-volume mount point. |
 | `best_effort` | `True` | Swallow and log errors instead of raising. Set `False` while debugging. |
 | `max_workers` | `min(32, (os.cpu_count() or 4) * 4)` | Thread count for parallel copy of large files on sync (I/O-bound). |
-| `hydrate_workers` | `max_workers` if set, else `64` | Concurrent range reads when hydrating large files. |
-| `hydrate_chunk_size` | `8 MiB` | Bytes per hydrate range. Peak hydrate memory is about `hydrate_workers * hydrate_chunk_size` (512 MiB by default). |
+| `hydrate_workers` | `max_workers` if set, else `8` | Concurrent range reads when hydrating large files. |
+| `hydrate_chunk_size` | `512 MiB / hydrate_workers`, at most `64 MiB` | Bytes per hydrate range. Peak hydrate memory is about `hydrate_workers * hydrate_chunk_size`, so the default keeps it at or below 512 MiB. |
 
 ## How it works
 
@@ -97,7 +97,11 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   likewise not restored. This is a best-effort check: an object-store mount
   can serve a replacement that lands in the middle of a single range read
   without it being visible. Keep `hydrate_workers * hydrate_chunk_size` near the default: past ~1 GiB in
-  flight, Global Store starts failing reads with `ENOMEM`.
+  flight, Global Store starts failing reads with `ENOMEM`. The default of 8 x
+  64 MiB ranges is about 2x faster than 64 x 8 MiB on network volumes and
+  within run-to-run noise on Global Store; if first-hydrate times on fresh
+  Global Store workers matter, `hydrate_workers=64` (8 MiB ranges) is worth
+  measuring.
 - **Packing/extraction.** Packing the small-file archive uses the `tar`
   binary when available (falling back to the stdlib `tarfile` module
   otherwise). Extraction always goes through `tarfile`, validating every
