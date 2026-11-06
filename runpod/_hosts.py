@@ -4,11 +4,13 @@ Each host can be overridden with an environment variable, which is read on
 every call so a change takes effect without re-importing ``runpod``. Unset or
 blank values fall back to the public Runpod hosts.
 
-    RUNPOD_CONSOLE_URL   web console base URL (default https://console.runpod.io)
-    RUNPOD_PROXY_DOMAIN  pod HTTP proxy domain (default proxy.runpod.net)
+    RUNPOD_CONSOLE_URL        web console base URL (default https://console.runpod.io)
+    RUNPOD_PROXY_DOMAIN       pod HTTP proxy domain (default proxy.runpod.net)
+    RUNPOD_ENDPOINT_BASE_URL  serverless base URL (default https://api.runpod.ai/v2)
 
-The endpoint domain is derived from ``runpod.endpoint_url_base``, which is
-controlled by ``RUNPOD_ENDPOINT_BASE_URL``.
+The endpoint domain is the host of ``RUNPOD_ENDPOINT_BASE_URL``. When that is
+unset or blank, a non-blank ``runpod.endpoint_url_base`` set programmatically
+is used instead.
 
 Example:
     >>> proxy_url("abc123", 8080)
@@ -20,6 +22,7 @@ from typing import Union
 
 DEFAULT_CONSOLE_URL = "https://console.runpod.io"
 DEFAULT_PROXY_DOMAIN = "proxy.runpod.net"
+DEFAULT_ENDPOINT_BASE_URL = "https://api.runpod.ai/v2"
 
 
 def _env(name: str, default: str) -> str:
@@ -45,5 +48,7 @@ def endpoint_domain() -> str:
     """
     import runpod
 
-    host = runpod.endpoint_url_base.split("://", 1)[-1]
+    module_base = (runpod.endpoint_url_base or "").strip()
+    base = _env("RUNPOD_ENDPOINT_BASE_URL", module_base or DEFAULT_ENDPOINT_BASE_URL)
+    host = base.split("://", 1)[-1]
     return host.split("/", 1)[0]

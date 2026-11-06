@@ -7,7 +7,11 @@ from runpod import _hosts
 
 @pytest.fixture(autouse=True)
 def _clear_host_env(monkeypatch):
-    for name in ("RUNPOD_CONSOLE_URL", "RUNPOD_PROXY_DOMAIN"):
+    for name in (
+        "RUNPOD_CONSOLE_URL",
+        "RUNPOD_PROXY_DOMAIN",
+        "RUNPOD_ENDPOINT_BASE_URL",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -47,3 +51,17 @@ class TestEndpointDomain:
     def test_default_endpoint_base(self, monkeypatch):
         monkeypatch.setattr("runpod.endpoint_url_base", "https://api.runpod.ai/v2")
         assert _hosts.endpoint_domain() == "api.runpod.ai"
+
+    def test_env_set_after_import_takes_effect(self, monkeypatch):
+        monkeypatch.setattr("runpod.endpoint_url_base", "https://api.runpod.ai/v2")
+        monkeypatch.setenv("RUNPOD_ENDPOINT_BASE_URL", "https://api.example.test/v2")
+        assert _hosts.endpoint_domain() == "api.example.test"
+
+    def test_blank_env_falls_back_to_default(self, monkeypatch):
+        monkeypatch.setattr("runpod.endpoint_url_base", "")
+        monkeypatch.setenv("RUNPOD_ENDPOINT_BASE_URL", "   ")
+        assert _hosts.endpoint_domain() == "api.runpod.ai"
+
+    def test_programmatic_base_used_when_env_unset(self, monkeypatch):
+        monkeypatch.setattr("runpod.endpoint_url_base", "https://lb.example.test/v2")
+        assert _hosts.endpoint_domain() == "lb.example.test"
