@@ -944,3 +944,11 @@ def test_sync_checks_account_keys_over_rest_only():
     graphql.assert_not_called()
     source.get_file.assert_called_once()
     destination.put_file.assert_called_once()
+
+
+def test_get_urls_honor_proxy_domain_override(monkeypatch):
+    monkeypatch.setenv("RUNPOD_PROXY_DOMAIN", "proxy.example.test")
+    result = _invoke(["get", "pod123"])
+    assert result.exit_code == 0, result.output
+    urls = [token for token in result.output.split() if token.startswith("https://")]
+    assert urls == ["https://pod123-8888.proxy.example.test"]
