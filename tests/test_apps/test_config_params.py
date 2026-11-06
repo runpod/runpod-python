@@ -8,6 +8,7 @@ from runpod.apps.datacenter import DataCenter
 from runpod.apps.dev import _endpoint_input
 from runpod.apps.errors import InvalidResourceError
 from runpod.apps.spec import (
+    DATACENTER_IDS_DOCS_URL,
     ResourceKind,
     ResourceSpec,
     normalize_cuda_version,
@@ -62,7 +63,7 @@ class TestDatacenterNormalization:
     )
     def test_known_values_normalize_without_warning(self, value, caplog):
         assert normalize_datacenter(value) == ["EU-RO-1"]
-        assert "not in the SDK" not in caplog.text
+        assert "valid datacenter id" not in caplog.text
 
     def test_none_passes(self):
         assert normalize_datacenter(None) is None
@@ -72,7 +73,10 @@ class TestDatacenterNormalization:
         warnings = [r for r in caplog.records if r.levelname == "WARNING"]
         assert len(warnings) == 1
         assert UNLISTED_DC in warnings[0].getMessage()
-        assert "passed to the API unchanged" in warnings[0].getMessage()
+        message = warnings[0].getMessage()
+        assert "doesn't look like a valid datacenter id" in message
+        assert "will be used anyway" in message
+        assert DATACENTER_IDS_DOCS_URL in message
 
     def test_mixed_list_keeps_order(self):
         assert normalize_datacenter(["us_ks_2", UNLISTED_DC]) == [

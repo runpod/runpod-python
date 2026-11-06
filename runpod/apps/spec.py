@@ -20,6 +20,10 @@ log = logging.getLogger(__name__)
 
 DEFAULT_WORKERS: Tuple[int, int] = (0, 3)
 
+DATACENTER_IDS_DOCS_URL = (
+    "https://docs.runpod.io/api-reference-v2/catalog/list-data-centers"
+)
+
 SCALER_TYPES = frozenset({"QUEUE_DELAY", "REQUEST_COUNT"})
 DEFAULT_SCALER_VALUE = 4
 
@@ -155,9 +159,9 @@ def normalize_cuda_version(version: Optional[str]) -> Optional[str]:
 def _warn_unlisted_datacenter(dc_id: str) -> None:
     # specs revalidate many times per deploy; warn once per id per process
     log.warning(
-        "datacenter %r is not in the SDK's known list; "
-        "it will be passed to the API unchanged",
+        "%r doesn't look like a valid datacenter id (see %s) but will be used anyway",
         dc_id,
+        DATACENTER_IDS_DOCS_URL,
     )
 
 
