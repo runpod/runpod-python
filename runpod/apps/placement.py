@@ -11,7 +11,7 @@ import asyncio
 import logging
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
-from .datacenter import DataCenter
+from .datacenter import DataCenter, datacenter_id
 from .errors import AppError
 from .gpu import GpuGroup
 from .utils.client import default_client
@@ -161,17 +161,21 @@ def candidates(spec, stock: StockMap) -> Set[str]:
     """
     spec.validate()
     allowed = {dc.value for dc in DataCenter.all()}
+    # stock is only queried for built-in datacenters, so an unlisted pin
+    # cannot be ruled out here; the backend decides whether it schedules
+    unlisted: Set[str] = set()
     if spec.datacenter:
+        unlisted = {dc for dc in spec.datacenter if not DataCenter.is_known(dc)}
         allowed &= set(spec.datacenter)
 
     keys = _hardware_keys(spec)
     if not keys:
-        return allowed
+        return allowed | unlisted
     viable = set()
     for dc in allowed:
         if any(stock.score(key, dc) > 0 for key in keys):
             viable.add(dc)
-    return viable
+    return viable | unlisted
 
 
 def _resource_best_score(spec, stock: StockMap, dc: str) -> int:
@@ -200,7 +204,7 @@ def solve_placement(
     per_resource = {spec.name: candidates(spec, stock) for spec in specs}
 
     if existing_dc is not None:
-        existing_dc = DataCenter.from_string(existing_dc).value
+        existing_dc = datacenter_id(existing_dc)
         blocked = [name for name, dcs in per_resource.items() if existing_dc not in dcs]
         if blocked:
             raise PlacementError(

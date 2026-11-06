@@ -317,6 +317,22 @@ class TestVolumeResolver:
         )
         assert resolved == {"id": "nv-new", "dataCenterId": "EU-RO-1"}
 
+    async def test_unlisted_volume_pin_uses_catalog(self):
+        api = _api(
+            created={"id": "nv-new", "name": "models", "size": 50, "dataCenter": "XX-TEST-1"}
+        )
+        api.network_volume_datacenters.return_value = {"EU-RO-1", "XX-TEST-1"}
+        spec = ResourceSpec(
+            kind=ResourceKind.TASK, name="r", gpu=None, datacenter="XX-TEST-1"
+        )
+        resolved = await VolumeResolver(api).resolve(
+            NetworkVolume("models", datacenter="XX-TEST-1"), [spec]
+        )
+        assert resolved == {"id": "nv-new", "dataCenterId": "XX-TEST-1"}
+        api.create_network_volume.assert_awaited_once_with(
+            name="models", size=50, data_center_id="XX-TEST-1"
+        )
+
     async def test_unsupported_explicit_pin_never_relocates(self):
         api = _api()
         api.network_volume_datacenters.return_value = {"EU-RO-1"}
