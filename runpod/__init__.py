@@ -115,7 +115,7 @@ def _load_api_key():
         ).get_credentials(profile)
     except Exception:  # noqa: BLE001 - no stored key is a valid state
         return None
-    return creds["api_key"] if creds else None
+    return creds.get("api_key") if creds else None
 
 
 def __getattr__(name):

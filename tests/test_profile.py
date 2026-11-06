@@ -1,5 +1,7 @@
 """Credential profile selection via RUNPOD_PROFILE."""
 
+import importlib
+
 import pytest
 
 import runpod
@@ -48,3 +50,30 @@ class TestApiKeyFromSelectedProfile:
         monkeypatch.setattr(runpod, "profile", "team")
 
         assert runpod._load_api_key() == "env-key"
+
+
+class TestImportWithSelectedProfile:
+    @pytest.fixture
+    def reload_runpod(self, monkeypatch):
+        """reload runpod under the test env, then again under the restored env."""
+        yield lambda: importlib.reload(runpod)
+        monkeypatch.undo()
+        importlib.reload(runpod)
+
+    def test_s3_only_profile_imports_without_api_key(
+        self, tmp_path, monkeypatch, reload_runpod
+    ):
+        from runpod.cli.groups.config import functions
+
+        credentials = tmp_path / "config.toml"
+        credentials.write_text(
+            '[storage]\ns3_access_key = "id"\ns3_secret_key = "secret"\n'
+        )
+        monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(credentials))
+        monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
+        monkeypatch.setenv("RUNPOD_PROFILE", "storage")
+
+        reload_runpod()
+
+        assert runpod.profile == "storage"
+        assert runpod.api_key is None
