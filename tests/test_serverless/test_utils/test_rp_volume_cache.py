@@ -12,6 +12,7 @@ import pytest
 import runpod.serverless.utils.rp_volume_cache as vcmod
 
 VolumeCache = vcmod.VolumeCache
+MIB = 1024 * 1024
 
 
 @pytest.fixture(autouse=True)
@@ -1345,9 +1346,48 @@ def test_hydrate_bounds_outstanding_range_tasks(tmp_path, monkeypatch):
 
 
 def test_hydrate_tuning_defaults(tmp_path):
+    # 8 x 64 MiB: ~2.8x faster than 64 x 8 MiB on network volumes and no slower
+    # on Global Store, at the same 512 MiB in flight.
     vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
-    assert vc._hydrate_workers == 64
-    assert vc._hydrate_chunk_size == 8 * 1024 * 1024
+    assert vc._hydrate_workers == 8
+    assert vc._hydrate_chunk_size == 64 * MIB
+
+
+@pytest.mark.parametrize(
+    ("workers", "chunk"),
+    [(4, 64 * MIB), (16, 32 * MIB), (32, 16 * MIB), (64, 8 * MIB)],
+)
+def test_default_hydrate_chunk_keeps_bytes_in_flight_bounded(tmp_path, workers, chunk):
+    # geesefs fails reads with ENOMEM much past ~1 GiB in flight, so a larger
+    # pool must get smaller default ranges, capped at 64 MiB for small pools.
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache(
+        [str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), hydrate_workers=workers
+    )
+    assert vc._hydrate_chunk_size == chunk
+    assert vc._hydrate_workers * vc._hydrate_chunk_size <= 512 * MIB
+
+
+def test_default_hydrate_chunk_follows_explicit_max_workers(tmp_path):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), max_workers=32)
+    assert vc._hydrate_workers == 32
+    assert vc._hydrate_chunk_size == 16 * MIB
+
+
+def test_explicit_hydrate_chunk_size_is_not_rescaled(tmp_path):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache(
+        [str(tmp_path / "cache")],
+        namespace="ep1",
+        volume_path=str(vol),
+        hydrate_workers=32,
+        hydrate_chunk_size=32 * MIB,
+    )
+    assert vc._hydrate_chunk_size == 32 * MIB
 
 
 def test_hydrate_skips_file_when_local_temp_cannot_be_created(tmp_path, monkeypatch):
