@@ -10,6 +10,7 @@ from typing import Any, Mapping, Optional
 
 import aiohttp
 import requests
+from yarl import URL
 
 from runpod import error
 from runpod.user_agent import USER_AGENT
@@ -33,8 +34,10 @@ def _resolve_api_key(api_key: Optional[str]) -> str:
     return effective_api_key
 
 
-def _build_url(path: str) -> str:
-    api_url_base = os.environ.get("RUNPOD_API_BASE_URL", "https://api.runpod.io")
+def _build_url(path: str, base_url: Optional[str] = None) -> str:
+    api_url_base = base_url or os.environ.get(
+        "RUNPOD_API_BASE_URL", "https://api.runpod.io"
+    )
     return f"{api_url_base.rstrip('/')}/{path.lstrip('/')}"
 
 
@@ -47,13 +50,15 @@ def _build_headers(api_key: str) -> dict[str, str]:
     }
 
 
-def _raise_for_error(
+def _raise_for_status(
     status_code: int,
+    payload: Mapping[str, Any],
+    text: str,
     method: str,
     path: str,
-    text: str = "",
     retry_after: Optional[float] = None,
 ) -> None:
+    """map http error details consistently across rest transports."""
     if status_code == HTTP_STATUS_UNAUTHORIZED:
         raise error.AuthenticationError(
             "Unauthorized request, please check your API key."
@@ -62,12 +67,6 @@ def _raise_for_error(
     if status_code < HTTP_STATUS_BAD_REQUEST:
         return
 
-    try:
-        payload = json_module.loads(text)
-    except ValueError:
-        payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
     message = payload.get("detail") or payload.get("title")
     if not message:
         message = text or f"Request failed with status {status_code}"
@@ -85,6 +84,31 @@ def _raise_for_error(
         f"{method.upper()} {path}",
         status_code=status_code,
         errors=payload.get("errors"),
+    )
+
+
+def _raise_for_error(
+    status_code: int,
+    method: str,
+    path: str,
+    text: str = "",
+    retry_after: Optional[float] = None,
+) -> None:
+    if status_code == HTTP_STATUS_UNAUTHORIZED:
+        _raise_for_status(status_code, {}, "", method, path)
+    if status_code < HTTP_STATUS_BAD_REQUEST:
+        return
+    try:
+        payload = json_module.loads(text)
+    except ValueError:
+        payload = {}
+    _raise_for_status(
+        status_code,
+        payload if isinstance(payload, dict) else {},
+        text,
+        method,
+        path,
+        retry_after,
     )
 
 
@@ -156,6 +180,56 @@ def run_rest_request(
                 bucket.release()
 
 
+async def _open_rest_response_async(
+    method: str,
+    path: str,
+    *,
+    session: aiohttp.ClientSession,
+    timeout: aiohttp.ClientTimeout,
+    api_key: Optional[str] = None,
+    url: Optional[str | URL] = None,
+    params: Optional[Mapping[str, Any]] = None,
+    json: Optional[Mapping[str, Any]] = None,
+    headers: Optional[Mapping[str, str]] = None,
+    max_retries: int = 3,
+    max_rate_limit_wait: float = 60,
+    allow_redirects: bool = True,
+) -> tuple[aiohttp.ClientResponse, Optional[float]]:
+    """open a quota-coordinated response; the caller owns its body and close."""
+    _validate_retry_options(max_retries, max_rate_limit_wait)
+    key = _resolve_api_key(api_key)
+    url = url if url is not None else _build_url(path)
+    request_headers = {**_build_headers(key), **(headers or {})}
+    budget = _RetryBudget(max_retries, max_rate_limit_wait, f"{method.upper()} {path}")
+    session._retry_connection = False
+    with rate_limits.bucket(str(url), key) as bucket:
+        for attempt in range(max_retries + 1):
+            async with bucket.reserve_async(budget) as started_at:
+                response = await session.request(
+                    method,
+                    url,
+                    headers=request_headers,
+                    params=params,
+                    json=json,
+                    timeout=timeout,
+                    allow_redirects=allow_redirects,
+                )
+                try:
+                    retry_after = bucket.update(
+                        response.status,
+                        response.headers,
+                        attempt,
+                        started_at=started_at,
+                    )
+                    if budget.can_retry(attempt, retry_after):
+                        response.close()
+                        continue
+                    return response, retry_after
+                except BaseException:
+                    response.close()
+                    raise
+
+
 async def run_rest_request_async(
     method: str,
     path: str,
@@ -174,58 +248,30 @@ async def run_rest_request_async(
     cumulative quota sleeps in seconds; ``max_retries`` counts 429 retries.
     Network failures and other HTTP errors are not retried.
     """
-    _validate_retry_options(max_retries, max_rate_limit_wait)
-    key = _resolve_api_key(api_key)
-    url = _build_url(path)
-    headers = _build_headers(key)
-    budget = _RetryBudget(max_retries, max_rate_limit_wait, f"{method.upper()} {path}")
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
     context = nullcontext(session) if session is not None else aiohttp.ClientSession()
     async with context as session:
-        # aiohttp otherwise replays put/delete requests after an ambiguous disconnect.
-        session._retry_connection = False  # pylint: disable=protected-access
-        with rate_limits.bucket(url, key) as bucket:
-            for attempt in range(max_retries + 1):
-                while wait := bucket.acquire(budget):
-                    if isinstance(wait, Future):
-                        await asyncio.wrap_future(wait)
-                    else:
-                        await asyncio.sleep(wait)
-                try:
-                    started_at = time.monotonic()
-                    async with session.request(
-                        method,
-                        url,
-                        headers=headers,
-                        params=params,
-                        json=json,
-                        timeout=client_timeout,
-                    ) as response:
-                        retry_after = bucket.update(
-                            response.status,
-                            response.headers,
-                            attempt,
-                            started_at=started_at,
-                        )
-                        if budget.can_retry(attempt, retry_after):
-                            continue
-                        if response.status >= HTTP_STATUS_BAD_REQUEST:
-                            text = (
-                                ""
-                                if response.status == HTTP_STATUS_UNAUTHORIZED
-                                else await response.text(errors="replace")
-                            )
-                            _raise_for_error(
-                                response.status, method, path, text, retry_after
-                            )
-                        if (
-                            response.status == HTTP_STATUS_NO_CONTENT
-                            or not await response.read()
-                        ):
-                            return None
-                        return await response.json(content_type=None)
-                finally:
-                    bucket.release()
+        response, retry_after = await _open_rest_response_async(
+            method,
+            path,
+            session=session,
+            api_key=api_key,
+            params=params,
+            json=json,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+            max_retries=max_retries,
+            max_rate_limit_wait=max_rate_limit_wait,
+        )
+        async with response:
+            if response.status >= HTTP_STATUS_BAD_REQUEST:
+                text = (
+                    ""
+                    if response.status == HTTP_STATUS_UNAUTHORIZED
+                    else await response.text(errors="replace")
+                )
+                _raise_for_error(response.status, method, path, text, retry_after)
+            if response.status == HTTP_STATUS_NO_CONTENT or not await response.read():
+                return None
+            return await response.json(content_type=None)
 
 
 async def run_rest_paginated_request_async(
