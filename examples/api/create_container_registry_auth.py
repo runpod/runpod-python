@@ -1,4 +1,9 @@
-""" Example of creating a container registry auth with the Runpod API. """
+"""Example of creating a container registry auth with the Runpod API.
+
+Registry credentials let templates pull images from a private registry. The
+credential stays on your account after the script exits; delete it with
+`rp registry delete NAME`.
+"""
 
 import runpod
 
@@ -7,9 +12,9 @@ import runpod
 
 try:
     new_container_registry_auth = runpod.create_container_registry_auth(
-        name="test-container-registry-auth-name",
-        username="test-username",
-        password="test-password",
+        name="example-registry-auth",
+        username="YOUR_REGISTRY_USERNAME",
+        password="YOUR_REGISTRY_PASSWORD",
     )
 
     print(new_container_registry_auth)
