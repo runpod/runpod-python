@@ -90,11 +90,12 @@ def test_get_gpu_propagates_other_api_errors():
 def test_get_pods_unwraps_response():
     pods = [{"id": "pod"}]
     with patch(
-        "runpod.api.ctl_commands.run_rest_request", return_value={"pods": pods}
+        "runpod.api.ctl_commands.run_rest_request",
+        return_value={"pods": pods, "pagination": {"hasNextPage": False}},
     ) as request:
         assert ctl_commands.get_pods(api_key="key") == pods
 
-    request.assert_called_once_with("GET", "/v2/pods", api_key="key")
+    request.assert_called_once_with("GET", "/v2/pods", api_key="key", params={})
 
 
 def test_get_pod_escapes_id():
@@ -343,11 +344,11 @@ def test_get_endpoints_unwraps_response():
     endpoints = [{"id": "endpoint"}]
     with patch(
         "runpod.api.ctl_commands.run_rest_request",
-        return_value={"endpoints": endpoints},
+        return_value={"endpoints": endpoints, "pagination": {"hasNextPage": False}},
     ) as request:
         assert ctl_commands.get_endpoints() == endpoints
 
-    request.assert_called_once_with("GET", "/v2/serverless")
+    request.assert_called_once_with("GET", "/v2/serverless", api_key=None, params={})
 
 
 @pytest.fixture

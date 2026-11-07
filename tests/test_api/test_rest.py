@@ -27,6 +27,7 @@ def rest_server(monkeypatch):
         "status": 200,
         "body": b'{"id":"pod-1"}',
         "content_type": "application/json",
+        "requests": [],
         "started": threading.Event(),
         "disconnected": threading.Event(),
     }
@@ -34,6 +35,7 @@ def rest_server(monkeypatch):
     class Handler(BaseHTTPRequestHandler):
         def _respond(self):
             state["hits"] += 1
+            state["requests"].append(self.path)
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             state["started"].set()
             if state.get("stall"):
@@ -48,6 +50,10 @@ def rest_server(monkeypatch):
             status, response_body = state["status"], state["body"]
             if self.headers.get("Authorization") != "Bearer key":
                 status, response_body = 401, b"invalid key"
+            elif "responses" in state:
+                status, response_body = state["responses"].get(
+                    self.path, (404, b"wrong path")
+                )
             elif self.path != state.get("path", "/prefix/v2/pods"):
                 status, response_body = 404, b"wrong path"
             elif (
@@ -107,6 +113,49 @@ def test_authenticated_mutation_at_custom_base_url(
         json={"name": "pod"},
     )
     assert result == {"id": "pod-1"}
+
+
+@pytest.mark.parametrize(
+    ("get_records", "path", "collection", "kwargs"),
+    [
+        (runpod.get_pods, "/v2/pods", "pods", {"api_key": "key"}),
+        (runpod.get_pods, "/v2/pods", "pods", {}),
+        (runpod.get_endpoints, "/v2/serverless", "endpoints", {}),
+    ],
+)
+@pytest.mark.parametrize("second_page_status", [200, 503])
+def test_sdk_lists_follow_cursor_pages(
+    rest_server, monkeypatch, get_records, path, collection, kwargs, second_page_status
+):
+    monkeypatch.setattr(runpod, "api_key", "wrong-key" if kwargs else "key")
+    first_path = f"/prefix{path}"
+    second_path = f"{first_path}?cursor=next-page"
+    second_body = (
+        {collection: [{"id": "second"}], "pagination": {"hasNextPage": False}}
+        if second_page_status == 200
+        else {"detail": "second page unavailable"}
+    )
+    rest_server["responses"] = {
+        first_path: (
+            200,
+            json.dumps(
+                {
+                    collection: [{"id": "first"}],
+                    "pagination": {"hasNextPage": True, "nextCursor": "next-page"},
+                }
+            ).encode(),
+        ),
+        second_path: (second_page_status, json.dumps(second_body).encode()),
+    }
+
+    if second_page_status == 200:
+        assert get_records(**kwargs) == [{"id": "first"}, {"id": "second"}]
+    else:
+        with pytest.raises(QueryError, match="second page unavailable") as raised:
+            get_records(**kwargs)
+        assert raised.value.status_code == 503
+
+    assert rest_server["requests"] == [first_path, second_path]
 
 
 def test_missing_key_fails_before_network_request(rest_server, rest_request):

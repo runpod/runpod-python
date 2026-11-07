@@ -18,6 +18,20 @@ def _path_segment(value: str) -> str:
     return quote(value, safe="")
 
 
+def _list_all(
+    path: str, collection: str, *, api_key: Optional[str] = None
+) -> list[dict]:
+    records = []
+    params = {}
+    while True:
+        response = run_rest_request("GET", path, api_key=api_key, params=params)
+        records.extend(response[collection])
+        pagination = response["pagination"]
+        if not pagination["hasNextPage"]:
+            return records
+        params["cursor"] = pagination["nextCursor"]
+
+
 def _split_values(value: Optional[Iterable[Any] | str]) -> list[str]:
     if value is None:
         return []
@@ -93,8 +107,7 @@ def get_gpu(gpu_id: str, gpu_quantity: int = 1, api_key: Optional[str] = None) -
 
 def get_pods(api_key: Optional[str] = None) -> list[dict]:
     """Get all standalone pods."""
-    response = run_rest_request("GET", "/v2/pods", api_key=api_key)
-    return response["pods"]
+    return _list_all("/v2/pods", "pods", api_key=api_key)
 
 
 def get_pod(pod_id: str, api_key: Optional[str] = None) -> Optional[dict]:
@@ -279,8 +292,7 @@ def create_template(
 
 def get_endpoints() -> list[dict]:
     """Get all serverless endpoints."""
-    response = run_rest_request("GET", "/v2/serverless")
-    return response["endpoints"]
+    return _list_all("/v2/serverless", "endpoints")
 
 
 def create_endpoint(
