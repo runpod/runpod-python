@@ -420,6 +420,102 @@ class TestTolerantDiscovery:
             discover_apps(client)
 
 
+class TestManifestKeepsEnvValuesOut:
+    PLAIN_VALUE = "hf_plain_value_from_os_environ"
+
+    def _app_with_env(self):
+        app = App("env-app")
+
+        @app.queue(name="qee", cpu="cpu5c-2-4", env={"HF_TOKEN": self.PLAIN_VALUE})
+        def qee(x):
+            return x
+
+        @app.api(name="web", cpu="cpu5c-2-4", env={"API_SECRET": self.PLAIN_VALUE})
+        def web():
+            return {}
+
+        @app.task(name="job", cpu="cpu3c-1-2", env={"MODE": "fast"})
+        def job():
+            pass
+
+        return app
+
+    def test_endpoint_env_is_left_out_of_the_manifest(self, tmp_path):
+        manifest = build_manifest(self._app_with_env(), tmp_path)
+
+        endpoints = [r for r in manifest["resources"] if r["kind"] != "task"]
+        assert len(endpoints) == 2
+        assert all("env" not in r for r in endpoints)
+        assert self.PLAIN_VALUE not in json.dumps(manifest)
+
+    def test_task_env_stays_in_the_manifest_for_the_backend(self, tmp_path):
+        manifest = build_manifest(self._app_with_env(), tmp_path)
+
+        (task,) = [r for r in manifest["resources"] if r["kind"] == "task"]
+        assert task["env"] == {"MODE": "fast"}
+
+    def test_reserved_endpoint_env_is_still_rejected(self, tmp_path):
+        app = App("env-app")
+
+        @app.queue(name="qee", cpu="cpu5c-2-4", env={"RUNPOD_ENDPOINT_ID": "x"})
+        def qee(x):
+            return x
+
+        with pytest.raises(InvalidResourceError, match="RUNPOD_ENDPOINT_ID"):
+            build_manifest(app, tmp_path)
+
+    def test_packaged_manifest_has_no_env_values(self, tmp_path):
+        manifest = {
+            "version": 1,
+            "app": "env-app",
+            "resources": [
+                {"kind": "task", "name": "job", "env": {"MODE": self.PLAIN_VALUE}}
+            ],
+        }
+
+        with tarfile.open(package_project(tmp_path, manifest)) as tar:
+            packaged = json.load(tar.extractfile("runpod_manifest.json"))
+
+        assert packaged["resources"] == [{"kind": "task", "name": "job"}]
+        assert manifest["resources"][0]["env"] == {"MODE": self.PLAIN_VALUE}
+
+    @pytest.mark.parametrize(
+        "name", ["HF_TOKEN", "OPENAI_API_KEY", "DB_PASSWORD", "app_secret"]
+    )
+    def test_secret_like_plain_value_warns(self, tmp_path, caplog, name):
+        app = App("env-app")
+
+        @app.queue(name="qee", cpu="cpu5c-2-4", env={name: self.PLAIN_VALUE})
+        def qee(x):
+            return x
+
+        build_manifest(app, tmp_path)
+
+        assert name in caplog.text
+        assert "runpod.Secret" in caplog.text
+        assert self.PLAIN_VALUE not in caplog.text
+
+    @pytest.mark.parametrize(
+        "env",
+        [
+            {"HF_TOKEN": runpod.Secret("hf-token")},
+            {"MODE": "fast", "KEYBOARD": "us"},
+        ],
+    )
+    def test_secret_references_and_ordinary_names_do_not_warn(
+        self, tmp_path, caplog, env
+    ):
+        app = App("env-app")
+
+        @app.queue(name="qee", cpu="cpu5c-2-4", env=env)
+        def qee(x):
+            return x
+
+        build_manifest(app, tmp_path)
+
+        assert "runpod.Secret" not in caplog.text
+
+
 class TestDeployedTemplateNames:
     """Template names are unique per owner, and a deleted endpoint holds its
     template for a while, so new endpoints must not reuse a fixed name."""

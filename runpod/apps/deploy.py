@@ -59,6 +59,44 @@ class DeployResult:
     endpoints: Dict[str, str] = field(default_factory=dict)
 
 
+SECRET_LIKE_ENV_SUFFIXES = ("_TOKEN", "_KEY", "_SECRET", "_PASSWORD")
+
+
+def _warn_secret_like_plain_env(resource_name: str, env: Dict[str, Any]) -> None:
+    """warn when a secret-looking env name carries a literal value.
+
+    literal values are stored in the endpoint or task definition as typed;
+    runpod.Secret keeps the value encrypted until the worker boots.
+    """
+    from .secret import Secret
+
+    for key, value in env.items():
+        if isinstance(value, Secret):
+            continue
+        if key.upper().endswith(SECRET_LIKE_ENV_SUFFIXES):
+            log.warning(
+                "resource '%s' sets %s to a literal value; store it with "
+                "`rp secret add` and reference it with runpod.Secret(...)",
+                resource_name,
+                key,
+            )
+
+
+def _without_env(manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """copy of a manifest with every resource's env removed.
+
+    the packaged artifact never needs env: endpoints get it from their
+    template and deployed tasks from the backend's task definition.
+    """
+    if "resources" not in manifest:
+        return dict(manifest)
+    resources = [
+        {k: v for k, v in resource.items() if k != "env"}
+        for resource in manifest["resources"]
+    ]
+    return {**manifest, "resources": resources}
+
+
 def _validate_endpoint_env(env: Dict[str, str]) -> None:
     reserved = {
         "RUNPOD_API_KEY",
@@ -106,8 +144,11 @@ def build_manifest(
             )
 
         entry = spec.to_manifest()
+        _warn_secret_like_plain_env(spec.name, spec.env or {})
         if spec.kind in (ResourceKind.QUEUE, ResourceKind.API):
-            _validate_endpoint_env(entry.get("env", {}))
+            # endpoint env reaches workers through the endpoint template;
+            # keep the values out of the uploaded manifest
+            _validate_endpoint_env(entry.pop("env", {}))
         if spec.kind is ResourceKind.TASK:
             from .images import image_for_spec
 
@@ -245,7 +286,7 @@ def package_project(
                     rel = path.relative_to(env_resolved).as_posix()
                     tar.add(path, arcname=f"{ENV_DIR_NAME}/{rel}", recursive=False)
 
-        manifest_bytes = json.dumps(manifest, indent=2).encode()
+        manifest_bytes = json.dumps(_without_env(manifest), indent=2).encode()
         info = tarfile.TarInfo(name="runpod_manifest.json")
         info.size = len(manifest_bytes)
         import io
