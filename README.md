@@ -9,7 +9,7 @@
 [![CI | Unit Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-pytests.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-pytests.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-[Documentation](https://docs.runpod.io) • [Examples](examples/apps) • [Discord](https://discord.gg/pJ3P2DbUUq)
+[Documentation](https://docs.runpod.io) • [Examples](examples) • [Discord](https://discord.gg/pJ3P2DbUUq)
 
 </div>
 
