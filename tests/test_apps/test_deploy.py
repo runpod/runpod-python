@@ -132,6 +132,20 @@ class TestEndpointInput:
         assert env["PORT_HEALTH"] == "80"
 
 
+    @pytest.mark.parametrize(
+        "hardware", [{"gpu": "ADA_24"}, {"cpu": "cpu3c-1-2"}, {"cpu": "cpu5c-2-4"}]
+    )
+    def test_unlisted_datacenter_reaches_locations(self, hardware):
+        app = App("dc-app")
+
+        @app.queue(name="q", datacenter="XX-TEST-1", **hardware)
+        def q():
+            pass
+
+        payload = _deployed_endpoint_input(app, q.spec, "env-1", "build-1", "3.12")
+        assert payload["locations"] == "XX-TEST-1"
+
+
 class TestPackaging:
     def test_tarball_contains_source_and_manifest(self, tmp_path):
         _write_project(tmp_path)
