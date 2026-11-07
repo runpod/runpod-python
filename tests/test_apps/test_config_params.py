@@ -4,14 +4,19 @@ import pytest
 
 from runpod.apps import App
 from runpod.apps.app import _clear_registry
+from runpod.apps.datacenter import DataCenter
 from runpod.apps.dev import _endpoint_input
 from runpod.apps.errors import InvalidResourceError
 from runpod.apps.spec import (
+    DATACENTER_IDS_DOCS_URL,
     ResourceKind,
     ResourceSpec,
     normalize_cuda_version,
+    normalize_datacenter,
     normalize_scaler_type,
 )
+
+UNLISTED_DC = "XX-TEST-1"
 
 
 @pytest.fixture(autouse=True)
@@ -42,6 +47,55 @@ class TestNormalizers:
     def test_cuda_version_rejects_unknown(self):
         with pytest.raises(InvalidResourceError):
             normalize_cuda_version("10.0")
+
+
+class TestDatacenterNormalization:
+    @pytest.fixture(autouse=True)
+    def _fresh_warnings(self):
+        from runpod.apps.spec import _warn_unlisted_datacenter
+
+        _warn_unlisted_datacenter.cache_clear()
+        yield
+        _warn_unlisted_datacenter.cache_clear()
+
+    @pytest.mark.parametrize(
+        "value", [DataCenter.EU_RO_1, "EU-RO-1", "eu_ro_1", " eu-ro-1 ", ["eu_ro_1"]]
+    )
+    def test_known_values_normalize_without_warning(self, value, caplog):
+        assert normalize_datacenter(value) == ["EU-RO-1"]
+        assert "valid datacenter id" not in caplog.text
+
+    def test_none_passes(self):
+        assert normalize_datacenter(None) is None
+
+    def test_unlisted_id_passes_through_with_warning(self, caplog):
+        assert normalize_datacenter(UNLISTED_DC) == [UNLISTED_DC]
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 1
+        assert UNLISTED_DC in warnings[0].getMessage()
+        message = warnings[0].getMessage()
+        assert "doesn't look like a valid datacenter id" in message
+        assert "will be used anyway" in message
+        assert DATACENTER_IDS_DOCS_URL in message
+
+    def test_mixed_list_keeps_order(self):
+        assert normalize_datacenter(["us_ks_2", UNLISTED_DC]) == [
+            "US-KS-2",
+            UNLISTED_DC,
+        ]
+
+    def test_unlisted_id_warns_once_across_revalidation(self, caplog):
+        spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q", datacenter=UNLISTED_DC)
+        spec.validate()
+        spec.to_manifest()
+        warnings = [r for r in caplog.records if UNLISTED_DC in r.getMessage()]
+        assert len(warnings) == 1
+        assert spec.datacenter == [UNLISTED_DC]
+
+    @pytest.mark.parametrize("value", ["", "   ", [""], ["EU-RO-1", " "], [None], 42])
+    def test_blank_or_non_string_rejected(self, value):
+        with pytest.raises(InvalidResourceError, match="invalid datacenter"):
+            normalize_datacenter(value)
 
 
 class TestSpecValidation:

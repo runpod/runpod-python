@@ -335,10 +335,10 @@ class VolumeResolver:
 
         dc = record["dataCenter"] if record is not None else volume.datacenter
         if record is None:
-            from .datacenter import DataCenter
+            from .datacenter import datacenter_id
 
             pins = {
-                DataCenter.from_string(ref.datacenter).value
+                datacenter_id(ref.datacenter)
                 for ref in [volume]
                 + [
                     ref
