@@ -7,6 +7,7 @@ the caller thread so discovery never abandons executing module code.
 
 import importlib
 import importlib.util
+import keyword
 import logging
 import os
 import sys
@@ -18,6 +19,8 @@ from .discovery_state import DISCOVERY_ENV
 
 log = logging.getLogger(__name__)
 
+
+_SYNTHETIC_PREFIX = "_runpod_discovered_"
 
 _SKIP_DIRS = {
     ".git",
@@ -57,7 +60,31 @@ def _module_name(path: Path) -> str:
         parent = parent.parent
     if parent != path.parent:
         return ".".join(parts)
-    return f"_runpod_discovered_{path.stem}_{abs(hash(str(path)))}"
+    if _imports_as_stem(path):
+        # a sibling's `from app import app` must reuse this module, or it
+        # re-runs the file and creates a second App with the same name
+        return path.stem
+    return f"{_SYNTHETIC_PREFIX}{path.stem}_{abs(hash(str(path)))}"
+
+
+def _imports_as_stem(path: Path) -> bool:
+    """whether `import <stem>` resolves to this top-level file."""
+    name = path.stem
+    if not name.isidentifier() or keyword.iskeyword(name):
+        return False
+    existing = sys.modules.get(name)
+    if existing is not None:
+        source = getattr(existing, "__file__", None)
+        return bool(source) and Path(source).resolve() == path
+    try:
+        spec = importlib.util.find_spec(name)
+    except (ImportError, ValueError):
+        return False
+    return (
+        spec is not None
+        and spec.origin is not None
+        and Path(spec.origin).resolve() == path
+    )
 
 
 def _rollback_modules(before: set, root: Path) -> None:
@@ -85,7 +112,7 @@ def _import_module(path: Path) -> None:
     module_name = _module_name(path)
     previous_module = sys.modules.get(module_name)
     try:
-        if (path.parent / "__init__.py").is_file():
+        if not module_name.startswith(_SYNTHETIC_PREFIX):
             module = importlib.import_module(module_name)
             if Path(module.__file__).resolve() != path:
                 raise DiscoveryError(
