@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import secrets
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
@@ -29,6 +30,8 @@ from .utils.events import emit
 log = logging.getLogger(__name__)
 
 MANIFEST_VERSION = 1
+# hex bytes in the suffix that keeps new template names unique (6 chars)
+TEMPLATE_TOKEN_BYTES = 3
 
 DEFAULT_IGNORES = [
     ".venv/",
@@ -363,6 +366,22 @@ def _container_disk_gb(spec) -> int:
     return CPU_CONTAINER_DISK_GB if spec.is_cpu else GPU_CONTAINER_DISK_GB
 
 
+def _legacy_template_name(app: App, spec) -> str:
+    """the fixed template name used before names carried a suffix."""
+    return f"{app.name}-{spec.name}-template"
+
+
+def _new_template_name(app: App, spec, token: str) -> str:
+    """a template name for a newly created endpoint.
+
+    template names are unique per owner, and a deleted endpoint keeps
+    its template for a while before the platform removes it, so a fixed
+    name fails when an app is redeployed soon after being deleted, or
+    deployed to a second environment.
+    """
+    return f"{_legacy_template_name(app, spec)}-{token}"
+
+
 def _deployed_endpoint_input(
     app: App,
     spec,
@@ -372,8 +391,12 @@ def _deployed_endpoint_input(
     *,
     env_name: Optional[str] = None,
     pool_members: Optional[Dict[str, Set[str]]] = None,
+    template_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """saveEndpoint payload for one deployed queue/api resource.
+
+    template_name names the bound template; it defaults to the legacy
+    fixed name (see reconcile_endpoints for why new endpoints vary it).
 
     the endpoint name must equal the resource name: sentinel
     resolution matches X-Flash-Endpoint against endpoint.name within
@@ -421,7 +444,7 @@ def _deployed_endpoint_input(
         "scalerValue": spec.scaler_value,
         "executionTimeoutMs": spec.execution_timeout_ms,
         "template": {
-            "name": f"{app.name}-{spec.name}-template",
+            "name": template_name or _legacy_template_name(app, spec),
             "imageName": image_for_spec(spec, python_version=python_version),
             "containerDiskInGb": _container_disk_gb(spec),
             "dockerArgs": "",
@@ -483,7 +506,14 @@ async def reconcile_endpoints(
     """
     for handle in app.resources.values():
         handle.spec.validate()
-    existing = {e["name"]: e["id"] for e in environment.get("endpoints") or []}
+    existing_endpoints = environment.get("endpoints") or []
+    existing = {e["name"]: e["id"] for e in existing_endpoints}
+    # updates send the bound template's current name, so redeploying an
+    # existing endpoint sends the same template name as before.
+    existing_templates = {
+        e["name"]: (e.get("template") or {}).get("name") for e in existing_endpoints
+    }
+    template_token = secrets.token_hex(TEMPLATE_TOKEN_BYTES)
     provisionable = {
         h.spec.name: h
         for h in app.resources.values()
@@ -500,6 +530,10 @@ async def reconcile_endpoints(
         members = None
         if needs_gpu_catalog(handle.spec.gpu):
             members = await client.gpu_pool_members()
+        if name in existing:
+            template_name = existing_templates.get(name)
+        else:
+            template_name = _new_template_name(app, handle.spec, template_token)
         payload = _deployed_endpoint_input(
             app,
             handle.spec,
@@ -508,6 +542,7 @@ async def reconcile_endpoints(
             python_version,
             env_name=environment["name"],
             pool_members=members or {},
+            template_name=template_name,
         )
         await attach_endpoint_volumes(payload, handle.spec, resolver, app)
         auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
