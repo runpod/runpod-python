@@ -2,13 +2,13 @@
 
 import runpod
 
-# Set your global API key with `runpod config` or uncomment the line below:
+# Run `rp login` once to store your API key, or uncomment the line below:
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
 
 try:
 
     new_template = runpod.create_template(
-        name="test", image_name="runpod/base:0.4.4", is_serverless=True
+        name="test", image_name="runpod/mock-worker:latest", is_serverless=True
     )
 
     print(new_template)

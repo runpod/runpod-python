@@ -2,12 +2,14 @@
 
 import runpod
 
-# Set your global API key with `runpod config` or uncomment the line below:
+# Run `rp login` once to store your API key, or uncomment the line below:
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
 
 try:
 
-    new_template = runpod.create_template(name="test", image_name="runpod/base:0.1.0")
+    new_template = runpod.create_template(
+        name="test", image_name="runpod/base:2.0.0-ubuntu2404"
+    )
 
     print(new_template)
 

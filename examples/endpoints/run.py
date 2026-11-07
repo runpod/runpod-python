@@ -4,10 +4,10 @@ Example of calling an endpoint using the Runpod Python Language Library.
 
 import runpod
 
-# Set your global API key with `runpod config` or uncomment the line below:
+# Run `rp login` once to store your API key, or uncomment the line below:
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
 
-endpoint = runpod.Endpoint("sdxl")  # Where "sdxl" is the endpoint ID
+endpoint = runpod.Endpoint("YOUR_ENDPOINT_ID")
 
 run_request = endpoint.run(
     {"input": {"prompt": "a photo of a horse the size of a Boeing 787"}}

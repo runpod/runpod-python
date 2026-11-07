@@ -2,7 +2,7 @@
 
 import runpod
 
-# Set your global API key with `runpod config` or uncomment the line below:
+# Run `rp login` once to store your API key, or uncomment the line below:
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
 
 try:
