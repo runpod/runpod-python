@@ -34,7 +34,7 @@ from runpod import App, Model, NetworkVolume, Secret
 
 app = App("inference")
 
-models = NetworkVolume("models", size=100)
+checkpoints = NetworkVolume("checkpoints", size=100)
 llama = Model("meta-llama/Llama-3.1-8B-Instruct")
 
 
@@ -44,7 +44,6 @@ llama = Model("meta-llama/Llama-3.1-8B-Instruct")
     gpu="H100",
     workers=(0, 3),
     dependencies=["vllm"],
-    mounts={"/runpod-volume": models},
     model=llama,
     env={"HF_TOKEN": Secret("hf-token")},
 )
@@ -52,26 +51,48 @@ def chat(prompt: str):
     import vllm
 
     llm = vllm.LLM(model=str(llama.path))   # weights already on disk
-    return llm.generate(prompt)
+    result = llm.generate([prompt])[0]
+    return result.outputs[0].text           # results must be JSON values
 
 
 # one ephemeral pod per call: provisions, runs to completion, terminates
-@app.task(gpu="H100", gpu_count=2, mounts={"/models": models})
+@app.task(gpu="H100", mounts={"/checkpoints": checkpoints})
 def finetune(steps: int = 1000):
-    ...
-    return {"loss": final_loss}
+    import torch
+
+    model = torch.nn.Linear(1, 1).cuda()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.05)
+    x = torch.randn(1024, 1, device="cuda")
+    y = 3 * x + 1
+    for _ in range(steps):
+        loss = ((model(x) - y) ** 2).mean()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    torch.save(model.state_dict(), checkpoints.path / "model.pt")
+    return {"loss": loss.item()}
 
 
 @runpod.local_entrypoint
 def main():
     print(chat.remote("why is the sky blue?"))   # blocks for the result
-    job = finetune.spawn(steps=500)              # fire and forget -> Job
+    print(finetune.remote(steps=500))            # pod terminates on return
 ```
 
 ```bash
+rp secret add hf-token  # store your Hugging Face token once
 rp flash dev main.py    # live dev session: edit, re-run, logs stream back
 rp flash deploy         # deploy production endpoints
 ```
+
+To start a task without blocking, use an async entrypoint:
+`job = await finetune.spawn.aio(steps=500)`, then `await job.wait()`.
+The task's pod keeps running until you wait on the job or call
+`await job.cancel()`, even after your script exits.
+
+The `checkpoints` volume is kept between runs. When you no longer need it,
+find its id with `rp volume list` and delete it with
+`rp volume delete VOLUME_ID`. More examples are in [`examples/`](examples).
 
 ## Contributing
 
