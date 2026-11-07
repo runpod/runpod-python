@@ -95,6 +95,34 @@ def test_package_relative_imports_preserve_local_handle_identity(tmp_path, singl
         assert module.double.local(3) == 3 * factor
 
 
+@pytest.mark.parametrize("worker_file", ["workers.py", "a_workers.py"])
+def test_flat_project_sibling_import_shares_app(tmp_path, worker_file):
+    (tmp_path / "app.py").write_text("from runpod import App\napp = App('flat')\n")
+    (tmp_path / worker_file).write_text(
+        "from app import app\n"
+        "@app.queue(name='embed', cpu='cpu3c-1-2')\n"
+        "def embed(value):\n"
+        "    return value\n"
+    )
+
+    apps = discover_apps(tmp_path)
+
+    assert [app.name for app in apps] == ["flat"]
+    assert list(apps[0].resources) == ["embed"]
+    assert get_registered_apps() == apps
+
+
+def test_flat_module_named_like_installed_module_keeps_installed_module(tmp_path):
+    import json
+
+    (tmp_path / "json.py").write_text("from runpod import App\napp = App('shadow')\n")
+
+    apps = discover_apps(tmp_path)
+
+    assert [app.name for app in apps] == ["shadow"]
+    assert sys.modules["json"] is json
+
+
 def test_discovery_restores_existing_invocation_guard(tmp_path, monkeypatch):
     target = tmp_path / "main.py"
     target.write_text("raise RuntimeError('broken')\n")
