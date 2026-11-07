@@ -13,6 +13,7 @@ from runpod.endpoint.helpers import (
     FINAL_STATES,
     UNAUTHORIZED_MSG,
     is_completed,
+    raise_for_job_state,
 )
 
 
@@ -115,6 +116,7 @@ class Job:
 
         self.job_status = None
         self.job_output = None
+        self.job_error = None
 
     def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
         """Returns the raw json of the status, raises an exception if invalid"""
@@ -124,6 +126,7 @@ class Job:
         if is_completed(job_state["status"]):
             self.job_status = job_state["status"]
             self.job_output = job_state.get("output", None)
+            self.job_error = job_state.get("error", None)
 
         return job_state
 
@@ -140,6 +143,10 @@ class Job:
 
         Args:
             timeout: The number of seconds to wait for the server to send data before giving up.
+
+        Raises:
+            TimeoutError: The job did not finish within timeout.
+            JobError: The job ended FAILED, TIMED_OUT or CANCELLED.
         """
         if timeout > 0:
             while not is_completed(self.status()):
@@ -148,10 +155,13 @@ class Job:
                 if timeout <= 0:
                     raise TimeoutError("Job timed out.")
 
-        if self.job_output is not None:
-            return self.job_output
+        if self.job_status is None:
+            job_state = self._fetch_job()
+            if not is_completed(job_state["status"]):
+                return job_state.get("output", None)
 
-        return self._fetch_job().get("output", None)
+        raise_for_job_state(self.job_id, self.job_status, self.job_error)
+        return self.job_output
 
     def stream(self) -> Any:
         """Returns a generator that yields the output of the job request."""
@@ -232,6 +242,10 @@ class Endpoint:
         Args:
             request_input: The input to pass into the endpoint.
             timeout: Maximum time to wait for the job to complete.
+
+        Raises:
+            TimeoutError: The job did not finish within timeout.
+            JobError: The job ended FAILED, TIMED_OUT or CANCELLED.
         """
         if not request_input.get("input"):
             request_input = {"input": request_input}
@@ -242,7 +256,10 @@ class Endpoint:
             timeout=timeout
         )
 
-        if job_request["status"] in FINAL_STATES:
+        if is_completed(job_request["status"]):
+            raise_for_job_state(
+                job_request.get("id"), job_request["status"], job_request.get("error")
+            )
             return job_request.get("output", None)
 
         return Job(

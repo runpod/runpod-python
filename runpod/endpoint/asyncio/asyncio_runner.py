@@ -5,7 +5,7 @@
 import asyncio
 from typing import Any, Dict, Optional
 
-from runpod.endpoint.helpers import FINAL_STATES, is_completed
+from runpod.endpoint.helpers import FINAL_STATES, is_completed, raise_for_job_state
 from runpod.http_client import ClientSession
 
 
@@ -34,6 +34,7 @@ class Job:
 
         self.job_status = None
         self.job_output = None
+        self.job_error = None
 
     async def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
         """Returns the raw json of the status, raises an exception if invalid.
@@ -50,6 +51,7 @@ class Job:
         if is_completed(job_state["status"]):
             self.job_status = job_state["status"]
             self.job_output = job_state.get("output", None)
+            self.job_error = job_state.get("error", None)
 
         return job_state
 
@@ -75,9 +77,11 @@ class Job:
         Returns:
             Output of job
         Raises:
-            KeyError if job Failed
+            TimeoutError: The job did not finish within timeout.
+            JobError: The job ended FAILED, TIMED_OUT or CANCELLED.
         """
-        if self.job_output is not None:
+        if self.job_status is not None:
+            raise_for_job_state(self.job_id, self.job_status, self.job_error)
             return self.job_output
 
         try:
@@ -86,6 +90,7 @@ class Job:
             raise TimeoutError("Job timed out.") from exc
 
         job_data = await self._fetch_job()
+        raise_for_job_state(self.job_id, job_data["status"], job_data.get("error"))
         return job_data.get("output", None)
 
     async def stream(self) -> Any:
