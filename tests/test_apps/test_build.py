@@ -17,6 +17,7 @@ from runpod.apps.build import (
     collect_requirements,
     installed_closure,
     prune_excluded,
+    reject_runpod_dependency,
     requirement_name,
     runpod_requirement,
     split_exclusions,
@@ -69,6 +70,44 @@ class TestCollectRequirements:
             pass
 
         assert collect_requirements(tmp_path, app) == []
+
+
+class TestRejectRunpodDependency:
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            "runpod",
+            "runpod==1.8.0",
+            "runpod>=1.0,<2",
+            "Runpod==1.8.0",
+            "https://files.pythonhosted.org/runpod-1.8.0-py3-none-any.whl",
+            "https://example.com/runpod.tar.gz",
+            "./dist/runpod-1.8.0.tar.gz",
+        ],
+    )
+    def test_runpod_entry_rejected_with_package_spec_hint(self, spec):
+        with pytest.raises(BuildError, match="RUNPOD_PACKAGE_SPEC") as exc:
+            reject_runpod_dependency(["numpy==1.26", spec, "requests"])
+        assert spec in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            "numpy==1.26",
+            "requests",
+            "runpod-cleanup==1.0",
+            "my-runpod-helper",
+            "run_pod==1.0",
+            "https://example.com/not-runpod-1.0-py3-none-any.whl",
+            "https://example.com/runpodctl-1.0.tar.gz",
+        ],
+    )
+    def test_non_runpod_entries_pass(self, spec):
+        # must not raise
+        reject_runpod_dependency([spec])
+
+    def test_empty_is_noop(self):
+        reject_runpod_dependency([])
 
 
 class TestSplitExclusions:
@@ -429,6 +468,20 @@ class TestBuildEnvironmentPrunes:
             )
         assert result.excluded == ["torch"]
         assert _installed(result.env_dir) == ["peft"]
+
+    def test_runpod_in_dependencies_fails_before_vendoring(self, tmp_path):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2", dependencies=["runpod==1.8.0"])
+        def q():
+            pass
+
+        def _no_vendor(*args, **kwargs):
+            raise AssertionError("vendor must not run when the app is rejected")
+
+        with patch("runpod.apps.build.vendor", side_effect=_no_vendor):
+            with pytest.raises(BuildError, match="RUNPOD_PACKAGE_SPEC"):
+                build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
 
     def test_mixed_cpu_gpu_app_prunes_transitive_torch(self, tmp_path):
         app = self._app(gpu="AMPERE_16")

@@ -115,6 +115,54 @@ def collect_requirements(project_root: Path, app) -> List[str]:
     return unique
 
 
+# archive extensions a url or path requirement can point at, longest first
+_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tgz", ".whl", ".zip", ".tar")
+
+
+def _spec_distribution(spec: str) -> str:
+    """the canonical distribution name a requirement spec installs.
+
+    a plain spec (name with optional extras or version) resolves by its
+    name; a url, vcs ref, or path resolves by its ``#egg=`` fragment or the
+    wheel/sdist filename it points at, so a pinned runpod wheel is still
+    recognised as runpod.
+    """
+    if _is_pinnable_name(spec):
+        return canonicalize_name(requirement_name(spec))
+
+    url = spec.split("?", 1)[0]
+    url, _, fragment = url.partition("#")
+    for part in fragment.split("&"):
+        if part.startswith("egg="):
+            return canonicalize_name(part[len("egg=") :])
+
+    basename = posixpath.basename(url.rstrip("/"))
+    for suffix in _ARCHIVE_SUFFIXES:
+        if basename.endswith(suffix):
+            basename = basename[: -len(suffix)]
+            break
+    return canonicalize_name(basename.split("-", 1)[0])
+
+
+def reject_runpod_dependency(requirements: List[str]) -> None:
+    """fail when an app pins the runpod sdk through its dependencies.
+
+    deploy installs the app's dependencies and then overlays the client's
+    own runpod tree (``sync_running_package``), so a runpod entry in
+    ``dependencies`` or requirements.txt produces a worker running a
+    silent mix of the two builds. RUNPOD_PACKAGE_SPEC is the supported way
+    to choose the worker's runpod build.
+    """
+    for req in requirements:
+        if _spec_distribution(req) == "runpod":
+            raise BuildError(
+                f"{req!r} pins the runpod sdk through dependencies, which "
+                f"would overlay the client build and run a mixed install on "
+                f"the worker. Remove it and set the RUNPOD_PACKAGE_SPEC "
+                f"environment variable to choose the worker's runpod build."
+            )
+
+
 def split_exclusions(
     requirements: List[str],
     extra_excludes: Optional[List[str]] = None,
@@ -635,6 +683,7 @@ def build_environment(
     env_dir.mkdir(parents=True, exist_ok=True)
 
     user_requirements = collect_requirements(project_root, app)
+    reject_runpod_dependency(user_requirements)
     # size-prohibitive packages come preinstalled only on the builtin
     # gpu images, and custom images carry no guarantee. builtin cpu
     # images ship without them, but a vendored pypi torch cannot serve
