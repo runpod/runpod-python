@@ -48,6 +48,7 @@ rp login --profile staging      # save browser credentials in a named profile
 
 Credentials are stored in `~/.runpod/config.toml`.
 Use `--profile NAME` with either login method to update only that profile; the default is `default`.
+Set `RUNPOD_PROFILE=NAME` to select the profile for all commands and for `runpod` in Python; `--profile` overrides it, and `RUNPOD_API_KEY` overrides any stored profile.
 
 ### Flash apps
 
