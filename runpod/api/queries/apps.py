@@ -19,7 +19,7 @@ query getFlashAppByName($flashAppName: String!) {
             name
             state
             activeBuildId
-            endpoints { id name }
+            endpoints { id name template { name } }
         }
     }
 }
@@ -60,7 +60,7 @@ query getFlashEnvironmentByName($input: FlashEnvironmentByNameInput!) {
         state
         activeBuildId
         createdAt
-        endpoints { id name }
+        endpoints { id name template { name } }
         networkVolumes { id name }
     }
 }
