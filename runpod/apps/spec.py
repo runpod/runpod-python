@@ -306,8 +306,13 @@ class ResourceSpec:
             return self.scaler_type
         return "REQUEST_COUNT" if self.kind is ResourceKind.API else "QUEUE_DELAY"
 
-    def to_manifest(self) -> Dict[str, Any]:
-        """serialize for the deploy manifest."""
+    def to_manifest(self, *, include_env: bool = True) -> Dict[str, Any]:
+        """serialize for the deploy manifest.
+
+        include_env is False for endpoints, whose env reaches workers
+        through the endpoint template rather than the manifest, so it is
+        never written into the packaged artifact.
+        """
         self.validate()
         data: Dict[str, Any] = {
             "kind": self.kind.value,
@@ -330,7 +335,7 @@ class ResourceSpec:
                 {"kind": volume.kind, "reference": volume.reference, "path": path}
                 for path, volume in self.mounts.items()
             ]
-        if self.env:
+        if self.env and include_env:
             from .secret import render_env
 
             data["env"] = render_env(self.env)

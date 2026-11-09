@@ -143,12 +143,13 @@ def build_manifest(
                 f"queue and api names must be at least 3 characters"
             )
 
-        entry = spec.to_manifest()
+        is_endpoint = spec.kind in (ResourceKind.QUEUE, ResourceKind.API)
+        # endpoint env reaches workers through the endpoint template, so it
+        # is never put into the manifest rather than stripped out afterward
+        entry = spec.to_manifest(include_env=not is_endpoint)
         _warn_secret_like_plain_env(spec.name, spec.env or {})
-        if spec.kind in (ResourceKind.QUEUE, ResourceKind.API):
-            # endpoint env reaches workers through the endpoint template;
-            # keep the values out of the uploaded manifest
-            _validate_endpoint_env(entry.pop("env", {}))
+        if is_endpoint:
+            _validate_endpoint_env(spec.env or {})
         if spec.kind is ResourceKind.TASK:
             from .images import image_for_spec
 
