@@ -48,8 +48,10 @@ def test_rejects_unknown_runtime_kind():
     ("installed", "runtime_override", "sdk_override", "expected_installs"),
     [
         (False, "", "", [
-            "runpod-sdk-runtime @ https://github.com/runpod-workers/sdk-runtime/"
-            "releases/latest/download/runpod-sdk-runtime.tar.gz",
+            (
+                "runpod-sdk-runtime @ https://github.com/runpod-workers/sdk-runtime/"
+                "releases/latest/download/runpod-sdk-runtime.tar.gz"
+            ),
             "runpod",
         ]),
         (True, "", "", []),
