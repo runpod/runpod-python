@@ -21,6 +21,12 @@ _UPDATE_CHECK_EXCLUDED = frozenset({"completion", "flash", "update"})
 _FLASH_UPDATE_CHECK_EXCLUDED = frozenset({"dev"})
 
 
+def _default_profile() -> str:
+    from runpod import _selected_profile
+
+    return _selected_profile()
+
+
 @click.group()
 @click.pass_context
 def cli(ctx):
@@ -631,7 +637,10 @@ def logs(pod_id, follow, log_type, tail):
     help="Store this API key directly (skips the browser flow).",
 )
 @click.option(
-    "--profile", default="default", show_default=True, help="Credential profile."
+    "--profile",
+    default=_default_profile,
+    show_default="RUNPOD_PROFILE, else default",
+    help="Credential profile.",
 )
 @click.option(
     "--agent",
