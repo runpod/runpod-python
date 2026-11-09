@@ -87,6 +87,18 @@ __all__ = [
 ]
 
 
+DEFAULT_PROFILE = "default"
+
+
+def _selected_profile() -> str:
+    """credential profile in ~/.runpod/config.toml to use.
+
+    set RUNPOD_PROFILE to pick a named profile (saved with
+    `rp login --profile NAME`); unset or blank means "default".
+    """
+    return os.environ.get("RUNPOD_PROFILE", "").strip() or DEFAULT_PROFILE
+
+
 def _load_api_key():
     """resolve the api key from the environment, then stored credentials.
 
@@ -103,7 +115,7 @@ def _load_api_key():
         ).get_credentials(profile)
     except Exception:  # noqa: BLE001 - no stored key is a valid state
         return None
-    return creds["api_key"] if creds else None
+    return creds.get("api_key") if creds else None
 
 
 def __getattr__(name):
@@ -119,7 +131,7 @@ def __getattr__(name):
 # ------------------------------- Config Paths ------------------------------- #
 SSH_KEY_PATH = os.path.expanduser("~/.runpod/ssh")
 
-profile = "default"  # pylint: disable=invalid-name
+profile = _selected_profile()  # pylint: disable=invalid-name
 
 api_key = _load_api_key()  # pylint: disable=invalid-name
 
