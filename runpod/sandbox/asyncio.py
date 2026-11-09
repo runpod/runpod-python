@@ -23,6 +23,7 @@ from runpod.sandbox.models import (
     SandboxCompute,
     SandboxExecutionError,
     SandboxInfo,
+    SandboxOptions,
     SandboxStartupTimeout,
     SandboxState,
     SandboxStateError,
@@ -243,6 +244,25 @@ class AsyncioSandbox:
             await _cleanup(sandbox.close(), request_timeout, error)
             raise
         return sandbox
+
+    @classmethod
+    async def options(
+        cls,
+        *,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        request_timeout: float = 30,
+    ) -> SandboxOptions:
+        """Return the data centers and CPU flavors a create may choose from."""
+        _timeout(request_timeout, "request_timeout")
+        api = AsyncSandboxAPI(api_key, base_url, request_timeout)
+        try:
+            result = SandboxOptions.from_dict(await api.options())
+        except BaseException as error:
+            await _cleanup(api.close(), request_timeout, error)
+            raise
+        await _cleanup(api.close(), request_timeout)
+        return result
 
     @classmethod
     async def list(

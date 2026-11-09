@@ -111,6 +111,21 @@ class SandboxInfo:
 
 
 @dataclass(frozen=True)
+class SandboxOptions:
+    """what a sandbox create may choose from right now."""
+
+    data_center_ids: tuple[str, ...]
+    cpu_flavor_ids: tuple[str, ...]
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "SandboxOptions":
+        return cls(
+            data_center_ids=tuple(payload["dataCenterIds"]),
+            cpu_flavor_ids=tuple(payload["cpuFlavorIds"]),
+        )
+
+
+@dataclass(frozen=True)
 class ExecResult:
     """command output with nullable host-reported execution details."""
 

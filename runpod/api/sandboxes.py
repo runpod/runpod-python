@@ -471,6 +471,16 @@ class AsyncSandboxAPI:
             raise ValueError("Registry listing returned no response")
         return payload["registries"]
 
+    async def options(self) -> dict[str, Any]:
+        path = f"{_SANDBOX_PATH}/options"
+        payload = await self._request("GET", path)
+        if not isinstance(payload, dict) or not all(
+            isinstance(payload.get(key), list)
+            for key in ("dataCenterIds", "cpuFlavorIds")
+        ):
+            raise error.QueryError("sandbox options response is malformed", f"GET {path}")
+        return payload
+
     async def create(self, body: Mapping[str, Any]) -> dict[str, Any]:
         payload = await self._request(
             "POST",
