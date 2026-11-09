@@ -49,7 +49,11 @@ def test_get_gpus_unwraps_response():
     ) as request:
         assert ctl_commands.get_gpus(api_key="key") == gpus
 
-    request.assert_called_once_with("GET", "/v2/catalog/gpus", api_key="key")
+    from runpod.user_agent import USER_AGENT
+
+    request.assert_called_once_with(
+        "GET", "/v2/catalog/gpus", api_key="key", user_agent=USER_AGENT
+    )
 
 
 def test_get_gpu_requests_pod_availability():
@@ -296,7 +300,9 @@ def test_create_pod_validates_image_and_cloud():
         ({"min_upload": 100}, "min_upload"),
     ],
 )
-def test_create_gpu_pod_rejects_unsupported_constraints(template_backend, kwargs, field):
+def test_create_gpu_pod_rejects_unsupported_constraints(
+    template_backend, kwargs, field
+):
     with pytest.raises(ValueError, match=field):
         ctl_commands.create_pod("pod", "image", gpu_type_id="NVIDIA A100", **kwargs)
 

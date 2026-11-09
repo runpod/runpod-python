@@ -13,14 +13,13 @@ import aiohttp
 
 from runpod._hosts import console_url
 from runpod.api.rest import _build_url
-from runpod.user_agent import USER_AGENT
+from runpod.user_agent import APPS_USER_AGENT
 
 import aiohttp
 
 from ..error import QueryError
 from .api import AppsApiClient
 from .errors import AppError
-
 
 MAX_KEY_ATTEMPTS = 3
 
@@ -101,7 +100,7 @@ async def agent_login(email: str, *, read_code: Callable[[], str]) -> str:
 
     async with aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=30),
-        headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+        headers={"Accept": "application/json", "User-Agent": APPS_USER_AGENT},
         cookie_jar=aiohttp.DummyCookieJar(),
     ) as session:
         attempt = await _post_authentication_attempt(

@@ -7,6 +7,7 @@ from typing import Any, Iterable, Optional
 from urllib.parse import quote
 
 from runpod import error
+from runpod.user_agent import USER_AGENT
 
 from .graphql import run_graphql_query
 from .mutations import container_register_auth as container_register_auth_mutations
@@ -63,9 +64,13 @@ def update_user_settings(pubkey: str, api_key: Optional[str] = None) -> dict:
     return get_user(api_key=api_key)
 
 
-def get_gpus(api_key: Optional[str] = None) -> list[dict]:
+def get_gpus(
+    api_key: Optional[str] = None, *, user_agent: str = USER_AGENT
+) -> list[dict]:
     """Get all GPU types."""
-    response = run_rest_request("GET", "/v2/catalog/gpus", api_key=api_key)
+    response = run_rest_request(
+        "GET", "/v2/catalog/gpus", api_key=api_key, user_agent=user_agent
+    )
     return response["gpus"]
 
 

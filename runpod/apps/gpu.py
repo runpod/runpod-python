@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+from ..user_agent import APPS_USER_AGENT
+
 log = logging.getLogger(__name__)
 
 
@@ -286,7 +288,9 @@ def live_pool_members() -> Optional[Dict[str, Set[str]]]:
     cache = _catalog_caches.setdefault(context, _CatalogCache())
     if cache.may_fetch():
         try:
-            cache.members = _parse_catalog(get_gpus(api_key=context[1]))
+            cache.members = _parse_catalog(
+                get_gpus(api_key=context[1], user_agent=APPS_USER_AGENT)
+            )
         except Exception as exc:  # noqa: BLE001 - offline, auth, or malformed
             cache.fail(exc)
     return cache.members
@@ -303,7 +307,11 @@ async def live_pool_members_async(
     if cache.may_fetch():
         try:
             data = await run_rest_request_async(
-                "GET", CATALOG_PATH, api_key=context[1], timeout=10
+                "GET",
+                CATALOG_PATH,
+                api_key=context[1],
+                timeout=10,
+                user_agent=APPS_USER_AGENT,
             )
             cache.members = _parse_catalog(data)
         except Exception as exc:

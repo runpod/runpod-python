@@ -14,7 +14,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 import aiohttp
 
 from .._hosts import endpoint_domain
-from ..user_agent import USER_AGENT
+from ..user_agent import APPS_USER_AGENT
 from .errors import EndpointNotFound, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest
 from .serialization import require_json_value
@@ -43,7 +43,7 @@ def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
+        "User-Agent": APPS_USER_AGENT,
     }
     runtime = runtime_headers()
     headers.update(

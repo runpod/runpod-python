@@ -30,6 +30,8 @@ from contextlib import closing
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
+from .user_agent import APPS_USER_AGENT
+
 from ._volume_transfer_utils import (  # noqa: F401 - re-exported names
     MIB,
     PARTIAL_SUFFIX,
@@ -852,7 +854,9 @@ def _list_volumes() -> List[Dict[str, Any]]:
 
     try:
         return block(
-            run_rest_paginated_request_async("/v2/network-volumes", "networkVolumes")
+            run_rest_paginated_request_async(
+                "/v2/network-volumes", "networkVolumes", user_agent=APPS_USER_AGENT
+            )
         )
     except error.AuthenticationError as exc:
         from runpod import api_key  # pylint: disable=import-outside-toplevel
@@ -927,6 +931,7 @@ def _client_config(concurrency: int) -> Any:
     from botocore.config import Config  # pylint: disable=import-outside-toplevel
 
     return Config(
+        user_agent_extra=APPS_USER_AGENT,
         s3={"addressing_style": "path"},
         request_checksum_calculation="when_required",
         response_checksum_validation="when_required",

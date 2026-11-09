@@ -13,6 +13,7 @@ import aiohttp
 
 from ..api.ctl_commands import _path_segment
 from ..api.rest import _build_url
+from ..user_agent import APPS_USER_AGENT
 
 HAPI_BASE = os.environ.get("RUNPOD_HAPI_URL", "https://hapi.runpod.net")
 
@@ -22,7 +23,7 @@ STREAM_TIMEOUT_SECONDS = 3600.0
 def _headers() -> Dict[str, str]:
     from .utils.network import api_key
 
-    return {"Authorization": f"Bearer {api_key()}"}
+    return {"Authorization": f"Bearer {api_key()}", "User-Agent": APPS_USER_AGENT}
 
 
 async def pod_logs(
