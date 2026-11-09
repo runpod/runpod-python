@@ -159,6 +159,10 @@ class Job:
             job_state = self._fetch_job()
             if not is_completed(job_state["status"]):
                 return job_state.get("output", None)
+        elif self.job_status == "COMPLETED" and self.job_output is None:
+            # stream() caches a terminal status without the aggregate
+            # output; fetch it from /status before returning the result
+            self._fetch_job()
 
         raise_for_job_state(self.job_id, self.job_status, self.job_error)
         return self.job_output

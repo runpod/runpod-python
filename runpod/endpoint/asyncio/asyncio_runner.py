@@ -81,6 +81,10 @@ class Job:
             JobError: The job ended FAILED, TIMED_OUT or CANCELLED.
         """
         if self.job_status is not None:
+            if self.job_status == "COMPLETED" and self.job_output is None:
+                # stream() caches a terminal status without the aggregate
+                # output; fetch it from /status before returning the result
+                await self._fetch_job()
             raise_for_job_state(self.job_id, self.job_status, self.job_error)
             return self.job_output
 

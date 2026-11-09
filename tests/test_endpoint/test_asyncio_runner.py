@@ -142,6 +142,42 @@ class TestJob(IsolatedAsyncioTestCase):
 
             assert outputs == ["OUTPUT1", "OUTPUT2"]
 
+    async def test_output_after_stream_fetches_aggregate_result(self):
+        """output() after a completed stream fetches the aggregate result
+        from /status instead of returning the stream's empty output."""
+        with patch(
+            "aiohttp.ClientSession", new_callable=AsyncMock
+        ) as mock_session_class:
+            mock_session = mock_session_class.return_value
+            mock_get = mock_session.get
+            mock_resp = AsyncMock()
+
+            responses = [
+                {"stream": [{"output": "OUTPUT1"}], "status": "IN_PROGRESS"},
+                {"stream": [], "status": "COMPLETED"},
+                {"output": "FINAL", "status": "COMPLETED"},
+            ]
+
+            async def json_side_effect():
+                return responses.pop(0) if responses else {
+                    "output": "FINAL",
+                    "status": "COMPLETED",
+                }
+
+            mock_resp.json.side_effect = json_side_effect
+            mock_get.return_value = mock_resp
+
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer MOCK_API_KEY",
+                "X-Request-ID": "job_id",
+            }
+            job = Job("endpoint_id", "job_id", mock_session, headers)
+
+            outputs = [chunk async for chunk in job.stream()]
+            assert outputs == ["OUTPUT1"]
+            assert await job.output() == "FINAL"
+
     async def test_cancel(self):
         """
         Tests Job.cancel
