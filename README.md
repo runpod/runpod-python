@@ -88,15 +88,6 @@ rp flash dev main.py    # live dev session: edit, re-run, logs stream back
 rp flash deploy         # deploy production endpoints
 ```
 
-To start a task without blocking, use an async entrypoint:
-`job = await finetune.spawn.aio(steps=500)`, then `await job.wait()`.
-The task's pod keeps running until you wait on the job or call
-`await job.cancel()`, even after your script exits.
-
-The `checkpoints` volume is kept between runs. When you no longer need it,
-find its id with `rp volume list` and delete it with
-`rp volume delete VOLUME_ID`. More examples are in [`examples/`](examples).
-
 ## Contributing
 
 Pull requests and issues are welcome — see the [contributing guide](CONTRIBUTING.md) to get started.
