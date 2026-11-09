@@ -1409,5 +1409,5 @@ def test_sync_options_matches_async(peer):
 @pytest.mark.asyncio
 async def test_options_authentication_failure_propagates(peer):
     bad = {**_connection(peer), "api_key": "wrong"}
-    with pytest.raises(Exception, match="invalid key"):
+    with pytest.raises(AuthenticationError):
         await AsyncioSandbox.options(**bad)
