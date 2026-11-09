@@ -22,6 +22,26 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.2.0](https://github.com/runpod/runpod-python/compare/v2.1.0...v2.2.0) (2026-11-09)
+
+
+### Features
+
+* invoke deployed flash tasks with runtime credentials (SEC-375 CON-1833) ([#644](https://github.com/runpod/runpod-python/issues/644)) ([367f174](https://github.com/runpod/runpod-python/commit/367f174ef14cc7fcf909a3b26413c3f2d38cbd9b))
+* make console, proxy, and endpoint hosts configurable ([#684](https://github.com/runpod/runpod-python/issues/684)) ([b9583f7](https://github.com/runpod/runpod-python/commit/b9583f7c0a02e6c0cbb9598538393fc239d88852))
+* resumable network volume upload and download ([#655](https://github.com/runpod/runpod-python/issues/655)) ([a677ee9](https://github.com/runpod/runpod-python/commit/a677ee9f08f21da5a29cc126ed63032fc1063365))
+
+
+### Bug Fixes
+
+* **apps:** accept datacenter ids outside the built-in list ([#690](https://github.com/runpod/runpod-python/issues/690)) ([dbc251a](https://github.com/runpod/runpod-python/commit/dbc251ac8ba87ed4cc53f71010bc8c87dba1c77d))
+* **serverless:** stop taking jobs after a per-job refresh_worker (SLS-900) ([#663](https://github.com/runpod/runpod-python/issues/663)) ([8ca9d9b](https://github.com/runpod/runpod-python/commit/8ca9d9bcfdc0ad1792e899cdef49a4fd172fbb13))
+
+
+### Documentation
+
+* rename getting_Started.md to getting_started.md ([#697](https://github.com/runpod/runpod-python/issues/697)) ([fbcabcd](https://github.com/runpod/runpod-python/commit/fbcabcd73889783d8e03b6261154891f13b0d9d6))
+
 ## [2.1.0](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.1.0) (2026-11-03)
 
 
