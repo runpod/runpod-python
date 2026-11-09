@@ -216,6 +216,14 @@ class TestManifestSerialization:
         assert data["accelerateDownloads"] is False
         assert data["containerDiskGb"] == 42
 
+    def test_env_included_by_default(self):
+        spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q", env={"MODE": "fast"})
+        assert spec.to_manifest()["env"] == {"MODE": "fast"}
+
+    def test_env_excluded_when_not_requested(self):
+        spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q", env={"MODE": "fast"})
+        assert "env" not in spec.to_manifest(include_env=False)
+
     def test_defaults_omitted(self):
         spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q")
         data = spec.to_manifest()
