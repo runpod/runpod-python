@@ -17,7 +17,13 @@ from typing import Dict, List, Optional, Tuple
 
 from packaging.markers import Marker
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.utils import canonicalize_name
+from packaging.utils import (
+    InvalidSdistFilename,
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_sdist_filename,
+    parse_wheel_filename,
+)
 
 from .errors import AppError
 from .images import DEFAULT_PYTHON_VERSION, SUPPORTED_PYTHON_VERSIONS
@@ -119,29 +125,59 @@ def collect_requirements(project_root: Path, app) -> List[str]:
 _ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tgz", ".whl", ".zip", ".tar")
 
 
-def _spec_distribution(spec: str) -> str:
-    """the canonical distribution name a requirement spec installs.
+def _named_distribution(value: str) -> str:
+    """the canonical distribution name of a PEP 508 requirement string.
 
-    a plain spec (name with optional extras or version) resolves by its
-    name; a url, vcs ref, or path resolves by its ``#egg=`` fragment or the
-    wheel/sdist filename it points at, so a pinned runpod wheel is still
-    recognised as runpod.
+    handles a bare name, a version pin, extras (``runpod[all]``), and a
+    direct reference (``runpod @ https://.../sdk.tar.gz``). a value that is
+    not a valid requirement (a bare archive filename) is named by its file.
     """
-    if _is_pinnable_name(spec):
-        return canonicalize_name(requirement_name(spec))
+    try:
+        return canonicalize_name(Requirement(value).name)
+    except InvalidRequirement:
+        return _archive_distribution(posixpath.basename(value))
 
-    url = spec.split("?", 1)[0]
-    url, _, fragment = url.partition("#")
-    for part in fragment.split("&"):
-        if part.startswith("egg="):
-            return canonicalize_name(part[len("egg=") :])
 
-    basename = posixpath.basename(url.rstrip("/"))
+def _archive_distribution(basename: str) -> str:
+    """the canonical distribution name a wheel or sdist filename declares.
+
+    wheel and sdist names escape the version differently, so the pep 427 /
+    pep 625 parsers are used before falling back to the leading name token
+    for an archive that carries a name but no version (``runpod.tar.gz``).
+    """
+    try:
+        return parse_wheel_filename(basename)[0]
+    except InvalidWheelFilename:
+        pass
+    try:
+        return parse_sdist_filename(basename)[0]
+    except InvalidSdistFilename:
+        pass
     for suffix in _ARCHIVE_SUFFIXES:
         if basename.endswith(suffix):
             basename = basename[: -len(suffix)]
             break
     return canonicalize_name(basename.split("-", 1)[0])
+
+
+def _spec_distribution(spec: str) -> str:
+    """the canonical distribution name a requirement spec installs.
+
+    a named spec (bare name, version pin, extras, or ``name @ url``)
+    resolves by its name; a direct url, vcs ref, or path resolves by its
+    ``#egg=`` fragment or the wheel/sdist filename it points at, so a
+    pinned runpod build is still recognised as runpod.
+    """
+    spec = spec.strip()
+    base, _, fragment = spec.partition("#")
+    for part in fragment.split("&"):
+        if part.startswith("egg="):
+            return _named_distribution(part[len("egg=") :])
+
+    basename = posixpath.basename(base.split("?", 1)[0].rstrip("/"))
+    if basename.endswith(_ARCHIVE_SUFFIXES) and " @ " not in spec:
+        return _archive_distribution(basename)
+    return _named_distribution(spec)
 
 
 def reject_runpod_dependency(requirements: List[str]) -> None:

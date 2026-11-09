@@ -80,9 +80,14 @@ class TestRejectRunpodDependency:
             "runpod==1.8.0",
             "runpod>=1.0,<2",
             "Runpod==1.8.0",
+            "runpod[all]==1.8.0",
+            "runpod @ https://example.com/releases/sdk.tar.gz",
+            "runpod-1.8.0-py3-none-any.whl",
             "https://files.pythonhosted.org/runpod-1.8.0-py3-none-any.whl",
             "https://example.com/runpod.tar.gz",
             "./dist/runpod-1.8.0.tar.gz",
+            "https://example.com/download?release=1.8.0#egg=runpod",
+            "https://example.com/x.git#egg=runpod[all]",
         ],
     )
     def test_runpod_entry_rejected_with_package_spec_hint(self, spec):
@@ -100,6 +105,8 @@ class TestRejectRunpodDependency:
             "run_pod==1.0",
             "https://example.com/not-runpod-1.0-py3-none-any.whl",
             "https://example.com/runpodctl-1.0.tar.gz",
+            "https://example.com/runpod-cleanup-1.0.tar.gz",
+            "runpod-cleanup-1.0.tar.gz",
         ],
     )
     def test_non_runpod_entries_pass(self, spec):
