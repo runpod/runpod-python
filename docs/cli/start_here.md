@@ -12,6 +12,8 @@ Store your Runpod API key by running `rp login` (approve in the browser, then pa
 
 Pass `--profile staging` with either login method to update a named credential profile without changing the others. The default profile is `default`.
 
+Set `RUNPOD_PROFILE=staging` to use that profile for every command, including `rp login`. `--profile` takes precedence over `RUNPOD_PROFILE`, and `RUNPOD_API_KEY` takes precedence over any stored profile.
+
 ### SSH
 
 Add an SSH key to your account by running `rp ssh add`. To use an existing key pass `--key` or `--key-file`. Keys are stored in `~/.runpod/ssh/`. If no key is specified a new one is generated and stored.
