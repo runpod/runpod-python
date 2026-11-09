@@ -143,10 +143,12 @@ async def test_catalog_wait_respects_provisioning_deadline(catalog, operation):
         # wait for the fetch to be in flight so the deadline lands on it,
         # rather than racing a fixed timeout against reaching the fetch
         await asyncio.wait_for(catalog.started.wait(), timeout=1)
+        # the deadline cancels provisioning mid-fetch, as a real one would
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(asyncio.shield(task), timeout=0.1)
+            await asyncio.wait_for(task, timeout=0.1)
         assert catalog.started.is_set()
         client.save_endpoint.assert_not_called()
+        # a cancelled deadline must not poison the cache
         cache = next(iter(gpu._catalog_caches.values()))
         assert cache.failed_at is None
         assert cache.members is None
