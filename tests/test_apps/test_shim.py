@@ -48,8 +48,8 @@ def test_rejects_unknown_runtime_kind():
     ("installed", "runtime_override", "sdk_override", "expected_installs"),
     [
         (False, "", "", [
-            "runpod-sdk-runtime @ https://github.com/runpod-workers/sdk-runtime/archive/"
-            "e0e7d733e931b980572ba954f34c42cfeda15680.tar.gz",
+            "runpod-sdk-runtime @ https://github.com/runpod-workers/sdk-runtime/archive/refs/tags/"
+            "runpod-sdk-runtime-v9.9.0.tar.gz",
             "runpod",
         ]),
         (True, "", "", []),
@@ -72,6 +72,7 @@ def test_installs_missing_packages_and_honors_overrides(
         "runtime": installed,
         "sdk": installed,
         "installs": [],
+        "lookups": 0,
     }))
     interpreter = tmp_path / "python3"
     interpreter.write_text(
@@ -82,6 +83,17 @@ def test_installs_missing_packages_and_honors_overrides(
         "state = json.loads(path.read_text())\n"
         "args = sys.argv[1:]\n"
         "if args[0] == '-c':\n"
+        "    if args[1].startswith('import urllib.request'):\n"
+        "        import urllib.request\n"
+        "        from unittest.mock import MagicMock\n"
+        "        response = MagicMock()\n"
+        "        response.__enter__.return_value.geturl.return_value = 'https://github.com/runpod-workers/sdk-runtime/releases/tag/runpod-sdk-runtime-v9.9.0'\n"
+        "        urllib.request.urlopen = MagicMock(return_value=response)\n"
+        "        exec(args[1])\n"
+        "        urllib.request.urlopen.assert_called_once_with('https://github.com/runpod-workers/sdk-runtime/releases/latest', timeout=30)\n"
+        "        state['lookups'] += 1\n"
+        "        path.write_text(json.dumps(state))\n"
+        "        sys.exit(0)\n"
         "    key = 'runtime' if args[1] == 'import runpod_sdk_runtime' else 'sdk'\n"
         "    sys.exit(0 if state[key] else 1)\n"
         "if args[:2] == ['-m', 'pip']:\n"
@@ -112,10 +124,12 @@ def test_installs_missing_packages_and_honors_overrides(
     state = json.loads(state_path.read_text())
     assert state["installs"] == expected_installs
     assert state["started"] == "runpod_sdk_runtime.bootstrap"
+    assert state["lookups"] == (0 if installed or runtime_override else 1)
 
 
 @pytest.mark.parametrize("kind", ["queue", "api", "task"])
-def test_failed_runtime_install_prevents_startup(tmp_path, kind):
+@pytest.mark.parametrize("failure_stage", ["lookup", "install"])
+def test_failed_runtime_install_prevents_startup(tmp_path, kind, failure_stage):
     import shlex
 
     marker = tmp_path / "started"
@@ -125,6 +139,11 @@ def test_failed_runtime_install_prevents_startup(tmp_path, kind):
         "import sys\n"
         "from pathlib import Path\n"
         "if sys.argv[1] == '-c':\n"
+        "    if sys.argv[2].startswith('import urllib.request'):\n"
+        f"        if {failure_stage!r} == 'lookup':\n"
+        "            sys.exit(23)\n"
+        "        print('runpod-sdk-runtime @ https://example.com/runtime.tar.gz')\n"
+        "        sys.exit(0)\n"
         "    sys.exit(1)\n"
         "if sys.argv[1:3] == ['-m', 'pip']:\n"
         "    sys.exit(23)\n"

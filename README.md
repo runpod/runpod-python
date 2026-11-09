@@ -73,13 +73,6 @@ rp flash dev main.py    # live dev session: edit, re-run, logs stream back
 rp flash deploy         # deploy production endpoints
 ```
 
-## Custom runtime images
-
-Custom images need Python and pip. When the worker runtime is missing, the SDK
-installs it from a commit-pinned GitHub source archive. An installed runtime is
-reused; `RUNPOD_RUNTIME_PACKAGE_SPEC` explicitly selects another package source.
-The SDK and third-party dependencies use their configured Python package index.
-
 ## Contributing
 
 Pull requests and issues are welcome — see the [contributing guide](CONTRIBUTING.md) to get started.
