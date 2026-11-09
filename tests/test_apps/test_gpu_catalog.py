@@ -138,13 +138,23 @@ async def test_catalog_wait_keeps_event_loop_responsive(catalog, operation):
 async def test_catalog_wait_respects_provisioning_deadline(catalog, operation):
     catalog.release.clear()
     client = AppsApiClient(api_key="explicit-key")
-    with pytest.raises(asyncio.TimeoutError):
-        await asyncio.wait_for(provision(operation, client), timeout=0.1)
-    assert catalog.started.is_set()
-    client.save_endpoint.assert_not_called()
-    cache = next(iter(gpu._catalog_caches.values()))
-    assert cache.failed_at is None
-    assert cache.members is None
+    task = asyncio.create_task(provision(operation, client))
+    try:
+        # wait for the fetch to be in flight so the deadline lands on it,
+        # rather than racing a fixed timeout against reaching the fetch
+        await asyncio.wait_for(catalog.started.wait(), timeout=1)
+        # the deadline cancels provisioning mid-fetch, as a real one would
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(task, timeout=0.1)
+        assert catalog.started.is_set()
+        client.save_endpoint.assert_not_called()
+        # a cancelled deadline must not poison the cache
+        cache = next(iter(gpu._catalog_caches.values()))
+        assert cache.failed_at is None
+        assert cache.members is None
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
     catalog.release.set()
     assert MIG in (await client.gpu_pool_members())["AMPERE_24"]
 
