@@ -474,9 +474,13 @@ class AsyncSandboxAPI:
     async def options(self) -> dict[str, Any]:
         path = f"{_SANDBOX_PATH}/options"
         payload = await self._request("GET", path)
-        if not isinstance(payload, dict) or not all(
-            isinstance(payload.get(key), list)
-            for key in ("dataCenterIds", "cpuFlavorIds")
+        if (
+            not isinstance(payload, dict)
+            or not all(
+                isinstance(payload.get(key), list)
+                for key in ("dataCenterIds", "cpuFlavorIds")
+            )
+            or not isinstance(payload.get("limits"), dict)
         ):
             raise error.QueryError("sandbox options response is malformed", f"GET {path}")
         return payload

@@ -111,17 +111,36 @@ class SandboxInfo:
 
 
 @dataclass(frozen=True)
+class SandboxLimits:
+    """limits for this account; capacity and other caps can still refuse a create."""
+
+    max_concurrent_sandboxes: int
+    max_idle_timeout_seconds: int
+    max_lifetime_seconds: int
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "SandboxLimits":
+        return cls(
+            max_concurrent_sandboxes=payload["maxConcurrentSandboxes"],
+            max_idle_timeout_seconds=payload["maxIdleTimeoutSeconds"],
+            max_lifetime_seconds=payload["maxLifetimeSeconds"],
+        )
+
+
+@dataclass(frozen=True)
 class SandboxOptions:
-    """what a sandbox create may choose from right now."""
+    """what this account may choose when creating a sandbox."""
 
     data_center_ids: tuple[str, ...]
     cpu_flavor_ids: tuple[str, ...]
+    limits: SandboxLimits
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "SandboxOptions":
         return cls(
             data_center_ids=tuple(payload["dataCenterIds"]),
             cpu_flavor_ids=tuple(payload["cpuFlavorIds"]),
+            limits=SandboxLimits.from_dict(payload["limits"]),
         )
 
 
