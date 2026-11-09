@@ -58,6 +58,9 @@ def chat(prompt: str):
 # one ephemeral pod per call: provisions, runs to completion, terminates
 @app.task(gpu="H100", mounts={"/checkpoints": checkpoints})
 def finetune(steps: int = 1000):
+    if steps < 1:
+        raise ValueError("steps must be a positive integer")
+
     import torch
 
     model = torch.nn.Linear(1, 1).cuda()
