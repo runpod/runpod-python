@@ -73,12 +73,6 @@ rp flash dev main.py    # live dev session: edit, re-run, logs stream back
 rp flash deploy         # deploy production endpoints
 ```
 
-## API endpoints
-
-`@app.api` native class routes accept no arguments or one complete JSON object.
-Use a FastAPI factory for typed path/query parameters and body schemas. See the
-[native API signature contract and factory example](docs/apps/native-api.md).
-
 ## Contributing
 
 Pull requests and issues are welcome — see the [contributing guide](CONTRIBUTING.md) to get started.
