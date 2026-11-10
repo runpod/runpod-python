@@ -4,7 +4,11 @@ import asyncio
 import base64
 import datetime as dt
 import hashlib
+import json
+import os
 import secrets
+import tempfile
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import quote
 from uuid import uuid4
@@ -89,8 +93,59 @@ async def _post_authentication_attempt(
     return payload
 
 
-async def agent_login(email: str, *, read_code: Callable[[], str]) -> str:
-    """exchange an emailed code for an api key bound to this login's verifier."""
+def pending_agent_login_path(profile: str) -> Path:
+    from runpod.cli.groups.config.functions import CREDENTIAL_FILE
+
+    profile_id = hashlib.sha256(profile.encode("utf-8")).hexdigest()
+    return Path(CREDENTIAL_FILE).parent / f"login-{profile_id}.json"
+
+
+def save_agent_login(attempt: dict, profile: str) -> None:
+    path = pending_agent_login_path(profile)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as pending:
+            json.dump(attempt, pending)
+        os.replace(temporary, path)
+    except BaseException:
+        os.unlink(temporary)
+        raise
+
+
+def load_agent_login(profile: str) -> dict:
+    try:
+        attempt = json.loads(
+            pending_agent_login_path(profile).read_text(encoding="utf-8")
+        )
+    except FileNotFoundError:
+        raise LoginError(
+            "no pending login for this profile. Run runpod login --agent --email ADDRESS"
+        ) from None
+    except ValueError:
+        raise LoginError(
+            "invalid pending login. Run runpod login --agent --email ADDRESS to request a new code"
+        ) from None
+    if not isinstance(attempt, dict) or any(
+        not isinstance(attempt.get(field), str) or not attempt[field]
+        for field in ("attempt_id", "verifier", "api_url")
+    ):
+        raise LoginError(
+            "invalid pending login. Run runpod login --agent --email ADDRESS to request a new code"
+        )
+    return attempt
+
+
+def _agent_session() -> aiohttp.ClientSession:
+    return aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=30),
+        headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+        cookie_jar=aiohttp.DummyCookieJar(),
+    )
+
+
+async def start_agent_login(email: str) -> dict:
+    """request an emailed code and return its proof-of-possession state."""
     verifier = secrets.token_urlsafe(32)
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
@@ -99,11 +154,7 @@ async def agent_login(email: str, *, read_code: Callable[[], str]) -> str:
     )
     path = "/v2/signup/authentication-attempts"
 
-    async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=30),
-        headers={"Accept": "application/json", "User-Agent": USER_AGENT},
-        cookie_jar=aiohttp.DummyCookieJar(),
-    ) as session:
+    async with _agent_session() as session:
         attempt = await _post_authentication_attempt(
             session,
             path,
@@ -114,22 +165,36 @@ async def agent_login(email: str, *, read_code: Callable[[], str]) -> str:
         if not isinstance(attempt_id, str) or not attempt_id:
             raise LoginError("auth attempt failed to initialize")
 
-        while True:
-            code = read_code()
-            try:
-                result = await _post_authentication_attempt(
-                    session,
-                    f"{path}/{quote(attempt_id, safe='')}/verify",
-                    {"code": code, "codeVerifier": verifier},
-                )
-            except _VerificationCodeRejected:
-                continue
-            break
+    return {"attempt_id": attempt_id, "verifier": verifier, "api_url": _build_url(path)}
+
+
+async def verify_agent_login(attempt: dict, code: str) -> str:
+    """exchange a code and its saved verifier for an api key."""
+    path = "/v2/signup/authentication-attempts"
+    if attempt["api_url"] != _build_url(path):
+        raise LoginError("pending login belongs to a different API. Request a new code")
+    async with _agent_session() as session:
+        result = await _post_authentication_attempt(
+            session,
+            f"{path}/{quote(attempt['attempt_id'], safe='')}/verify",
+            {"code": code, "codeVerifier": attempt["verifier"]},
+        )
         credential = result.get("credential")
         api_key = credential.get("apiKey") if isinstance(credential, dict) else None
         if not isinstance(api_key, str) or not api_key.strip():
             raise LoginError("email sign-in response did not contain an API key")
         return api_key
+
+
+async def agent_login(email: str, *, read_code: Callable[[], str]) -> str:
+    """exchange an emailed code for an api key bound to this login's verifier."""
+    attempt = await start_agent_login(email)
+    while True:
+        code = read_code()
+        try:
+            return await verify_agent_login(attempt, code)
+        except _VerificationCodeRejected:
+            continue
 
 
 def _parse_expires_at(value: Optional[str]) -> Optional[dt.datetime]:

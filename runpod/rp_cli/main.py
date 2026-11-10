@@ -8,6 +8,7 @@ output, never for help rendering.
 
 import asyncio
 import os
+import shlex
 import signal
 import sys
 from pathlib import Path
@@ -645,26 +646,51 @@ def logs(pod_id, follow, log_type, tail):
 @click.option(
     "--agent",
     is_flag=True,
-    help="Sign in with an emailed code; requires an interactive terminal, not a browser.",
+    help="Sign in without prompting: use --email to request a code, then --code to complete login.",
 )
 @click.option("--email", default=None, help="Email address for --agent sign-in.")
-def login(no_open, api_key_opt, profile, agent, email):
+@click.option(
+    "--code",
+    default=None,
+    help="Complete a pending --agent login with a six-digit code without prompting.",
+)
+def login(no_open, api_key_opt, profile, agent, email, code):
     """Authenticate with Runpod and store the API key.
 
     Opens the Runpod console for browser approval by default, then asks
-    you to paste the API key the console shows; pass --api-key to store a
-    key directly. Use --agent --email ADDRESS to receive a verification
-    code by email and enter it at the prompt in an interactive terminal.
-    Keep this process running until sign-in completes; the code must be
-    entered in the same process that requested it.
+    you to paste the API key the console shows. Pass --api-key to store a
+    key directly. Run --agent --email ADDRESS to email a verification code
+    and exit, then --agent --code CODE to complete login without prompting.
+    Use the same --profile for both commands. Pending
+    login state is stored in ~/.runpod with owner-only permissions and
+    deleted after credentials are saved. Treat the code as a secret.
+    Command arguments can appear in shell history and process listings.
     """
-    from runpod.apps.auth import LoginError, agent_login, browser_login
+    from runpod.apps.auth import (
+        LoginError,
+        browser_login,
+        load_agent_login,
+        pending_agent_login_path,
+        save_agent_login,
+        start_agent_login,
+        verify_agent_login,
+    )
     from runpod.cli.groups.config.functions import set_credentials
     from runpod.rp_cli import console as ui
 
     if agent and api_key_opt is not None:
         raise click.UsageError("--agent cannot be combined with --api-key")
-    if agent and (email is None or not email.strip()):
+    if code is not None and not agent:
+        raise click.UsageError("--code requires --agent")
+    if code is not None and email is not None:
+        raise click.UsageError(
+            "--code uses the pending login. Do not combine it with --email"
+        )
+    if code is not None:
+        code = code.strip()
+        if len(code) != 6 or not code.isascii() or not code.isdigit():
+            raise click.UsageError("--code must contain six ASCII digits")
+    if agent and code is None and (email is None or not email.strip()):
         raise click.UsageError("--agent requires --email")
     if email is not None and not agent:
         raise click.UsageError("--email requires --agent")
@@ -677,7 +703,6 @@ def login(no_open, api_key_opt, profile, agent, email):
         ui.success("credentials saved to [dim]~/.runpod/config.toml[/dim]")
         return
 
-    # browser-paste needs a tty to read the key; agent reads a piped code fine.
     if not agent and not _stdin_is_tty():
         _fail(
             "rp login needs an interactive terminal to paste the API key. "
@@ -704,24 +729,20 @@ def login(no_open, api_key_opt, profile, agent, email):
     def _rejected(reason: str) -> None:
         ui.console.print(f" [dim]{reason}, try again[/dim]")
 
-    code_prompted = False
-
-    def _read_code() -> str:
-        nonlocal code_prompted
-        if code_prompted:
-            click.echo("Verification code rejected. Try again.", err=True)
-        else:
-            click.echo("A verification code was sent to your email.")
-            code_prompted = True
-        while True:
-            code = click.prompt("Verification code", hide_input=True).strip()
-            if len(code) == 6 and code.isascii() and code.isdigit():
-                return code
-            click.echo("Enter the six-digit code from your email.", err=True)
-
     try:
-        if agent:
-            api_key = asyncio.run(agent_login(email.strip(), read_code=_read_code))
+        if agent and code is None:
+            attempt = asyncio.run(start_agent_login(email.strip()))
+            save_agent_login(attempt, profile)
+            command = ["runpod", "login", "--agent", "--code", "CODE"]
+            if profile != "default":
+                command.extend(["--profile", profile])
+            click.echo("A verification code was sent to your email.")
+            click.echo("Check your inbox, then run:")
+            click.echo(f"\n  {shlex.join(command)}\n")
+            click.echo("Replace CODE with the six-digit code from your email.")
+            return
+        if code is not None:
+            api_key = asyncio.run(verify_agent_login(load_agent_login(profile), code))
         else:
             api_key = asyncio.run(
                 browser_login(
@@ -729,6 +750,8 @@ def login(no_open, api_key_opt, profile, agent, email):
                 )
             )
         set_credentials(api_key, profile=profile, overwrite=True)
+        if code is not None:
+            pending_agent_login_path(profile).unlink(missing_ok=True)
     except (LoginError, ValueError, OSError) as exc:
         _fail(str(exc))
     ui.success("logged in, credentials saved to [dim]~/.runpod/config.toml[/dim]")
