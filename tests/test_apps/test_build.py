@@ -62,6 +62,24 @@ class TestCollectRequirements:
         # numpy deduped by name, requirements.txt wins on order
         assert reqs == ["numpy==1.26", "pandas", "requests"]
 
+    def test_strips_inline_comments(self, tmp_path):
+        (tmp_path / "requirements.txt").write_text(
+            "requests==2.32.3  # http client\n"
+            "numpy==1.26\t# tab before the comment\n"
+            "pkg @ https://example.com/pkg-1.0-py3-none-any.whl#sha256=abc\n"
+        )
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        assert collect_requirements(tmp_path, app) == [
+            "requests==2.32.3",
+            "numpy==1.26",
+            "pkg @ https://example.com/pkg-1.0-py3-none-any.whl#sha256=abc",
+        ]
+
     def test_no_requirements_file(self, tmp_path):
         app = App("a")
 
