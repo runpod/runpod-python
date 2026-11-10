@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Dict, Iterable, Optional
 
-from .discovery import _SKIP_DIRS
+from .source import DISCOVERY_SKIP_DIRS
 
 
 def _snapshot(roots: Iterable[Path]) -> Dict[str, float]:
@@ -22,7 +22,9 @@ def _snapshot(roots: Iterable[Path]) -> Dict[str, float]:
                 pass
             continue
         for path in root.rglob("*.py"):
-            if any(part in _SKIP_DIRS for part in path.relative_to(root).parts):
+            if any(
+                part in DISCOVERY_SKIP_DIRS for part in path.relative_to(root).parts
+            ):
                 continue
             try:
                 state[str(path)] = path.stat().st_mtime

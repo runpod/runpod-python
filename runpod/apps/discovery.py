@@ -12,20 +12,9 @@ from typing import Dict, List
 from .app import App, _restore_registry, get_registered_apps
 from .discovery_state import DISCOVERY_ENV
 from .errors import InvalidResourceError
+from .source import DISCOVERY_SKIP_DIRS, iter_source_files
 
 log = logging.getLogger(__name__)
-
-_SKIP_DIRS = {
-    ".git",
-    ".venv",
-    "venv",
-    "node_modules",
-    "__pycache__",
-    ".runpod",
-    ".flash",
-    "build",
-    "dist",
-}
 
 _loaded_modules: Dict[str, ModuleType] = {}
 
@@ -48,21 +37,28 @@ def resolve_project(target: Path) -> Project:
     source_root = target if target.is_dir() else target.parent
     import_root = source_root
     while (import_root / "__init__.py").is_file():
+        if not import_root.name.isidentifier():
+            raise DiscoveryError(
+                f"{import_root / '__init__.py'} makes {import_root} a package, "
+                "but its directory name is not a valid python identifier. "
+                "Rename the directory or remove __init__.py for a flat project."
+            )
         source_root = import_root
         import_root = import_root.parent
     return Project(target, source_root, import_root)
 
 
-def _python_files(target: Path) -> List[Path]:
+def _python_files(project: Project) -> List[Path]:
+    target = project.target
     if target.is_file():
         if target.suffix != ".py":
             raise DiscoveryError(f"{target} is not a python file")
         return [target]
-    return [
+    return sorted(
         path
-        for path in sorted(target.rglob("*.py"))
-        if not any(part in _SKIP_DIRS for part in path.relative_to(target).parts)
-    ]
+        for path in iter_source_files(project.source_root, discovery=True)
+        if path.is_relative_to(target)
+    )
 
 
 def _module_name(path: Path, import_root: Path) -> str:
@@ -70,7 +66,10 @@ def _module_name(path: Path, import_root: Path) -> str:
     if parts[-1] == "__init__":
         parts.pop()
     if not parts or any(not part.isidentifier() for part in parts):
-        raise DiscoveryError(f"{path} does not have a valid python module name")
+        raise DiscoveryError(
+            f"{path} does not have a valid python module name. "
+            "Rename it or add it to .runpodignore if it is not application code."
+        )
     return ".".join(parts)
 
 
@@ -84,7 +83,7 @@ def _project_modules(root: Path) -> Dict[str, ModuleType]:
         for path in paths:
             resolved = Path(path).resolve()
             if resolved.is_relative_to(root) and not any(
-                part in _SKIP_DIRS for part in resolved.relative_to(root).parts
+                part in DISCOVERY_SKIP_DIRS for part in resolved.relative_to(root).parts
             ):
                 modules[name] = module
                 break
@@ -114,17 +113,31 @@ def _rollback_modules(before: set, root: Path) -> None:
     )
 
 
-def _import_module(path: Path, import_root: Path) -> None:
-    name = _module_name(path, import_root)
+def _import_module(path: Path, project: Project) -> None:
+    name = _module_name(path, project.import_root)
     try:
         module = importlib.import_module(name)
         source = getattr(module, "__file__", None)
         if source is None or Path(source).resolve() != path:
             raise DiscoveryError(
-                f"module {name!r} resolves to {source}, expected {path}"
+                f"module {name!r} resolves to {source}, expected {path}. "
+                "Rename the project module to avoid shadowing an installed "
+                "or standard-library module."
             )
     except (Exception, SystemExit) as exc:
-        raise DiscoveryError(f"importing {path} failed: {exc}") from exc
+        hint = ""
+        if isinstance(exc, ModuleNotFoundError) and (
+            project.source_root != project.import_root
+        ):
+            hint = (
+                f"Package context is set by {project.source_root / '__init__.py'}. "
+                "Use package-relative imports for sibling modules, or remove "
+                "that __init__.py if this is intended to be a flat project. "
+            )
+        raise DiscoveryError(
+            f"importing {path} failed: {exc}\n{hint}"
+            "If this file is not application code, add it to .runpodignore."
+        ) from exc
 
 
 def validate_apps(apps: List[App]) -> None:
@@ -147,7 +160,7 @@ def discover_apps(target: Path, *, strict: bool = False) -> List[App]:
     """
     global _loaded_modules
     project = resolve_project(target)
-    files = _python_files(project.target)
+    files = _python_files(project)
     registered_before = get_registered_apps()
     modules_before = {
         name: module
@@ -174,8 +187,8 @@ def discover_apps(target: Path, *, strict: bool = False) -> List[App]:
     )
     before = {id(app) for app in get_registered_apps()}
     importlib.invalidate_caches()
-    previous_path = sys.path[:]
-    sys.path.insert(0, str(project.import_root))
+    import_path = str(project.import_root)
+    sys.path.insert(0, import_path)
     previous_discovery = os.environ.get(DISCOVERY_ENV)
     os.environ[DISCOVERY_ENV] = "1"
     failures = []
@@ -184,7 +197,7 @@ def discover_apps(target: Path, *, strict: bool = False) -> List[App]:
             registered = get_registered_apps()
             imported_before = set(sys.modules)
             try:
-                _import_module(path, project.import_root)
+                _import_module(path, project)
             except BaseException as exc:
                 _restore_registry(registered)
                 _rollback_modules(imported_before, project.source_root)
@@ -227,7 +240,10 @@ def discover_apps(target: Path, *, strict: bool = False) -> List[App]:
         _restore_registry(registered_before)
         raise
     finally:
-        sys.path[:] = previous_path
+        for index, entry in enumerate(sys.path):
+            if entry is import_path:
+                del sys.path[index]
+                break
         if previous_discovery is None:
             os.environ.pop(DISCOVERY_ENV, None)
         else:
