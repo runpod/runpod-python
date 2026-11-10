@@ -73,42 +73,6 @@ rp flash dev main.py    # live dev session: edit, re-run, logs stream back
 rp flash deploy         # deploy production endpoints
 ```
 
-### Multi-file projects
-
-Define an App in `app.py` and import it wherever you declare resources:
-
-```python
-# app.py
-from runpod import App
-
-app = App("service")
-```
-
-```python
-# workers.py
-from app import app
-
-@app.queue(cpu="cpu3c-1-2")
-def generate(value):
-    return value * 2
-```
-
-Run `rp flash dev .` or `rp flash deploy .` to discover resources throughout
-the directory. Both commands execute Python modules using their normal import
-names and require a complete, valid resource set. Import failures, empty Apps,
-and distinct Apps sharing a name stop the operation before provisioning.
-A file target selects that file and its transitive imports.
-
-Within packages, use relative or fully qualified imports, such as
-`from .app import app` or `from service.app import app`. Deployment artifacts
-preserve the package hierarchy so these imports work on workers.
-
-Dev watches the project and refreshes its temporary resources after successful
-scans. A `@runpod.local_entrypoint` is optional; without one, dev watches without
-running a local driver. Use `--entrypoint module:function` to select among
-multiple local entrypoints. A failed reload reports the error and keeps the
-last successfully applied environment while waiting for another edit.
-
 ## Contributing
 
 Pull requests and issues are welcome — see the [contributing guide](CONTRIBUTING.md) to get started.
