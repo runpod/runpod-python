@@ -658,13 +658,13 @@ def login(no_open, api_key_opt, profile, agent, email, code):
     """Authenticate with Runpod and store the API key.
 
     Opens the Runpod console for browser approval by default, then asks
-    you to paste the API key the console shows; pass --api-key to store a
+    you to paste the API key the console shows. Pass --api-key to store a
     key directly. Run --agent --email ADDRESS to email a verification code
     and exit, then --agent --code CODE to complete login without prompting.
     Use the same --profile for both commands. Pending
     login state is stored in ~/.runpod with owner-only permissions and
-    deleted after credentials are saved. Treat the code as a secret;
-    command arguments can appear in shell history and process listings.
+    deleted after credentials are saved. Treat the code as a secret.
+    Command arguments can appear in shell history and process listings.
     """
     from runpod.apps.auth import (
         LoginError,
@@ -684,7 +684,7 @@ def login(no_open, api_key_opt, profile, agent, email, code):
         raise click.UsageError("--code requires --agent")
     if code is not None and email is not None:
         raise click.UsageError(
-            "--code uses the pending login; do not combine it with --email"
+            "--code uses the pending login. Do not combine it with --email"
         )
     if code is not None:
         code = code.strip()

@@ -120,18 +120,18 @@ def load_agent_login(profile: str) -> dict:
         )
     except FileNotFoundError:
         raise LoginError(
-            "no pending login for this profile; run runpod login --agent --email ADDRESS"
+            "no pending login for this profile. Run runpod login --agent --email ADDRESS"
         ) from None
     except ValueError:
         raise LoginError(
-            "invalid pending login; run runpod login --agent --email ADDRESS to request a new code"
+            "invalid pending login. Run runpod login --agent --email ADDRESS to request a new code"
         ) from None
     if not isinstance(attempt, dict) or any(
         not isinstance(attempt.get(field), str) or not attempt[field]
         for field in ("attempt_id", "verifier", "api_url")
     ):
         raise LoginError(
-            "invalid pending login; run runpod login --agent --email ADDRESS to request a new code"
+            "invalid pending login. Run runpod login --agent --email ADDRESS to request a new code"
         )
     return attempt
 
@@ -172,7 +172,7 @@ async def verify_agent_login(attempt: dict, code: str) -> str:
     """exchange a code and its saved verifier for an api key."""
     path = "/v2/signup/authentication-attempts"
     if attempt["api_url"] != _build_url(path):
-        raise LoginError("pending login belongs to a different API; request a new code")
+        raise LoginError("pending login belongs to a different API. Request a new code")
     async with _agent_session() as session:
         result = await _post_authentication_attempt(
             session,
