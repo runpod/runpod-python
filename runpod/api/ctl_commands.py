@@ -133,8 +133,13 @@ def create_pod(
     min_download=None,
     min_upload=None,
     instance_id: Optional[str] = None,
+    container_registry_auth_id: Optional[str] = None,
 ) -> dict:
-    """Create a GPU or CPU pod."""
+    """Create a GPU or CPU pod.
+
+    container_registry_auth_id is the id of saved registry credentials (see
+    create_container_registry_auth), used to pull a private image.
+    """
     if not image_name and not template_id:
         raise ValueError("Either image_name or template_id must be provided")
     if cloud_type not in {"ALL", "COMMUNITY", "SECURE"}:
@@ -167,6 +172,8 @@ def create_pod(
         body["image"] = image_name
     if template_id:
         body["templateId"] = template_id
+    if container_registry_auth_id:
+        body["registry"] = container_registry_auth_id
     if cloud_type != "ALL":
         body["cloud"] = cloud_type
     if data_center_id:

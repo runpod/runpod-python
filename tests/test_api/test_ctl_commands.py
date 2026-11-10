@@ -264,6 +264,28 @@ def test_create_gpu_pod_enforces_per_gpu_host_minima():
     assert pod["machineId"] == "at-boundary"
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"gpu_type_id": "NVIDIA A100"}, {"instance_id": "cpu3c-2-4"}],
+    ids=["gpu", "cpu"],
+)
+def test_create_pod_sends_container_registry_auth(template_backend, kwargs):
+    pod = ctl_commands.create_pod(
+        "private",
+        "ghcr.io/org/image:tag",
+        container_registry_auth_id="auth-1",
+        **kwargs,
+    )
+
+    assert pod["registry"] == "auth-1"
+
+
+def test_create_pod_omits_container_registry_auth_by_default(template_backend):
+    pod = ctl_commands.create_pod("public", "python:3.11", gpu_type_id="NVIDIA A100")
+
+    assert "registry" not in pod
+
+
 def test_create_cpu_pod_requires_instance_id():
     with pytest.raises(ValueError, match="instance_id"):
         ctl_commands.create_pod("cpu-pod", "python:3.11")
