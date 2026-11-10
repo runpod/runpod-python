@@ -112,6 +112,18 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   member and every big-file destination is checked to resolve inside one of
   the configured `dirs` before any write, so a mirror entry can't be used to
   write outside the cached directories.
+- **Logging.** Each hydrate that restores files, retries a range, or gives up
+  on a range logs one summary line:
+  `hydrated N file(s) from <mirror> (range retries: R, ranges given up: G)`.
+  A range is given up when its retries run out or its error is not
+  transient. The file it belongs to is then not restored, and its other
+  ranges are skipped without being counted. Every retry is logged at debug
+  level with the errno name, the attempt number, the file, and the range
+  offset. A hydrate that passes 64 range retries logs one warning, because
+  the mount is then under sustained pressure and backoff is slowing the
+  hydrate down. When a volume rejects `utime`/`chmod` with `EPERM` (as Global
+  Store does), the sync logs that once at debug level and skips metadata
+  updates for the rest of its files.
 
 ## Limitations
 

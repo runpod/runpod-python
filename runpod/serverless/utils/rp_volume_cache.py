@@ -58,7 +58,77 @@ _RANGE_RETRY_ERRNOS = frozenset({errno.ENOMEM, errno.EIO, errno.EAGAIN})
 _RANGE_MAX_ATTEMPTS = 8
 _RANGE_RETRY_BASE_SECONDS = 0.05
 
+
+# A hydrate warns once its range retries pass this count. Isolated retries are
+# expected and stay at debug level. 64 is one retry for every range in flight
+# with a 64-worker pool, or eight rounds with an 8-worker pool. Past that, the
+# mount is under sustained pressure (e.g. geesefs ENOMEM) and backoff is
+# slowing the hydrate down.
+_HYDRATE_RETRY_WARN_THRESHOLD = 64
+
 _RangedFile = collections.namedtuple("_RangedFile", "src dst tmp size mtime identity")
+
+
+class _HydrateStats:
+    """Retry counters for one hydrate, safe to update from the range worker pool.
+
+    ``range_retries`` counts retried range attempts. ``ranges_given_up``
+    counts ranges that failed for good, either because their retries ran out
+    or because the error was not transient. The other ranges of a failed
+    file are skipped, and are not counted. ``as_dict()`` is the shape the
+    summary log reports.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.range_retries = 0
+        self.ranges_given_up = 0
+
+    def record_retry(self):
+        """Count one retry and return the hydrate's running total."""
+        with self._lock:
+            self.range_retries += 1
+            return self.range_retries
+
+    def record_given_up(self):
+        with self._lock:
+            self.ranges_given_up += 1
+
+    def as_dict(self):
+        with self._lock:
+            return {"range_retries": self.range_retries, "ranges_given_up": self.ranges_given_up}
+
+
+class _MetadataPolicy:
+    """Metadata stamping state for one sync or hydrate.
+
+    FUSE object stores such as Global Store reject utime and chmod with EPERM
+    on every file. After the first EPERM, the rest of the operation skips
+    metadata updates entirely and logs the rejection once, instead of
+    issuing two failing syscalls and two debug lines for each file. Other
+    errors are still logged per file, because they may not repeat.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._denied = False
+
+    @property
+    def denied(self):
+        return self._denied
+
+    def note_failure(self, dst, kept, exc):
+        if exc.errno != errno.EPERM:
+            log.debug(f"VolumeCache: kept {kept} on {dst}: {exc}")
+            return
+        with self._lock:
+            if self._denied:
+                return
+            self._denied = True
+        log.debug(
+            f"VolumeCache: metadata update rejected with EPERM on {dst}; keeping "
+            "copy-time mtime and default mode for the rest of this operation"
+        )
 
 
 class VolumeCache:
@@ -289,12 +359,12 @@ class VolumeCache:
         target = os.path.realpath(dst_abs)
         return any(target == d or target.startswith(d + os.sep) for d in self._dirs)
 
-    def _copy_file(self, src, dst):
+    def _copy_file(self, src, dst, *, metadata=None):
         tmp = _tmp_path(dst)
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(src, tmp)
-            _copy_metadata(src, tmp)
+            _copy_metadata(src, tmp, policy=metadata)
             os.replace(tmp, dst)  # atomic; last-writer-wins under concurrency
             return True
         except OSError as exc:
@@ -325,6 +395,7 @@ class VolumeCache:
         at that instant, so no re-stat is needed to confirm it.
         """
         needs_copy = needs_copy or self._needs_copy
+        metadata = _MetadataPolicy()
         todo = [(s, d) for s, d in pairs if needs_copy(s, d)]
         current = {s for s, _ in pairs} - {s for s, _ in todo}
         if not todo:
@@ -333,11 +404,11 @@ class VolumeCache:
             # pool.map preserves input order, so zip pairs each result with its
             # source. This holds one path per copied file (unavoidable: per-file
             # identity is required to keep failed copies out of the manifest).
-            results = pool.map(lambda sd: self._copy_file(sd[0], sd[1]), todo)
+            results = pool.map(lambda sd: self._copy_file(sd[0], sd[1], metadata=metadata), todo)
             copied = {s for (s, _), ok in zip(todo, results) if ok}
         return copied, current
 
-    def _hydrate_ranged(self, entries):
+    def _hydrate_ranged(self, entries, stats):
         """Restore ``(src, dst, manifest_entry)`` triples with concurrent range reads.
 
         Every file is split into ``hydrate_chunk_size`` ranges, and one pool of
@@ -351,7 +422,8 @@ class VolumeCache:
         renamed into place only once every range copied, stamped with the
         manifest's source mtime, so a failure leaves the local file untouched.
 
-        Returns the set of sources restored.
+        Retries and given-up ranges are counted in ``stats``. Returns the set
+        of sources restored.
         """
         # Temp paths are fixed before any is created so an interrupt (e.g.
         # Ctrl-C) in preparation, copying or finalization removes every one.
@@ -362,8 +434,11 @@ class VolumeCache:
         try:
             prepared = (self._prepare_ranged(*e, tmp) for e, tmp in zip(entries, tmps))
             files = [f for f in prepared if f]
-            failed = self._copy_ranges(files)
-            return {f.src for i, f in enumerate(files) if self._finish_ranged(f, i in failed)}
+            failed = self._copy_ranges(files, stats)
+            metadata = _MetadataPolicy()
+            return {
+                f.src for i, f in enumerate(files) if self._finish_ranged(f, i in failed, metadata)
+            }
         except BaseException:
             for tmp in tmps:
                 _silent_remove(tmp)
@@ -386,7 +461,7 @@ class VolumeCache:
             return None
         return _RangedFile(src, dst, tmp, entry["size"], entry["mtime"], identity)
 
-    def _copy_ranges(self, files):
+    def _copy_ranges(self, files, stats):
         """Copy every range of ``files`` into their temp files; return indexes that failed."""
         failed = set()
 
@@ -395,22 +470,29 @@ class VolumeCache:
             if i in failed:
                 return
             f = files[i]
+
+            def on_retry(exc, attempt):
+                _note_range_retry(stats, f.src, off, exc, attempt)
+
             try:
-                _with_range_retry(_copy_range, f.src, f.tmp, off, length, f.identity)
+                _with_range_retry(
+                    _copy_range, f.src, f.tmp, off, length, f.identity, on_retry=on_retry
+                )
             except OSError as exc:
                 failed.add(i)
+                stats.record_given_up()
                 log.warn(f"VolumeCache: failed to hydrate {f.src} at offset {off}: {exc}")
 
         _run_bounded(_iter_ranges(files, self._hydrate_chunk_size), run, self._hydrate_workers)
         return failed
 
     @staticmethod
-    def _finish_ranged(f, failed):
+    def _finish_ranged(f, failed, metadata):
         if failed:
             _silent_remove(f.tmp)
             return False
         try:
-            _copy_metadata(f.src, f.tmp, f.mtime)
+            _copy_metadata(f.src, f.tmp, f.mtime, policy=metadata)
             os.replace(f.tmp, f.dst)
             return True
         except OSError as exc:
@@ -551,9 +633,15 @@ class VolumeCache:
                 and not self._meta_satisfied_by_local(entry)
             ):
                 todo.append((src, dst, entry))
-        restored += len(self._hydrate_ranged(todo))
-        if restored:
-            log.info(f"VolumeCache: hydrated {restored} file(s) from {self._mirror_root}")
+        stats = _HydrateStats()
+        restored += len(self._hydrate_ranged(todo, stats))
+        counts = stats.as_dict()
+        if restored or any(counts.values()):
+            log.info(
+                f"VolumeCache: hydrated {restored} file(s) from {self._mirror_root} "
+                f"(range retries: {counts['range_retries']}, "
+                f"ranges given up: {counts['ranges_given_up']})"
+            )
         return restored
 
     def sync(self, *, background=True):
@@ -647,7 +735,7 @@ class VolumeCache:
 # ----------------------------------------------------------------------- #
 
 
-def _copy_metadata(src, dst, mtime=None):
+def _copy_metadata(src, dst, mtime=None, *, policy=None):
     """Stamp dst with an mtime and src's permission bits, each best-effort.
 
     The mtime is ``mtime`` when given (hydrate passes the manifest's source
@@ -656,7 +744,14 @@ def _copy_metadata(src, dst, mtime=None):
     valid then: reconciliation compares against the manifest's recorded
     source metadata, not the mirror file's copy-time mtime. Only the
     permission bits are lost on such a volume.
+
+    ``policy`` carries EPERM detection across one sync or hydrate: once the
+    filesystem has rejected a metadata update with EPERM, later files skip
+    both calls. Without a policy, each call detects EPERM on its own.
     """
+    policy = policy or _MetadataPolicy()
+    if policy.denied:
+        return
     try:
         if mtime is None:
             st = os.stat(src)
@@ -664,11 +759,13 @@ def _copy_metadata(src, dst, mtime=None):
         else:
             os.utime(dst, (mtime, mtime))
     except OSError as exc:
-        log.debug(f"VolumeCache: kept copy-time mtime on {dst}: {exc}")
+        policy.note_failure(dst, "copy-time mtime", exc)
+    if policy.denied:
+        return
     try:
         shutil.copymode(src, dst)
     except OSError as exc:
-        log.debug(f"VolumeCache: kept default mode on {dst}: {exc}")
+        policy.note_failure(dst, "default mode", exc)
 
 
 def _positive_or_default(name, value, default):
@@ -738,8 +835,12 @@ def _run_bounded(items, fn, workers):
             raise
 
 
-def _with_range_retry(fn, *args):
-    """Call fn, retrying transient FUSE errors with jittered exponential backoff."""
+def _with_range_retry(fn, *args, on_retry=None):
+    """Call fn, retrying transient FUSE errors with jittered exponential backoff.
+
+    ``on_retry(exc, attempt)`` is called before each retry with the error and
+    the 1-based number of the attempt that failed.
+    """
     for attempt in range(_RANGE_MAX_ATTEMPTS - 1):
         try:
             fn(*args)
@@ -747,8 +848,28 @@ def _with_range_retry(fn, *args):
         except OSError as exc:
             if exc.errno not in _RANGE_RETRY_ERRNOS:
                 raise
+            if on_retry is not None:
+                on_retry(exc, attempt + 1)
             time.sleep(random.uniform(0, _RANGE_RETRY_BASE_SECONDS * 2**attempt))
     fn(*args)  # final attempt: any error propagates
+
+
+def _note_range_retry(stats, src, offset, exc, attempt):
+    """Count and log one range retry. Never raises: instrumentation must not fail a hydrate."""
+    try:
+        total = stats.record_retry()
+        log.debug(
+            f"VolumeCache: retrying {src} at offset {offset} after "
+            f"{errno.errorcode.get(exc.errno, exc.errno)} "
+            f"(attempt {attempt}/{_RANGE_MAX_ATTEMPTS})"
+        )
+        if total == _HYDRATE_RETRY_WARN_THRESHOLD + 1:
+            log.warn(
+                f"VolumeCache: hydrate passed {_HYDRATE_RETRY_WARN_THRESHOLD} range retries; "
+                "the volume mount is under sustained pressure and hydrate is slowing down"
+            )
+    except Exception:  # noqa: BLE001 - instrumentation is best-effort by design
+        pass
 
 
 def _file_identity(st):

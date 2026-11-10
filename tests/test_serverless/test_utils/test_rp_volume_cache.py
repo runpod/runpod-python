@@ -1,3 +1,4 @@
+import collections
 import errno
 import json
 import os
@@ -1484,3 +1485,273 @@ def test_hydrate_interrupted_during_finalization_leaves_no_temps(tmp_path, monke
         _hydrating_cache(cache, vol).hydrate()
 
     assert _leftover_temps(cache) == []
+
+
+# --------------------------------------------------------------------------- #
+# hydrate retry instrumentation and metadata EPERM logging
+# --------------------------------------------------------------------------- #
+
+
+def _capture_logs(monkeypatch):
+    """Record (level, message) for every VolumeCache log call."""
+    records = []
+    for level in ("debug", "info", "warn"):
+        monkeypatch.setattr(
+            vcmod.log, level, lambda msg, *_a, _lvl=level, **_kw: records.append((_lvl, msg))
+        )
+    return records
+
+
+def _messages(records, level, needle):
+    return [msg for lvl, msg in records if lvl == level and needle in msg]
+
+
+def _summary(records):
+    (line,) = _messages(records, "info", "hydrated")
+    return line
+
+
+def _fail_pread_n_times(monkeypatch, marker, err, times, per_range=None):
+    """Thread-safe: raise OSError(err) from the first ``times`` preads of marked files.
+
+    ``per_range`` caps the failures injected into any single (file, offset)
+    range. Without a cap, one range can absorb enough of the shared budget to
+    exhaust its retries, depending on thread scheduling.
+    """
+    real_open, real_pread = os.open, os.pread
+    lock = threading.Lock()
+    marked, failures = {}, []
+    per_key = collections.Counter()
+
+    def tracking_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        with lock:
+            if marker in str(path) and not flags & os.O_WRONLY:
+                marked[fd] = str(path)
+            else:
+                marked.pop(fd, None)
+        return fd
+
+    def flaky_pread(fd, n, off):
+        with lock:
+            key = (marked.get(fd), off)
+            fail = (
+                fd in marked
+                and len(failures) < times
+                and (per_range is None or per_key[key] < per_range)
+            )
+            if fail:
+                failures.append(off)
+                per_key[key] += 1
+        if fail:
+            raise OSError(err, os.strerror(err))
+        return real_pread(fd, n, off)
+
+    monkeypatch.setattr(os, "open", tracking_open)
+    monkeypatch.setattr(os, "pread", flaky_pread)
+    return failures
+
+
+def test_hydrate_logs_each_range_retry_at_debug(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    _fail_pread_n_times(monkeypatch, "/big/", errno.ENOMEM, times=3)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=1).hydrate() == 1
+
+    retries = _messages(records, "debug", "retrying")
+    assert len(retries) == 3
+    for attempt, msg in enumerate(retries, start=1):
+        assert "ENOMEM" in msg
+        assert f"attempt {attempt}/{vcmod._RANGE_MAX_ATTEMPTS}" in msg
+        assert "model.safetensors" in msg
+        assert "offset 0" in msg
+
+
+def test_hydrate_summary_reports_retry_and_given_up_counts(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    _fail_pread_n_times(monkeypatch, "/big/", errno.EAGAIN, times=2)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 1
+
+    summary = _summary(records)
+    assert "range retries: 2" in summary
+    assert "ranges given up: 0" in summary
+
+
+def test_hydrate_summary_reports_zero_counters_when_clean(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 1
+
+    summary = _summary(records)
+    assert "range retries: 0" in summary
+    assert "ranges given up: 0" in summary
+    assert _messages(records, "warn", "retr") == []
+
+
+def test_hydrate_counts_ranges_given_up_when_retries_exhausted(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    _fail_pread_on(monkeypatch, "/big/", errno.EIO)  # every read fails, forever
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=1).hydrate() == 0
+
+    # One range per file exhausts its attempts; the file's other ranges are
+    # skipped, not given up. The summary still appears when nothing restored.
+    summary = _summary(records)
+    assert "ranges given up: 2" in summary
+    assert f"range retries: {2 * (vcmod._RANGE_MAX_ATTEMPTS - 1)}" in summary
+
+
+def test_hydrate_counts_non_retryable_failure_as_given_up(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    _fail_pread_on(monkeypatch, "/big/", errno.EACCES)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=1).hydrate() == 0
+
+    summary = _summary(records)
+    assert "range retries: 0" in summary
+    assert "ranges given up: 1" in summary
+
+
+@pytest.mark.parametrize(("failures", "warned"), [(3, False), (4, True), (6, True)])
+def test_hydrate_warns_once_when_retries_exceed_threshold(tmp_path, monkeypatch, failures, warned):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    monkeypatch.setattr(vcmod, "_HYDRATE_RETRY_WARN_THRESHOLD", 3)
+    _fail_pread_n_times(monkeypatch, "/big/", errno.ENOMEM, times=failures)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=1).hydrate() == 2
+
+    warnings = _messages(records, "warn", "range retries")
+    assert len(warnings) == (1 if warned else 0)
+
+
+def test_hydrate_retry_counters_are_exact_under_concurrent_ranges(tmp_path, monkeypatch):
+    names = [f"shard-{i}.bin" for i in range(6)]
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, names, size=_CHUNK * 8)
+    # Each range fails fewer times than it has attempts, so every range
+    # eventually succeeds and every failure is a counted retry, whatever the
+    # thread scheduling.
+    failures = _fail_pread_n_times(
+        monkeypatch,
+        "/big/",
+        errno.ENOMEM,
+        times=40,
+        per_range=vcmod._RANGE_MAX_ATTEMPTS - 1,
+    )
+    records = _capture_logs(monkeypatch)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=16).hydrate()
+
+    assert restored == len(names)
+    for name, payload in payloads.items():
+        assert (cache / name).read_bytes() == payload
+    assert len(failures) == 40
+    summary = _summary(records)
+    assert "range retries: 40" in summary
+    assert "ranges given up: 0" in summary
+    assert len(_messages(records, "debug", "retrying")) == 40
+
+
+def test_hydrate_survives_failing_retry_instrumentation(tmp_path, monkeypatch):
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    _fail_pread_n_times(monkeypatch, "/big/", errno.ENOMEM, times=2)
+
+    def broken_debug(*_a, **_kw):
+        raise RuntimeError("log sink down")
+
+    monkeypatch.setattr(vcmod.log, "debug", broken_debug)
+
+    assert _hydrating_cache(cache, vol, best_effort=False).hydrate() == 1
+    assert (cache / "model.safetensors").read_bytes() == payloads["model.safetensors"]
+
+
+def test_sync_logs_metadata_eperm_once_and_stops_retrying(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    for i in range(5):
+        (cache / f"shard-{i}.bin").write_bytes(_big_payload(i))
+    attempts = []
+    real_chmod, real_utime = os.chmod, os.utime
+
+    def deny_on_volume(real, name):
+        def call(path, *args, **kwargs):
+            if str(path).startswith(str(vol)):
+                attempts.append(name)
+                raise PermissionError(errno.EPERM, "Operation not permitted")
+            return real(path, *args, **kwargs)
+
+        return call
+
+    monkeypatch.setattr(os, "chmod", deny_on_volume(real_chmod, "chmod"))
+    monkeypatch.setattr(os, "utime", deny_on_volume(real_utime, "utime"))
+    records = _capture_logs(monkeypatch)
+
+    vc.sync(background=False)
+
+    assert len(_messages(records, "debug", "EPERM")) == 1
+    assert _messages(records, "debug", "kept") == []  # no per-file metadata lines
+    assert attempts.count("utime") == 1
+    assert attempts.count("chmod") <= 1
+    assert len(json.loads((vol / ".cache" / "ep1" / "manifest.json").read_text())["big"]) == 5
+
+
+def test_sync_still_logs_non_eperm_metadata_errors_per_file(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    for i in range(3):
+        (cache / f"shard-{i}.bin").write_bytes(_big_payload(i))
+    real_utime = os.utime
+
+    def flaky_utime(path, *args, **kwargs):
+        if str(path).startswith(str(vol)):
+            raise OSError(errno.EIO, "Input/output error")
+        return real_utime(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "utime", flaky_utime)
+    records = _capture_logs(monkeypatch)
+
+    vc.sync(background=False)
+
+    assert len(_messages(records, "debug", "kept copy-time mtime")) == 3
+
+
+def test_each_sync_detects_metadata_eperm_afresh(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    (cache / "a.bin").write_bytes(_big_payload(1))
+    _deny_metadata_ops_under(monkeypatch, vol)
+    records = _capture_logs(monkeypatch)
+    vc.sync(background=False)
+    (cache / "b.bin").write_bytes(_big_payload(2))
+
+    vc.sync(background=False)
+
+    assert len(_messages(records, "debug", "EPERM")) == 2
+
+
+def test_sync_logs_chmod_only_eperm_once_and_keeps_first_mtime(tmp_path, monkeypatch):
+    # A volume that accepts utime but rejects chmod: the first file still gets
+    # its mtime, the rejection is logged once, and later files skip both calls.
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    for i in range(3):
+        (cache / f"shard-{i}.bin").write_bytes(_big_payload(i))
+    chmods = []
+    real_chmod = os.chmod
+
+    def deny_chmod(path, *args, **kwargs):
+        if str(path).startswith(str(vol)):
+            chmods.append(path)
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+        return real_chmod(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "chmod", deny_chmod)
+    records = _capture_logs(monkeypatch)
+
+    vc.sync(background=False)
+
+    assert len(chmods) == 1
+    assert len(_messages(records, "debug", "EPERM")) == 1
+    assert len(json.loads((vol / ".cache" / "ep1" / "manifest.json").read_text())["big"]) == 3
