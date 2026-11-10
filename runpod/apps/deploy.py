@@ -22,6 +22,7 @@ from .build import (
     build_environment,
 )
 from .errors import InvalidResourceError, ScheduleNotSupported
+from .discovery import resolve_project, validate_apps
 from .schedule import SCHEDULES_ENABLED
 from .shim import runtime_launcher
 from .spec import ResourceKind
@@ -98,7 +99,7 @@ def _module_path_for(fn, project_root: Path) -> str:
     module = getattr(fn, "__module__", "") or ""
     try:
         source = Path(inspect.getfile(fn)).resolve()
-        rel = source.relative_to(project_root.resolve())
+        rel = source.relative_to(resolve_project(project_root).import_root)
     except (TypeError, ValueError, OSError):
         return module
     parts = list(rel.with_suffix("").parts)
@@ -148,6 +149,7 @@ def build_manifest(
     python_version: str = DEFAULT_PYTHON_VERSION,
 ) -> Dict[str, Any]:
     """serialize an app's resources for the coordinator and workers."""
+    validate_apps([app])
     resources = []
 
     for handle in app.resources.values():
@@ -286,6 +288,8 @@ def package_project(
         output = Path(tempfile.mkdtemp()) / "artifact.tar.gz"
 
     project_root = project_root.resolve()
+    project = resolve_project(project_root)
+    source_prefix = project_root.relative_to(project.import_root)
     output_resolved = output.resolve()
     env_resolved = env_dir.resolve() if env_dir is not None else None
     runpod_ignores = _load_ignores(project_root / ".runpodignore")
@@ -326,7 +330,7 @@ def package_project(
                 ):
                     log.warning("excluded source path %r from deployment artifact", rel)
                     continue
-                tar.add(path, arcname=rel, recursive=False)
+                tar.add(path, arcname=(source_prefix / rel).as_posix(), recursive=False)
 
         if env_resolved is not None and env_resolved.is_dir():
             for directory, dirs, files in os.walk(env_resolved, followlinks=False):
@@ -622,12 +626,9 @@ async def deploy_app(
     events: Optional[object] = None,
 ) -> DeployResult:
     """run the full deploy pipeline for one app."""
+    manifest = build_manifest(app, project_root, python_version=python_version)
     client = api or AppsApiClient()
     env_name = env_name or app.env
-    for handle in app.resources.values():
-        handle.spec.validate()
-
-    manifest = build_manifest(app, project_root, python_version=python_version)
 
     # fail fast on unresolvable secret references (workers would boot
     # with the literal template string otherwise)
