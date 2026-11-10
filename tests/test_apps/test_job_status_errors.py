@@ -3,6 +3,7 @@
 import json
 import threading
 import traceback
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import AsyncMock, patch
 
@@ -75,16 +76,16 @@ async def test_admitted_job_status_propagation(
     )
     with patch("runpod.apps.targets.asyncio.sleep", AsyncMock()) as sleep:
         if operation == "invoke":
-            call = client.invoke({"input": {}}, timeout=60)
+            call = partial(client.invoke, {"input": {}}, timeout=60)
         else:
             job = await client.run({"input": {}})
-            call = client.status(job["id"])
+            call = partial(client.status, job["id"])
 
         if not_found_count < JOB_PROPAGATION_ATTEMPTS:
-            assert (await call)["output"] == 42
+            assert (await call())["output"] == 42
         else:
             with pytest.raises(JobStatusError) as raised:
-                await call
+                await call()
             error = raised.value
             assert isinstance(error, AppError)
             assert error.job_id == "admitted-job"
@@ -112,9 +113,10 @@ async def test_admitted_job_status_propagation(
         state["requests"][1:]
         == [("GET", f"/{endpoint}/status/admitted-job")] * expected_gets
     )
-    delays = [call.args[0] for call in sleep.await_args_list]
+    delays = [awaited.args[0] for awaited in sleep.await_args_list]
     if operation == "invoke":
-        assert delays.pop(0) == 0.5
+        assert delays[0] == 0.5
+        delays = delays[1:]
     assert delays == [0.5 * 2**i for i in range(expected_gets - 1)]
 
 
