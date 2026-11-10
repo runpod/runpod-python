@@ -30,6 +30,11 @@ def validate_route(method: str, path: str) -> None:
         raise ValueError(f"method must be one of {sorted(_VALID_METHODS)}")
     if not isinstance(path, str) or not path.startswith("/"):
         raise ValueError(f"path must start with '/', got: {path!r}")
+    if "{" in path or "}" in path:
+        raise ValueError(
+            f"native API route {method} {path} requires a literal path. "
+            "Use an @app.api FastAPI factory for path parameters."
+        )
     if path in RESERVED_PATHS:
         raise ValueError(
             f"path {path!r} is reserved by the worker runtime "

@@ -20,6 +20,7 @@ with the resource:
 
 import asyncio
 import inspect
+import sys
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -307,6 +308,57 @@ class _RouteCaller:
         return await target.request(self._method, path, body, **kwargs)
 
 
+def _validate_native_route(cls: Type, name: str, method: str, path: str) -> None:
+    member = inspect.getattr_static(cls, name)
+    guidance = (
+        f"native API route {method} {path} ({cls.__name__}.{name}): "
+        "use an instance method with no arguments after self, or one required "
+        "positional JSON-object argument for POST/PUT/PATCH/DELETE. "
+        "The body annotation must be omitted, dict, typing.Dict, or Any. "
+        "Use an @app.api FastAPI factory for typed path/query parameters "
+        "or body schemas."
+    )
+    if not inspect.isfunction(member):
+        raise InvalidResourceError(guidance)
+
+    if sys.version_info >= (3, 14):
+        from annotationlib import Format
+
+        signature = inspect.signature(member, annotation_format=Format.FORWARDREF)
+    else:
+        signature = inspect.signature(member)
+    parameters = list(signature.parameters.values())
+    positional = (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
+    if not parameters or parameters[0].kind not in positional:
+        raise InvalidResourceError(guidance)
+    parameters = parameters[1:]
+    if len(parameters) > (0 if method == "GET" else 1):
+        raise InvalidResourceError(guidance)
+    if not parameters:
+        return
+
+    body = parameters[0]
+    if body.kind not in positional or body.default is not inspect.Parameter.empty:
+        raise InvalidResourceError(guidance)
+    annotation = body.annotation
+    if isinstance(annotation, str):
+        annotation = annotation.strip("'\"")
+        valid_annotation = annotation in {
+            "dict",
+            "Dict",
+            "typing.Dict",
+            "Any",
+            "typing.Any",
+        }
+    else:
+        valid_annotation = annotation in (inspect.Parameter.empty, dict, Dict, Any)
+    if not valid_annotation:
+        raise InvalidResourceError(guidance)
+
+
 class ApiHandle:
     """handle for @app.api classes and asgi factories.
 
@@ -347,10 +399,11 @@ class ApiHandle:
     def _collect_routes(self, cls: Type) -> None:
         seen: Dict[tuple, str] = {}
         routes: List[RouteSpec] = []
-        for name, member in inspect.getmembers(cls, callable):
-            route = route_of(member)
+        for name, member in inspect.getmembers(cls):
+            route = route_of(member) or route_of(inspect.getattr_static(cls, name))
             if route is not None:
                 method, path = route
+                _validate_native_route(cls, name, method, path)
                 if (method, path) in seen:
                     raise InvalidResourceError(
                         f"duplicate route {method} {path} on {cls.__name__}: "
