@@ -124,3 +124,93 @@ def test_interrupt_aborts_discovery_and_rolls_back_partial_import(
     assert get_registered_apps() == [existing]
     assert not (tmp_path / "b_later.started").exists()
     assert DISCOVERY_ENV not in os.environ
+
+
+def test_directory_scan_skips_non_application_files(tmp_path):
+    (tmp_path / "service.py").write_text(
+        "from runpod import App\n"
+        "app = App('service')\n"
+        "@app.queue(cpu='cpu3c-1-2')\n"
+        "def worker(): return 1\n"
+    )
+    for name in (
+        "tests/test_app.py",
+        "setup.py",
+        ".hidden/script.py",
+        "custom_env/script.py",
+        "git_ignored.py",
+        "runpod_ignored.py",
+    ):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("from runpod import App\nApp('service')\nraise SystemExit\n")
+    (tmp_path / "custom_env/pyvenv.cfg").write_text("home = /python\n")
+    (tmp_path / ".gitignore").write_text("git_ignored.py\n")
+    (tmp_path / ".runpodignore").write_text("runpod_ignored.py\n")
+
+    (app,) = discover_apps(tmp_path, strict=True)
+
+    assert set(app.resources) == {"worker"}
+
+
+def test_import_failure_suggests_runpodignore(tmp_path):
+    (tmp_path / "broken.py").write_text("raise RuntimeError('broken')\n")
+
+    with pytest.raises(DiscoveryError, match=r"add it to \.runpodignore"):
+        discover_apps(tmp_path, strict=True)
+
+
+def test_stdlib_collision_suggests_renaming(tmp_path):
+    original = importlib.import_module("queue")
+    (tmp_path / "queue.py").write_text("raise AssertionError('must not import')\n")
+
+    with pytest.raises(DiscoveryError) as exc:
+        discover_apps(tmp_path, strict=True)
+
+    assert "Rename the project module" in str(exc.value)
+    assert "shadowing an installed or standard-library module" in str(exc.value)
+    assert sys.modules["queue"] is original
+
+
+@pytest.mark.parametrize(
+    "name, hint",
+    [("service", "package-relative imports"), ("my-svc", "valid python identifier")],
+)
+def test_package_layout_error_names_initializer(tmp_path, name, hint):
+    package = tmp_path / name
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "local_app.py").write_text("from runpod import App\napp = App('svc')\n")
+    (package / "worker.py").write_text("from local_app import app\n")
+
+    with pytest.raises(DiscoveryError) as exc:
+        discover_apps(package, strict=True)
+
+    assert str(package / "__init__.py") in str(exc.value)
+    assert hint in str(exc.value)
+
+
+def test_project_path_additions_support_lazy_imports(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "path", sys.path[:])
+    project = tmp_path / "project"
+    project.mkdir()
+    vendor = tmp_path / "vendor"
+    vendor.mkdir()
+    (vendor / "vendor_helper.py").write_text("VALUE = 42\n")
+    (project / "service.py").write_text(
+        "import sys\n"
+        f"sys.path.append({str(vendor)!r})\n"
+        "from runpod import App\n"
+        "app = App('service')\n"
+        "@app.queue(cpu='cpu3c-1-2')\n"
+        "def worker():\n"
+        "    from vendor_helper import VALUE\n"
+        "    return VALUE\n"
+    )
+    sys.path.append(str(project))
+    previous_path = sys.path[:]
+
+    (app,) = discover_apps(project, strict=True)
+
+    assert sys.path == [*previous_path, str(vendor)]
+    assert app.resources["worker"].local() == 42
