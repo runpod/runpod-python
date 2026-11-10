@@ -164,3 +164,71 @@ class TestRunLocal(IsolatedAsyncioTestCase):
 
         assert mock_file.called
         assert mock_run.called is False
+
+    async def test_sync_generator_handler_output_is_collected(self):
+        def handler(job):
+            for i in range(3):
+                yield f"chunk {i}"
+
+        config = {"handler": handler, "rp_args": {"test_input": {"input": {"x": 1}}}}
+        with (
+            patch("runpod.serverless.modules.rp_local.log") as logger,
+            self.assertRaises(SystemExit) as sys_exit,
+        ):
+            await rp_local.run_local(config)
+
+        self.assertEqual(sys_exit.exception.code, 0)
+        logger.info.assert_any_call(
+            "Job result: {'output': ['chunk 0', 'chunk 1', 'chunk 2']}"
+        )
+
+    async def test_async_generator_handler_output_is_collected(self):
+        async def handler(job):
+            for i in range(3):
+                yield f"chunk {i}"
+
+        config = {"handler": handler, "rp_args": {"test_input": {"input": {"x": 1}}}}
+        with (
+            patch("runpod.serverless.modules.rp_local.log") as logger,
+            self.assertRaises(SystemExit) as sys_exit,
+        ):
+            await rp_local.run_local(config)
+
+        self.assertEqual(sys_exit.exception.code, 0)
+        logger.info.assert_any_call(
+            "Job result: {'output': ['chunk 0', 'chunk 1', 'chunk 2']}"
+        )
+
+    async def test_generator_handler_error_fails_local_test(self):
+        def handler(job):
+            yield "chunk 0"
+            raise ValueError("boom")
+
+        config = {"handler": handler, "rp_args": {"test_input": {"input": {"x": 1}}}}
+        with (
+            patch("runpod.serverless.modules.rp_local.log") as logger,
+            self.assertRaises(SystemExit) as sys_exit,
+        ):
+            await rp_local.run_local(config)
+
+        self.assertEqual(sys_exit.exception.code, 1)
+        self.assertIn("boom", logger.error.call_args.args[0])
+
+    async def test_generator_handler_output_matches_test_output(self):
+        def handler(job):
+            yield "chunk 0"
+
+        config = {
+            "handler": handler,
+            "rp_args": {
+                "test_input": {"input": {"x": 1}},
+                "test_output": {"output": ["chunk 0"]},
+            },
+        }
+        with (
+            patch("runpod.serverless.modules.rp_local.log"),
+            self.assertRaises(SystemExit) as sys_exit,
+        ):
+            await rp_local.run_local(config)
+
+        self.assertEqual(sys_exit.exception.code, 0)
