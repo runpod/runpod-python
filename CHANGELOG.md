@@ -1,17 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Features
-
-* Deployed Flash calls use endpoint or pod runtime credentials. Release requires deployed support from [RunPod#6686](https://github.com/runpod/RunPod/pull/6686), [ai-api#1176](https://github.com/runpod/ai-api/pull/1176), and [sdk-runtime#4](https://github.com/runpod-workers/sdk-runtime/pull/4).
-
-### Breaking Changes
-
-* Production endpoint environment variables reserve `RUNPOD_API_KEY` and runtime identity fields. Workers authenticate Flash calls with platform-issued runtime credentials; application credentials must use non-reserved environment names.
-* Deployed workers can invoke Flash resources only within their own app and environment, including through `Queue`, `Api`, and `Task` stubs. Local clients use account credentials subject to their permissions.
-* Remote queues, tasks, and JSON API calls require finite JSON-compatible arguments and results in local, dev, and deployed execution. Dev workers receive source separately from the JSON argument contract. Explicit `.local()` calls run Python directly.
-
 ## [2.2.1](https://github.com/runpod/runpod-python/compare/v2.2.0...v2.2.1) (2026-11-10)
 
 
@@ -31,8 +19,16 @@
 ## [2.2.0](https://github.com/runpod/runpod-python/compare/v2.1.0...v2.2.0) (2026-11-09)
 
 
+### BREAKING CHANGES
+
+* Production endpoint environment variables reserve `RUNPOD_API_KEY` and runtime identity fields. Workers authenticate Flash calls with platform-issued runtime credentials; application credentials must use non-reserved environment names.
+* Deployed workers can invoke Flash resources only within their own app and environment, including through `Queue`, `Api`, and `Task` stubs. Local clients use account credentials subject to their permissions.
+* Remote queues, tasks, and JSON API calls require finite JSON-compatible arguments and results in local, dev, and deployed execution. Dev workers receive source separately from the JSON argument contract. Explicit `.local()` calls run Python directly.
+
+
 ### Features
 
+* Deployed Flash calls use endpoint or pod runtime credentials. Release requires deployed support from [RunPod#6686](https://github.com/runpod/RunPod/pull/6686), [ai-api#1176](https://github.com/runpod/ai-api/pull/1176), and [sdk-runtime#4](https://github.com/runpod-workers/sdk-runtime/pull/4).
 * invoke deployed flash tasks with runtime credentials (SEC-375 CON-1833) ([#644](https://github.com/runpod/runpod-python/issues/644)) ([367f174](https://github.com/runpod/runpod-python/commit/367f174ef14cc7fcf909a3b26413c3f2d38cbd9b))
 * make console, proxy, and endpoint hosts configurable ([#684](https://github.com/runpod/runpod-python/issues/684)) ([b9583f7](https://github.com/runpod/runpod-python/commit/b9583f7c0a02e6c0cbb9598538393fc239d88852))
 * resumable network volume upload and download ([#655](https://github.com/runpod/runpod-python/issues/655)) ([a677ee9](https://github.com/runpod/runpod-python/commit/a677ee9f08f21da5a29cc126ed63032fc1063365))
