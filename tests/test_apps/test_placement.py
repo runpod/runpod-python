@@ -79,6 +79,20 @@ class TestCandidates:
         assert candidates(spec, stock) == {"EU-RO-1"}
         assert spec.to_manifest()["locations"] == "EU-RO-1"
 
+    def test_unlisted_pin_stays_candidate_without_stock_data(self):
+        # the sdk only queries stock for its built-in list, so an unlisted
+        # pin cannot be ruled out client-side; the backend decides
+        stock = _stock(gpu={("NVIDIA GeForce RTX 4090", "EU-RO-1"): 3})
+        spec = _spec(gpu=["NVIDIA GeForce RTX 4090"], datacenter=["XX-TEST-1"])
+        assert candidates(spec, stock) == {"XX-TEST-1"}
+
+    def test_unlisted_pin_alongside_known_pin(self):
+        stock = _stock(gpu={("NVIDIA GeForce RTX 4090", "EU-RO-1"): 0})
+        spec = _spec(
+            gpu=["NVIDIA GeForce RTX 4090"], datacenter=["EU-RO-1", "XX-TEST-1"]
+        )
+        assert candidates(spec, stock) == {"XX-TEST-1"}
+
     def test_mutated_datacenter_pin_is_normalized(self):
         spec = _spec(cpu="cpu5c-2-4")
         spec.datacenter = [DataCenter.EU_RO_1]
@@ -144,6 +158,36 @@ class TestSolvePlacement:
             volume_datacenters=set(),
         )
         assert dc == "EU-RO-1"
+
+    def test_existing_unlisted_dc_with_matching_pin(self):
+        dc = solve_placement(
+            [_spec("train", gpu=["NVIDIA H200"], datacenter="XX-TEST-1")],
+            _stock(),
+            volume_name="models",
+            existing_dc="XX-TEST-1",
+            volume_datacenters=set(),
+        )
+        assert dc == "XX-TEST-1"
+
+    def test_existing_unlisted_dc_without_pin_is_placement_error(self):
+        with pytest.raises(PlacementError, match="lives in XX-TEST-1"):
+            solve_placement(
+                [_spec("train", gpu=["NVIDIA H200"])],
+                _stock(gpu={("NVIDIA H200", "EU-RO-1"): 3}),
+                volume_name="models",
+                existing_dc="XX-TEST-1",
+                volume_datacenters=set(),
+            )
+
+    def test_new_volume_in_unlisted_dc(self):
+        dc = solve_placement(
+            [_spec("train", gpu=["NVIDIA H200"], datacenter="XX-TEST-1")],
+            _stock(),
+            volume_name="models",
+            volume_dc="XX-TEST-1",
+            volume_datacenters={"EU-RO-1", "XX-TEST-1"},
+        )
+        assert dc == "XX-TEST-1"
 
     def test_existing_dc_unschedulable_errors(self):
         stock = _stock(gpu={("NVIDIA H200", "EU-RO-1"): 3})

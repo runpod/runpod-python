@@ -20,6 +20,8 @@ from rich.progress import (
 from rich.spinner import SPINNERS
 from rich.theme import Theme
 
+from runpod._hosts import console_url
+
 # -- brand ----------------------------------------------------------------
 
 ACCENT = "#673de6"  # runpod purple
@@ -101,11 +103,8 @@ def _spinner_column(finished_text: str = "[ok]✓[/ok]") -> SpinnerColumn:
     )
 
 
-CONSOLE_URL = "https://console.runpod.io/serverless/user/endpoint"
-
-
 def endpoint_url(endpoint_id: str) -> str:
-    return f"{CONSOLE_URL}/{endpoint_id}?tab=overview"
+    return f"{console_url()}/serverless/user/endpoint/{endpoint_id}?tab=overview"
 
 
 def endpoint_link(endpoint_id: str) -> str:

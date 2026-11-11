@@ -13,8 +13,9 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import aiohttp
 
-from ..user_agent import USER_AGENT
-from .errors import EndpointNotFound, RemoteExecutionError
+from .._hosts import endpoint_domain
+from ..user_agent import APPS_USER_AGENT
+from .errors import EndpointNotFound, JobStatusError, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest
 from .serialization import require_json_value
 from .spec import ResourceSpec
@@ -34,9 +35,7 @@ FINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"})
 
 def _lb_domain() -> str:
     """host portion of the data-plane base url, for lb subdomain urls."""
-    base = _endpoint_url_base()
-    host = base.split("://", 1)[-1]
-    return host.split("/", 1)[0]
+    return endpoint_domain()
 
 
 def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
@@ -44,7 +43,7 @@ def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
+        "User-Agent": APPS_USER_AGENT,
     }
     runtime = runtime_headers()
     headers.update(
@@ -226,6 +225,7 @@ async def _request_json(
     app_name: str = "",
     resource_name: str = "",
     retry_not_found: bool = False,
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """http json call with exponential backoff on transient failures."""
     require_json_value(payload, "remote request body must be JSON-serializable")
@@ -246,6 +246,13 @@ async def _request_json(
                 async with session.request(
                     method, url, json=payload, headers=headers
                 ) as resp:
+                    if resp.status >= 400 and job_id is not None:
+                        last_exc = JobStatusError(job_id, resp.status, method, url)
+                        if (resp.status == 404 and retry_not_found) or (
+                            resp.status in RETRYABLE_STATUSES and retry_transient
+                        ):
+                            continue
+                        raise last_exc
                     if resp.status == 404:
                         last_exc = EndpointNotFound(app_name, resource_name)
                         if retry_not_found and attempt < attempts - 1:
@@ -301,6 +308,7 @@ async def _get_json(
     app_name: str = "",
     resource_name: str = "",
     retry_not_found: bool = False,
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     return await _request_json(
         "GET",
@@ -310,6 +318,7 @@ async def _get_json(
         app_name=app_name,
         resource_name=resource_name,
         retry_not_found=retry_not_found,
+        job_id=job_id,
     )
 
 
@@ -358,6 +367,7 @@ async def _wait_terminal(
             app_name=app_name,
             resource_name=resource_name,
             retry_not_found=True,
+            job_id=job_id,
         )
         if on_status is not None:
             on_status(data)
@@ -408,6 +418,7 @@ class QueueClient:
             retry_not_found=path.startswith(
                 ("status/", "stream/", "cancel/", "retry/")
             ),
+            job_id=path[len("status/") :] if path.startswith("status/") else None,
         )
 
     async def run(

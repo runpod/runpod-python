@@ -8,6 +8,7 @@ output, never for help rendering.
 
 import asyncio
 import os
+import shlex
 import signal
 import sys
 from pathlib import Path
@@ -19,6 +20,12 @@ import click
 # update notice
 _UPDATE_CHECK_EXCLUDED = frozenset({"completion", "flash", "update"})
 _FLASH_UPDATE_CHECK_EXCLUDED = frozenset({"dev"})
+
+
+def _default_profile() -> str:
+    from runpod import _selected_profile
+
+    return _selected_profile()
 
 
 @click.group()
@@ -179,7 +186,7 @@ def deploy(target, env, python_version, exclude, build_only):
     import logging
 
     from runpod.apps.deploy import build_artifact, deploy_app
-    from runpod.apps.discovery import DiscoveryError, discover_apps
+    from runpod.apps.discovery import discover_apps, resolve_project
     from runpod.rp_cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
@@ -206,19 +213,13 @@ def deploy(target, env, python_version, exclude, build_only):
     if not target.exists():
         _fail(f"{target} does not exist")
 
-    project_root = target if target.is_dir() else target.parent
-
     try:
-        apps = discover_apps(target)
-    except DiscoveryError as exc:
+        project = resolve_project(target)
+        apps = discover_apps(project.target, strict=True)
+    except Exception as exc:
         _fail(str(exc))
 
-    if not apps:
-        _fail(
-            "no runpod.App found. define one with:\n\n"
-            "    from runpod import App\n"
-            '    app = App("my-app")'
-        )
+    project_root = project.source_root
 
     if build_only:
         for found in apps:
@@ -305,59 +306,64 @@ def deploy(target, env, python_version, exclude, build_only):
 
 
 @flash.command()
-@click.argument("module", type=click.Path(exists=True, path_type=Path))
+@click.argument("target", default=".", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--entrypoint",
+    "entrypoint_selector",
+    default=None,
+    help="Select a registered entry hook as module:function.",
+)
 @click.option(
     "--once",
     is_flag=True,
-    help="Run the entrypoint once, tear down, and exit (for scripts/CI).",
+    help="Provision, run an optional entry hook, tear down, and exit.",
 )
-def dev(module, once):
-    """Start an interactive dev session for MODULE.
+def dev(target, once, entrypoint_selector):
+    """Start an interactive dev session for TARGET (default: cwd).
 
-    Provisions temporary live endpoints, runs the module's
-    @runpod.local_entrypoint, watches for file changes (re-scanning and
-    refreshing endpoints so requests run fresh code), and deletes the
-    endpoints on exit.
+    Provisions temporary live endpoints, runs an optional
+    @runpod.local_entrypoint, watches the project for file changes,
+    and deletes the endpoints on exit.
     """
     import logging
 
     from runpod.apps.dev import DevSession
-    from runpod.apps.discovery import DiscoveryError, discover_apps
-    from runpod.apps.entrypoint import get_entrypoint, run_entrypoint
+    from runpod.apps.discovery import discover_apps, resolve_project
+    from runpod.apps.entrypoint import (
+        _clear_entrypoints,
+        _restore_entrypoints,
+        get_entrypoints,
+        run_entrypoint,
+        select_entrypoint,
+    )
     from runpod.apps.utils.names import dev_endpoint_name
     from runpod.apps.watch import FileWatcher
     from runpod.rp_cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
 
-    module = module.resolve()
-    if not module.is_file():
-        _fail(f"{module} is not a file")
+    try:
+        project = resolve_project(target)
+    except Exception as exc:
+        _fail(str(exc))
 
     os.environ["RUNPOD_DEV_SESSION"] = "1"
 
     def _scan():
-        # each rescan registers entrypoints anew; clearing first keeps
-        # get_entrypoint() reflecting the current file, not stale runs
-        from runpod.apps.entrypoint import _clear_entrypoints
-
+        previous_entrypoints = get_entrypoints()
         _clear_entrypoints()
         try:
-            apps = discover_apps(module)
-        except DiscoveryError as exc:
-            _fail(str(exc))
-        if not apps:
-            _fail("no runpod.App found in module")
-        entrypoint = get_entrypoint()
-        if entrypoint is None:
-            _fail(
-                "no @runpod.local_entrypoint found. define one:\n\n"
-                "    @runpod.local_entrypoint\n"
-                "    async def main(): ..."
-            )
+            apps = discover_apps(project.target, strict=True)
+            entrypoint = select_entrypoint(entrypoint_selector)
+        except BaseException:
+            _restore_entrypoints(previous_entrypoints)
+            raise
         return apps, entrypoint
 
-    apps, entrypoint = _scan()
+    try:
+        apps, entrypoint = _scan()
+    except Exception as exc:
+        _fail(str(exc))
 
     def _all_resource_names(app_list) -> list:
         return [
@@ -514,33 +520,44 @@ def dev(module, once):
         nonlocal apps, entrypoint, tearing_down
         ui.set_name_width(_all_resource_names(apps))
         session = DevSession(apps, events=ui.DevEvents())
-        watcher = FileWatcher([module.parent])
+        watcher = FileWatcher([project.source_root])
 
-        ui.dev_banner([a.name for a in apps], str(module.name))
+        ui.dev_banner([a.name for a in apps], str(project.target.name))
         _install_stop_signals()
         try:
             await session.start()
             ui.resources_table(_table_rows(session))
             while True:
-                ui.entrypoint_header(getattr(entrypoint, "__name__", ""))
-                with ui.Timer() as t:
-                    try:
-                        await _run_entrypoint_cancellable(entrypoint)
-                        ui.entrypoint_success(t.so_far)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
-                        ui.entrypoint_failure(t.so_far, str(exc))
-                        if once:
-                            return 1
+                if entrypoint is not None:
+                    ui.entrypoint_header(getattr(entrypoint, "__name__", ""))
+                    with ui.Timer() as t:
+                        try:
+                            await _run_entrypoint_cancellable(entrypoint)
+                            ui.entrypoint_success(t.so_far)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            ui.entrypoint_failure(t.so_far, str(exc))
+                            if once:
+                                return 1
                 if once:
                     return 0
-                reason = await _wait_for_rerun(watcher)
-                if reason == "changed":
-                    ui.reload_banner(str(module.name))
-                    apps, entrypoint = _scan()
-                    ui.set_name_width(_all_resource_names(apps))
-                    await session.refresh(apps)
+                reload_failed = False
+                while True:
+                    reason = await _wait_for_rerun(watcher)
+                    if reason == "changed":
+                        ui.reload_banner(str(project.target.name))
+                        try:
+                            apps, entrypoint = _scan()
+                        except Exception as exc:
+                            ui.error(f"reload failed: {exc}; keeping current endpoints")
+                            reload_failed = True
+                            continue
+                        ui.set_name_width(_all_resource_names(apps))
+                        await session.refresh(apps)
+                        reload_failed = False
+                    if not reload_failed:
+                        break
         finally:
             tearing_down = True
             events = ui.CleanupEvents()
@@ -631,31 +648,59 @@ def logs(pod_id, follow, log_type, tail):
     help="Store this API key directly (skips the browser flow).",
 )
 @click.option(
-    "--profile", default="default", show_default=True, help="Credential profile."
+    "--profile",
+    default=_default_profile,
+    show_default="RUNPOD_PROFILE, else default",
+    help="Credential profile.",
 )
 @click.option(
     "--agent",
     is_flag=True,
-    help="Sign in with an emailed code; requires an interactive terminal, not a browser.",
+    help="Sign in without prompting: use --email to request a code, then --code to complete login.",
 )
 @click.option("--email", default=None, help="Email address for --agent sign-in.")
-def login(no_open, api_key_opt, profile, agent, email):
+@click.option(
+    "--code",
+    default=None,
+    help="Complete a pending --agent login with a six-digit code without prompting.",
+)
+def login(no_open, api_key_opt, profile, agent, email, code):
     """Authenticate with Runpod and store the API key.
 
     Opens the Runpod console for browser approval by default, then asks
-    you to paste the API key the console shows; pass --api-key to store a
-    key directly. Use --agent --email ADDRESS to receive a verification
-    code by email and enter it at the prompt in an interactive terminal.
-    Keep this process running until sign-in completes; the code must be
-    entered in the same process that requested it.
+    you to paste the API key the console shows. Pass --api-key to store a
+    key directly. Run --agent --email ADDRESS to email a verification code
+    and exit, then --agent --code CODE to complete login without prompting.
+    Use the same --profile for both commands. Pending
+    login state is stored in ~/.runpod with owner-only permissions and
+    deleted after credentials are saved. Treat the code as a secret.
+    Command arguments can appear in shell history and process listings.
     """
-    from runpod.apps.auth import LoginError, agent_login, browser_login
+    from runpod.apps.auth import (
+        LoginError,
+        browser_login,
+        load_agent_login,
+        pending_agent_login_path,
+        save_agent_login,
+        start_agent_login,
+        verify_agent_login,
+    )
     from runpod.cli.groups.config.functions import set_credentials
     from runpod.rp_cli import console as ui
 
     if agent and api_key_opt is not None:
         raise click.UsageError("--agent cannot be combined with --api-key")
-    if agent and (email is None or not email.strip()):
+    if code is not None and not agent:
+        raise click.UsageError("--code requires --agent")
+    if code is not None and email is not None:
+        raise click.UsageError(
+            "--code uses the pending login. Do not combine it with --email"
+        )
+    if code is not None:
+        code = code.strip()
+        if len(code) != 6 or not code.isascii() or not code.isdigit():
+            raise click.UsageError("--code must contain six ASCII digits")
+    if agent and code is None and (email is None or not email.strip()):
         raise click.UsageError("--agent requires --email")
     if email is not None and not agent:
         raise click.UsageError("--email requires --agent")
@@ -668,7 +713,6 @@ def login(no_open, api_key_opt, profile, agent, email):
         ui.success("credentials saved to [dim]~/.runpod/config.toml[/dim]")
         return
 
-    # browser-paste needs a tty to read the key; agent reads a piped code fine.
     if not agent and not _stdin_is_tty():
         _fail(
             "rp login needs an interactive terminal to paste the API key. "
@@ -695,24 +739,20 @@ def login(no_open, api_key_opt, profile, agent, email):
     def _rejected(reason: str) -> None:
         ui.console.print(f" [dim]{reason}, try again[/dim]")
 
-    code_prompted = False
-
-    def _read_code() -> str:
-        nonlocal code_prompted
-        if code_prompted:
-            click.echo("Verification code rejected. Try again.", err=True)
-        else:
-            click.echo("A verification code was sent to your email.")
-            code_prompted = True
-        while True:
-            code = click.prompt("Verification code", hide_input=True).strip()
-            if len(code) == 6 and code.isascii() and code.isdigit():
-                return code
-            click.echo("Enter the six-digit code from your email.", err=True)
-
     try:
-        if agent:
-            api_key = asyncio.run(agent_login(email.strip(), read_code=_read_code))
+        if agent and code is None:
+            attempt = asyncio.run(start_agent_login(email.strip()))
+            save_agent_login(attempt, profile)
+            command = ["runpod", "login", "--agent", "--code", "CODE"]
+            if profile != "default":
+                command.extend(["--profile", profile])
+            click.echo("A verification code was sent to your email.")
+            click.echo("Check your inbox, then run:")
+            click.echo(f"\n  {shlex.join(command)}\n")
+            click.echo("Replace CODE with the six-digit code from your email.")
+            return
+        if code is not None:
+            api_key = asyncio.run(verify_agent_login(load_agent_login(profile), code))
         else:
             api_key = asyncio.run(
                 browser_login(
@@ -720,6 +760,8 @@ def login(no_open, api_key_opt, profile, agent, email):
                 )
             )
         set_credentials(api_key, profile=profile, overwrite=True)
+        if code is not None:
+            pending_agent_login_path(profile).unlink(missing_ok=True)
     except (LoginError, ValueError, OSError) as exc:
         _fail(str(exc))
     ui.success("logged in, credentials saved to [dim]~/.runpod/config.toml[/dim]")

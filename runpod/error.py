@@ -58,3 +58,18 @@ class RateLimitError(QueryError):
     ):
         super().__init__(message, query, status_code=429, errors=errors)
         self.retry_after = retry_after
+
+
+class JobError(RunPodError):
+    """A serverless job ended FAILED, TIMED_OUT or CANCELLED.
+
+    Raised by Endpoint.run_sync and Job.output instead of returning None,
+    so a failed job can't be mistaken for a handler that returned None.
+    """
+
+    def __init__(self, job_id: str, status: str, error: Optional[str] = None):
+        detail = f": {error}" if error else ""
+        super().__init__(f"job {job_id} {status}{detail}")
+        self.job_id = job_id
+        self.status = status
+        self.error = error

@@ -122,6 +122,7 @@ def run_rest_request(
     timeout: float = 30,
     max_retries: int = 3,
     max_rate_limit_wait: float = 60,
+    user_agent: str = USER_AGENT,
 ) -> Optional[dict[str, Any]]:
     """Send a REST request with bounded 429 retries and shared quota waits.
 
@@ -133,6 +134,7 @@ def run_rest_request(
     key = _resolve_api_key(api_key)
     url = _build_url(path)
     headers = _build_headers(key)
+    headers["User-Agent"] = user_agent
     budget = _RetryBudget(max_retries, max_rate_limit_wait, f"{method.upper()} {path}")
     with rate_limits.bucket(url, key) as bucket:
         for attempt in range(max_retries + 1):
@@ -241,6 +243,7 @@ async def run_rest_request_async(
     max_retries: int = 3,
     max_rate_limit_wait: float = 60,
     session: Optional[aiohttp.ClientSession] = None,
+    user_agent: str = USER_AGENT,
 ) -> Optional[dict[str, Any]]:
     """Send a REST request with cancellable quota waits and bounded 429 retries.
 
@@ -258,6 +261,7 @@ async def run_rest_request_async(
             params=params,
             json=json,
             timeout=aiohttp.ClientTimeout(total=timeout),
+            headers={"User-Agent": user_agent},
             max_retries=max_retries,
             max_rate_limit_wait=max_rate_limit_wait,
         )
@@ -279,6 +283,7 @@ async def run_rest_paginated_request_async(
     collection: str,
     *,
     api_key: Optional[str] = None,
+    user_agent: str = USER_AGENT,
 ) -> list[dict[str, Any]]:
     """read all cursor pages with one session and four transport attempts per page."""
     records = []
@@ -290,7 +295,12 @@ async def run_rest_paginated_request_async(
             for attempt in range(4):
                 try:
                     data = await run_rest_request_async(
-                        "GET", path, api_key=api_key, params=params, session=session
+                        "GET",
+                        path,
+                        api_key=api_key,
+                        params=params,
+                        session=session,
+                        user_agent=user_agent,
                     )
                     break
                 except (aiohttp.ClientError, OSError, asyncio.TimeoutError):

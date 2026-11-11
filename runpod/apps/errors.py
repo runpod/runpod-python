@@ -1,5 +1,7 @@
 """errors raised by the apps surface."""
 
+from yarl import URL
+
 
 class AppError(Exception):
     """base error for the apps sdk."""
@@ -19,6 +21,20 @@ class EndpointNotFound(AppError):
 
 class RemoteExecutionError(AppError):
     """the remote worker reported a failure executing the function."""
+
+
+class JobStatusError(AppError):
+    """a job-status request failed with an http error."""
+
+    def __init__(self, job_id: str, status: int, method: str, url: str):
+        self.job_id = job_id
+        self.status = status
+        self.method = method
+        self.url = str(URL(url).with_user(None).with_query(None).with_fragment(None))
+        super().__init__(
+            f"could not retrieve status for job '{job_id}': "
+            f"HTTP {status} ({method} {self.url})"
+        )
 
 
 class ScheduleNotSupported(AppError):

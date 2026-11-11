@@ -17,7 +17,13 @@ from typing import Dict, List, Optional, Tuple
 
 from packaging.markers import Marker
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.utils import canonicalize_name
+from packaging.utils import (
+    InvalidSdistFilename,
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_sdist_filename,
+    parse_wheel_filename,
+)
 
 from .errors import AppError
 from .images import DEFAULT_PYTHON_VERSION, SUPPORTED_PYTHON_VERSIONS
@@ -98,21 +104,130 @@ def _requirements_txt(project_root: Path) -> List[str]:
 
 
 def collect_requirements(project_root: Path, app) -> List[str]:
-    """project requirements.txt plus per-resource dependencies, deduped."""
-    requirements = _requirements_txt(project_root)
+    """collect constraints and reject incompatible unconditional version pins."""
+    requirements = [
+        (req, "requirements.txt") for req in _requirements_txt(project_root)
+    ]
 
-    for handle in app.resources.values():
+    for name, handle in app.resources.items():
         for dep in handle.spec.dependencies or []:
-            requirements.append(dep)
+            requirements.append((dep, f"resource {name!r}"))
 
     seen = set()
     unique = []
-    for req in requirements:
-        key = requirement_name(req)
-        if key not in seen:
-            seen.add(key)
+    unconditional: Dict[str, List[Tuple[Requirement, str, str]]] = {}
+    for req, source in requirements:
+        parsed = _parse_requirement(req)
+        if parsed is not None and parsed.marker is None:
+            entries = unconditional.setdefault(canonicalize_name(parsed.name), [])
+            if entries and req.strip() == parsed.name:
+                continue
+            entries.append((parsed, req, source))
+        if req not in seen:
+            seen.add(req)
             unique.append(req)
+
+    for name, entries in unconditional.items():
+        constraints = [entry for entry in entries if entry[0].specifier]
+        pins = {
+            spec.version
+            for parsed, _, _ in constraints
+            for spec in parsed.specifier
+            if spec.operator == "==" and not spec.version.endswith(".*")
+        }
+        if pins and not any(
+            all(
+                parsed.specifier.contains(pin, prereleases=True)
+                for parsed, _, _ in constraints
+            )
+            for pin in pins
+        ):
+            details = ", ".join(
+                f"{req!r} from {source}" for _, req, source in constraints
+            )
+            raise BuildError(
+                f"conflicting dependency requirements for {name}: {details}. "
+                "use compatible versions across requirements.txt and all resources"
+            )
     return unique
+
+
+# archive extensions a url or path requirement can point at, longest first
+_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tgz", ".whl", ".zip", ".tar")
+
+
+def _named_distribution(value: str) -> str:
+    """the canonical distribution name of a PEP 508 requirement string.
+
+    handles a bare name, a version pin, extras (``runpod[all]``), and a
+    direct reference (``runpod @ https://.../sdk.tar.gz``). a value that is
+    not a valid requirement (a bare archive filename) is named by its file.
+    """
+    try:
+        return canonicalize_name(Requirement(value).name)
+    except InvalidRequirement:
+        return _archive_distribution(posixpath.basename(value))
+
+
+def _archive_distribution(basename: str) -> str:
+    """the canonical distribution name a wheel or sdist filename declares.
+
+    wheel and sdist names escape the version differently, so the pep 427 /
+    pep 625 parsers are used before falling back to the leading name token
+    for an archive that carries a name but no version (``runpod.tar.gz``).
+    """
+    try:
+        return parse_wheel_filename(basename)[0]
+    except InvalidWheelFilename:
+        pass
+    try:
+        return parse_sdist_filename(basename)[0]
+    except InvalidSdistFilename:
+        pass
+    for suffix in _ARCHIVE_SUFFIXES:
+        if basename.endswith(suffix):
+            basename = basename[: -len(suffix)]
+            break
+    return canonicalize_name(basename.split("-", 1)[0])
+
+
+def _spec_distribution(spec: str) -> str:
+    """the canonical distribution name a requirement spec installs.
+
+    a named spec (bare name, version pin, extras, or ``name @ url``)
+    resolves by its name; a direct url, vcs ref, or path resolves by its
+    ``#egg=`` fragment or the wheel/sdist filename it points at, so a
+    pinned runpod build is still recognised as runpod.
+    """
+    spec = spec.strip()
+    base, _, fragment = spec.partition("#")
+    for part in fragment.split("&"):
+        if part.startswith("egg="):
+            return _named_distribution(part[len("egg=") :])
+
+    basename = posixpath.basename(base.split("?", 1)[0].rstrip("/"))
+    if basename.endswith(_ARCHIVE_SUFFIXES) and " @ " not in spec:
+        return _archive_distribution(basename)
+    return _named_distribution(spec)
+
+
+def reject_runpod_dependency(requirements: List[str]) -> None:
+    """fail when an app pins the runpod sdk through its dependencies.
+
+    deploy installs the app's dependencies and then overlays the client's
+    own runpod tree (``sync_running_package``), so a runpod entry in
+    ``dependencies`` or requirements.txt produces a worker running a
+    silent mix of the two builds. RUNPOD_PACKAGE_SPEC is the supported way
+    to choose the worker's runpod build.
+    """
+    for req in requirements:
+        if _spec_distribution(req) == "runpod":
+            raise BuildError(
+                f"{req!r} pins the runpod sdk through dependencies, which "
+                f"would overlay the client build and run a mixed install on "
+                f"the worker. Remove it and set the RUNPOD_PACKAGE_SPEC "
+                f"environment variable to choose the worker's runpod build."
+            )
 
 
 def split_exclusions(
@@ -635,6 +750,7 @@ def build_environment(
     env_dir.mkdir(parents=True, exist_ok=True)
 
     user_requirements = collect_requirements(project_root, app)
+    reject_runpod_dependency(user_requirements)
     # size-prohibitive packages come preinstalled only on the builtin
     # gpu images, and custom images carry no guarantee. builtin cpu
     # images ship without them, but a vendored pypi torch cannot serve

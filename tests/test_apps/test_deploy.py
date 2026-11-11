@@ -132,6 +132,20 @@ class TestEndpointInput:
         assert env["PORT_HEALTH"] == "80"
 
 
+    @pytest.mark.parametrize(
+        "hardware", [{"gpu": "ADA_24"}, {"cpu": "cpu3c-1-2"}, {"cpu": "cpu5c-2-4"}]
+    )
+    def test_unlisted_datacenter_reaches_locations(self, hardware):
+        app = App("dc-app")
+
+        @app.queue(name="q", datacenter="XX-TEST-1", **hardware)
+        def q():
+            pass
+
+        payload = _deployed_endpoint_input(app, q.spec, "env-1", "build-1", "3.12")
+        assert payload["locations"] == "XX-TEST-1"
+
+
 class TestPackaging:
     def test_tarball_contains_source_and_manifest(self, tmp_path):
         _write_project(tmp_path)
@@ -404,3 +418,84 @@ class TestTolerantDiscovery:
         client.write_text("from main import que1\nque1.remote(1)\n")
         with pytest.raises(DiscoveryError, match="invoked at import time"):
             discover_apps(client)
+
+
+class TestDeployedTemplateNames:
+    """Template names are unique per owner, and a deleted endpoint holds its
+    template for a while, so new endpoints must not reuse a fixed name."""
+
+    @staticmethod
+    def _app():
+        app = App("demo-app")
+
+        @app.queue(name="que1", cpu="cpu5c-2-4")
+        def que1(x: int):
+            return x
+
+        return app
+
+    @staticmethod
+    def _client():
+        client = AsyncMock()
+        client.save_endpoint.side_effect = lambda payload: {
+            "id": payload.get("id", "ep-new")
+        }
+        return client
+
+    @staticmethod
+    def _saved_template_name(client) -> str:
+        (payload,), _ = client.save_endpoint.await_args
+        return payload["template"]["name"]
+
+    async def _reconcile(self, environment):
+        from runpod.apps.deploy import reconcile_endpoints
+
+        client = self._client()
+        await reconcile_endpoints(client, self._app(), environment, "b-1", "3.12")
+        return client
+
+    async def test_new_endpoint_template_name_has_unique_suffix(self):
+        environment = {"id": "env-1", "name": "default", "endpoints": []}
+
+        first = self._saved_template_name(await self._reconcile(environment))
+        second = self._saved_template_name(await self._reconcile(environment))
+
+        assert first.startswith("demo-app-que1-template-")
+        assert second.startswith("demo-app-que1-template-")
+        assert first != second
+
+    async def test_update_keeps_the_existing_template_name(self):
+        environment = {
+            "id": "env-1",
+            "name": "default",
+            "endpoints": [
+                {"id": "ep-1", "name": "que1", "template": {"name": "kept-name"}}
+            ],
+        }
+
+        client = await self._reconcile(environment)
+
+        (payload,), _ = client.save_endpoint.await_args
+        assert payload["id"] == "ep-1"
+        assert payload["template"]["name"] == "kept-name"
+
+    async def test_update_without_template_info_uses_the_legacy_name(self):
+        environment = {
+            "id": "env-1",
+            "name": "default",
+            "endpoints": [{"id": "ep-1", "name": "que1", "template": None}],
+        }
+
+        client = await self._reconcile(environment)
+
+        assert self._saved_template_name(client) == "demo-app-que1-template"
+
+    @pytest.mark.parametrize(
+        "query_name", ["QUERY_FLASH_APP_BY_NAME", "QUERY_FLASH_ENVIRONMENT_BY_NAME"]
+    )
+    def test_environment_queries_select_the_bound_template_name(self, query_name):
+        from runpod.api.queries import apps as app_queries
+
+        query = " ".join(getattr(app_queries, query_name).split())
+
+        assert "endpoints { id name template { name } }" in query

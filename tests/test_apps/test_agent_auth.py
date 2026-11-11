@@ -15,7 +15,7 @@ import pytest
 
 import runpod
 from runpod.apps.auth import LoginError, _post_authentication_attempt, agent_login
-from runpod.user_agent import USER_AGENT
+from runpod.user_agent import APPS_USER_AGENT
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def test_agent_login_uses_anonymous_pkce_exchange(signup_server):
     for path, headers, _ in (start, verify):
         assert "Authorization" not in headers
         assert "Cookie" not in headers
-        assert headers["User-Agent"] == USER_AGENT
+        assert headers["User-Agent"] == APPS_USER_AGENT
         assert verifier not in path
 
 
@@ -240,3 +240,106 @@ def test_transport_failures_are_sanitized(error):
         asyncio.run(_post_authentication_attempt(session, "/path", {}))
     assert "secret" not in str(exc.value)
     session.post.assert_called_once()
+
+
+def test_two_step_login_across_processes(signup_server, tmp_path):
+    import os
+    import stat
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    import tomli
+
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {**os.environ, "HOME": str(home)}
+    command = [
+        sys.executable,
+        "-c",
+        "from runpod.rp_cli import update; "
+        "update.start_background_check = lambda: None; "
+        "from runpod.rp_cli.main import run; run()",
+        "login",
+        "--agent",
+        "--profile",
+        "automation",
+    ]
+    cwd = Path(__file__).resolve().parents[2]
+    sent = subprocess.run(
+        [*command, "--email", "owner@example.com"],
+        env=env,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert sent.returncode == 0, sent.stderr
+    assert len(signup_server["requests"]) == 1
+    (pending,) = (home / ".runpod").glob("login-*.json")
+    attempt = json.loads(pending.read_text())
+    assert stat.S_IMODE(pending.stat().st_mode) == 0o600
+    assert not (home / ".runpod" / "config.toml").exists()
+    assert attempt["verifier"] not in sent.stdout + sent.stderr
+
+    verified = subprocess.run(
+        [*command, "--code", "012345"],
+        env=env,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert verified.returncode == 0, verified.stderr
+    assert not pending.exists()
+    assert len(signup_server["requests"]) == 2
+    start, verify = signup_server["requests"]
+    assert verify[2] == {"code": "012345", "codeVerifier": attempt["verifier"]}
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(attempt["verifier"].encode()).digest()
+    )
+    assert start[2]["codeChallenge"] == challenge.decode().rstrip("=")
+    credentials = home / ".runpod" / "config.toml"
+    assert tomli.loads(credentials.read_text()) == {
+        "automation": {"api_key": "rpa_test"}
+    }
+    assert stat.S_IMODE(credentials.stat().st_mode) == 0o600
+    for secret in ("012345", "rpa_test", attempt["verifier"]):
+        assert secret not in verified.stdout + verified.stderr
+
+
+def test_two_step_rejected_code_can_be_retried(signup_server, monkeypatch, tmp_path):
+    from click.testing import CliRunner
+
+    from runpod.apps.auth import load_agent_login, pending_agent_login_path
+    from runpod.cli.groups.config import functions
+    from runpod.rp_cli.main import cli
+
+    monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(tmp_path / "config.toml"))
+    monkeypatch.setattr("runpod.rp_cli.update.start_background_check", lambda: None)
+    monkeypatch.setattr(
+        "click.prompt", MagicMock(side_effect=AssertionError("unexpected prompt"))
+    )
+    signup_server["responses"].insert(1, (422, {}))
+    runner = CliRunner()
+    sent = runner.invoke(
+        cli, ["login", "--agent", "--email", "owner@example.com"]
+    )
+    assert sent.exit_code == 0, sent.output
+    attempt = load_agent_login("default")
+    rejected = runner.invoke(cli, ["login", "--agent", "--code", "111111"])
+    assert rejected.exit_code == 1
+    assert "verification code rejected" in rejected.output
+    assert load_agent_login("default") == attempt
+    assert functions.get_credentials() is None
+    verified = runner.invoke(cli, ["login", "--agent", "--code", "012345"])
+    assert verified.exit_code == 0, verified.output
+    assert not pending_agent_login_path("default").exists()
+    assert functions.get_credentials()["api_key"] == "rpa_test"
+    assert len(signup_server["requests"]) == 3
+    assert (
+        signup_server["requests"][1][2]["codeVerifier"]
+        == signup_server["requests"][2][2]["codeVerifier"]
+    )
