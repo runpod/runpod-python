@@ -366,7 +366,7 @@ def _validate_native_route(cls: Type, name: str, method: str, path: str) -> None
                 try:
                     localns[variable] = cell.cell_contents
                 except ValueError:
-                    pass
+                    continue
         try:
             annotation = get_type_hints(
                 SimpleNamespace(__annotations__={body.name: annotation}),
@@ -375,7 +375,7 @@ def _validate_native_route(cls: Type, name: str, method: str, path: str) -> None
                 include_extras=True,
             )[body.name]
         except (NameError, TypeError, SyntaxError, AttributeError):
-            pass
+            annotation = None
     valid_annotation = annotation in (inspect.Parameter.empty, dict, Dict, Any) or (
         get_origin(annotation) is dict and get_args(annotation) == (str, Any)
     )
