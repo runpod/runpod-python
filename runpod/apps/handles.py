@@ -20,6 +20,8 @@ with the resource:
 
 import asyncio
 import inspect
+import sys
+from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -29,6 +31,9 @@ from typing import (
     List,
     Optional,
     Type,
+    get_args,
+    get_origin,
+    get_type_hints,
 )
 
 from .._serialization import normalize_json
@@ -313,6 +318,79 @@ class _RouteCaller:
         return await target.request(self._method, path, body, **kwargs)
 
 
+def _validate_native_route(cls: Type, name: str, method: str, path: str) -> None:
+    member = inspect.getattr_static(cls, name)
+    guidance = (
+        f"native API route {method} {path} ({cls.__name__}.{name}): "
+        "use an instance method with no arguments after self, or one required "
+        "positional JSON-object argument for POST/PUT/PATCH/DELETE. "
+        "The body annotation must be omitted, dict, typing.Dict, Any, "
+        "dict[str, Any], or typing.Dict[str, Any]. "
+        "Use an @app.api FastAPI factory for typed path/query parameters "
+        "or body schemas."
+    )
+    if not inspect.isfunction(member):
+        raise InvalidResourceError(guidance)
+
+    member = inspect.unwrap(member)
+    annotate = getattr(member, "__annotate__", None)
+    if sys.version_info >= (3, 14) and annotate is not None:
+        from annotationlib import Format
+
+        signature = inspect.signature(member, annotation_format=Format.STRING)
+    else:
+        signature = inspect.signature(member)
+    parameters = list(signature.parameters.values())
+    positional = (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
+    if not parameters or parameters[0].kind not in positional:
+        raise InvalidResourceError(guidance)
+    parameters = parameters[1:]
+    if len(parameters) > (0 if method == "GET" else 1):
+        raise InvalidResourceError(guidance)
+    if not parameters:
+        return
+
+    body = parameters[0]
+    if body.kind not in positional or body.default is not inspect.Parameter.empty:
+        raise InvalidResourceError(guidance)
+    annotation = body.annotation
+    if isinstance(annotation, str):
+        localns = dict(vars(cls))
+        if inspect.isfunction(annotate):
+            for variable, cell in zip(
+                annotate.__code__.co_freevars, annotate.__closure__ or ()
+            ):
+                try:
+                    localns[variable] = cell.cell_contents
+                except ValueError:
+                    continue
+        try:
+            annotation = get_type_hints(
+                SimpleNamespace(__annotations__={body.name: annotation}),
+                globalns=member.__globals__,
+                localns=localns,
+                include_extras=True,
+            )[body.name]
+        except (NameError, TypeError, SyntaxError, AttributeError):
+            annotation = None
+    valid_annotation = annotation in (inspect.Parameter.empty, dict, Dict, Any) or (
+        get_origin(annotation) is dict and get_args(annotation) == (str, Any)
+    )
+    if not valid_annotation:
+        annotation_label = (
+            body.annotation
+            if isinstance(body.annotation, str)
+            else inspect.formatannotation(body.annotation)
+        )
+        raise InvalidResourceError(
+            f"body argument {body.name!r} has unsupported annotation "
+            f"{annotation_label}. {guidance}"
+        )
+
+
 class ApiHandle:
     """handle for @app.api classes and asgi factories.
 
@@ -353,10 +431,11 @@ class ApiHandle:
     def _collect_routes(self, cls: Type) -> None:
         seen: Dict[tuple, str] = {}
         routes: List[RouteSpec] = []
-        for name, member in inspect.getmembers(cls, callable):
-            route = route_of(member)
+        for name, member in inspect.getmembers(cls):
+            route = route_of(member) or route_of(inspect.getattr_static(cls, name))
             if route is not None:
                 method, path = route
+                _validate_native_route(cls, name, method, path)
                 if (method, path) in seen:
                     raise InvalidResourceError(
                         f"duplicate route {method} {path} on {cls.__name__}: "
