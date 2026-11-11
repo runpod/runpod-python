@@ -24,6 +24,7 @@ from ..user_agent import APPS_USER_AGENT
 from .api import AppsApiClient, is_capacity_error
 from .context import CLEANUP_TIMEOUT
 from .spec import ResourceSpec
+from .utils.http import raise_for_status
 
 log = logging.getLogger(__name__)
 
@@ -285,7 +286,7 @@ class _TaskTransport:
                     if resp.status == 404 and attempt < attempts - 1:
                         await asyncio.sleep(2 * (attempt + 1))
                         continue
-                    resp.raise_for_status()
+                    await raise_for_status(resp)
                     if timeout is not None:
                         response = await resp.json()
                         if (
@@ -319,7 +320,7 @@ class _TaskTransport:
                     if resp.status == 404 and attempt < attempts - 1:
                         await asyncio.sleep(2 * (attempt + 1))
                         continue
-                    resp.raise_for_status()
+                    await raise_for_status(resp)
                     data = await resp.json()
                     break
         if data.get("status") == "DONE":

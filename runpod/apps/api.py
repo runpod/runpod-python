@@ -17,6 +17,8 @@ from ..api.queries import user as user_queries
 from ..api.rest import run_rest_paginated_request_async, run_rest_request_async
 from ..error import AuthenticationError, QueryError
 from ..user_agent import APPS_USER_AGENT
+from .errors import AppHTTPError
+from .utils.http import raise_for_status
 
 _TRANSPORT_RETRIES = 4
 
@@ -713,7 +715,7 @@ class AppsApiClient:
             try:
                 await self._put_tarball(upload_url, _reader(), total, timeout)
                 return
-            except (aiohttp.ClientError, OSError):
+            except (AppHTTPError, aiohttp.ClientError, OSError):
                 if attempt == attempts - 1:
                     raise
                 await asyncio.sleep(2**attempt)
@@ -729,4 +731,4 @@ class AppsApiClient:
                     "Content-Length": str(total),
                 },
             ) as resp:
-                resp.raise_for_status()
+                await raise_for_status(resp)
