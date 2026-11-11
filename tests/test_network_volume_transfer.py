@@ -691,7 +691,9 @@ def test_make_transfer_requires_s3_keys(monkeypatch):
     monkeypatch.delenv(nvt.SECRET_KEY_ENV, raising=False)
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws")
-    monkeypatch.setattr(nvt, "_resolve_volume", lambda volume: ("vol", "EU-RO-1"))
+    monkeypatch.setattr(
+        nvt, "_resolve_volume", lambda volume, **kwargs: ("vol", "EU-RO-1")
+    )
     with pytest.raises(nvt.NetworkVolumeTransferError, match="RUNPOD_S3_ACCESS_KEY"):
         nvt._make_transfer("vol", None, None, None, 4, None)
 
@@ -781,7 +783,7 @@ def test_network_volume_methods_delegate():
     volume = runpod.NetworkVolume("models", create=False)
     located = []
 
-    def locate(reference, endpoint_url=None):
+    def locate(reference, endpoint_url=None, **kwargs):
         located.append(reference)
         return ("vol123", "EU-RO-1", "https://s3api-eu-ro-1.runpod.io/")
 
@@ -798,7 +800,9 @@ def test_network_volume_methods_delegate():
 def test_network_volume_download_keeps_trailing_slash(tmp_path, monkeypatch):
     fake = FakeS3()
     fake.put("w.bin", b"w")
-    monkeypatch.setattr(nvt, "_locate", lambda *a: ("vol", "EU-RO-1", "https://x/"))
+    monkeypatch.setattr(
+        nvt, "_locate", lambda *a, **k: ("vol", "EU-RO-1", "https://x/")
+    )
     monkeypatch.setattr(
         nvt, "_make_transfer", lambda *a, **k: _transfer(fake, tmp_path)
     )
@@ -1348,7 +1352,7 @@ def interactive(monkeypatch):
 def cli_preflight(monkeypatch):
     """Keep CLI presentation tests independent of the account and DNS."""
     monkeypatch.setattr(
-        nvt, "_resolve_volume", lambda reference: (reference, "EU-RO-1")
+        nvt, "_resolve_volume", lambda reference, **kwargs: (reference, "EU-RO-1")
     )
 
 
@@ -1473,7 +1477,7 @@ def test_cli_prompts_for_keys_and_offers_to_save(
 
 
 def test_cli_checks_volume_before_asking_for_keys(monkeypatch, tmp_path, interactive):
-    def missing_volume(reference):
+    def missing_volume(reference, **kwargs):
         raise nvt.NetworkVolumeTransferError("no network volume named 'missing'")
 
     monkeypatch.setattr(nvt, "_resolve_volume", missing_volume)
@@ -1588,7 +1592,7 @@ def test_cli_rejects_a_blank_volume_cleanly(tmp_path):
 def test_network_volume_caches_one_location_per_endpoint(monkeypatch):
     located = []
 
-    def locate(reference, endpoint_url=None):
+    def locate(reference, endpoint_url=None, **kwargs):
         located.append(endpoint_url)
         return ("vol123", "EU-RO-1", endpoint_url or "https://default/")
 
@@ -1627,7 +1631,7 @@ def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
     resolved = []
     built = []
 
-    def resolve(reference):
+    def resolve(reference, **kwargs):
         resolved.append(reference)
         return "vol123", "EU-RO-1"
 

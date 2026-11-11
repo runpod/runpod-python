@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import runpod
+from runpod.user_agent import APPS_USER_AGENT
 from runpod.apps import App
 from runpod.apps.api import FlashTaskApiClient
 from runpod.apps.app import _clear_registry
@@ -110,7 +111,7 @@ async def test_account_clients_can_target_other_apps_and_environments(monkeypatc
             }
         )
     assert execute.await_args.kwargs["api_key"] == "account-key"
-    assert execute.await_args.kwargs["headers"] is None
+    assert execute.await_args.kwargs["headers"] == {"User-Agent": APPS_USER_AGENT}
 
 
 @dataclass

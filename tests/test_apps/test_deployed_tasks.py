@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import runpod
+from runpod.user_agent import APPS_USER_AGENT
 from runpod.apps import App, Task
 from runpod.apps.api import FlashTaskApiClient
 from runpod.apps.app import _clear_registry
@@ -177,7 +178,7 @@ async def test_explicit_local_task_uses_account_named_api(monkeypatch):
     with patch("runpod.apps.api.run_graphql_query_async", execute):
         await FlashTaskApiClient().create({"resourceName": "work"})
     assert execute.await_args.kwargs["api_key"] == "local-key"
-    assert execute.await_args.kwargs["headers"] is None
+    assert execute.await_args.kwargs["headers"] == {"User-Agent": APPS_USER_AGENT}
 
 
 async def test_task_target_selection_is_production_only(production, monkeypatch):
@@ -324,7 +325,10 @@ async def test_execution_creation_contains_only_named_identity_and_timeout():
             "executionTimeoutSeconds": 12.5,
         }
     )
-    assert execution._headers == {"Authorization": f"Bearer {execution.token}"}
+    assert execution._headers == {
+        "Authorization": f"Bearer {execution.token}",
+        "User-Agent": APPS_USER_AGENT,
+    }
     await execution.terminate()
 
 

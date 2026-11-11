@@ -15,7 +15,7 @@ from runpod.apps.deploy import reconcile_endpoints
 from runpod.apps.dev import DevSession
 from runpod.apps.gpu import live_pool_members as _real_live_pool_members
 from runpod.apps.gpu import live_pool_members_async as _real_live_pool_members_async
-
+from runpod.user_agent import APPS_USER_AGENT
 
 MIG = "NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb"
 CATALOG = {
@@ -165,9 +165,7 @@ async def test_failed_catalog_uses_static_payload_without_sync_fetch(
 ):
     catalog.status = 500
     payload = await provision(operation, AppsApiClient(api_key="explicit-key"))
-    assert payload["gpuIds"] == (
-        "AMPERE_24,-NVIDIA GeForce RTX 3090,-NVIDIA RTX A5000"
-    )
+    assert payload["gpuIds"] == ("AMPERE_24,-NVIDIA GeForce RTX 3090,-NVIDIA RTX A5000")
     assert len(catalog.requests) == 1
 
 
@@ -210,7 +208,7 @@ def test_sync_catalog_reuses_gpu_catalog_command(monkeypatch):
     monkeypatch.setattr(ctl_commands, "get_gpus", fetch)
     assert MIG in _real_live_pool_members()["AMPERE_24"]
     assert MIG in _real_live_pool_members()["AMPERE_24"]
-    fetch.assert_called_once_with(api_key="sdk-key")
+    fetch.assert_called_once_with(api_key="sdk-key", user_agent=APPS_USER_AGENT)
 
 
 async def test_cache_is_scoped_to_credentials_and_catalog_url(catalog, monkeypatch):

@@ -5,6 +5,8 @@ from typing import Any, Dict, Optional
 
 import aiohttp
 
+from ...user_agent import APPS_USER_AGENT
+
 
 def runtime_headers() -> Optional[Dict[str, str]]:
     from ..context import deployed_identity
@@ -60,6 +62,8 @@ def endpoint_url_base() -> str:
 async def get_json(url: str, headers: Dict[str, str], timeout: float) -> Dict[str, Any]:
     client_timeout = aiohttp.ClientTimeout(total=timeout)
     async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.get(url, headers=headers) as response:
+        async with session.get(
+            url, headers={**headers, "User-Agent": APPS_USER_AGENT}
+        ) as response:
             response.raise_for_status()
             return await response.json()

@@ -15,7 +15,7 @@ import pytest
 
 import runpod
 from runpod.apps.auth import LoginError, _post_authentication_attempt, agent_login
-from runpod.user_agent import USER_AGENT
+from runpod.user_agent import APPS_USER_AGENT
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def test_agent_login_uses_anonymous_pkce_exchange(signup_server):
     for path, headers, _ in (start, verify):
         assert "Authorization" not in headers
         assert "Cookie" not in headers
-        assert headers["User-Agent"] == USER_AGENT
+        assert headers["User-Agent"] == APPS_USER_AGENT
         assert verifier not in path
 
 

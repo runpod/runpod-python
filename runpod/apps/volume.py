@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from ..user_agent import APPS_USER_AGENT
 from .errors import AppError
 from .utils.client import default_client
 from .utils.events import emit
@@ -77,6 +78,7 @@ class NetworkVolume(Volume):
         self.datacenter = datacenter
         self.create = create
         self._s3_locations: Dict[Optional[str], Tuple[str, str, str]] = {}
+        self._user_agent = APPS_USER_AGENT
 
     @property
     def name(self) -> str:
@@ -93,7 +95,9 @@ class NetworkVolume(Volume):
         if location is None:
             from runpod import network_volume_transfer as nvt
 
-            location = nvt._locate(self.reference, endpoint_url)
+            location = nvt._locate(
+                self.reference, endpoint_url, user_agent=self._user_agent
+            )
             self._s3_locations[endpoint_url] = location
         return location
 
@@ -137,6 +141,7 @@ class NetworkVolume(Volume):
             progress,
             force,
             location=self._s3_location(endpoint_url),
+            user_agent=self._user_agent,
         )
         return transfer.upload(Path(local_path), remote_path)
 
@@ -174,6 +179,7 @@ class NetworkVolume(Volume):
             progress,
             force,
             location=self._s3_location(endpoint_url),
+            user_agent=self._user_agent,
         )
         # passed through as given: Path() would drop a trailing "/"
         return transfer.download(remote_path, local_path)

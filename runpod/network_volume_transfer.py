@@ -30,6 +30,8 @@ from contextlib import closing
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
+from .user_agent import USER_AGENT
+
 from ._volume_transfer_utils import (  # noqa: F401 - re-exported names
     MIB,
     PARTIAL_SUFFIX,
@@ -842,7 +844,7 @@ class _Download:
 # ---------------------------------------------------------------- client
 
 
-def _list_volumes() -> List[Dict[str, Any]]:
+def _list_volumes(*, user_agent: str = USER_AGENT) -> List[Dict[str, Any]]:
     """every network volume of the account."""
     from runpod import error  # pylint: disable=import-outside-toplevel
     from runpod.api.rest import (  # pylint: disable=import-outside-toplevel
@@ -852,7 +854,9 @@ def _list_volumes() -> List[Dict[str, Any]]:
 
     try:
         return block(
-            run_rest_paginated_request_async("/v2/network-volumes", "networkVolumes")
+            run_rest_paginated_request_async(
+                "/v2/network-volumes", "networkVolumes", user_agent=user_agent
+            )
         )
     except error.AuthenticationError as exc:
         from runpod import api_key  # pylint: disable=import-outside-toplevel
@@ -862,14 +866,14 @@ def _list_volumes() -> List[Dict[str, Any]]:
         raise NetworkVolumeTransferError(API_KEY_REJECTED) from exc
 
 
-def _resolve_volume(reference: str) -> Tuple[str, str]:
+def _resolve_volume(reference: str, *, user_agent: str = USER_AGENT) -> Tuple[str, str]:
     """the id and datacenter of the network volume with this id or name."""
     from runpod.apps.utils.lookup import (  # pylint: disable=import-outside-toplevel
         find_by_id_or_name,
     )
 
     record = find_by_id_or_name(
-        _list_volumes(),
+        _list_volumes(user_agent=user_agent),
         reference,
         noun="network volumes",
         error=NetworkVolumeTransferError,
@@ -923,10 +927,11 @@ def _s3_keys(access_key: Optional[str], secret_key: Optional[str]) -> Tuple[str,
     return keys
 
 
-def _client_config(concurrency: int) -> Any:
+def _client_config(concurrency: int, *, user_agent: str = USER_AGENT) -> Any:
     from botocore.config import Config  # pylint: disable=import-outside-toplevel
 
     return Config(
+        user_agent_extra=user_agent,
         s3={"addressing_style": "path"},
         request_checksum_calculation="when_required",
         response_checksum_validation="when_required",
@@ -940,10 +945,15 @@ def _client_config(concurrency: int) -> Any:
     )
 
 
-def _locate(reference: str, endpoint_url: Optional[str] = None) -> Tuple[str, str, str]:
+def _locate(
+    reference: str,
+    endpoint_url: Optional[str] = None,
+    *,
+    user_agent: str = USER_AGENT,
+) -> Tuple[str, str, str]:
     """the id, datacenter, and s3 endpoint of the network volume with this
     id or name."""
-    volume_id, datacenter = _resolve_volume(reference)
+    volume_id, datacenter = _resolve_volume(reference, user_agent=user_agent)
     endpoint = endpoint_url or f"https://s3api-{datacenter.lower()}.runpod.io/"
     return volume_id, datacenter, endpoint
 
@@ -957,13 +967,17 @@ def _make_transfer(
     progress: Optional[Progress],
     force: bool = False,
     location: Optional[Tuple[str, str, str]] = None,
+    *,
+    user_agent: str = USER_AGENT,
 ) -> _Transfer:
     """a transfer to the network volume with this id or name. backs
     NetworkVolume.upload and NetworkVolume.download. `location` is a
     result of `_locate` the caller already holds."""
     import boto3  # pylint: disable=import-outside-toplevel
 
-    volume_id, datacenter, endpoint = location or _locate(volume, endpoint_url)
+    volume_id, datacenter, endpoint = location or _locate(
+        volume, endpoint_url, user_agent=user_agent
+    )
     access_key, secret_key = _s3_keys(access_key, secret_key)
     concurrency = max(1, int(concurrency))
     client = boto3.session.Session().client(
@@ -972,7 +986,7 @@ def _make_transfer(
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        config=_client_config(concurrency),
+        config=_client_config(concurrency, user_agent=user_agent),
     )
     transfer = _Transfer(
         client, volume_id, endpoint, concurrency, progress, force=force

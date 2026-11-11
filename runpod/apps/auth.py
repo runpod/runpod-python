@@ -17,14 +17,13 @@ import aiohttp
 
 from runpod._hosts import console_url
 from runpod.api.rest import _build_url
-from runpod.user_agent import USER_AGENT
+from runpod.user_agent import APPS_USER_AGENT
 
 import aiohttp
 
 from ..error import QueryError
 from .api import AppsApiClient
 from .errors import AppError
-
 
 MAX_KEY_ATTEMPTS = 3
 
@@ -139,7 +138,7 @@ def load_agent_login(profile: str) -> dict:
 def _agent_session() -> aiohttp.ClientSession:
     return aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=30),
-        headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+        headers={"Accept": "application/json", "User-Agent": APPS_USER_AGENT},
         cookie_jar=aiohttp.DummyCookieJar(),
     )
 
