@@ -23,6 +23,7 @@ from .models import (
     LogSource,
     SandboxCompute,
     SandboxInfo,
+    SandboxOptions,
     SandboxState,
 )
 
@@ -399,6 +400,27 @@ class Sandbox:
                 except BaseException as error:
                     raise original from error
             raise
+
+    @classmethod
+    def options(
+        cls,
+        *,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        request_timeout: float = 30,
+    ) -> SandboxOptions:
+        """Return the data centers and CPU flavors a create may choose from."""
+        runner = _LoopRunner()
+        try:
+            return runner.run(
+                AsyncioSandbox.options(
+                    api_key=api_key,
+                    base_url=base_url,
+                    request_timeout=request_timeout,
+                )
+            )
+        finally:
+            runner.stop()
 
     @classmethod
     def list(
