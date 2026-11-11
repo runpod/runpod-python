@@ -7,6 +7,7 @@ from .entrypoint import local_entrypoint
 from .errors import (
     AppError,
     EndpointNotFound,
+    JobStatusError,
     RemoteExecutionError,
     ScheduleNotSupported,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "FunctionHandle",
     "GlobalVolume",
     "Job",
+    "JobStatusError",
     "Model",
     "NetworkVolume",
     "Queue",
