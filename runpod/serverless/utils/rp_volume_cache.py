@@ -90,9 +90,12 @@ class _HydrateStats:
             self.range_retries += 1
             return self.range_retries
 
-    def record_given_up(self):
+    def record_given_up(self, count):
+        """Count ``count`` files given up for good (one per failed file)."""
+        if count <= 0:
+            return
         with self._lock:
-            self.ranges_given_up += 1
+            self.ranges_given_up += count
 
     def as_dict(self):
         with self._lock:
@@ -102,33 +105,47 @@ class _HydrateStats:
 class _MetadataPolicy:
     """Metadata stamping state for one sync or hydrate.
 
-    FUSE object stores such as Global Store reject utime and chmod with EPERM
-    on every file. After the first EPERM, the rest of the operation skips
-    metadata updates entirely and logs the rejection once, instead of
-    issuing two failing syscalls and two debug lines for each file. Other
-    errors are still logged per file, because they may not repeat.
+    FUSE object stores such as Global Store reject utime and chmod with EPERM.
+    Denial is tracked per operation: once utime (or chmod) is rejected with
+    EPERM, later files skip that operation, but the other operation keeps
+    running. A volume that accepts utime but rejects chmod must still restore
+    each file's manifest mtime, or later files keep copy-time mtimes and churn
+    syncs. The rejection is logged once for the whole operation instead of two
+    failing syscalls and a debug line per file. Other errors are still logged
+    per file, because they may not repeat.
     """
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._denied = False
+        self._utime_denied = False
+        self._chmod_denied = False
+        self._logged = False
 
     @property
-    def denied(self):
-        return self._denied
+    def utime_denied(self):
+        return self._utime_denied
 
-    def note_failure(self, dst, kept, exc):
+    @property
+    def chmod_denied(self):
+        return self._chmod_denied
+
+    def note_failure(self, dst, op, kept, exc):
+        """Record a failed metadata op (``op`` is ``"utime"`` or ``"chmod"``)."""
         if exc.errno != errno.EPERM:
             log.debug(f"VolumeCache: kept {kept} on {dst}: {exc}")
             return
         with self._lock:
-            if self._denied:
-                return
-            self._denied = True
-        log.debug(
-            f"VolumeCache: metadata update rejected with EPERM on {dst}; keeping "
-            "copy-time mtime and default mode for the rest of this operation"
-        )
+            if op == "utime":
+                self._utime_denied = True
+            else:
+                self._chmod_denied = True
+            should_log = not self._logged
+            self._logged = True
+        if should_log:
+            log.debug(
+                f"VolumeCache: metadata update rejected with EPERM on {dst}; "
+                "skipping the rejected operation for the rest of this operation"
+            )
 
 
 class VolumeCache:
@@ -480,10 +497,12 @@ class VolumeCache:
                 )
             except OSError as exc:
                 failed.add(i)
-                stats.record_given_up()
                 log.warn(f"VolumeCache: failed to hydrate {f.src} at offset {off}: {exc}")
 
         _run_bounded(_iter_ranges(files, self._hydrate_chunk_size), run, self._hydrate_workers)
+        # Count once per failed file: concurrent ranges of one file can each
+        # raise, but the file is given up only once. ``failed`` is drained.
+        stats.record_given_up(len(failed))
         return failed
 
     @staticmethod
@@ -746,26 +765,27 @@ def _copy_metadata(src, dst, mtime=None, *, policy=None):
     permission bits are lost on such a volume.
 
     ``policy`` carries EPERM detection across one sync or hydrate: once the
-    filesystem has rejected a metadata update with EPERM, later files skip
-    both calls. Without a policy, each call detects EPERM on its own.
+    filesystem has rejected utime (or chmod) with EPERM, later files skip that
+    operation. Denial is per operation, so a volume that rejects chmod but
+    accepts utime still restores every file's mtime. Without a policy, each
+    call detects EPERM on its own.
     """
     policy = policy or _MetadataPolicy()
-    if policy.denied:
-        return
-    try:
-        if mtime is None:
-            st = os.stat(src)
-            os.utime(dst, ns=(st.st_atime_ns, st.st_mtime_ns))
-        else:
-            os.utime(dst, (mtime, mtime))
-    except OSError as exc:
-        policy.note_failure(dst, "copy-time mtime", exc)
-    if policy.denied:
+    if not policy.utime_denied:
+        try:
+            if mtime is None:
+                st = os.stat(src)
+                os.utime(dst, ns=(st.st_atime_ns, st.st_mtime_ns))
+            else:
+                os.utime(dst, (mtime, mtime))
+        except OSError as exc:
+            policy.note_failure(dst, "utime", "copy-time mtime", exc)
+    if policy.chmod_denied:
         return
     try:
         shutil.copymode(src, dst)
     except OSError as exc:
-        policy.note_failure(dst, "default mode", exc)
+        policy.note_failure(dst, "chmod", "default mode", exc)
 
 
 def _positive_or_default(name, value, default):

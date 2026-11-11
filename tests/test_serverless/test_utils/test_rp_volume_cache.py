@@ -1618,6 +1618,29 @@ def test_hydrate_counts_non_retryable_failure_as_given_up(tmp_path, monkeypatch)
     assert "ranges given up: 1" in summary
 
 
+def test_hydrate_counts_a_failed_file_once_under_concurrent_ranges(tmp_path, monkeypatch):
+    # Several ranges of one file can be in flight when the first range fails.
+    # The file is given up once; the other in-flight ranges must not each add
+    # to the counter. A barrier holds every range past the already-failed
+    # guard before any raises, so a per-range count is exposed deterministically.
+    ranges = 4
+    cache, vol, _payloads = _synced_big_files(
+        tmp_path, monkeypatch, ["model.safetensors"], size=_CHUNK * ranges
+    )
+    gate = threading.Barrier(ranges)
+
+    def fail_together(*_a):
+        gate.wait()
+        raise OSError(errno.EACCES, os.strerror(errno.EACCES))
+
+    monkeypatch.setattr(vcmod, "_copy_range", fail_together)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=ranges).hydrate() == 0
+
+    assert "ranges given up: 1" in _summary(records)
+
+
 @pytest.mark.parametrize(("failures", "warned"), [(3, False), (4, True), (6, True)])
 def test_hydrate_warns_once_when_retries_exceed_threshold(tmp_path, monkeypatch, failures, warned):
     cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
@@ -1673,6 +1696,7 @@ def test_hydrate_survives_failing_retry_instrumentation(tmp_path, monkeypatch):
 
 def test_sync_logs_metadata_eperm_once_and_stops_retrying(tmp_path, monkeypatch):
     vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._max_workers = 1  # exact syscall counts; serialize the sync pool
     for i in range(5):
         (cache / f"shard-{i}.bin").write_bytes(_big_payload(i))
     attempts = []
@@ -1732,14 +1756,17 @@ def test_each_sync_detects_metadata_eperm_afresh(tmp_path, monkeypatch):
     assert len(_messages(records, "debug", "EPERM")) == 2
 
 
-def test_sync_logs_chmod_only_eperm_once_and_keeps_first_mtime(tmp_path, monkeypatch):
-    # A volume that accepts utime but rejects chmod: the first file still gets
-    # its mtime, the rejection is logged once, and later files skip both calls.
+def test_sync_keeps_mtime_on_every_file_when_only_chmod_is_denied(tmp_path, monkeypatch):
+    # A volume that accepts utime but rejects chmod: every file still gets its
+    # mtime restored, the chmod rejection is logged once, and later files skip
+    # only the chmod. A chmod EPERM must not stop the manifest mtime being
+    # restored on later files, or they keep copy-time mtimes and churn syncs.
     vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._max_workers = 1  # exact syscall counts; serialize the sync pool
     for i in range(3):
         (cache / f"shard-{i}.bin").write_bytes(_big_payload(i))
-    chmods = []
-    real_chmod = os.chmod
+    chmods, utimes = [], []
+    real_chmod, real_utime = os.chmod, os.utime
 
     def deny_chmod(path, *args, **kwargs):
         if str(path).startswith(str(vol)):
@@ -1747,11 +1774,18 @@ def test_sync_logs_chmod_only_eperm_once_and_keeps_first_mtime(tmp_path, monkeyp
             raise PermissionError(errno.EPERM, "Operation not permitted")
         return real_chmod(path, *args, **kwargs)
 
+    def track_utime(path, *args, **kwargs):
+        if str(path).startswith(str(vol)):
+            utimes.append(path)
+        return real_utime(path, *args, **kwargs)
+
     monkeypatch.setattr(os, "chmod", deny_chmod)
+    monkeypatch.setattr(os, "utime", track_utime)
     records = _capture_logs(monkeypatch)
 
     vc.sync(background=False)
 
-    assert len(chmods) == 1
+    assert len(chmods) == 1  # chmod denied once, then skipped for later files
+    assert len(utimes) == 3  # mtime still restored on every file
     assert len(_messages(records, "debug", "EPERM")) == 1
     assert len(json.loads((vol / ".cache" / "ep1" / "manifest.json").read_text())["big"]) == 3
