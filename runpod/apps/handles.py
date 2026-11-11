@@ -55,6 +55,12 @@ class FunctionHandle:
         fn: Callable,
         spec: ResourceSpec,
     ):
+        if inspect.isclass(fn):
+            raise InvalidResourceError(
+                f"@app.{spec.kind.value} does not support class target '{fn.__name__}'. "
+                "Decorate a function and use @function.init for worker startup "
+                "initialization."
+            )
         self._app = app
         self._fn = fn
         self.spec = spec
