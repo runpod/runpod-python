@@ -5,6 +5,7 @@ Provides the functionality for scaling the runpod serverless worker.
 
 import asyncio
 import json
+import os
 import signal
 import sys
 import traceback
@@ -32,11 +33,43 @@ PRESTART_FAILURE_REPORT_TIMEOUT_SECONDS = 15
 # wait so one long job can't hold the other slots idle, and so set_scale still
 # runs as often as it did under the old fixed sleep.
 FULL_WAIT_SECONDS = 1
+# Opt-in take-ahead (#647): while the platform queue is deep, a busy worker may
+# hold up to this many extra jobs, so the next job-take overlaps the jobs that
+# are running instead of waiting for them. Off (0) by default.
+TAKE_AHEAD_ENV = "RUNPOD_TAKE_AHEAD"
 
 
 def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
     exc = traceback.format_exception(exc_type, exc_value, exc_traceback)
     log.error(f"Uncaught exception | {exc}")
+
+
+def _take_ahead_from(config: dict[str, Any]) -> int:
+    """Read the take-ahead size from config["take_ahead"] or RUNPOD_TAKE_AHEAD."""
+    value = config.get("take_ahead")
+    if value is None:
+        value = os.environ.get(TAKE_AHEAD_ENV, "0")
+
+    try:
+        if isinstance(value, bool):
+            raise TypeError("take_ahead is a job count, not a flag")
+        take_ahead = int(value)
+    except (TypeError, ValueError):
+        log.warn(
+            f"JobScaler | Ignoring invalid take_ahead {value!r}; expected an integer >= 0."
+        )
+        return 0
+
+    if take_ahead < 0:
+        log.warn(f"JobScaler | Ignoring negative take_ahead {take_ahead}.")
+        return 0
+
+    if take_ahead and config.get("refresh_worker", False):
+        # The worker exits after its first job, so held jobs would be lost.
+        log.warn("JobScaler | take_ahead is disabled because refresh_worker is set.")
+        return 0
+
+    return take_ahead
 
 
 def _default_concurrency_modifier(current_concurrency: int) -> int:
@@ -65,6 +98,9 @@ class JobScaler:
         self._jobs_available = asyncio.Event()
         # Set when a job leaves the worker so a full get_jobs re-checks for room.
         self._slot_freed = asyncio.Event()
+        # Set when run_jobs takes a job off jobs_queue, so a take-ahead worker
+        # holding jobs knows when its buffer has drained.
+        self._job_dequeued = asyncio.Event()
         self._prestart_ready = asyncio.Event()
         self._prestart_succeeded = False
         self._prestart_error: dict[str, Any] | None = None
@@ -84,7 +120,18 @@ class JobScaler:
         self.stop_signals_fetcher = get_stop_signals
         self.stop_signals_fetcher_timeout = 90
 
-        self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
+        # Extra jobs a busy worker may hold while the queue is deep (#647).
+        self.take_ahead = _take_ahead_from(config)
+        # Whether the last job-take was filled, i.e. the platform queue is deep.
+        # Take-ahead only asks for extra jobs then, so a shallow queue still
+        # spreads across workers as before.
+        self._queue_is_deep = False
+        # Ids of jobs waiting in jobs_queue, and those of them stopped before
+        # they started, so a stop signal still applies to a held job.
+        self._queued_job_ids: set[str] = set()
+        self._stopped_queued_job_ids: set[str] = set()
+
+        self.jobs_queue = asyncio.Queue(maxsize=self._queue_size())
 
         self.concurrency_modifier = _default_concurrency_modifier
         self.jobs_fetcher = get_job
@@ -117,10 +164,13 @@ class JobScaler:
         ):
             self.stop_signals_fetcher_timeout = stop_signals_fetcher_timeout
 
+    def _queue_size(self) -> int:
+        return self.current_concurrency + self.take_ahead
+
     async def set_scale(self):
         self.current_concurrency = self.concurrency_modifier(self.current_concurrency)
 
-        if self.jobs_queue and (self.current_concurrency == self.jobs_queue.maxsize):
+        if self.jobs_queue and (self._queue_size() == self.jobs_queue.maxsize):
             # no need to resize
             return
 
@@ -129,7 +179,7 @@ class JobScaler:
             await asyncio.sleep(1)
             continue
 
-        self.jobs_queue = asyncio.Queue(maxsize=self.current_concurrency)
+        self.jobs_queue = asyncio.Queue(maxsize=self._queue_size())
         log.debug(
             f"JobScaler.set_scale | New concurrency set to: {self.current_concurrency}"
         )
@@ -320,7 +370,14 @@ class JobScaler:
                 break
             await self.set_scale()
 
-            jobs_needed = self.current_concurrency - self.current_occupancy()
+            if self.take_ahead and self.jobs_queue.qsize() > 0:
+                # Held jobs are still waiting for a slot; a take now could
+                # only ask for fewer jobs than a full one.
+                log.debug("JobScaler.get_jobs | Holding jobs. Waiting for a slot.")
+                await self._wait_until_queue_drained()
+                continue
+
+            jobs_needed = self._jobs_needed()
             if jobs_needed <= 0:
                 log.debug("JobScaler.get_jobs | Queue is full. Waiting to drain.")
                 await self._wait_until_drained()
@@ -334,6 +391,9 @@ class JobScaler:
                     self.jobs_fetcher(session, jobs_needed),
                     timeout=self.jobs_fetcher_timeout,
                 )
+
+                # A filled take means more jobs are likely queued behind it.
+                self._queue_is_deep = len(acquired_jobs or []) >= jobs_needed
 
                 if not acquired_jobs:
                     log.debug("JobScaler.get_jobs | No jobs acquired.")
@@ -352,6 +412,7 @@ class JobScaler:
 
                 for job in acquired_jobs:
                     await self.jobs_queue.put(job)
+                    self._queued_job_ids.add(job["id"])
                     self.job_progress.add(job)
                     log.debug("Job Queued", job["id"])
                 self._jobs_available.set()
@@ -377,6 +438,35 @@ class JobScaler:
             finally:
                 # Yield control back to the event loop
                 await asyncio.sleep(0)
+
+    def _jobs_needed(self) -> int:
+        """How many jobs the next job-take should ask for."""
+        jobs_needed = self.current_concurrency - self.current_occupancy()
+        if not self.take_ahead or self.current_concurrency <= 0:
+            return jobs_needed
+
+        if self._queue_is_deep:
+            # Ask for the free slots plus up to take_ahead jobs to hold, so
+            # this take overlaps the jobs already running.
+            jobs_needed += self.take_ahead
+        return jobs_needed
+
+    async def _wait_until_queue_drained(self) -> None:
+        """Block until run_jobs empties jobs_queue or shutdown begins."""
+        while self.is_alive():
+            # Clear, then re-check: a dequeue after this point re-arms the event.
+            self._job_dequeued.clear()
+            if self.jobs_queue.empty():
+                return
+            dequeued = asyncio.create_task(self._job_dequeued.wait())
+            stopping = asyncio.create_task(self._shutdown_event.wait())
+            try:
+                await asyncio.wait(
+                    {dequeued, stopping}, return_when=asyncio.FIRST_COMPLETED
+                )
+            finally:
+                dequeued.cancel()
+                stopping.cancel()
 
     async def _wait_until_drained(self) -> None:
         """Block until no job is in progress, shutdown begins, or FULL_WAIT_SECONDS pass."""
@@ -419,6 +509,11 @@ class JobScaler:
             # Fetch as many jobs as the concurrency allows
             while len(tasks) < self.current_concurrency and not self.jobs_queue.empty():
                 job = await self.jobs_queue.get()
+                self._queued_job_ids.discard(job["id"])
+                self._job_dequeued.set()
+                if job["id"] in self._stopped_queued_job_ids:
+                    self._drop_stopped_job(job)
+                    continue
                 # Create a new task for each job and track it by job id
                 task = asyncio.create_task(self.handle_job(session, job))
                 tasks.add(task)
@@ -535,12 +630,25 @@ class JobScaler:
         """
         task = self.jobs_tasks.get(job_id)
         if task is None:
+            if job_id in self._queued_job_ids:
+                # Held in jobs_queue and not started: run_jobs drops it.
+                log.info("Stopping job before it starts.", job_id)
+                self._stopped_queued_job_ids.add(job_id)
+                return True
             log.debug(f"JobScaler.stop_job | No in-progress job for {job_id}.")
             return False
 
         log.info("Stopping job.", job_id)
         task.cancel()
         return True
+
+    def _drop_stopped_job(self, job: dict[str, Any]) -> None:
+        """Release a job that was stopped while it waited in jobs_queue."""
+        self._stopped_queued_job_ids.discard(job["id"])
+        self.jobs_queue.task_done()
+        self.job_progress.remove(job)
+        self._slot_freed.set()
+        log.info("Job stopped.", job["id"])
 
     async def handle_job(self, session: ClientSession, job: dict[str, Any]):
         """
