@@ -9,6 +9,7 @@
 
 ### Breaking Changes
 
+* Native `@app.api` routes validate paths and signatures during class decoration. Invalid declarations raise immediately during module import and prevent worker startup. GET handlers take only `self`. POST, PUT, PATCH, and DELETE handlers take `self` and at most one required positional JSON-object body. Its annotation can be omitted, `dict`, `typing.Dict`, `Any`, `dict[str, Any]`, or `typing.Dict[str, Any]`. Migrate routes that need path parameters, query parameters, or body schemas to a zero-argument `@app.api` factory returning a FastAPI app.
 * Production endpoint environment variables reserve `RUNPOD_API_KEY` and runtime identity fields. Workers authenticate Flash calls with platform-issued runtime credentials; application credentials must use non-reserved environment names.
 * Deployed workers can invoke Flash resources only within their own app and environment, including through `Queue`, `Api`, and `Task` stubs. Local clients use account credentials subject to their permissions.
 * Remote queues, tasks, and JSON API calls require finite JSON-compatible arguments and results in local, dev, and deployed execution. Dev workers receive source separately from the JSON argument contract. Explicit `.local()` calls run Python directly.

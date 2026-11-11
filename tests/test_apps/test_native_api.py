@@ -2,6 +2,7 @@
 
 import sys
 import typing
+from functools import wraps
 
 import pytest
 
@@ -50,11 +51,17 @@ def test_no_argument_routes(marker, async_method):
         "self, payload: dict",
         "self, payload: typing.Dict",
         "self, payload: typing.Any",
+        "self, payload: dict[str, typing.Any]",
+        "self, payload: typing.Dict[str, typing.Any]",
+        "self, payload: Dict[str, Any]",
+        "self, payload: dict[str, Any]",
         "self, payload: 'dict'",
         "self, payload: 'typing.Dict'",
         "self, payload: 'typing.Any'",
         "self, payload: 'Dict'",
         "self, payload: 'Any'",
+        "self, payload: 'dict[str, Any]'",
+        "self, payload: 'typing.Dict[str, typing.Any]'",
         "self, payload: dict, /",
     ],
 )
@@ -62,11 +69,110 @@ def test_no_argument_routes(marker, async_method):
 def test_single_json_object_argument(marker, signature, postponed):
     namespace = {"typing": typing}
     source = "from __future__ import annotations\n" if postponed else ""
+    source += "from typing import Any, Dict\n"
     source += f"async def route({signature}) -> 'Result':\n    return payload\n"
     exec(source, namespace)
     cls = type("Service", (), {"route": marker("/echo")(namespace["route"])})
     handle = App("test").api()(cls)
     assert handle.spec.routes[0].handler_name == "route"
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "t.Dict",
+        "t.Any",
+        "t.Dict[str, t.Any]",
+        "dict[str, t.Any]",
+        "Object",
+        "Object[str, Value]",
+        "Value",
+        "JSONBody",
+        "'JSONBody'",
+    ],
+)
+@pytest.mark.parametrize("postponed", [False, True])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_imported_body_aliases(annotation, postponed, wrapped):
+    namespace = {}
+    source = "from __future__ import annotations\n" if postponed else ""
+    source += (
+        "import typing as t\n"
+        "from typing import Dict as Object, Any as Value\n"
+        "JSONBody = Object[str, Value]\n"
+        f"def route(self, payload: {annotation}) -> 'UnresolvedReturn':\n"
+        "    return payload\n"
+    )
+    exec(source, namespace)
+    route = namespace["route"]
+    if wrapped:
+        original = route
+
+        @wraps(original)
+        def route(*args, **kwargs):
+            return original(*args, **kwargs)
+
+    cls = type("Service", (), {"route": post("/echo")(route)})
+    assert App("test").api()(cls).spec.routes[0].handler_name == "route"
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "t.Dict[str, int]",
+        "dict[str, int]",
+        "t.Dict[int, t.Any]",
+        "dict[int, t.Any]",
+        "dict[t.Any, t.Any]",
+        "Object[str, int]",
+        "Schema",
+        "Model",
+        "Dict",
+        "Any",
+        "MissingBody",
+        "t.MissingBody",
+        "t.Annotated[dict[str, t.Any], 'body']",
+    ],
+)
+@pytest.mark.parametrize("postponed", [False, True])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_invalid_body_aliases_identify_argument_and_annotation(
+    annotation, postponed, wrapped
+):
+    namespace = {}
+    source = "from __future__ import annotations\n" if postponed else ""
+    source += (
+        "import typing as t\n"
+        "from typing import Dict as Object\n"
+        "from pydantic import BaseModel\n"
+        "class Schema(t.TypedDict):\n"
+        "    count: int\n"
+        "class Model(BaseModel):\n"
+        "    count: int\n"
+        "Dict = dict[str, int]\n"
+        "Any = int\n"
+        f"def route(self, payload: {annotation!r}) -> 'UnresolvedReturn':\n"
+        "    return payload\n"
+    )
+    exec(source, namespace)
+    route = namespace["route"]
+    if wrapped:
+        original = route
+
+        @wraps(original)
+        def route(*args, **kwargs):
+            return original(*args, **kwargs)
+
+    cls = type("Service", (), {"route": post("/echo")(route)})
+    app = App("test")
+    with pytest.raises(InvalidResourceError) as exc:
+        app.api()(cls)
+    message = str(exc.value)
+    assert "body argument 'payload'" in message
+    assert annotation in message
+    assert "POST /echo (Service.route)" in message
+    assert "FastAPI factory" in message
+    assert app.resources == {}
 
 
 @pytest.mark.parametrize(
@@ -101,7 +207,8 @@ def test_get_arguments_rejected_before_registration(signature):
         "self, value: str",
         "self, value: list",
         "self, value: dict[str, int]",
-        "self, value: typing.Dict[str, typing.Any]",
+        "self, value: typing.Dict[int, typing.Any]",
+        "self, value: dict[int, typing.Any]",
         "self, value: typing.Optional[dict]",
         "self, value: typing.Annotated[dict, 'body']",
         "self, value: 'RequestModel'",
@@ -179,6 +286,66 @@ def test_typed_body_classes_require_factory():
         cls = type("Service", (), {"route": post("/generate")(route)})
         with pytest.raises(InvalidResourceError, match="body schemas"):
             App("test").api()(cls)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="requires deferred annotations")
+def test_deferred_body_aliases_capture_enclosing_scope():
+    namespace = {}
+    exec(
+        "def make_route():\n"
+        "    from typing import Dict as Object, Any as Value\n"
+        "    def route(self, payload: Object[str, Value]) -> UnresolvedReturn:\n"
+        "        return payload\n"
+        "    return route\n",
+        namespace,
+    )
+    cls = type("Service", (), {"route": post("/echo")(namespace["make_route"]())})
+    assert App("test").api()(cls).spec.routes[0].handler_name == "route"
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="requires deferred annotations")
+def test_deferred_body_aliases_with_unbound_return_closure():
+    namespace = {"app": App("test"), "post": post}
+    exec(
+        "def declare():\n"
+        "    from typing import Dict as Object, Any as Value\n"
+        "    @app.api()\n"
+        "    class Service:\n"
+        "        @post('/echo')\n"
+        "        def route(self, payload: Object[str, Value]) -> Service:\n"
+        "            return payload\n"
+        "    return Service\n",
+        namespace,
+    )
+    assert namespace["declare"]().spec.routes[0].handler_name == "route"
+
+
+@pytest.mark.parametrize("postponed", [False, True])
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("signature", ["self", "self, payload: t.Dict[str, t.Any]"])
+def test_return_annotations_are_not_evaluated(postponed, wrapped, signature):
+    if not postponed and sys.version_info < (3, 14):
+        pytest.skip("requires deferred annotations")
+    namespace = {}
+    source = "from __future__ import annotations\n" if postponed else ""
+    source += (
+        "import typing as t\n"
+        "def invalid_return():\n"
+        "    raise AssertionError('return annotation evaluated')\n"
+        f"def route({signature}) -> invalid_return():\n"
+        "    pass\n"
+    )
+    exec(source, namespace)
+    route = namespace["route"]
+    if wrapped:
+        original = route
+
+        @wraps(original)
+        def route(*args, **kwargs):
+            return original(*args, **kwargs)
+
+    cls = type("Service", (), {"route": post("/echo")(route)})
+    assert App("test").api()(cls).spec.routes[0].handler_name == "route"
 
 
 @pytest.mark.skipif(sys.version_info < (3, 14), reason="requires deferred annotations")

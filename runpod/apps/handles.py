@@ -21,6 +21,7 @@ with the resource:
 import asyncio
 import inspect
 import sys
+from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -30,6 +31,9 @@ from typing import (
     List,
     Optional,
     Type,
+    get_args,
+    get_origin,
+    get_type_hints,
 )
 
 from .._serialization import normalize_json
@@ -320,17 +324,20 @@ def _validate_native_route(cls: Type, name: str, method: str, path: str) -> None
         f"native API route {method} {path} ({cls.__name__}.{name}): "
         "use an instance method with no arguments after self, or one required "
         "positional JSON-object argument for POST/PUT/PATCH/DELETE. "
-        "The body annotation must be omitted, dict, typing.Dict, or Any. "
+        "The body annotation must be omitted, dict, typing.Dict, Any, "
+        "dict[str, Any], or typing.Dict[str, Any]. "
         "Use an @app.api FastAPI factory for typed path/query parameters "
         "or body schemas."
     )
     if not inspect.isfunction(member):
         raise InvalidResourceError(guidance)
 
-    if sys.version_info >= (3, 14):
+    member = inspect.unwrap(member)
+    annotate = getattr(member, "__annotate__", None)
+    if sys.version_info >= (3, 14) and annotate is not None:
         from annotationlib import Format
 
-        signature = inspect.signature(member, annotation_format=Format.FORWARDREF)
+        signature = inspect.signature(member, annotation_format=Format.STRING)
     else:
         signature = inspect.signature(member)
     parameters = list(signature.parameters.values())
@@ -351,18 +358,37 @@ def _validate_native_route(cls: Type, name: str, method: str, path: str) -> None
         raise InvalidResourceError(guidance)
     annotation = body.annotation
     if isinstance(annotation, str):
-        annotation = annotation.strip("'\"")
-        valid_annotation = annotation in {
-            "dict",
-            "Dict",
-            "typing.Dict",
-            "Any",
-            "typing.Any",
-        }
-    else:
-        valid_annotation = annotation in (inspect.Parameter.empty, dict, Dict, Any)
+        localns = dict(vars(cls))
+        if inspect.isfunction(annotate):
+            for variable, cell in zip(
+                annotate.__code__.co_freevars, annotate.__closure__ or ()
+            ):
+                try:
+                    localns[variable] = cell.cell_contents
+                except ValueError:
+                    pass
+        try:
+            annotation = get_type_hints(
+                SimpleNamespace(__annotations__={body.name: annotation}),
+                globalns=member.__globals__,
+                localns=localns,
+                include_extras=True,
+            )[body.name]
+        except (NameError, TypeError, SyntaxError, AttributeError):
+            pass
+    valid_annotation = annotation in (inspect.Parameter.empty, dict, Dict, Any) or (
+        get_origin(annotation) is dict and get_args(annotation) == (str, Any)
+    )
     if not valid_annotation:
-        raise InvalidResourceError(guidance)
+        annotation_label = (
+            body.annotation
+            if isinstance(body.annotation, str)
+            else inspect.formatannotation(body.annotation)
+        )
+        raise InvalidResourceError(
+            f"body argument {body.name!r} has unsupported annotation "
+            f"{annotation_label}. {guidance}"
+        )
 
 
 class ApiHandle:

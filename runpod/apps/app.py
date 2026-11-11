@@ -230,8 +230,10 @@ class App:
         native routes use literal paths. GET methods take only self.
         POST/PUT/PATCH/DELETE methods take self and optionally one required
         positional argument containing the complete JSON object. its
-        annotation may be omitted, dict, typing.Dict, or Any. defaults,
-        keyword-only arguments, variadics, and body schemas are unsupported.
+        annotation may be omitted, dict, typing.Dict, Any, dict[str, Any],
+        or typing.Dict[str, Any], including imported aliases. defaults,
+        keyword-only arguments, variadics, non-string dictionary keys,
+        and body schemas are unsupported.
         use a fastapi factory for path/query binding and field validation.
         """
 
