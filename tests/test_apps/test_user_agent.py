@@ -274,19 +274,27 @@ async def test_lightweight_json_client(server):
     assert server.requests[0][2]["Authorization"] == "Bearer test-key"
 
 
-def test_volume_lookup(server):
+@pytest.mark.parametrize("user_agent", [None, APPS_USER_AGENT])
+def test_volume_lookup(server, user_agent):
     from runpod.network_volume_transfer import _locate
 
+    server.user_agent = user_agent or USER_AGENT
     server.responses = [
         {
             "networkVolumes": [{"id": "vol", "name": "data", "dataCenter": "EU-RO-1"}],
             "pagination": {"hasNextPage": False},
         }
     ]
-    assert _locate("data")[0] == "vol"
+    assert (
+        _locate(
+            "data", **({"user_agent": user_agent} if user_agent is not None else {})
+        )[0]
+        == "vol"
+    )
 
 
-def test_s3_transfer_user_agent():
+@pytest.mark.parametrize("user_agent", [None, APPS_USER_AGENT])
+def test_s3_transfer_user_agent(user_agent):
     from runpod.network_volume_transfer import _make_transfer
 
     transfer = _make_transfer(
@@ -297,6 +305,7 @@ def test_s3_transfer_user_agent():
         1,
         None,
         location=("vol", "EU-RO-1", "https://s3.example.test"),
+        **({"user_agent": user_agent} if user_agent is not None else {}),
     )
     requests = []
 
@@ -308,9 +317,84 @@ def test_s3_transfer_user_agent():
     try:
         with pytest.raises(RuntimeError, match="captured request"):
             transfer.client.head_object(Bucket="vol", Key="file")
-        assert APPS_USER_AGENT in requests[0].headers["User-Agent"].decode()
+        header = requests[0].headers["User-Agent"].decode()
+        assert (user_agent or USER_AGENT) in header
+        assert ("Integration/apps" in header.split()) == (user_agent is not None)
     finally:
         transfer.client.close()
+
+
+@pytest.mark.parametrize("caller", ["apps", "cli"])
+@pytest.mark.parametrize("operation", ["upload", "download"])
+def test_volume_transfer_caller_attribution(
+    server, monkeypatch, tmp_path, caller, operation
+):
+    import boto3.session
+    from click.testing import CliRunner
+
+    from runpod.apps import NetworkVolume
+    from runpod.rp_cli.main import cli
+
+    server.user_agent = APPS_USER_AGENT if caller == "apps" else USER_AGENT
+    server.responses = [
+        {
+            "networkVolumes": [{"id": "vol", "name": "data", "dataCenter": "EU-RO-1"}],
+            "pagination": {"hasNextPage": False},
+        }
+    ]
+    monkeypatch.setattr("runpod.rp_cli.update.start_background_check", lambda: None)
+    local = tmp_path / "model.bin"
+    local.write_bytes(b"model")
+    source, target = (
+        (str(local), "model.bin")
+        if operation == "upload"
+        else ("model.bin", str(local))
+    )
+    headers = []
+    clients = []
+    real_client = boto3.session.Session.client
+
+    def capture(request, **kwargs):
+        headers.append(request.headers["User-Agent"].decode())
+        raise RuntimeError("captured s3 request")
+
+    def client(session, *args, **kwargs):
+        result = real_client(session, *args, **kwargs)
+        result.meta.events.register("before-send.s3", capture)
+        clients.append(result)
+        return result
+
+    monkeypatch.setattr(boto3.session.Session, "client", client)
+    try:
+        if caller == "apps":
+            with pytest.raises(RuntimeError, match="captured s3 request"):
+                getattr(NetworkVolume("data"), operation)(
+                    source, target, access_key="test-access", secret_key="test-secret"
+                )
+        else:
+            result = CliRunner().invoke(
+                cli,
+                [
+                    "volume",
+                    operation,
+                    "data",
+                    source,
+                    target,
+                    "--s3-access-key",
+                    "test-access",
+                    "--s3-secret-key",
+                    "test-secret",
+                ],
+            )
+            assert result.exit_code == 1
+            assert "captured s3 request" in result.output
+        assert len(server.requests) == 1
+        assert len(headers) == 1
+        assert server.user_agent in headers[0]
+        assert ("Integration/apps" in headers[0].split()) == (caller == "apps")
+    finally:
+        for client in clients:
+            client.close()
 
 
 async def test_plain_sdk_transports_keep_default_user_agent(server):
