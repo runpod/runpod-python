@@ -15,6 +15,8 @@ no persistent local state.
 """
 
 import os
+import sys
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 from .context import Context, current_context
@@ -57,6 +59,7 @@ class App:
             raise InvalidResourceError("App name must be a non-empty string")
         self.name = name
         self.env = env
+        self._source_file = Path(sys._getframe(1).f_code.co_filename).resolve()
         self._resources: Dict[str, Union[FunctionHandle, ApiHandle]] = {}
         self._dev_events: Optional[object] = None
         self._dev_targets: Dict[str, InvocationTarget] = {}

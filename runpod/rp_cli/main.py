@@ -186,7 +186,7 @@ def deploy(target, env, python_version, exclude, build_only):
     import logging
 
     from runpod.apps.deploy import build_artifact, deploy_app
-    from runpod.apps.discovery import DiscoveryError, discover_apps
+    from runpod.apps.discovery import discover_apps, resolve_project
     from runpod.rp_cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
@@ -213,19 +213,13 @@ def deploy(target, env, python_version, exclude, build_only):
     if not target.exists():
         _fail(f"{target} does not exist")
 
-    project_root = target if target.is_dir() else target.parent
-
     try:
-        apps = discover_apps(target)
-    except DiscoveryError as exc:
+        project = resolve_project(target)
+        apps = discover_apps(project.target, strict=True)
+    except Exception as exc:
         _fail(str(exc))
 
-    if not apps:
-        _fail(
-            "no runpod.App found. define one with:\n\n"
-            "    from runpod import App\n"
-            '    app = App("my-app")'
-        )
+    project_root = project.source_root
 
     if build_only:
         for found in apps:
@@ -312,59 +306,64 @@ def deploy(target, env, python_version, exclude, build_only):
 
 
 @flash.command()
-@click.argument("module", type=click.Path(exists=True, path_type=Path))
+@click.argument("target", default=".", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--entrypoint",
+    "entrypoint_selector",
+    default=None,
+    help="Select a registered entry hook as module:function.",
+)
 @click.option(
     "--once",
     is_flag=True,
-    help="Run the entrypoint once, tear down, and exit (for scripts/CI).",
+    help="Provision, run an optional entry hook, tear down, and exit.",
 )
-def dev(module, once):
-    """Start an interactive dev session for MODULE.
+def dev(target, once, entrypoint_selector):
+    """Start an interactive dev session for TARGET (default: cwd).
 
-    Provisions temporary live endpoints, runs the module's
-    @runpod.local_entrypoint, watches for file changes (re-scanning and
-    refreshing endpoints so requests run fresh code), and deletes the
-    endpoints on exit.
+    Provisions temporary live endpoints, runs an optional
+    @runpod.local_entrypoint, watches the project for file changes,
+    and deletes the endpoints on exit.
     """
     import logging
 
     from runpod.apps.dev import DevSession
-    from runpod.apps.discovery import DiscoveryError, discover_apps
-    from runpod.apps.entrypoint import get_entrypoint, run_entrypoint
+    from runpod.apps.discovery import discover_apps, resolve_project
+    from runpod.apps.entrypoint import (
+        _clear_entrypoints,
+        _restore_entrypoints,
+        get_entrypoints,
+        run_entrypoint,
+        select_entrypoint,
+    )
     from runpod.apps.utils.names import dev_endpoint_name
     from runpod.apps.watch import FileWatcher
     from runpod.rp_cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
 
-    module = module.resolve()
-    if not module.is_file():
-        _fail(f"{module} is not a file")
+    try:
+        project = resolve_project(target)
+    except Exception as exc:
+        _fail(str(exc))
 
     os.environ["RUNPOD_DEV_SESSION"] = "1"
 
     def _scan():
-        # each rescan registers entrypoints anew; clearing first keeps
-        # get_entrypoint() reflecting the current file, not stale runs
-        from runpod.apps.entrypoint import _clear_entrypoints
-
+        previous_entrypoints = get_entrypoints()
         _clear_entrypoints()
         try:
-            apps = discover_apps(module)
-        except DiscoveryError as exc:
-            _fail(str(exc))
-        if not apps:
-            _fail("no runpod.App found in module")
-        entrypoint = get_entrypoint()
-        if entrypoint is None:
-            _fail(
-                "no @runpod.local_entrypoint found. define one:\n\n"
-                "    @runpod.local_entrypoint\n"
-                "    async def main(): ..."
-            )
+            apps = discover_apps(project.target, strict=True)
+            entrypoint = select_entrypoint(entrypoint_selector)
+        except BaseException:
+            _restore_entrypoints(previous_entrypoints)
+            raise
         return apps, entrypoint
 
-    apps, entrypoint = _scan()
+    try:
+        apps, entrypoint = _scan()
+    except Exception as exc:
+        _fail(str(exc))
 
     def _all_resource_names(app_list) -> list:
         return [
@@ -521,33 +520,44 @@ def dev(module, once):
         nonlocal apps, entrypoint, tearing_down
         ui.set_name_width(_all_resource_names(apps))
         session = DevSession(apps, events=ui.DevEvents())
-        watcher = FileWatcher([module.parent])
+        watcher = FileWatcher([project.source_root])
 
-        ui.dev_banner([a.name for a in apps], str(module.name))
+        ui.dev_banner([a.name for a in apps], str(project.target.name))
         _install_stop_signals()
         try:
             await session.start()
             ui.resources_table(_table_rows(session))
             while True:
-                ui.entrypoint_header(getattr(entrypoint, "__name__", ""))
-                with ui.Timer() as t:
-                    try:
-                        await _run_entrypoint_cancellable(entrypoint)
-                        ui.entrypoint_success(t.so_far)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:  # noqa: BLE001 - dev loop survives user errors
-                        ui.entrypoint_failure(t.so_far, str(exc))
-                        if once:
-                            return 1
+                if entrypoint is not None:
+                    ui.entrypoint_header(getattr(entrypoint, "__name__", ""))
+                    with ui.Timer() as t:
+                        try:
+                            await _run_entrypoint_cancellable(entrypoint)
+                            ui.entrypoint_success(t.so_far)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            ui.entrypoint_failure(t.so_far, str(exc))
+                            if once:
+                                return 1
                 if once:
                     return 0
-                reason = await _wait_for_rerun(watcher)
-                if reason == "changed":
-                    ui.reload_banner(str(module.name))
-                    apps, entrypoint = _scan()
-                    ui.set_name_width(_all_resource_names(apps))
-                    await session.refresh(apps)
+                reload_failed = False
+                while True:
+                    reason = await _wait_for_rerun(watcher)
+                    if reason == "changed":
+                        ui.reload_banner(str(project.target.name))
+                        try:
+                            apps, entrypoint = _scan()
+                        except Exception as exc:
+                            ui.error(f"reload failed: {exc}; keeping current endpoints")
+                            reload_failed = True
+                            continue
+                        ui.set_name_width(_all_resource_names(apps))
+                        await session.refresh(apps)
+                        reload_failed = False
+                    if not reload_failed:
+                        break
         finally:
             tearing_down = True
             events = ui.CleanupEvents()

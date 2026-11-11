@@ -8,9 +8,7 @@ import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-from pathspec import GitIgnoreSpec
+from typing import Any, Dict, List, Optional, Set
 
 from .api import AppsApiClient
 from .app import App
@@ -22,8 +20,10 @@ from .build import (
     build_environment,
 )
 from .errors import InvalidResourceError, ScheduleNotSupported
+from .discovery import resolve_project, validate_apps
 from .schedule import SCHEDULES_ENABLED
 from .shim import runtime_launcher
+from .source import iter_source_files
 from .spec import ResourceKind
 from .utils.events import emit
 
@@ -33,63 +33,6 @@ MANIFEST_VERSION = 1
 # hex bytes in the suffix that keeps new template names unique (6 chars)
 TEMPLATE_TOKEN_BYTES = 3
 
-DEFAULT_IGNORES = [
-    ".venv/",
-    "venv/",
-    "env/",
-    "__pycache__/",
-    "*.pyc",
-    "node_modules/",
-    ".DS_Store",
-    "*.tar.gz",
-    "tests/",
-    "test/",
-    "test_*.py",
-    "*_test.py",
-    ".pytest_cache/",
-    ".mypy_cache/",
-    ".ruff_cache/",
-    ".tox/",
-    ".nox/",
-]
-
-PROTECTED_IGNORES = GitIgnoreSpec.from_lines(
-    [
-        ".git",
-        ".runpod",
-        ".flash",
-        "/env",
-        "/runpod_manifest.json",
-        ".env",
-        ".env.*",
-        "*.env",
-        "*.env.*",
-        "*.pem",
-        "*.key",
-        "id_rsa",
-        "id_rsa.*",
-        "id_dsa",
-        "id_dsa.*",
-        "id_ecdsa",
-        "id_ecdsa.*",
-        "id_ed25519",
-        "id_ed25519.*",
-        ".ssh",
-        ".aws",
-        ".azure",
-        ".kube",
-        ".docker/config.json",
-        "**/.docker/config.json",
-        ".netrc",
-        ".npmrc",
-        ".pypirc",
-        ".git-credentials",
-        ".boto",
-        "service-account*.json",
-        "service_account*.json",
-    ]
-)
-
 
 def _module_path_for(fn, project_root: Path) -> str:
     """dotted import path for fn's file relative to the project root."""
@@ -98,7 +41,7 @@ def _module_path_for(fn, project_root: Path) -> str:
     module = getattr(fn, "__module__", "") or ""
     try:
         source = Path(inspect.getfile(fn)).resolve()
-        rel = source.relative_to(project_root.resolve())
+        rel = source.relative_to(resolve_project(project_root).import_root)
     except (TypeError, ValueError, OSError):
         return module
     parts = list(rel.with_suffix("").parts)
@@ -148,6 +91,7 @@ def build_manifest(
     python_version: str = DEFAULT_PYTHON_VERSION,
 ) -> Dict[str, Any]:
     """serialize an app's resources for the coordinator and workers."""
+    validate_apps([app])
     resources = []
 
     for handle in app.resources.values():
@@ -251,21 +195,6 @@ async def _prepare_task_resources(
             resource["registryAuth"] = registry_id
 
 
-def _load_ignores(path: Path) -> GitIgnoreSpec:
-    if path.is_symlink() or not path.is_file():
-        return GitIgnoreSpec.from_lines([])
-    return GitIgnoreSpec.from_lines(path.read_text(encoding="utf-8").splitlines())
-
-
-def _is_ignored(rel_path: str, patterns: List[Tuple[str, GitIgnoreSpec]]) -> bool:
-    ignored = False
-    for prefix, spec in patterns:
-        result = spec.check_file(rel_path[len(prefix) :])
-        if result.include is not None:
-            ignored = result.include
-    return ignored
-
-
 ENV_DIR_NAME = "env"
 
 
@@ -286,47 +215,18 @@ def package_project(
         output = Path(tempfile.mkdtemp()) / "artifact.tar.gz"
 
     project_root = project_root.resolve()
+    project = resolve_project(project_root)
+    source_prefix = project_root.relative_to(project.import_root)
     output_resolved = output.resolve()
     env_resolved = env_dir.resolve() if env_dir is not None else None
-    runpod_ignores = _load_ignores(project_root / ".runpodignore")
-    git_ignores = [("", GitIgnoreSpec.from_lines(DEFAULT_IGNORES))]
+    excluded_paths = {output_resolved}
+    if env_resolved is not None:
+        excluded_paths.add(env_resolved)
 
     with tarfile.open(output, "w:gz", dereference=True) as tar:
-        for directory, dirs, files in os.walk(project_root, followlinks=False):
-            root = Path(directory)
-            relative = root.relative_to(project_root).as_posix()
-            prefix = "" if relative == "." else relative + "/"
-            while not prefix.startswith(git_ignores[-1][0]):
-                git_ignores.pop()
-            git_ignores.append((prefix, _load_ignores(root / ".gitignore")))
-            patterns = [*git_ignores, ("", runpod_ignores)]
-            kept_dirs = []
-            for name in sorted(dirs):
-                path = root / name
-                rel = prefix + name + "/"
-                if (
-                    path.is_symlink()
-                    or path == env_resolved
-                    or PROTECTED_IGNORES.match_file(rel)
-                    or _is_ignored(rel, patterns)
-                ):
-                    log.warning("excluded source path %r from deployment artifact", rel)
-                    continue
-                kept_dirs.append(name)
-            dirs[:] = kept_dirs
-            for name in sorted(files):
-                path = root / name
-                rel = prefix + name
-                if (
-                    path.is_symlink()
-                    or not path.is_file()
-                    or path == output_resolved
-                    or PROTECTED_IGNORES.match_file(rel)
-                    or _is_ignored(rel, patterns)
-                ):
-                    log.warning("excluded source path %r from deployment artifact", rel)
-                    continue
-                tar.add(path, arcname=rel, recursive=False)
+        for path in iter_source_files(project_root, excluded_paths=excluded_paths):
+            rel = path.relative_to(project_root)
+            tar.add(path, arcname=(source_prefix / rel).as_posix(), recursive=False)
 
         if env_resolved is not None and env_resolved.is_dir():
             for directory, dirs, files in os.walk(env_resolved, followlinks=False):
@@ -622,12 +522,9 @@ async def deploy_app(
     events: Optional[object] = None,
 ) -> DeployResult:
     """run the full deploy pipeline for one app."""
+    manifest = build_manifest(app, project_root, python_version=python_version)
     client = api or AppsApiClient()
     env_name = env_name or app.env
-    for handle in app.resources.values():
-        handle.spec.validate()
-
-    manifest = build_manifest(app, project_root, python_version=python_version)
 
     # fail fast on unresolvable secret references (workers would boot
     # with the literal template string otherwise)
