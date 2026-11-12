@@ -70,6 +70,8 @@ API_RUNTIME_REQUIREMENTS = ("fastapi[standard]", "uvicorn>=0.30")
 MAX_ARTIFACT_MB = 1500
 
 _REQ_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+# same rule as pip: "#" at line start or after whitespace starts a comment
+_REQ_COMMENT_RE = re.compile(r"(^|\s+)#.*$")
 
 
 class BuildError(AppError):
@@ -97,8 +99,8 @@ def _requirements_txt(project_root: Path) -> List[str]:
     req_file = project_root / "requirements.txt"
     if req_file.exists():
         for line in req_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and not line.startswith("-"):
+            line = _REQ_COMMENT_RE.sub("", line).strip()
+            if line and not line.startswith("-"):
                 requirements.append(line)
     return requirements
 
