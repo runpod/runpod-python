@@ -8,6 +8,7 @@ the decorated function is registered so `rp flash dev <module>` can find and
 run it (sync or async). importing the module never executes it.
 """
 
+import asyncio
 import inspect
 from typing import Any, Callable, List, Optional
 
@@ -62,12 +63,14 @@ def _restore_entrypoints(entrypoints: List[Callable]) -> None:
 
 
 def run_entrypoint(fn: Callable) -> Any:
-    """execute an entrypoint, driving the loop for async functions."""
-    from .context import block
-
+    """execute an entrypoint with its own event loop for async user code."""
     result = fn()
     if inspect.isawaitable(result):
-        return block(result)
+
+        async def run():
+            return await result
+
+        return asyncio.run(run())
     return result
 
 
