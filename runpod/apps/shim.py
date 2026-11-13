@@ -5,6 +5,7 @@ constraints:
   - posix sh only
   - python may live outside the image's path
   - the runtime package may already be baked into the image
+  - missing runtimes install from the latest github release source archive
   - package overrides support prerelease and pinned runtime builds
 
 commands stay single-quote-free internally because the host parses
@@ -30,6 +31,11 @@ _RUNTIME_MODULES = {
     "task": "runpod_sdk_runtime.task.runner",
 }
 
+_DEFAULT_RUNTIME_PACKAGE_SPEC = (
+    "runpod-sdk-runtime @ https://github.com/runpod-workers/sdk-runtime/"
+    "releases/latest/download/runpod-sdk-runtime.tar.gz"
+)
+
 
 def runtime_launcher(kind: str) -> str:
     """dockerArgs command that installs and starts a runtime module."""
@@ -49,10 +55,10 @@ def runtime_launcher(kind: str) -> str:
         f'"custom images must include python3." >&2; '
         f"exit 1; fi; "
         f'export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD="${{SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD:-0.0.0.dev0}}"; '
-        f'RUNTIME_SPEC="${{RUNPOD_RUNTIME_PACKAGE_SPEC:-runpod-sdk-runtime}}"; '
+        f'RUNTIME_SPEC="${{RUNPOD_RUNTIME_PACKAGE_SPEC:-{_DEFAULT_RUNTIME_PACKAGE_SPEC}}}"; '
         f'if [ -n "${{RUNPOD_RUNTIME_PACKAGE_SPEC:-}}" ] || '
         f'! "$PY" -c "import runpod_sdk_runtime" >/dev/null 2>&1; then '
-        f'"$PY" -m pip install -q --upgrade "$RUNTIME_SPEC" || exit 1; '
+        f'"$PY" -m pip install -q --no-cache-dir --upgrade "$RUNTIME_SPEC" || exit 1; '
         f"fi; "
         f'SDK_SPEC="${{RUNPOD_PACKAGE_SPEC:-runpod}}"; '
         f'if [ -n "${{RUNPOD_PACKAGE_SPEC:-}}" ] || '

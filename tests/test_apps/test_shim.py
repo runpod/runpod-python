@@ -47,10 +47,19 @@ def test_rejects_unknown_runtime_kind():
 @pytest.mark.parametrize(
     ("installed", "runtime_override", "sdk_override", "expected_installs"),
     [
-        (False, "", "", ["runpod-sdk-runtime", "runpod"]),
+        (False, "", "", [
+            (
+                "runpod-sdk-runtime @ https://github.com/runpod-workers/sdk-runtime/"
+                "releases/latest/download/runpod-sdk-runtime.tar.gz"
+            ),
+            "runpod",
+        ]),
         (True, "", "", []),
         (True, "runpod-sdk-runtime==2.1", "runpod==3.2", [
             "runpod-sdk-runtime==2.1", "runpod==3.2"
+        ]),
+        (True, "runpod-sdk-runtime @ https://example.com/runtime.tar.gz", "", [
+            "runpod-sdk-runtime @ https://example.com/runtime.tar.gz"
         ]),
     ],
 )
@@ -79,6 +88,8 @@ def test_installs_missing_packages_and_honors_overrides(
         "    sys.exit(0 if state[key] else 1)\n"
         "if args[:2] == ['-m', 'pip']:\n"
         "    spec = args[-1]\n"
+        "    if spec.startswith('runpod-sdk-runtime'):\n"
+        "        assert '--no-cache-dir' in args\n"
         "    state['installs'].append(spec)\n"
         "    state['runtime' if spec.startswith('runpod-sdk-runtime') else 'sdk'] = True\n"
         "else:\n"
@@ -105,3 +116,32 @@ def test_installs_missing_packages_and_honors_overrides(
     state = json.loads(state_path.read_text())
     assert state["installs"] == expected_installs
     assert state["started"] == "runpod_sdk_runtime.bootstrap"
+
+
+@pytest.mark.parametrize("kind", ["queue", "api", "task"])
+def test_failed_runtime_install_prevents_startup(tmp_path, kind):
+    import shlex
+
+    marker = tmp_path / "started"
+    interpreter = tmp_path / "python3"
+    interpreter.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "if sys.argv[1] == '-c':\n"
+        "    sys.exit(1)\n"
+        "if sys.argv[1:3] == ['-m', 'pip']:\n"
+        "    sys.exit(23)\n"
+        f"Path({str(marker)!r}).write_text('ran')\n"
+    )
+    interpreter.chmod(0o755)
+    result = subprocess.run(
+        shlex.split(runtime_launcher(kind)),
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 1, result.stderr
+    assert not marker.exists()
