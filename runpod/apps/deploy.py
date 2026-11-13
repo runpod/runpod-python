@@ -436,6 +436,7 @@ async def reconcile_endpoints(
     undo = []
     activation_attempted = False
     creating = False
+    action = "prepare deployment"
     try:
         if provisionable.keys() & existing.keys():
             _phase(events, "snapshot")
