@@ -257,3 +257,60 @@ async def test_redacts_complete_repeating_credentials_at_excerpt_boundary():
     with pytest.raises(AppHTTPError) as raised:
         await raise_for_status(response)
     assert "synthetic" not in raised.value.body_excerpt
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+async def test_preserves_non_secret_query_values(truncated):
+    body = "100 true container host 3600 AWS4-HMAC-SHA256"
+    if truncated:
+        body = body.ljust(BODY_EXCERPT_LIMIT - 1, "x") + "t overflow"
+    response = response_for(
+        body.encode(),
+        url=(
+            "https://api.example/pod100/logs?tail=100&stream=true&type=container"
+            "&X-Amz-SignedHeaders=host&X-Amz-Expires=3600"
+            "&X-Amz-Algorithm=AWS4-HMAC-SHA256"
+        ),
+    )
+    with pytest.raises(AppHTTPError) as raised:
+        await raise_for_status(response)
+    assert raised.value.url == "https://api.example/pod100/logs"
+    expected = body[: BODY_EXCERPT_LIMIT - 3] + "..." if truncated else body
+    assert raised.value.body_excerpt == expected
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "token",
+        "access_token",
+        "key",
+        "apiKey",
+        "signature",
+        "X-Amz-Signature",
+        "X-Amz-Credential",
+        "X-Amz-Security-Token",
+        "password",
+        "client_secret",
+        "Authorization",
+        "sig",
+    ],
+)
+@pytest.mark.parametrize("redirected", [False, True])
+async def test_redacts_credential_query_values(name, redirected):
+    body = b"rejected synthetic-query-secret and abc"
+    response = response_for(
+        body,
+        url=str(
+            URL("https://api.example/work").with_query(
+                [(name, "synthetic-query-secret"), (name, "abc")]
+            )
+        ),
+    )
+    if redirected:
+        original = response
+        response = response_for(body)
+        response.history = (original,)
+    with pytest.raises(AppHTTPError) as raised:
+        await raise_for_status(response)
+    assert raised.value.body_excerpt == "rejected [redacted] and [redacted]"

@@ -23,7 +23,20 @@ async def raise_for_status(
     secrets = set()
     for item in (*response.history, response):
         url = item.request_info.real_url
-        secrets.update(value for value in url.query.values() if value)
+        for name, value in url.query.items():
+            if name.lower() == "sig" or any(
+                word in name.lower()
+                for word in (
+                    "token",
+                    "key",
+                    "signature",
+                    "credential",
+                    "password",
+                    "secret",
+                    "authorization",
+                )
+            ):
+                secrets.add(value)
         secrets.update(value for value in (url.user, url.password) if value)
         for name, value in item.request_info.headers.items():
             if any(
