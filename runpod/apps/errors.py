@@ -49,3 +49,7 @@ class ScheduleNotSupported(AppError):
 
 class InvalidResourceError(AppError):
     """a decorator was applied to an unsupported target or with bad config."""
+
+
+class EndpointReconciliationError(AppError):
+    """endpoint reconciliation failed with rollback results and remaining changes."""

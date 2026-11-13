@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from .errors import InvalidResourceError
 from .datacenter import DataCenter, datacenter_id
-from .gpu import GpuGroup, GpuLike, GpuType
+from .gpu import CpuInstanceType, GpuGroup, GpuLike, GpuType
 from .volume import Volume, normalize_mounts, validate_mounts
 
 log = logging.getLogger(__name__)
@@ -126,6 +126,12 @@ def normalize_cpu(
         )
     if not cpu or any(not isinstance(c, str) or not c.strip() for c in cpu):
         raise InvalidResourceError("cpu must contain non-empty instance ids")
+    supported = {flavor.value for flavor in CpuInstanceType}
+    if unsupported := set(cpu) - supported:
+        raise InvalidResourceError(
+            f"unsupported cpu instance ids: {', '.join(sorted(unsupported))}. "
+            f"expected one of {', '.join(sorted(supported))}"
+        )
     return list(cpu)
 
 
@@ -245,6 +251,15 @@ class ResourceSpec:
         if self.gpu_count < 1:
             raise InvalidResourceError(
                 f"resource '{self.name}': gpu_count must be >= 1"
+            )
+        if (
+            isinstance(self.idle_timeout, bool)
+            or not isinstance(self.idle_timeout, int)
+            or not 1 <= self.idle_timeout <= 3600
+        ):
+            raise InvalidResourceError(
+                f"resource '{self.name}': idle_timeout must be an integer "
+                "between 1 and 3600 seconds"
             )
         if self.max_concurrency < 1:
             raise InvalidResourceError(

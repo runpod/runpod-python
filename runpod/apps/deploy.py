@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import secrets
+import shlex
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
@@ -19,7 +20,11 @@ from .build import (
     BuildResult,
     build_environment,
 )
-from .errors import InvalidResourceError, ScheduleNotSupported
+from .errors import (
+    EndpointReconciliationError,
+    InvalidResourceError,
+    ScheduleNotSupported,
+)
 from .discovery import resolve_project, validate_apps
 from .schedule import SCHEDULES_ENABLED
 from .shim import runtime_launcher
@@ -403,6 +408,8 @@ async def reconcile_endpoints(
     resource name -> endpoint id for everything provisioned. existing
     endpoints (matched by name) are updated in place; endpoints whose
     resources disappeared are deleted.
+
+    failures trigger best-effort deletion of endpoints created by this call.
     """
     for handle in app.resources.values():
         handle.spec.validate()
@@ -426,47 +433,94 @@ async def reconcile_endpoints(
 
     resolver = resolver or VolumeResolver(client)
     endpoints: Dict[str, str] = {}
-    for name, handle in sorted(provisionable.items()):
-        members = None
-        if needs_gpu_catalog(handle.spec.gpu):
-            members = await client.gpu_pool_members()
-        if name in existing:
-            template_name = existing_templates.get(name)
-        else:
-            template_name = _new_template_name(app, handle.spec, template_token)
-        payload = _deployed_endpoint_input(
-            app,
-            handle.spec,
-            environment["id"],
-            build_id,
-            python_version,
-            env_name=environment["name"],
-            pool_members=members or {},
-            template_name=template_name,
-        )
-        await attach_endpoint_volumes(payload, handle.spec, resolver, app)
-        auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
-        if auth_id:
-            payload["template"]["containerRegistryAuthId"] = auth_id
-        if handle.spec.model:
-            from .model import model_reference
+    completed: Dict[str, Dict[str, str]] = {
+        "created": {}, "updated": {}, "deleted": {}
+    }
+    try:
+        for name, handle in sorted(provisionable.items()):
+            operation = "prepare"
+            members = None
+            if needs_gpu_catalog(handle.spec.gpu):
+                members = await client.gpu_pool_members()
+            if name in existing:
+                template_name = existing_templates.get(name)
+            else:
+                template_name = _new_template_name(app, handle.spec, template_token)
+            payload = _deployed_endpoint_input(
+                app,
+                handle.spec,
+                environment["id"],
+                build_id,
+                python_version,
+                env_name=environment["name"],
+                pool_members=members or {},
+                template_name=template_name,
+            )
+            await attach_endpoint_volumes(payload, handle.spec, resolver, app)
+            auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
+            if auth_id:
+                payload["template"]["containerRegistryAuthId"] = auth_id
+            if handle.spec.model:
+                from .model import model_reference
 
-            payload["modelReferences"] = [model_reference(handle.spec.model)]
-        if name in existing:
-            payload["id"] = existing[name]
-        result = await client.save_endpoint(payload)
-        endpoints[name] = result["id"]
-        log.info(
-            "%s endpoint %s (%s)",
-            "updated" if name in existing else "provisioned",
-            name,
-            result["id"],
-        )
+                payload["modelReferences"] = [model_reference(handle.spec.model)]
+            if name in existing:
+                payload["id"] = existing[name]
+            operation = "update" if name in existing else "create"
+            result = await client.save_endpoint(payload)
+            endpoints[name] = result["id"]
+            completed["updated" if name in existing else "created"][name] = result["id"]
+            log.info("%s endpoint %s (%s)", operation, name, result["id"])
 
-    for name, endpoint_id in existing.items():
-        if name not in provisionable:
-            await client.delete_endpoint(endpoint_id)
-            log.info("deleted removed endpoint %s (%s)", name, endpoint_id)
+        for name, endpoint_id in existing.items():
+            if name not in provisionable:
+                operation = "delete"
+                await client.delete_endpoint(endpoint_id)
+                completed["deleted"][name] = endpoint_id
+                log.info("deleted removed endpoint %s (%s)", name, endpoint_id)
+    except Exception as exc:
+        failed_id = f" ({existing[name]})" if name in existing else ""
+        lines = [
+            f"endpoint reconciliation failed for {app.name}/{environment['name']} "
+            f"(environment {environment['id']}, build {build_id}).",
+            f"failed to {operation} {name}{failed_id}: {exc}",
+        ]
+        rolled_back = {}
+        cleanup_failures = {}
+        for resource, endpoint_id in reversed(list(completed["created"].items())):
+            try:
+                if not await client.delete_endpoint(endpoint_id):
+                    raise RuntimeError("endpoint deletion was not confirmed")
+                rolled_back[resource] = endpoint_id
+            except Exception as cleanup_exc:
+                cleanup_failures[resource] = endpoint_id
+                lines.append(
+                    f"rollback failed for {resource} ({endpoint_id}): {cleanup_exc}"
+                )
+        for status, changes in (
+            ("rolled back created endpoints", rolled_back),
+            ("created endpoints still requiring cleanup", cleanup_failures),
+            ("updated endpoints (not rolled back)", completed["updated"]),
+            ("deleted endpoints (not restored)", completed["deleted"]),
+        ):
+            summary = ", ".join(
+                f"{resource} ({endpoint_id})" for resource, endpoint_id in changes.items()
+            )
+            if summary:
+                lines.append(f"{status}: {summary}")
+        lines.append("Remaining operations were not attempted.")
+        if operation != "prepare":
+            lines.append(
+                "The failed request may have taken effect if its response was lost."
+            )
+        lines.append(
+            f"Inspect this environment with `rp flash env get "
+            f"{shlex.quote(environment['name'])} --app {shlex.quote(app.name)}` "
+            "before retrying. "
+            "Endpoints with active workers can keep billing. "
+            "Delete unwanted endpoints or scale their minimum workers to 0."
+        )
+        raise EndpointReconciliationError("\n".join(lines)) from exc
 
     return endpoints
 
@@ -602,9 +656,14 @@ async def deploy_app(
     log.info("activated build %s on %s/%s", build["id"], app.name, env_name)
 
     _phase(events, "endpoints")
-    endpoints = await reconcile_endpoints(
-        client, app, environment, build["id"], python_version, resolver=resolver
-    )
+    try:
+        endpoints = await reconcile_endpoints(
+            client, app, environment, build["id"], python_version, resolver=resolver
+        )
+    except EndpointReconciliationError as exc:
+        raise EndpointReconciliationError(
+            f"build {build['id']} was activated on {app.name}/{env_name}.\n{exc}"
+        ) from exc
     endpoint_ready = getattr(events, "endpoint_ready", None)
     if endpoint_ready is not None:
         for name, endpoint_id in sorted(endpoints.items()):

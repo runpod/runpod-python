@@ -14,11 +14,13 @@ from rich.console import Console
 from rich.progress import (
     Progress,
     SpinnerColumn,
+    Task,
     TaskID,
     TextColumn,
 )
 from rich.spinner import SPINNERS
 from rich.theme import Theme
+from rich.text import Text
 
 from runpod._hosts import console_url
 
@@ -275,6 +277,13 @@ def _bar(fraction: float) -> str:
     )
 
 
+class _DeploySpinnerColumn(SpinnerColumn):
+    def render(self, task: Task) -> Text:
+        if task.fields.get("failed"):
+            return Text("✗", style="err")
+        return super().render(task)
+
+
 class DeployEvents:
     """deploy_app event sink: animated phase list with live progress.
 
@@ -285,7 +294,9 @@ class DeployEvents:
 
     def __init__(self) -> None:
         self._progress = Progress(
-            _spinner_column(),
+            _DeploySpinnerColumn(
+                RUNPOD_SAND_SPINNER, style=ACCENT, finished_text="[ok]✓[/ok]"
+            ),
             TextColumn("[white]{task.description}[/white]"),
             TextColumn("{task.fields[detail]}"),
             console=console,
@@ -358,8 +369,13 @@ class DeployEvents:
         self.endpoints: Dict[str, str] = getattr(self, "endpoints", {})
         self.endpoints[name] = endpoint_id
 
-    def close(self) -> None:
-        self._finish_current()
+    def close(self, *, failed: bool = False) -> None:
+        if failed and self._current is not None:
+            self._progress.update(self._current, failed=True, detail="[err]failed[/err]")
+            self._progress.stop_task(self._current)
+            self._current = None
+        else:
+            self._finish_current()
         if self._started:
             self._progress.stop()
             self._started = False
