@@ -23,6 +23,36 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.3.0](https://github.com/runpod/runpod-python/compare/v2.2.1...v2.3.0) (2026-11-13)
+
+
+### Features
+
+* **serverless:** log VolumeCache hydrate range retries ([#709](https://github.com/runpod/runpod-python/issues/709)) ([ed053b2](https://github.com/runpod/runpod-python/commit/ed053b290b5c88925a69e9fbee488442e3fa72b5))
+
+
+### Bug Fixes
+
+* **apps:** allow sync SDK calls in async entrypoints ([#720](https://github.com/runpod/runpod-python/issues/720)) ([cea3c2a](https://github.com/runpod/runpod-python/commit/cea3c2a414fe1ee4887f6fca824711e31fa48a17))
+* **apps:** deploy every function when an App is split across files ([#710](https://github.com/runpod/runpod-python/issues/710)) ([b71bd96](https://github.com/runpod/runpod-python/commit/b71bd9661bd4f01da01ff1bcaddee2d35427c4b9))
+* **apps:** fail builds with conflicting dependency pins ([#716](https://github.com/runpod/runpod-python/issues/716)) ([64e35a3](https://github.com/runpod/runpod-python/commit/64e35a3365e9093c69a9344c3ed7b1d3a8a4c232))
+* **apps:** identify jobs in status lookup errors ([#712](https://github.com/runpod/runpod-python/issues/712)) ([517701c](https://github.com/runpod/runpod-python/commit/517701c962cc26ff92b29f858af68a6d34e471cd))
+* **apps:** include sanitized response details in HTTP errors ([#719](https://github.com/runpod/runpod-python/issues/719)) ([fd16b99](https://github.com/runpod/runpod-python/commit/fd16b99fb59a593105dc3ff1b428fd5e616370be))
+* **apps:** reject classes in queue and task decorators ([#715](https://github.com/runpod/runpod-python/issues/715)) ([34c21f7](https://github.com/runpod/runpod-python/commit/34c21f7b9fab068eb2f165020ab0a52cf93c4f0c))
+* **apps:** reject unsupported native API route parameters ([#713](https://github.com/runpod/runpod-python/issues/713)) ([2d9471b](https://github.com/runpod/runpod-python/commit/2d9471b0eb89ea066aa9d6cd12cb0693ec133716))
+* **apps:** tag HTTP traffic with apps user agent ([#707](https://github.com/runpod/runpod-python/issues/707)) ([59e3c2d](https://github.com/runpod/runpod-python/commit/59e3c2d6673d8ada29c9037eb44443af1dc39251))
+* **cli:** tolerate unencodable characters in redirected output ([#723](https://github.com/runpod/runpod-python/issues/723)) ([8714afe](https://github.com/runpod/runpod-python/commit/8714afee4cc1d475210dae10292ad8cbd6c3aef4))
+
+
+### Performance Improvements
+
+* **serverless:** 8x64 MiB VolumeCache hydrate ([#691](https://github.com/runpod/runpod-python/issues/691)) ([5013bc5](https://github.com/runpod/runpod-python/commit/5013bc5a55774502a66785c84ef77dcf3276ddad))
+
+
+### Documentation
+
+* **readme:** make the top-level README sample runnable and safe ([#695](https://github.com/runpod/runpod-python/issues/695)) ([7b16c38](https://github.com/runpod/runpod-python/commit/7b16c38b9c0ae340dfb464198b2808bf8bb68803))
+
 ## [2.2.1](https://github.com/runpod/runpod-python/compare/v2.2.0...v2.2.1) (2026-11-10)
 
 
