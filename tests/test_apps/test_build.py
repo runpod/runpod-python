@@ -476,6 +476,22 @@ class TestBuildEnvironmentPrunes:
         assert result.excluded == ["torch"]
         assert _installed(result.env_dir) == ["peft"]
 
+    def test_api_runtime_vendors_fastapi_without_the_standard_extra(self, tmp_path):
+        app = App("a")
+
+        @app.api(name="web", cpu="cpu3c-2-4")
+        def web():
+            pass
+
+        seen = []
+        with patch(
+            "runpod.apps.build.vendor",
+            side_effect=lambda env_dir, requirements, *a, **k: seen.extend(requirements),
+        ):
+            build_environment(app, tmp_path, scratch_dir=tmp_path / "s")
+        assert "fastapi" in seen and "uvicorn>=0.30" in seen
+        assert not any(r.startswith("fastapi[") for r in seen)
+
     def test_runpod_in_dependencies_fails_before_vendoring(self, tmp_path):
         app = App("a")
 
