@@ -194,7 +194,18 @@ async def get_job(
             return jobs
 
 
-async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dict:
+async def handle_job(
+    session: ClientSession,
+    config: Dict[str, Any],
+    job,
+    on_result_ready: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> dict:
+    """Run a job and send its result.
+
+    on_result_ready, if given, is called with the final result just before it
+    is sent, so the caller can free the job's slot and take the next job
+    while the result upload is still in flight.
+    """
     if is_generator(config["handler"]):
         is_stream = True
         generator_output = run_job_generator(config["handler"], job)
@@ -236,6 +247,9 @@ async def handle_job(session: ClientSession, config: Dict[str, Any], job) -> dic
     else:
         log.debug("rp_debugger | Flag not set, skipping debugger output.", job["id"])
         rp_debugger.clear_debugger_output()
+
+    if on_result_ready is not None:
+        on_result_ready(job_result)
 
     # Send the job result back to JOB_DONE_URL
     await send_result(session, job_result, job, is_stream=is_stream)
