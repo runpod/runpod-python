@@ -545,14 +545,14 @@ class TestLiveTarget:
     async def test_failed_source_sync_prevents_execution_and_can_retry(
         self, live_api_server
     ):
-        import aiohttp
+        from runpod.apps import AppHTTPError
 
         state, _, release = live_api_server
         state["reject_sync"] = True
         release.set()
         target = LiveTarget("ep123", "calculate")
         target.attach_source(self._spec, "calculate", self._spec())
-        with pytest.raises(aiohttp.ClientResponseError):
+        with pytest.raises(AppHTTPError):
             await target.request("POST", "/calculate", {"value": 7})
         assert state["calls"] == 0
         assert await target.request("POST", "/calculate", {"value": 7}) == {

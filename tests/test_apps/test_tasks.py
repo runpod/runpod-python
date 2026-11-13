@@ -275,13 +275,15 @@ class TestPollResult:
             httpd.server_close()
 
     def test_persistent_404_raises(self):
-        import aiohttp
+        from runpod.apps import AppHTTPError
 
         httpd, hits = self._server([(404, {"error": "not found"})])
         try:
             url = f"http://127.0.0.1:{httpd.server_port}"
-            with pytest.raises(aiohttp.ClientResponseError):
+            with pytest.raises(AppHTTPError) as raised:
                 self._poll(url)
+            assert raised.value.status == 404
+            assert raised.value.body_excerpt == '{"error": "not found"}'
             assert hits["count"] == 6
         finally:
             httpd.shutdown()

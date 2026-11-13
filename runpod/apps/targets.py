@@ -15,11 +15,12 @@ import aiohttp
 
 from .._hosts import endpoint_domain
 from ..user_agent import APPS_USER_AGENT
-from .errors import EndpointNotFound, JobStatusError, RemoteExecutionError
+from .errors import AppHTTPError, EndpointNotFound, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest
 from .serialization import require_json_value
 from .spec import ResourceSpec
 from .utils.events import emit
+from .utils.http import raise_for_status
 from .utils.network import api_key as _api_key
 from .utils.network import endpoint_url_base as _endpoint_url_base
 
@@ -246,30 +247,20 @@ async def _request_json(
                 async with session.request(
                     method, url, json=payload, headers=headers
                 ) as resp:
-                    if resp.status >= 400 and job_id is not None:
-                        last_exc = JobStatusError(job_id, resp.status, method, url)
-                        if (resp.status == 404 and retry_not_found) or (
-                            resp.status in RETRYABLE_STATUSES and retry_transient
-                        ):
-                            continue
-                        raise last_exc
-                    if resp.status == 404:
+                    if resp.status == 404 and job_id is None:
                         last_exc = EndpointNotFound(app_name, resource_name)
                         if retry_not_found and attempt < attempts - 1:
                             continue
                         raise last_exc
-                    if resp.status in RETRYABLE_STATUSES:
-                        last_exc = aiohttp.ClientResponseError(
-                            resp.request_info,
-                            resp.history,
-                            status=resp.status,
-                            message=await resp.text(),
-                        )
-                        if not retry_transient:
-                            raise last_exc
-                        continue
-                    resp.raise_for_status()
+                    await raise_for_status(resp, job_id=job_id)
                     return await resp.json()
+        except AppHTTPError as exc:
+            if (exc.status == 404 and retry_not_found) or (
+                exc.status in RETRYABLE_STATUSES and retry_transient
+            ):
+                last_exc = exc
+                continue
+            raise
         except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exc:
             if not retry_transient:
                 raise
@@ -516,7 +507,7 @@ class QueueClient:
             ) as resp:
                 if resp.status == 404 and self._app_name:
                     raise EndpointNotFound(self._app_name, self._resource_name)
-                resp.raise_for_status()
+                await raise_for_status(resp)
                 text = await resp.text()
         try:
             result = json.loads(text)

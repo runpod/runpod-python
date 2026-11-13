@@ -7,6 +7,18 @@ class AppError(Exception):
     """base error for the apps sdk."""
 
 
+class AppHTTPError(AppError):
+    """an http failure with a sanitized request url and response excerpt."""
+
+    def __init__(self, method: str, url: str, status: int, body_excerpt: str = ""):
+        self.method = method
+        self.url = str(URL(url).with_user(None).with_query(None).with_fragment(None))
+        self.status = status
+        self.body_excerpt = body_excerpt
+        detail = f": {body_excerpt}" if body_excerpt else ""
+        super().__init__(f"HTTP {status} ({method} {self.url}){detail}")
+
+
 class EndpointNotFound(AppError):
     """a resource was invoked but is not deployed."""
 
@@ -23,18 +35,15 @@ class RemoteExecutionError(AppError):
     """the remote worker reported a failure executing the function."""
 
 
-class JobStatusError(AppError):
+class JobStatusError(AppHTTPError):
     """a job-status request failed with an http error."""
 
-    def __init__(self, job_id: str, status: int, method: str, url: str):
+    def __init__(
+        self, job_id: str, status: int, method: str, url: str, body_excerpt: str = ""
+    ):
         self.job_id = job_id
-        self.status = status
-        self.method = method
-        self.url = str(URL(url).with_user(None).with_query(None).with_fragment(None))
-        super().__init__(
-            f"could not retrieve status for job '{job_id}': "
-            f"HTTP {status} ({method} {self.url})"
-        )
+        super().__init__(method, url, status, body_excerpt)
+        self.args = (f"could not retrieve status for job '{job_id}': {self.args[0]}",)
 
 
 class ScheduleNotSupported(AppError):
