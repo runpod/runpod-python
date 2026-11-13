@@ -129,8 +129,8 @@ def normalize_cpu(
     supported = {flavor.value for flavor in CpuInstanceType}
     if unsupported := set(cpu) - supported:
         raise InvalidResourceError(
-            f"unsupported cpu instance ids: {', '.join(sorted(unsupported))}. "
-            f"expected one of {', '.join(sorted(supported))}"
+            f"unknown cpu {', '.join(repr(value) for value in sorted(unsupported))}. "
+            "Use a CpuInstanceType value."
         )
     return list(cpu)
 
@@ -258,8 +258,7 @@ class ResourceSpec:
             or not 1 <= self.idle_timeout <= 3600
         ):
             raise InvalidResourceError(
-                f"resource '{self.name}': idle_timeout must be an integer "
-                "between 1 and 3600 seconds"
+                f"'{self.name}': idle_timeout must be a whole number from 1 to 3600 seconds"
             )
         if self.max_concurrency < 1:
             raise InvalidResourceError(

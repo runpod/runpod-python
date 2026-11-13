@@ -32,7 +32,12 @@ def make_app():
 
 
 def environment(endpoints=None):
-    return {"id": "env-1", "name": "prod", "endpoints": endpoints or []}
+    return {
+        "id": "env-1",
+        "name": "prod",
+        "endpoints": endpoints or [],
+        "activeBuildId": "build-old",
+    }
 
 
 @pytest.mark.parametrize("updating", [False, True])
@@ -41,7 +46,10 @@ def environment(endpoints=None):
 )
 async def test_reports_confirmed_changes_and_failed_request(updating, cause):
     api = AsyncMock()
-    api.save_endpoint.side_effect = [{"id": "ep-ok"}, cause]
+    snapshot = {"id": "ep-ok", "name": "a_ok", "workersMin": 2}
+    api.snapshot_endpoint.return_value = snapshot.copy()
+    api.get_environment_by_name.return_value = environment()
+    api.save_endpoint.side_effect = [{"id": "ep-ok"}, cause, {"id": "ep-ok"}]
     existing = [{"name": "a_ok", "id": "ep-ok"}] if updating else []
     existing.append({"name": "obsolete", "id": "ep-old"})
 
@@ -52,31 +60,33 @@ async def test_reports_confirmed_changes_and_failed_request(updating, cause):
 
     message = str(caught.value)
     assert caught.value.__cause__ is cause
-    assert "partial/prod (environment env-1, build build-1)" in message
-    status = (
-        "updated endpoints (not rolled back)"
-        if updating
-        else "rolled back created endpoints"
-    )
-    assert f"{status}: a_ok (ep-ok)" in message
-    assert f"failed to create b_bad: {cause}" in message
-    assert "deleted endpoints (not restored)" not in message
-    assert "response was lost" in message
-    assert "keep billing" in message
-    assert "rp flash env get prod --app partial" in message
-    assert [call.args[0]["name"] for call in api.save_endpoint.await_args_list] == [
+    assert f"Couldn't deploy 'b_bad': {cause}" in message
+    if isinstance(cause, TimeoutError):
+        assert "Rollback incomplete:\n  b_bad: creation status unknown" in message
+        assert "rp flash env get prod --app partial" in message
+    else:
+        assert (
+            message == "Couldn't deploy 'b_bad': quota exceeded\nChanges rolled back."
+        )
+    assert [call.args[0]["name"] for call in api.save_endpoint.await_args_list[:2]] == [
         "a_ok",
         "b_bad",
     ]
     if updating:
         api.delete_endpoint.assert_not_awaited()
+        assert api.save_endpoint.await_args.args[0] == {
+            **snapshot,
+            "flashEnvironmentId": "env-1",
+        }
     else:
         api.delete_endpoint.assert_awaited_once_with("ep-ok")
 
 
 async def test_first_update_failure_identifies_existing_endpoint():
     api = AsyncMock()
-    api.save_endpoint.side_effect = RuntimeError("rejected")
+    snapshot = {"id": "ep-old", "name": "a_ok", "workersMin": 2}
+    api.snapshot_endpoint.return_value = snapshot
+    api.save_endpoint.side_effect = [RuntimeError("rejected"), {"id": "ep-old"}]
     with pytest.raises(EndpointReconciliationError) as caught:
         await reconcile_endpoints(
             api,
@@ -85,10 +95,10 @@ async def test_first_update_failure_identifies_existing_endpoint():
             "build-1",
             "3.12",
         )
-    assert "failed to update a_ok (ep-old): rejected" in str(caught.value)
-    assert "rolled back created endpoints" not in str(caught.value)
+    assert str(caught.value) == "Couldn't deploy 'a_ok': rejected\nChanges rolled back."
     api.delete_endpoint.assert_not_awaited()
-    assert api.save_endpoint.await_count == 1
+    assert api.save_endpoint.await_count == 2
+    assert api.save_endpoint.await_args.args[0] == snapshot
 
 
 async def test_preparation_failure_reports_earlier_changes():
@@ -100,9 +110,10 @@ async def test_preparation_failure_reports_earlier_changes():
     ):
         with pytest.raises(EndpointReconciliationError) as caught:
             await reconcile_endpoints(api, make_app(), environment(), "build-1", "3.12")
-    assert "rolled back created endpoints: a_ok (ep-ok)" in str(caught.value)
-    assert "failed to prepare b_bad: volume unavailable" in str(caught.value)
-    assert "response was lost" not in str(caught.value)
+    assert (
+        str(caught.value)
+        == "Couldn't prepare 'b_bad': volume unavailable\nChanges rolled back."
+    )
     api.save_endpoint.assert_awaited_once()
     api.delete_endpoint.assert_awaited_once_with("ep-ok")
 
@@ -119,17 +130,12 @@ async def test_deletion_failure_reports_creates_updates_and_deletes():
             api, make_app(), environment(existing), "build-1", "3.12"
         )
     message = str(caught.value)
-    assert (
-        "rolled back created endpoints: c_later (ep-c_later), a_ok (ep-a_ok)" in message
-    )
-    assert "updated endpoints (not rolled back): b_bad (ep-b_bad)" in message
-    assert "deleted endpoints (not restored): old1 (ep-old1)" in message
-    assert "failed to delete old2 (ep-old2): delete denied" in message
+    assert "Deployed, but couldn't remove 'old2' (ep-old2): delete denied" in message
+    assert "rolled back" not in message
+    assert api.save_endpoint.await_count == 3
     assert [call.args for call in api.delete_endpoint.await_args_list] == [
         ("ep-old1",),
         ("ep-old2",),
-        ("ep-c_later",),
-        ("ep-a_ok",),
     ]
 
 
@@ -143,11 +149,10 @@ async def test_rollback_continues_after_cleanup_failure(cleanup_result):
         await reconcile_endpoints(api, make_app(), environment(), "build-1", "3.12")
     message = str(caught.value)
     assert caught.value.__cause__ is cause
-    assert "failed to create c_later: quota exceeded" in message
-    assert "rollback failed for b_bad (ep-b)" in message
-    assert "created endpoints still requiring cleanup: b_bad (ep-b)" in message
-    assert "rolled back created endpoints: a_ok (ep-a)" in message
-    assert "keep billing" in message
+    assert "Couldn't deploy 'c_later': quota exceeded" in message
+    assert "Rollback incomplete:\n  b_bad (ep-b):" in message
+    assert "a_ok" not in message
+    assert "may still incur charges" in message
     assert [call.args for call in api.delete_endpoint.await_args_list] == [
         ("ep-b",),
         ("ep-a",),
@@ -198,13 +203,17 @@ def test_cli_reports_partial_deploy_and_failed_phase(tmp_path, monkeypatch):
             cli, ["flash", "deploy", str(tmp_path), "-e", "prod"]
         )
     assert result.exit_code == 1, result.output
-    assert "build build-1 was activated on partial/prod" in result.output
-    assert "rolled back created endpoints: a_ok (ep-ok)" in result.output
-    assert "failed to create b_bad: quota exceeded" in result.output
-    assert "✗ reconciling endpoints" in buffer.getvalue()
-    assert "✓ reconciling endpoints" not in buffer.getvalue()
+    assert (
+        result.output
+        == "Error: Couldn't deploy 'b_bad': quota exceeded\nChanges rolled back.\n"
+    )
+    assert "✗ deploying endpoints" in buffer.getvalue()
+    assert "✓ deploying endpoints" not in buffer.getvalue()
     assert "is live" not in buffer.getvalue()
-    api.deploy_build.assert_awaited_once_with("env-1", "build-1")
+    assert [call.args for call in api.deploy_build.await_args_list] == [
+        ("env-1", "build-1"),
+        ("env-1", "build-old"),
+    ]
     api.delete_endpoint.assert_awaited_once_with("ep-ok")
 
 
@@ -231,9 +240,7 @@ def test_accepts_timeout_boundaries_and_supported_cpu_flavors(timeout, cpu):
 @pytest.mark.parametrize("cpu", ["cpu9z", ["cpu3c-1-2", "cpu9z"]])
 def test_cpu_flavor_rejected_at_decoration(kind, cpu):
     app = App("invalid")
-    with pytest.raises(
-        InvalidResourceError, match="unsupported cpu instance ids: cpu9z"
-    ):
+    with pytest.raises(InvalidResourceError, match="unknown cpu 'cpu9z'"):
         getattr(app, kind)(name="worker", cpu=cpu)(lambda: None)
 
 

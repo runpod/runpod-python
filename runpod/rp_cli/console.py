@@ -260,7 +260,10 @@ _PHASE_LABELS = {
     "vendor": "resolving dependencies",
     "package": "packaging artifact",
     "upload": "uploading build",
-    "endpoints": "reconciling endpoints",
+    "endpoints": "deploying endpoints",
+    "snapshot": "saving current settings",
+    "activate": "activating build",
+    "cleanup": "removing unused endpoints",
 }
 
 
@@ -371,7 +374,7 @@ class DeployEvents:
 
     def close(self, *, failed: bool = False) -> None:
         if failed and self._current is not None:
-            self._progress.update(self._current, failed=True, detail="[err]failed[/err]")
+            self._progress.update(self._current, failed=True, detail="")
             self._progress.stop_task(self._current)
             self._current = None
         else:
