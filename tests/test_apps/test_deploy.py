@@ -196,6 +196,7 @@ class TestPackaging:
                 assert f"src/{name}" in tar.getnames()
 
     def test_excluded_paths_are_logged_without_contents(self, tmp_path, caplog):
+        caplog.set_level("DEBUG", logger="runpod.apps.source")
         for name in (".env", "private.key", "private.pem", "local.txt", ".aws/config"):
             path = tmp_path / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,6 +209,14 @@ class TestPackaging:
             assert (
                 f"excluded source path {name!r} from deployment artifact" in caplog.text
             )
+        assert "sensitive-file-contents" not in caplog.text
+
+    def test_excluded_paths_are_quiet_at_normal_log_levels(self, tmp_path, caplog):
+        (tmp_path / "__pycache__").mkdir()
+        (tmp_path / ".env").write_text("sensitive-file-contents")
+        with tarfile.open(package_project(tmp_path, {})) as tar:
+            assert set(tar.getnames()) == {"runpod_manifest.json"}
+        assert "excluded source path" not in caplog.text
         assert "sensitive-file-contents" not in caplog.text
 
     def test_vendored_env_included_under_env(self, tmp_path):
