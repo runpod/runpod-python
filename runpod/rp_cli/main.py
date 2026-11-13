@@ -1227,6 +1227,10 @@ _mount_groups()
 
 def run() -> None:
     """console-script entry point."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(errors="replace")
     cli()
 
 
