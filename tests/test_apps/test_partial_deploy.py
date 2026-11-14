@@ -189,6 +189,7 @@ def test_cli_reports_partial_deploy_and_failed_phase(tmp_path, monkeypatch):
         "objectKey": "key",
     }
     api.finalize_artifact_upload.return_value = {"id": "build-1"}
+    api.get_environment_by_name.return_value = {"activeBuildId": "build-1"}
     api.save_endpoint.side_effect = [{"id": "ep-ok"}, RuntimeError("quota exceeded")]
     buffer = io.StringIO()
     monkeypatch.setattr(ui, "console", Console(file=buffer, theme=ui.theme, width=120))

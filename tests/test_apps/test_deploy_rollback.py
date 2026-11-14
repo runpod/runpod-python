@@ -163,6 +163,7 @@ async def test_restores_full_state_of_successful_and_failed_updates_in_reverse_o
     alpha = snapshot("alpha", "ep-alpha")
     beta = snapshot("beta", "ep-beta")
     api = AsyncMock()
+    api.get_environment_by_name.return_value = {"activeBuildId": "new-build"}
     api.snapshot_endpoint.side_effect = [deepcopy(alpha), deepcopy(beta)]
     api.save_endpoint.side_effect = [
         {"id": "ep-alpha"},
@@ -216,6 +217,7 @@ async def test_activation_failure_restores_endpoints_and_previous_build(
 ):
     app, environment = app_and_environment()
     api = AsyncMock()
+    api.get_environment_by_name.return_value = {"activeBuildId": "new-build"}
     api.snapshot_endpoint.side_effect = [
         snapshot("alpha", "ep-alpha"),
         snapshot("beta", "ep-beta"),

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from .errors import InvalidResourceError
 from .datacenter import DataCenter, datacenter_id
-from .gpu import CpuInstanceType, GpuGroup, GpuLike, GpuType
+from .gpu import GpuGroup, GpuLike, GpuType
 from .volume import Volume, normalize_mounts, validate_mounts
 
 log = logging.getLogger(__name__)
@@ -126,12 +126,13 @@ def normalize_cpu(
         )
     if not cpu or any(not isinstance(c, str) or not c.strip() for c in cpu):
         raise InvalidResourceError("cpu must contain non-empty instance ids")
-    supported = {flavor.value for flavor in CpuInstanceType}
-    if unsupported := set(cpu) - supported:
-        raise InvalidResourceError(
-            f"unknown cpu {', '.join(repr(value) for value in sorted(unsupported))}. "
-            "Use a CpuInstanceType value."
-        )
+    from ..api.ctl_commands import _cpu_config
+
+    for instance_id in cpu:
+        try:
+            _cpu_config(instance_id)
+        except ValueError as exc:
+            raise InvalidResourceError(f"unknown cpu {instance_id!r}. {exc}") from exc
     return list(cpu)
 
 

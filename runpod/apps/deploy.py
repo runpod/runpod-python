@@ -1,5 +1,6 @@
 """deploy pipeline: discovered apps -> manifest -> artifact -> activated build."""
 
+import asyncio
 import json
 import logging
 import os
@@ -493,7 +494,24 @@ async def reconcile_endpoints(
     except Exception as exc:
         lines = [f"Couldn't {action}: {str(exc) or type(exc).__name__}"]
         rollback_errors = []
-        if activation_attempted and not environment_created:
+        rollback_allowed = True
+        if activation_attempted:
+            try:
+                current = await client.get_environment_by_name(
+                    app.name, environment["name"]
+                )
+                if not isinstance(current, dict) or "activeBuildId" not in current:
+                    raise RuntimeError("activation status unknown")
+                if current["activeBuildId"] != build_id and (
+                    undo or current["activeBuildId"] != environment.get("activeBuildId")
+                ):
+                    raise RuntimeError("environment changed during deployment")
+            except Exception as ownership_exc:
+                rollback_errors.append(
+                    f"build: {str(ownership_exc) or type(ownership_exc).__name__}"
+                )
+                rollback_allowed = False
+        if rollback_allowed and activation_attempted and not environment_created:
             try:
                 previous_build = environment.get("activeBuildId")
                 if previous_build:
@@ -510,7 +528,11 @@ async def reconcile_endpoints(
                 rollback_errors.append(
                     f"build: {str(restore_exc) or type(restore_exc).__name__}"
                 )
-        if creating and isinstance(exc, (aiohttp.ClientError, OSError)):
+        if (
+            rollback_allowed
+            and creating
+            and isinstance(exc, (aiohttp.ClientError, OSError, asyncio.TimeoutError))
+        ):
             try:
                 current = await client.get_environment_by_name(
                     app.name, environment["name"]
@@ -526,7 +548,9 @@ async def reconcile_endpoints(
                 undo.append((name, matches[0]["id"], None))
             except Exception:
                 rollback_errors.append(f"{name}: creation status unknown")
-        for resource, endpoint_id, snapshot in reversed(undo):
+        for resource, endpoint_id, snapshot in (
+            reversed(undo) if rollback_allowed else []
+        ):
             try:
                 if snapshot is not None:
                     await client.save_endpoint(snapshot)
