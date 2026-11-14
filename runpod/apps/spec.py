@@ -5,16 +5,24 @@ it is what the manifest serializes, what `rp flash deploy` ships to the backend,
 and what dev-session provisioning consumes. it holds no live state.
 """
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from .errors import InvalidResourceError
-from .datacenter import DataCenter
+from .datacenter import DataCenter, datacenter_id
 from .gpu import GpuGroup, GpuLike, GpuType
 from .volume import Volume, normalize_mounts, validate_mounts
 
+log = logging.getLogger(__name__)
+
 DEFAULT_WORKERS: Tuple[int, int] = (0, 3)
+
+DATACENTER_IDS_DOCS_URL = (
+    "https://docs.runpod.io/api-reference-v2/catalog/list-data-centers"
+)
 
 SCALER_TYPES = frozenset({"QUEUE_DELAY", "REQUEST_COUNT"})
 DEFAULT_SCALER_VALUE = 4
@@ -147,17 +155,37 @@ def normalize_cuda_version(version: Optional[str]) -> Optional[str]:
     return normalized
 
 
+@lru_cache(maxsize=None)
+def _warn_unlisted_datacenter(dc_id: str) -> None:
+    # specs revalidate many times per deploy; warn once per id per process
+    log.warning(
+        "%r doesn't look like a valid datacenter id (see %s) but will be used anyway",
+        dc_id,
+        DATACENTER_IDS_DOCS_URL,
+    )
+
+
 def normalize_datacenter(
     datacenter: Optional[Union[str, List[str]]],
 ) -> Optional[List[str]]:
-    """normalize enum values and string variants to api datacenter ids."""
+    """normalize enum values and string variants to api datacenter ids.
+
+    ids outside the built-in DataCenter list pass through with a warning;
+    blank or non-string values raise InvalidResourceError.
+    """
     if datacenter is None:
         return None
     values = [datacenter] if isinstance(datacenter, str) else datacenter
     try:
-        return [DataCenter.from_string(value).value for value in values]
-    except (AttributeError, TypeError, ValueError) as exc:
+        ids = [datacenter_id(value) for value in values]
+    except (AttributeError, TypeError) as exc:
         raise InvalidResourceError(f"invalid datacenter: {datacenter!r}") from exc
+    if not all(ids):
+        raise InvalidResourceError(f"invalid datacenter: {datacenter!r}")
+    for dc_id in ids:
+        if not DataCenter.is_known(dc_id):
+            _warn_unlisted_datacenter(dc_id)
+    return ids
 
 
 @dataclass

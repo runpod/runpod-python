@@ -10,7 +10,7 @@ from unittest.mock import patch
 import aiohttp
 import pytest
 
-from runpod.apps.errors import EndpointNotFound
+from runpod.apps.errors import AppHTTPError, EndpointNotFound
 from runpod.apps.targets import (
     JOB_PROPAGATION_ATTEMPTS,
     RETRY_ATTEMPTS,
@@ -77,9 +77,10 @@ async def test_retries_transient_5xx_then_succeeds(flaky_server):
 async def test_exhausted_retries_raise_last_error(flaky_server):
     flaky_server.state["script"] = [503] * (RETRY_ATTEMPTS + 2)
     with patch("runpod.apps.targets.RETRY_BASE_DELAY", 0.01):
-        with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+        with pytest.raises(AppHTTPError) as exc_info:
             await _request_json("GET", flaky_server.url, {}, timeout=10)
     assert exc_info.value.status == 503
+    assert exc_info.value.body_excerpt == "scripted"
     assert flaky_server.state["hits"] == RETRY_ATTEMPTS
 
 
@@ -127,9 +128,10 @@ async def test_persistent_job_404_exhausts_retries(flaky_server):
 
 async def test_client_4xx_not_retried(flaky_server):
     flaky_server.state["script"] = [400]
-    with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+    with pytest.raises(AppHTTPError) as exc_info:
         await _post_json(flaky_server.url, {"x": 1}, {}, timeout=10)
     assert exc_info.value.status == 400
+    assert exc_info.value.body_excerpt == "scripted"
     assert flaky_server.state["hits"] == 1
 
 
@@ -154,7 +156,10 @@ async def test_submission_is_not_repeated_after_ambiguous_failure(
     else:
         flaky_server.state["script"] = [failure]
     client = QueueClient("endpoint", lambda: {})
-    with pytest.raises(aiohttp.ClientError):
+    error_type = (
+        aiohttp.ClientConnectionError if failure == "disconnect" else AppHTTPError
+    )
+    with pytest.raises(error_type):
         if operation == "invoke":
             await client.invoke({"input": {}}, timeout=10)
         elif operation == "retry":

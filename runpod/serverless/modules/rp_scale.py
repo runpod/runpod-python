@@ -562,9 +562,14 @@ class JobScaler:
                     )
                     return
 
-            await self.jobs_handler(session, self.config, job)
+            job_result = await self.jobs_handler(session, self.config, job)
 
-            if self.config.get("refresh_worker", False):
+            # Stop intake before the finally frees this slot: the platform
+            # restarts the worker on stopPod, killing any job taken meanwhile.
+            if self.config.get("refresh_worker", False) or (
+                isinstance(job_result, dict) and job_result.get("stopPod")
+            ):
+                log.info("Refresh requested, taking no more jobs.", job["id"])
                 self.kill_worker()
 
         except asyncio.CancelledError:

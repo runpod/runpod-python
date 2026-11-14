@@ -8,6 +8,7 @@ import os
 from aiohttp import ClientError
 from aiohttp_retry import FibonacciRetry, RetryClient
 
+from runpod._serialization import validate_json
 from runpod.http_client import ClientSession
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
@@ -57,7 +58,19 @@ async def _handle_result(
     try:
         session.headers["X-Request-ID"] = job["id"]
 
-        serialized_job_data = json.dumps(job_data, ensure_ascii=False)
+        try:
+            validate_json(job_data, "job result")
+            serialized_job_data = json.dumps(
+                job_data, ensure_ascii=False, allow_nan=False
+            )
+        except (TypeError, ValueError, RecursionError) as err:
+            error = {
+                "error_type": "SerializationError",
+                "error_message": str(err),
+            }
+            serialized_job_data = json.dumps({"error": json.dumps(error)})
+            url_template = JOB_DONE_URL
+            log.error(f"Error while returning job result. | {err}", job["id"])
 
         is_stream = "true" if is_stream else "false"
         url = url_template.replace("$ID", job["id"]) + f"&isStream={is_stream}"
@@ -68,7 +81,7 @@ async def _handle_result(
     except ClientError as err:
         log.error(f"Failed to return job results. | {err}", job["id"])
 
-    except (TypeError, RuntimeError) as err:
+    except (TypeError, ValueError, RuntimeError) as err:
         log.error(f"Error while returning job result. | {err}", job["id"])
 
     finally:

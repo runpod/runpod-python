@@ -38,11 +38,9 @@ def runtime_tag() -> str:
 def local_python_version() -> str:
     """the local interpreter's version, which the worker must match.
 
-    dev sessions and tasks ship cloudpickle payloads produced on the
-    client interpreter; those are not reliably portable across python
-    versions, so a silent fallback would surface as cryptic
-    deserialization failures on the worker. mismatches fail here,
-    loudly, instead.
+    live execution ships python source from the client. matching the
+    interpreter keeps syntax and language behavior consistent between
+    local development and the worker.
     """
     version = f"{sys.version_info.major}.{sys.version_info.minor}"
     if version not in SUPPORTED_PYTHON_VERSIONS:

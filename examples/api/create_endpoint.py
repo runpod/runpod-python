@@ -1,20 +1,33 @@
-""" Example of creating an endpoint with the Runpod API. """
+"""Example of creating an endpoint with the Runpod API.
+
+The endpoint scales to zero workers when idle, so it costs nothing until it
+receives requests. It stays on your account after the script exits; delete it
+with `rp endpoint delete ENDPOINT_ID`, then delete its template from the
+Templates page in the console.
+"""
+
+import uuid
 
 import runpod
 
-# Set your global API key with `runpod config` or uncomment the line below:
+# Run `rp login` once to store your API key, or uncomment the line below:
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
+
+# Template and endpoint names must be unique on your account.
+NAME = f"example-endpoint-{uuid.uuid4().hex[:8]}"
 
 try:
 
+    # runpod/mock-worker echoes its input back, which is enough to try the
+    # examples in examples/endpoints/.
     new_template = runpod.create_template(
-        name="test", image_name="runpod/base:0.4.4", is_serverless=True
+        name=NAME, image_name="runpod/mock-worker:latest", is_serverless=True
     )
 
     print(new_template)
 
     new_endpoint = runpod.create_endpoint(
-        name="test",
+        name=NAME,
         template_id=new_template["id"],
         gpu_ids="AMPERE_16",
         workers_min=0,
@@ -23,6 +36,8 @@ try:
     )
 
     print(new_endpoint)
+    print(f"Endpoint id: {new_endpoint['id']}")
+    print(f"Delete it with: rp endpoint delete {new_endpoint['id']}")
 
 except runpod.error.QueryError as err:
     print(err)

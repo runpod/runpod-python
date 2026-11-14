@@ -3,15 +3,12 @@
 import json
 import logging
 import os
+import secrets
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-from pathspec import GitIgnoreSpec
-
-import runpod
+from pathlib import Path, PurePosixPath
+from typing import Any, Dict, List, Optional, Set
 
 from .api import AppsApiClient
 from .app import App
@@ -23,71 +20,18 @@ from .build import (
     build_environment,
 )
 from .errors import InvalidResourceError, ScheduleNotSupported
+from .discovery import resolve_project, validate_apps
 from .schedule import SCHEDULES_ENABLED
 from .shim import runtime_launcher
+from .source import iter_source_files
 from .spec import ResourceKind
 from .utils.events import emit
 
 log = logging.getLogger(__name__)
 
 MANIFEST_VERSION = 1
-
-DEFAULT_IGNORES = [
-    ".venv/",
-    "venv/",
-    "env/",
-    "__pycache__/",
-    "*.pyc",
-    "node_modules/",
-    ".DS_Store",
-    "*.tar.gz",
-    "tests/",
-    "test/",
-    "test_*.py",
-    "*_test.py",
-    ".pytest_cache/",
-    ".mypy_cache/",
-    ".ruff_cache/",
-    ".tox/",
-    ".nox/",
-]
-
-PROTECTED_IGNORES = GitIgnoreSpec.from_lines(
-    [
-        ".git",
-        ".runpod",
-        ".flash",
-        "/env",
-        "/runpod_manifest.json",
-        ".env",
-        ".env.*",
-        "*.env",
-        "*.env.*",
-        "*.pem",
-        "*.key",
-        "id_rsa",
-        "id_rsa.*",
-        "id_dsa",
-        "id_dsa.*",
-        "id_ecdsa",
-        "id_ecdsa.*",
-        "id_ed25519",
-        "id_ed25519.*",
-        ".ssh",
-        ".aws",
-        ".azure",
-        ".kube",
-        ".docker/config.json",
-        "**/.docker/config.json",
-        ".netrc",
-        ".npmrc",
-        ".pypirc",
-        ".git-credentials",
-        ".boto",
-        "service-account*.json",
-        "service_account*.json",
-    ]
-)
+# hex bytes in the suffix that keeps new template names unique (6 chars)
+TEMPLATE_TOKEN_BYTES = 3
 
 
 def _module_path_for(fn, project_root: Path) -> str:
@@ -97,7 +41,7 @@ def _module_path_for(fn, project_root: Path) -> str:
     module = getattr(fn, "__module__", "") or ""
     try:
         source = Path(inspect.getfile(fn)).resolve()
-        rel = source.relative_to(project_root.resolve())
+        rel = source.relative_to(resolve_project(project_root).import_root)
     except (TypeError, ValueError, OSError):
         return module
     parts = list(rel.with_suffix("").parts)
@@ -115,14 +59,39 @@ class DeployResult:
     endpoints: Dict[str, str] = field(default_factory=dict)
 
 
+def _validate_endpoint_env(env: Dict[str, str]) -> None:
+    reserved = {
+        "RUNPOD_API_KEY",
+        "RUNPOD_AI_API_KEY",
+        "RUNPOD_ENDPOINT_ID",
+        "RUNPOD_POD_ID",
+        "RUNPOD_TASK_TOKEN",
+        "RUNPOD_TASK_PORT",
+        "FLASH_BUILD_ARTIFACT_PATH",
+        "RUNPOD_RUNTIME_KIND",
+        "RUNPOD_DEV_APP",
+        "RUNPOD_DEV_RESOURCE",
+        "RUNPOD_DEV_SESSION",
+        "FLASH_APP_NAME",
+        "FLASH_ENVIRONMENT",
+        "FLASH_RESOURCE_NAME",
+        "RUNPOD_BUILD_ID",
+    }
+    if conflicts := reserved.intersection(env):
+        raise InvalidResourceError(
+            "production endpoint env contains reserved runtime fields: "
+            + ", ".join(sorted(conflicts))
+        )
+
+
 def build_manifest(
     app: App,
     project_root: Path,
     *,
     python_version: str = DEFAULT_PYTHON_VERSION,
-    excluded_packages: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """serialize an app's resources for the coordinator and workers."""
+    validate_apps([app])
     resources = []
 
     for handle in app.resources.values():
@@ -137,6 +106,48 @@ def build_manifest(
             )
 
         entry = spec.to_manifest()
+        if spec.kind in (ResourceKind.QUEUE, ResourceKind.API):
+            _validate_endpoint_env(entry.get("env", {}))
+        if spec.kind is ResourceKind.TASK:
+            from .images import image_for_spec
+
+            for key in entry.get("env", {}):
+                normalized = key.strip().upper()
+                if normalized.startswith(("RUNPOD_", "FLASH_")) or normalized in {
+                    "PYTHONPATH",
+                    "PYTHONHOME",
+                    "LD_PRELOAD",
+                }:
+                    raise InvalidResourceError(
+                        f"task '{spec.name}' env contains reserved runtime field {key!r}"
+                    )
+            for path in spec.mounts:
+                mount_path = PurePosixPath(path)
+                for reserved in (
+                    "/root/.runpod",
+                    "/runpod-volume",
+                    "/proc",
+                    "/sys",
+                    "/dev",
+                ):
+                    reserved_path = PurePosixPath(reserved)
+                    if (
+                        mount_path == reserved_path
+                        or mount_path in reserved_path.parents
+                        or reserved_path in mount_path.parents
+                    ):
+                        raise InvalidResourceError(
+                            f"task '{spec.name}' mount {path!r} overlaps "
+                            f"reserved runtime path {reserved!r}"
+                        )
+            entry["imageName"] = image_for_spec(spec, python_version=python_version)
+            entry["customImage"] = bool(spec.image)
+            for mount, volume in zip(entry.get("mounts", []), spec.mounts.values()):
+                mount["create"] = volume.create
+                if volume.kind == "network":
+                    mount["size"] = volume.size
+                    if volume.datacenter is not None:
+                        mount["datacenter"] = volume.datacenter
 
         fn = (
             getattr(handle, "_fn", None)
@@ -156,25 +167,32 @@ def build_manifest(
         "resources": resources,
     }
 
-    if excluded_packages:
-        manifest["excludedPackages"] = excluded_packages
-
     return manifest
 
 
-def _load_ignores(path: Path) -> GitIgnoreSpec:
-    if path.is_symlink() or not path.is_file():
-        return GitIgnoreSpec.from_lines([])
-    return GitIgnoreSpec.from_lines(path.read_text(encoding="utf-8").splitlines())
+async def _prepare_task_resources(
+    app: App,
+    manifest: Dict[str, Any],
+    client: AppsApiClient,
+    events=None,
+    *,
+    resolver=None,
+) -> None:
+    from .registry import resolve_registry_auth
+    from .volume import VolumeResolver
 
-
-def _is_ignored(rel_path: str, patterns: List[Tuple[str, GitIgnoreSpec]]) -> bool:
-    ignored = False
-    for prefix, spec in patterns:
-        result = spec.check_file(rel_path[len(prefix) :])
-        if result.include is not None:
-            ignored = result.include
-    return ignored
+    resolver = resolver or VolumeResolver(client, events=events)
+    specs = [handle.spec for handle in app.resources.values()]
+    for resource in manifest["resources"]:
+        if resource["kind"] != "task":
+            continue
+        spec = app.resources[resource["name"]].spec
+        bindings = await resolver.resolve_mounts(spec.mounts, specs)
+        for mount, binding in zip(resource.get("mounts", []), bindings):
+            mount["id"] = binding["id"]
+        registry_id = await resolve_registry_auth(spec.registry_auth, api=client)
+        if registry_id:
+            resource["registryAuth"] = registry_id
 
 
 ENV_DIR_NAME = "env"
@@ -197,47 +215,18 @@ def package_project(
         output = Path(tempfile.mkdtemp()) / "artifact.tar.gz"
 
     project_root = project_root.resolve()
+    project = resolve_project(project_root)
+    source_prefix = project_root.relative_to(project.import_root)
     output_resolved = output.resolve()
     env_resolved = env_dir.resolve() if env_dir is not None else None
-    runpod_ignores = _load_ignores(project_root / ".runpodignore")
-    git_ignores = [("", GitIgnoreSpec.from_lines(DEFAULT_IGNORES))]
+    excluded_paths = {output_resolved}
+    if env_resolved is not None:
+        excluded_paths.add(env_resolved)
 
     with tarfile.open(output, "w:gz", dereference=True) as tar:
-        for directory, dirs, files in os.walk(project_root, followlinks=False):
-            root = Path(directory)
-            relative = root.relative_to(project_root).as_posix()
-            prefix = "" if relative == "." else relative + "/"
-            while not prefix.startswith(git_ignores[-1][0]):
-                git_ignores.pop()
-            git_ignores.append((prefix, _load_ignores(root / ".gitignore")))
-            patterns = [*git_ignores, ("", runpod_ignores)]
-            kept_dirs = []
-            for name in sorted(dirs):
-                path = root / name
-                rel = prefix + name + "/"
-                if (
-                    path.is_symlink()
-                    or path == env_resolved
-                    or PROTECTED_IGNORES.match_file(rel)
-                    or _is_ignored(rel, patterns)
-                ):
-                    log.warning("excluded source path %r from deployment artifact", rel)
-                    continue
-                kept_dirs.append(name)
-            dirs[:] = kept_dirs
-            for name in sorted(files):
-                path = root / name
-                rel = prefix + name
-                if (
-                    path.is_symlink()
-                    or not path.is_file()
-                    or path == output_resolved
-                    or PROTECTED_IGNORES.match_file(rel)
-                    or _is_ignored(rel, patterns)
-                ):
-                    log.warning("excluded source path %r from deployment artifact", rel)
-                    continue
-                tar.add(path, arcname=rel, recursive=False)
+        for path in iter_source_files(project_root, excluded_paths=excluded_paths):
+            rel = path.relative_to(project_root)
+            tar.add(path, arcname=(source_prefix / rel).as_posix(), recursive=False)
 
         if env_resolved is not None and env_resolved.is_dir():
             for directory, dirs, files in os.walk(env_resolved, followlinks=False):
@@ -277,6 +266,22 @@ def _container_disk_gb(spec) -> int:
     return CPU_CONTAINER_DISK_GB if spec.is_cpu else GPU_CONTAINER_DISK_GB
 
 
+def _legacy_template_name(app: App, spec) -> str:
+    """the fixed template name used before names carried a suffix."""
+    return f"{app.name}-{spec.name}-template"
+
+
+def _new_template_name(app: App, spec, token: str) -> str:
+    """a template name for a newly created endpoint.
+
+    template names are unique per owner, and a deleted endpoint keeps
+    its template for a while before the platform removes it, so a fixed
+    name fails when an app is redeployed soon after being deleted, or
+    deployed to a second environment.
+    """
+    return f"{_legacy_template_name(app, spec)}-{token}"
+
+
 def _deployed_endpoint_input(
     app: App,
     spec,
@@ -286,8 +291,12 @@ def _deployed_endpoint_input(
     *,
     env_name: Optional[str] = None,
     pool_members: Optional[Dict[str, Set[str]]] = None,
+    template_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """saveEndpoint payload for one deployed queue/api resource.
+
+    template_name names the bound template; it defaults to the legacy
+    fixed name (see reconcile_endpoints for why new endpoints vary it).
 
     the endpoint name must equal the resource name: sentinel
     resolution matches X-Flash-Endpoint against endpoint.name within
@@ -300,20 +309,15 @@ def _deployed_endpoint_input(
     from .secret import render_env
 
     spec.validate()
+    resource_env = render_env(spec.env)
+    _validate_endpoint_env(resource_env)
     template_env = {
-        "FLASH_RESOURCE_NAME": spec.name,
-        # version-triggering: a new build recreates all workers
-        "RUNPOD_BUILD_ID": build_id,
-        **render_env(spec.env),
+        **resource_env,
+        "FLASH_APP_NAME": app.name,
         "FLASH_ENVIRONMENT": env_name or app.env,
+        "FLASH_RESOURCE_NAME": spec.name,
+        "RUNPOD_BUILD_ID": build_id,
     }
-
-    # cross-resource calls from inside a worker go through the sentinel,
-    # which authenticates with the account api key; without it any
-    # .remote() from worker code would fail
-    api_key = runpod.api_key
-    if api_key and "RUNPOD_API_KEY" not in template_env:
-        template_env["RUNPOD_API_KEY"] = api_key
 
     # nested tasks use the same runtime and sdk channels as the endpoint
     for key in (
@@ -340,7 +344,7 @@ def _deployed_endpoint_input(
         "scalerValue": spec.scaler_value,
         "executionTimeoutMs": spec.execution_timeout_ms,
         "template": {
-            "name": f"{app.name}-{spec.name}-template",
+            "name": template_name or _legacy_template_name(app, spec),
             "imageName": image_for_spec(spec, python_version=python_version),
             "containerDiskInGb": _container_disk_gb(spec),
             "dockerArgs": "",
@@ -391,6 +395,8 @@ async def reconcile_endpoints(
     environment: Dict[str, Any],
     build_id: str,
     python_version: str,
+    *,
+    resolver=None,
 ) -> Dict[str, str]:
     """converge the environment's endpoints to the app's resources.
 
@@ -400,7 +406,14 @@ async def reconcile_endpoints(
     """
     for handle in app.resources.values():
         handle.spec.validate()
-    existing = {e["name"]: e["id"] for e in environment.get("endpoints") or []}
+    existing_endpoints = environment.get("endpoints") or []
+    existing = {e["name"]: e["id"] for e in existing_endpoints}
+    # updates send the bound template's current name, so redeploying an
+    # existing endpoint sends the same template name as before.
+    existing_templates = {
+        e["name"]: (e.get("template") or {}).get("name") for e in existing_endpoints
+    }
+    template_token = secrets.token_hex(TEMPLATE_TOKEN_BYTES)
     provisionable = {
         h.spec.name: h
         for h in app.resources.values()
@@ -411,12 +424,16 @@ async def reconcile_endpoints(
     from .registry import resolve_registry_auth
     from .volume import VolumeResolver, attach_endpoint_volumes
 
-    resolver = VolumeResolver(client)
+    resolver = resolver or VolumeResolver(client)
     endpoints: Dict[str, str] = {}
     for name, handle in sorted(provisionable.items()):
         members = None
         if needs_gpu_catalog(handle.spec.gpu):
             members = await client.gpu_pool_members()
+        if name in existing:
+            template_name = existing_templates.get(name)
+        else:
+            template_name = _new_template_name(app, handle.spec, template_token)
         payload = _deployed_endpoint_input(
             app,
             handle.spec,
@@ -425,6 +442,7 @@ async def reconcile_endpoints(
             python_version,
             env_name=environment["name"],
             pool_members=members or {},
+            template_name=template_name,
         )
         await attach_endpoint_volumes(payload, handle.spec, resolver, app)
         auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
@@ -467,6 +485,7 @@ def build_artifact(
     output: Optional[Path] = None,
 ) -> Path:
     """vendor, build the manifest, and package one app's artifact."""
+    manifest = build_manifest(app, project_root, python_version=python_version)
     _phase(events, "vendor", f"python {python_version}")
     build: BuildResult = build_environment(
         app,
@@ -475,12 +494,8 @@ def build_artifact(
         exclude=exclude,
         events=events,
     )
-    manifest = build_manifest(
-        app,
-        project_root,
-        python_version=python_version,
-        excluded_packages=build.excluded,
-    )
+    if build.excluded:
+        manifest["excludedPackages"] = build.excluded
     _phase(events, "package")
     tar_path = package_project(
         project_root, manifest, output=output, env_dir=build.env_dir
@@ -507,10 +522,9 @@ async def deploy_app(
     events: Optional[object] = None,
 ) -> DeployResult:
     """run the full deploy pipeline for one app."""
+    manifest = build_manifest(app, project_root, python_version=python_version)
     client = api or AppsApiClient()
     env_name = env_name or app.env
-    for handle in app.resources.values():
-        handle.spec.validate()
 
     # fail fast on unresolvable secret references (workers would boot
     # with the literal template string otherwise)
@@ -531,12 +545,12 @@ async def deploy_app(
         exclude=exclude,
         events=events,
     )
-    manifest = build_manifest(
-        app,
-        project_root,
-        python_version=python_version,
-        excluded_packages=build.excluded,
-    )
+    if build.excluded:
+        manifest["excludedPackages"] = build.excluded
+    from .volume import VolumeResolver
+
+    resolver = VolumeResolver(client, events=events)
+    await _prepare_task_resources(app, manifest, client, events, resolver=resolver)
     _phase(events, "package")
     tar_path = package_project(project_root, manifest, env_dir=build.env_dir)
     tar_size = tar_path.stat().st_size
@@ -568,6 +582,20 @@ async def deploy_app(
         upload["uploadUrl"], str(tar_path), progress=upload_progress
     )
     build = await client.finalize_artifact_upload(app_id, upload["objectKey"], manifest)
+    definitions = build.get("resourceSpec")
+    tasks = {r["name"] for r in manifest["resources"] if r["kind"] == "task"}
+    if tasks and (
+        not isinstance(definitions, dict)
+        or not isinstance(definitions.get("tasks"), dict)
+        or set(definitions["tasks"]) != tasks
+        or any(
+            not isinstance(task, dict) or not task
+            for task in definitions["tasks"].values()
+        )
+    ):
+        raise RuntimeError(
+            "backend did not acknowledge the registered task definitions"
+        )
     log.info("uploaded build %s", build["id"])
 
     await client.deploy_build(environment["id"], build["id"])
@@ -575,7 +603,7 @@ async def deploy_app(
 
     _phase(events, "endpoints")
     endpoints = await reconcile_endpoints(
-        client, app, environment, build["id"], python_version
+        client, app, environment, build["id"], python_version, resolver=resolver
     )
     endpoint_ready = getattr(events, "endpoint_ready", None)
     if endpoint_ready is not None:

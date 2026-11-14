@@ -63,6 +63,34 @@ def _result(name="demo", endpoints=None):
 
 
 class TestDeploy:
+
+    def test_task_only_deployment_shows_registered_per_call(
+        self, tmp_path, monkeypatch
+    ):
+        source = """
+import runpod
+app = runpod.App("tasks")
+@app.task(name="batch", cpu="cpu3c-1-2")
+def batch():
+    return 1
+"""
+        (tmp_path / "main.py").write_text(source)
+        monkeypatch.chdir(tmp_path)
+        deployed = DeployResult(
+            app_name="tasks",
+            build_id="build",
+            environment_id="env",
+            resources=["batch"],
+            endpoints={},
+        )
+        with patch("runpod.apps.deploy.deploy_app", AsyncMock(return_value=deployed)):
+            result = _runner().invoke(cli, ["flash", "deploy"])
+        assert result.exit_code == 0, result.output
+        assert "batch" in result.output
+        assert "task" in result.output
+        assert "cpu3c-1-2" in result.output
+        assert "registered / per-call" in result.output
+
     def test_deploys_discovered_app(self, tmp_path, monkeypatch):
         (tmp_path / "main.py").write_text(APP_SOURCE)
         monkeypatch.chdir(tmp_path)
@@ -481,9 +509,28 @@ class TestDev:
         module = tmp_path / "main.py"
         module.write_text(APP_SOURCE)
         monkeypatch.chdir(tmp_path)
-        result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
-        assert result.exit_code == 1
-        assert "local_entrypoint" in result.output
+        session = MagicMock()
+        session.start = AsyncMock()
+        session.stop = AsyncMock()
+        session._endpoints = {dev_endpoint_name("demo", "chat"): "ep1"}
+
+        def make_session(apps, events=None):
+            session.apps = apps
+            return session
+
+        with (
+            patch("runpod.apps.dev.DevSession", side_effect=make_session),
+            patch("runpod.apps.entrypoint.run_entrypoint") as run,
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        assert result.exit_code == 0, result.output
+        session.start.assert_awaited_once()
+        session.stop.assert_awaited_once()
+        run.assert_not_called()
+        assert [(app.name, list(app.resources)) for app in session.apps] == [
+            ("demo", ["chat"])
+        ]
+        assert "ep1" in result.output
 
     def test_module_without_app(self, tmp_path, monkeypatch):
         module = tmp_path / "main.py"

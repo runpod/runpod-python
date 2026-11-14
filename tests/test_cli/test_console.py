@@ -227,3 +227,10 @@ class TestTimer:
         with ui.Timer() as t:
             assert t.so_far >= 0
         assert t.elapsed >= 0
+
+
+def test_endpoint_url_honors_console_override(monkeypatch):
+    monkeypatch.setenv("RUNPOD_CONSOLE_URL", "https://console.example.test")
+    assert ui.endpoint_url("ep1") == (
+        "https://console.example.test/serverless/user/endpoint/ep1?tab=overview"
+    )

@@ -11,6 +11,7 @@ import requests
 
 from rich.markup import escape
 
+from runpod._hosts import endpoint_domain
 from runpod.api.rest import run_rest_request
 from runpod.apps.utils.network import api_key
 from runpod.endpoint import runner
@@ -625,7 +626,7 @@ def _call_load_balancer(
     endpoint: dict, path: str, method, body, timeout, as_json
 ) -> None:
     base = (endpoint.get("requestUrls") or {}).get("base") or (
-        f"https://{endpoint['id']}.api.runpod.ai"
+        f"https://{endpoint['id']}.{endpoint_domain()}"
     )
     method = (method or ("POST" if body is not None else "GET")).upper()
     url = f"{base.rstrip('/')}/{path.lstrip('/')}"

@@ -3,9 +3,9 @@
 import asyncio
 import base64
 import json
+import pickle
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import cloudpickle
 import pytest
 
 from runpod.apps import App
@@ -29,14 +29,6 @@ def clean_registry():
     _clear_registry()
     yield
     _clear_registry()
-
-
-def _b64(value):
-    return base64.b64encode(cloudpickle.dumps(value)).decode("utf-8")
-
-
-def _unb64(value):
-    return cloudpickle.loads(base64.b64decode(value))
 
 
 class TestPodInput:
@@ -113,8 +105,10 @@ class TestPodInput:
 
 
 class TestUnwrapTaskResponse:
-    def test_success_cloudpickle(self):
-        assert unwrap_task_response({"success": True, "result": _b64(42)}) == 42
+    def test_pickled_result_is_rejected(self):
+        payload = base64.b64encode(pickle.dumps(42)).decode("utf-8")
+        with pytest.raises(RemoteExecutionError, match="must use json_result"):
+            unwrap_task_response({"success": True, "result": payload})
 
     def test_success_json(self):
         assert unwrap_task_response({"success": True, "json_result": {"a": 1}}) == {
@@ -138,7 +132,8 @@ class TestPodTargetPayload:
         payload = target.build_payload(t._fn, t.spec, (5,), {})
         assert payload["function_name"] == "t"
         assert "def t(x):" in payload["function_code"]
-        assert _unb64(payload["args"][0]) == 5
+        assert payload["args"] == [5]
+        assert payload["serialization_format"] == "json"
         assert payload["dependencies"] == ["numpy"]
 
     def test_task_remote_runs_past_one_hour_and_cleans_up(self):
@@ -159,7 +154,7 @@ class TestPodTargetPayload:
             if clock[0] == 0:
                 clock[0] = 7200.0
                 return None
-            return {"success": True, "result": _b64(10)}
+            return {"success": True, "json_result": 10}
 
         async def delete(pod_id):
             pods.remove(pod_id)
@@ -280,13 +275,15 @@ class TestPollResult:
             httpd.server_close()
 
     def test_persistent_404_raises(self):
-        import aiohttp
+        from runpod.apps import AppHTTPError
 
         httpd, hits = self._server([(404, {"error": "not found"})])
         try:
             url = f"http://127.0.0.1:{httpd.server_port}"
-            with pytest.raises(aiohttp.ClientResponseError):
+            with pytest.raises(AppHTTPError) as raised:
                 self._poll(url)
+            assert raised.value.status == 404
+            assert raised.value.body_excerpt == '{"error": "not found"}'
             assert hits["count"] == 6
         finally:
             httpd.shutdown()
@@ -722,3 +719,10 @@ class TestCancellationCleanup:
             await TaskJob(execution).wait()
         assert caught.value is failure
         assert execution.pod_id == "pod-recoverable"
+
+
+def test_proxy_url_honors_proxy_domain_override(monkeypatch):
+    from runpod.apps.tasks import TASK_PORT, _proxy_url
+
+    monkeypatch.setenv("RUNPOD_PROXY_DOMAIN", "proxy.example.test")
+    assert _proxy_url("pod1") == f"https://pod1-{TASK_PORT}.proxy.example.test"

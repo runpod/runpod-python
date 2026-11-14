@@ -6,8 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import web
+from yarl import URL
 
+from runpod.apps import AppHTTPError
 from runpod.apps.logs import pod_logs, stream_pod_logs, tail_summary
+from runpod.apps.utils.http import BODY_READ_LIMIT
 
 
 class TestTailSummary:
@@ -35,6 +38,7 @@ class TestTailSummary:
 
 def _mock_session(response):
     """a ClientSession whose get() context manager yields `response`."""
+    response.status = 200
     get_cm = MagicMock()
     get_cm.__aenter__ = AsyncMock(return_value=response)
     get_cm.__aexit__ = AsyncMock(return_value=False)
@@ -200,9 +204,17 @@ class TestStreamPodLogs:
         monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
         response = MagicMock()
         response.content = _FakeContent([b'data: {"line": "ready"}\n', b"\n"])
-        if status == 403:
-            response.raise_for_status.side_effect = web.HTTPForbidden()
         session_cm, session = _mock_session(response)
+        response.status = status
+        response.method = "GET"
+        response.url = response.request_info.real_url = URL("https://logs.example/pod1")
+        if status == 403:
+            response.content = MagicMock()
+            response.content.readexactly = AsyncMock(
+                side_effect=asyncio.IncompleteReadError(
+                    b"forbidden", BODY_READ_LIMIT + 1
+                )
+            )
 
         async def connect():
             await asyncio.sleep(0.03)
@@ -212,8 +224,10 @@ class TestStreamPodLogs:
         with patch("aiohttp.ClientSession", return_value=session_cm):
             stream = stream_pod_logs("pod1", idle_timeout=0.001)
             if status == 403:
-                with pytest.raises(web.HTTPForbidden):
+                with pytest.raises(AppHTTPError) as raised:
                     await anext(stream)
+                assert raised.value.status == 403
+                assert raised.value.body_excerpt == "forbidden"
             else:
                 assert [e async for e in stream] == [{"line": "ready"}]
         session.get.return_value.__aexit__.assert_awaited_once()

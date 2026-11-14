@@ -31,6 +31,33 @@ active tasks can run indefinitely, including detached work after client exit.
 `remote()` and `job.wait()` impose no execution timeout by default. pod deletion
 requires a working control-plane API and pod-scoped credentials.
 
+## Native API routes
+
+Native `@app.api` classes use literal route paths. GET handlers take only `self`.
+POST, PUT, PATCH, and DELETE handlers may also take one required positional
+argument for the complete JSON object:
+
+```python
+from typing import Any
+
+@app.api()
+class Service:
+    @post("/echo")
+    def echo(self, payload: dict[str, Any]):
+        return payload
+```
+
+The body annotation may be omitted, `dict`, `typing.Dict`, `Any`,
+`dict[str, Any]`, or `typing.Dict[str, Any]`. Imported aliases work with eager,
+postponed, and lazy annotations. These annotations describe an unvalidated JSON
+object, not a field schema. Defaults, keyword-only arguments, variadics,
+non-string dictionary keys, and typed body schemas are unsupported.
+
+Invalid declarations fail during module import and prevent worker startup.
+For path parameters, query parameters, or schema validation, use a
+zero-argument `@app.api` factory returning a FastAPI app and declare routes
+on that app.
+
 ## Storage
 
 `NetworkVolume(name_or_id, size=50, datacenter=None, create=True)` references
@@ -56,4 +83,3 @@ binds declared references and resolved IDs before importing user code. Access
 raises if the volume is unmounted or has multiple bindings. Evaluate `.path`
 inside remote functions, not during local module discovery. Calling `.local()`
 does not mount remote storage on the client machine.
-

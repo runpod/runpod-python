@@ -1,75 +1,98 @@
-"""module discovery for `rp flash deploy` and `rp flash dev`.
-
-imports target modules under __name__ != "__main__" (so main guards
-never run) and collects App instances from the registry. imports run on
-the caller thread so discovery never abandons executing module code.
-"""
+"""execute project modules with their normal python import identities."""
 
 import importlib
-import importlib.util
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from types import ModuleType
+from typing import Dict, List
 
 from .app import App, _restore_registry, get_registered_apps
 from .discovery_state import DISCOVERY_ENV
+from .errors import InvalidResourceError
+from .source import DISCOVERY_SKIP_DIRS, iter_source_files
 
 log = logging.getLogger(__name__)
 
-
-_SKIP_DIRS = {
-    ".git",
-    ".venv",
-    "venv",
-    "node_modules",
-    "__pycache__",
-    ".runpod",
-    ".flash",
-    "build",
-    "dist",
-}
+_loaded_modules: Dict[str, ModuleType] = {}
 
 
 class DiscoveryError(Exception):
-    """a module failed to import during discovery."""
+    """the project could not be loaded unambiguously."""
 
 
-def _python_files(target: Path) -> List[Path]:
+@dataclass(frozen=True)
+class Project:
+    target: Path
+    source_root: Path
+    import_root: Path
+
+
+def resolve_project(target: Path) -> Project:
+    target = target.resolve()
+    if not target.exists():
+        raise DiscoveryError(f"{target} does not exist")
+    source_root = target if target.is_dir() else target.parent
+    import_root = source_root
+    while (import_root / "__init__.py").is_file():
+        if not import_root.name.isidentifier():
+            raise DiscoveryError(
+                f"{import_root / '__init__.py'} makes {import_root} a package, "
+                "but its directory name is not a valid python identifier. "
+                "Rename the directory or remove __init__.py for a flat project."
+            )
+        source_root = import_root
+        import_root = import_root.parent
+    return Project(target, source_root, import_root)
+
+
+def _python_files(project: Project) -> List[Path]:
+    target = project.target
     if target.is_file():
         if target.suffix != ".py":
             raise DiscoveryError(f"{target} is not a python file")
         return [target]
-    files = []
-    for path in sorted(target.rglob("*.py")):
-        if any(part in _SKIP_DIRS for part in path.parts):
+    return sorted(
+        path
+        for path in iter_source_files(project.source_root, discovery=True)
+        if path.is_relative_to(target)
+    )
+
+
+def _module_name(path: Path, import_root: Path) -> str:
+    parts = list(path.relative_to(import_root).with_suffix("").parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    if not parts or any(not part.isidentifier() for part in parts):
+        raise DiscoveryError(
+            f"{path} does not have a valid python module name. "
+            "Rename it or add it to .runpodignore if it is not application code."
+        )
+    return ".".join(parts)
+
+
+def _project_modules(root: Path) -> Dict[str, ModuleType]:
+    modules = {}
+    for name, module in list(sys.modules.items()):
+        if module is None or name == "runpod" or name.startswith("runpod."):
             continue
-        files.append(path)
-    return files
-
-
-def _module_name(path: Path) -> str:
-    parts = [] if path.name == "__init__.py" else [path.stem]
-    parent = path.parent
-    while (parent / "__init__.py").is_file():
-        parts.insert(0, parent.name)
-        parent = parent.parent
-    if parent != path.parent:
-        return ".".join(parts)
-    return f"_runpod_discovered_{path.stem}_{abs(hash(str(path)))}"
-
-
-def _rollback_modules(before: set, root: Path) -> None:
-    for name in set(sys.modules) - before:
-        module = sys.modules.get(name)
         source = getattr(module, "__file__", None)
-        if not source:
-            continue
-        source_path = Path(source).resolve()
-        if not source_path.is_relative_to(root) or any(
-            part in _SKIP_DIRS for part in source_path.relative_to(root).parts
-        ):
+        paths = [source] if source else getattr(module, "__path__", ())
+        for path in paths:
+            resolved = Path(path).resolve()
+            if resolved.is_relative_to(root) and not any(
+                part in DISCOVERY_SKIP_DIRS for part in resolved.relative_to(root).parts
+            ):
+                modules[name] = module
+                break
+    return modules
+
+
+def _remove_modules(modules: Dict[str, ModuleType]) -> None:
+    for name, module in modules.items():
+        if sys.modules.get(name) is not module:
             continue
         if cached := getattr(module, "__cached__", None):
             Path(cached).unlink(missing_ok=True)
@@ -80,125 +103,148 @@ def _rollback_modules(before: set, root: Path) -> None:
             delattr(parent, child_name)
 
 
-def _import_module(path: Path) -> None:
-    """import a file in its package context, never as __main__."""
-    module_name = _module_name(path)
-    previous_module = sys.modules.get(module_name)
+def _rollback_modules(before: set, root: Path) -> None:
+    _remove_modules(
+        {
+            name: module
+            for name, module in _project_modules(root).items()
+            if name not in before
+        }
+    )
+
+
+def _import_module(path: Path, project: Project) -> None:
+    name = _module_name(path, project.import_root)
     try:
-        if (path.parent / "__init__.py").is_file():
-            module = importlib.import_module(module_name)
-            if Path(module.__file__).resolve() != path:
-                raise DiscoveryError(
-                    f"module {module_name!r} is already loaded from {module.__file__}"
-                )
-        else:
-            spec = importlib.util.spec_from_file_location(module_name, path)
-            if spec is None or spec.loader is None:
-                raise DiscoveryError(f"cannot load {path}")
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            spec.loader.exec_module(module)
-    except BaseException as exc:
-        if previous_module is not None:
-            sys.modules[module_name] = previous_module
-        else:
-            sys.modules.pop(module_name, None)
-        if isinstance(exc, (Exception, SystemExit)):
-            raise DiscoveryError(f"importing {path} failed: {exc}") from exc
-        raise
+        module = importlib.import_module(name)
+        source = getattr(module, "__file__", None)
+        if source is None or Path(source).resolve() != path:
+            raise DiscoveryError(
+                f"module {name!r} resolves to {source}, expected {path}. "
+                "Rename the project module to avoid shadowing an installed "
+                "or standard-library module."
+            )
+    except (Exception, SystemExit) as exc:
+        hint = ""
+        if isinstance(exc, ModuleNotFoundError) and (
+            project.source_root != project.import_root
+        ):
+            hint = (
+                f"Package context is set by {project.source_root / '__init__.py'}. "
+                "Use package-relative imports for sibling modules, or remove "
+                "that __init__.py if this is intended to be a flat project. "
+            )
+        raise DiscoveryError(
+            f"importing {path} failed: {exc}\n{hint}"
+            "If this file is not application code, add it to .runpodignore."
+        ) from exc
 
 
-def discover_apps(target: Path) -> List[App]:
-    """import python files under target and return the apps they define.
+def validate_apps(apps: List[App]) -> None:
+    """validate the complete desired resource set before provisioning."""
+    for app in apps:
+        if not app.resources:
+            raise InvalidResourceError(
+                f"app {app.name!r} has no resources; check its resource modules and imports"
+            )
+        for handle in app.resources.values():
+            handle.spec.validate()
 
-    a single-file target imports strictly and raises on any failure.
-    a directory walk is tolerant: files that fail to import are
-    collected as warnings, and discovery only fails outright when no
-    app was found anywhere (the failures are then the likely cause and
-    are included in the error).
 
-    each scan imports fresh project modules while preserving sdk and
-    unrelated application registrations.
+def discover_apps(target: Path, *, strict: bool = False) -> List[App]:
+    """execute a fresh project scan and collect its app registrations.
+
+    strict scans and file targets abort on import errors. tolerant directory
+    scans support inspection of projects with broken modules. unsuccessful
+    scans restore the previous project modules and registrations.
     """
-    target = target.resolve()
-
-    local_root = target if target.is_dir() else target.parent
-    root = local_root
-    project_root = local_root
-    while (root / "__init__.py").is_file():
-        project_root = root
-        root = root.parent
-    protected_modules = {
-        name for name in sys.modules if name == "runpod" or name.startswith("runpod.")
+    global _loaded_modules
+    project = resolve_project(target)
+    files = _python_files(project)
+    registered_before = get_registered_apps()
+    modules_before = {
+        name: module
+        for name, module in _loaded_modules.items()
+        if sys.modules.get(name) is module
     }
-    _rollback_modules(protected_modules, project_root)
+    modules_before.update(_project_modules(project.source_root))
+    parent_bindings = []
+    for name, module in modules_before.items():
+        parent_name, _, child_name = name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if parent is not None and getattr(parent, child_name, None) is module:
+            parent_bindings.append((parent, child_name, module))
+    _remove_modules(modules_before)
     _restore_registry(
         [
             app
-            for app in get_registered_apps()
+            for app in registered_before
             if not (
                 (source := getattr(app, "_source_file", None))
-                and Path(source).resolve().is_relative_to(project_root)
+                and Path(source).resolve().is_relative_to(project.source_root)
             )
         ]
     )
     before = {id(app) for app in get_registered_apps()}
     importlib.invalidate_caches()
-    added_paths = []
-    for import_root in (local_root, root):
-        root_str = str(import_root)
-        if root_str not in sys.path:
-            sys.path.insert(0, root_str)
-            added_paths.append(root_str)
-
-    strict = target.is_file()
-    failures: List[str] = []
+    import_path = str(project.import_root)
+    sys.path.insert(0, import_path)
     previous_discovery = os.environ.get(DISCOVERY_ENV)
     os.environ[DISCOVERY_ENV] = "1"
+    failures = []
     try:
-        for path in _python_files(target):
+        for path in files:
             registered = get_registered_apps()
-            seen = {id(a) for a in registered}
-            modules_before = set(sys.modules)
-            imported = False
+            imported_before = set(sys.modules)
             try:
-                try:
-                    _import_module(path)
-                    imported = True
-                finally:
-                    if not imported:
-                        _restore_registry(registered)
-                        _rollback_modules(modules_before, root)
-            except DiscoveryError as exc:
-                if strict:
+                _import_module(path, project)
+            except BaseException as exc:
+                _restore_registry(registered)
+                _rollback_modules(imported_before, project.source_root)
+                if (
+                    not isinstance(exc, DiscoveryError)
+                    or strict
+                    or project.target.is_file()
+                ):
                     raise
                 failures.append(str(exc))
                 log.warning("%s", exc)
-                continue
-            # stamp fresh apps with their defining file so callers can
-            # report where each app came from
-            for app in get_registered_apps():
-                if id(app) not in seen and not hasattr(app, "_source_file"):
-                    app._source_file = path
+
+        found = [app for app in get_registered_apps() if id(app) not in before]
+        by_name = {}
+        for app in found:
+            if app.name in by_name and by_name[app.name] is not app:
+                other = by_name[app.name]
+                raise DiscoveryError(
+                    f"distinct Apps named {app.name!r} are defined in "
+                    f"{other._source_file} and {app._source_file}; "
+                    "import one shared App or use distinct names"
+                )
+            by_name[app.name] = app
+        if not found and failures:
+            raise DiscoveryError(
+                "no runpod.App found; some files failed to import:\n  "
+                + "\n  ".join(failures)
+            )
+        if strict:
+            if not found:
+                raise DiscoveryError("no runpod.App found in the selected target")
+            validate_apps(found)
+        _loaded_modules = _project_modules(project.source_root)
+        return found
+    except BaseException:
+        _remove_modules(_project_modules(project.source_root))
+        sys.modules.update(modules_before)
+        for parent, child_name, module in parent_bindings:
+            setattr(parent, child_name, module)
+        _restore_registry(registered_before)
+        raise
     finally:
+        for index, entry in enumerate(sys.path):
+            if entry is import_path:
+                del sys.path[index]
+                break
         if previous_discovery is None:
             os.environ.pop(DISCOVERY_ENV, None)
         else:
             os.environ[DISCOVERY_ENV] = previous_discovery
-        for root_str in added_paths:
-            sys.path.remove(root_str)
-
-    found = [a for a in get_registered_apps() if id(a) not in before]
-
-    # dedupe
-    by_name = {}
-    for app in found:
-        by_name.setdefault(app.name, app)
-    found = list(by_name.values())
-
-    if not found and failures:
-        raise DiscoveryError(
-            "no runpod.App found; some files failed to import:\n  "
-            + "\n  ".join(failures)
-        )
-    return found

@@ -8,6 +8,7 @@ the decorated function is registered so `rp flash dev <module>` can find and
 run it (sync or async). importing the module never executes it.
 """
 
+import asyncio
 import inspect
 from typing import Any, Callable, List, Optional
 
@@ -28,13 +29,48 @@ def get_entrypoint() -> Optional[Callable]:
     return _ENTRYPOINTS[-1] if _ENTRYPOINTS else None
 
 
-def run_entrypoint(fn: Callable) -> Any:
-    """execute an entrypoint, driving the loop for async functions."""
-    from .context import block
+def get_entrypoints() -> List[Callable]:
+    """return the registered entry hooks."""
+    return list(_ENTRYPOINTS)
 
+
+def select_entrypoint(selector: Optional[str] = None) -> Optional[Callable]:
+    """select a registered hook by module:function, requiring an unambiguous choice."""
+    named = [(f"{fn.__module__}:{fn.__name__}", fn) for fn in _ENTRYPOINTS]
+
+    if selector is not None:
+        matches = [fn for name, fn in named if name == selector]
+        if len(matches) == 1:
+            return matches[0]
+        if not matches:
+            available = ", ".join(name for name, _ in named) or "none"
+            raise ValueError(
+                f"entrypoint '{selector}' not found; available: {available}"
+            )
+    elif len(named) <= 1:
+        return named[0][1] if named else None
+
+    raise ValueError(
+        "multiple @runpod.local_entrypoint hooks found: "
+        + ", ".join(name for name, _ in named)
+        + "; select one with --entrypoint module:function"
+    )
+
+
+def _restore_entrypoints(entrypoints: List[Callable]) -> None:
+    """restore the entry hook registry."""
+    _ENTRYPOINTS[:] = entrypoints
+
+
+def run_entrypoint(fn: Callable) -> Any:
+    """execute an entrypoint with its own event loop for async user code."""
     result = fn()
     if inspect.isawaitable(result):
-        return block(result)
+
+        async def run():
+            return await result
+
+        return asyncio.run(run())
     return result
 
 

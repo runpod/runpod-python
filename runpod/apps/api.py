@@ -13,10 +13,54 @@ from ..api.ctl_commands import _cpu_config, _path_segment, _split_values
 from ..api.graphql import run_graphql_query_async
 from ..api.mutations import apps as app_mutations
 from ..api.queries import apps as app_queries
+from ..api.queries import user as user_queries
 from ..api.rest import run_rest_paginated_request_async, run_rest_request_async
-from ..error import QueryError
+from ..error import AuthenticationError, QueryError
+from ..user_agent import APPS_USER_AGENT
+from .errors import AppHTTPError
+from .utils.http import raise_for_status
 
 _TRANSPORT_RETRIES = 4
+
+
+class FlashTaskApiClient:
+    """named task lifecycle operations with runtime-scoped authentication."""
+
+    async def _execute(self, query: str, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        from .utils.network import api_key, runtime_headers
+
+        headers = runtime_headers()
+        response = await run_graphql_query_async(
+            query,
+            variables={"input": task_input},
+            api_key=(headers["Authorization"][7:] if headers else api_key()),
+            headers={**(headers or {}), "User-Agent": APPS_USER_AGENT},
+        )
+        return response["data"]
+
+    async def create(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        from .utils.network import validate_runtime_target
+
+        validate_runtime_target(
+            task_input.get("flashAppName"), task_input.get("flashEnvironmentName")
+        )
+        data = await self._execute(
+            """mutation FlashTaskCreate($input: FlashTaskCreateInput!) {
+                flashTaskCreate(input: $input) { podId flashBuildId resourceName }
+            }""",
+            task_input,
+        )
+        return data["flashTaskCreate"]
+
+    async def terminate(self, pod_id: str, token: str) -> None:
+        data = await self._execute(
+            """mutation FlashTaskTerminate($input: FlashTaskTerminateInput!) {
+                flashTaskTerminate(input: $input)
+            }""",
+            {"podId": pod_id, "executionToken": token},
+        )
+        if data.get("flashTaskTerminate") is not True:
+            raise RuntimeError("task termination was not acknowledged")
 
 
 def _rest_endpoint_input(endpoint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -187,6 +231,7 @@ class AppsApiClient:
                     api_key=self._api_key,
                     variables=variables,
                     anonymous=anonymous,
+                    headers={"User-Agent": APPS_USER_AGENT},
                 )
                 return response["data"]
             except (aiohttp.ClientError, OSError, asyncio.TimeoutError):
@@ -196,6 +241,7 @@ class AppsApiClient:
             api_key=self._api_key,
             variables=variables,
             anonymous=anonymous,
+            headers={"User-Agent": APPS_USER_AGENT},
         )
         return response["data"]
 
@@ -207,6 +253,7 @@ class AppsApiClient:
             current = await run_rest_request_async(
                 "GET",
                 f"/v2/serverless/{_path_segment(endpoint_id)}",
+                user_agent=APPS_USER_AGENT,
                 api_key=self._api_key,
             )
             if not current:
@@ -240,6 +287,7 @@ class AppsApiClient:
             return await run_rest_request_async(
                 "PATCH" if endpoint_id else "POST",
                 path,
+                user_agent=APPS_USER_AGENT,
                 api_key=self._api_key,
                 json=body,
             )
@@ -258,13 +306,14 @@ class AppsApiClient:
         await run_rest_request_async(
             "DELETE",
             f"/v2/serverless/{_path_segment(endpoint_id)}",
+            user_agent=APPS_USER_AGENT,
             api_key=self._api_key,
         )
         return True
 
     async def list_my_endpoints(self) -> List[Dict[str, Any]]:
         data = await run_rest_request_async(
-            "GET", "/v2/serverless", api_key=self._api_key
+            "GET", "/v2/serverless", user_agent=APPS_USER_AGENT, api_key=self._api_key
         )
         return data["endpoints"]
 
@@ -273,6 +322,7 @@ class AppsApiClient:
         return await run_rest_request_async(
             "GET",
             f"/v2/serverless/{_path_segment(endpoint_id)}/workers",
+            user_agent=APPS_USER_AGENT,
             api_key=self._api_key,
             timeout=10,
         )
@@ -311,7 +361,10 @@ class AppsApiClient:
 
     async def terminate_pod(self, pod_id: str) -> None:
         await run_rest_request_async(
-            "DELETE", f"/v2/pods/{_path_segment(pod_id)}", api_key=self._api_key
+            "DELETE",
+            f"/v2/pods/{_path_segment(pod_id)}",
+            user_agent=APPS_USER_AGENT,
+            api_key=self._api_key,
         )
 
     async def get_app_by_name(self, name: str) -> Optional[Dict[str, Any]]:
@@ -347,6 +400,7 @@ class AppsApiClient:
         data = await run_rest_request_async(
             "GET",
             f"/v2/catalog/gpus/{_path_segment(gpu_id)}",
+            user_agent=APPS_USER_AGENT,
             api_key=self._api_key,
             params={
                 "include": "AVAILABILITY",
@@ -383,6 +437,7 @@ class AppsApiClient:
         data = await run_rest_request_async(
             "GET",
             f"/v2/catalog/cpus/{_path_segment(cpu['id'])}",
+            user_agent=APPS_USER_AGENT,
             api_key=self._api_key,
             params={
                 "include": "AVAILABILITY",
@@ -395,7 +450,10 @@ class AppsApiClient:
     async def network_volume_datacenters(self) -> Set[str]:
         """datacenters supporting any network volume tier chosen by the backend."""
         data = await run_rest_request_async(
-            "GET", "/v2/catalog/datacenters", api_key=self._api_key
+            "GET",
+            "/v2/catalog/datacenters",
+            user_agent=APPS_USER_AGENT,
+            api_key=self._api_key,
         )
         datacenters = data.get("dataCenters") if isinstance(data, dict) else None
         if not isinstance(datacenters, list):
@@ -420,7 +478,10 @@ class AppsApiClient:
     async def list_global_volumes(self) -> List[Dict[str, Any]]:
         """list every rest page, retrying transient read failures with backoff."""
         return await run_rest_paginated_request_async(
-            "/v2/global-volumes", "globalVolumes", api_key=self._api_key
+            "/v2/global-volumes",
+            "globalVolumes",
+            user_agent=APPS_USER_AGENT,
+            api_key=self._api_key,
         )
 
     async def create_global_volume(self, name: str) -> Dict[str, Any]:
@@ -428,6 +489,7 @@ class AppsApiClient:
         data = await run_rest_request_async(
             "POST",
             "/v2/global-volumes",
+            user_agent=APPS_USER_AGENT,
             api_key=self._api_key,
             json={"name": name},
         )
@@ -446,7 +508,10 @@ class AppsApiClient:
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
         """list every rest page, retrying transient read failures with backoff."""
         return await run_rest_paginated_request_async(
-            "/v2/network-volumes", "networkVolumes", api_key=self._api_key
+            "/v2/network-volumes",
+            "networkVolumes",
+            user_agent=APPS_USER_AGENT,
+            api_key=self._api_key,
         )
 
     async def create_network_volume(
@@ -455,13 +520,14 @@ class AppsApiClient:
         return await run_rest_request_async(
             "POST",
             "/v2/network-volumes",
+            user_agent=APPS_USER_AGENT,
             api_key=self._api_key,
             json={"name": name, "size": size, "dataCenter": data_center_id},
         )
 
     async def list_registry_auths(self) -> List[Dict[str, Any]]:
         data = await run_rest_request_async(
-            "GET", "/v2/registries", api_key=self._api_key
+            "GET", "/v2/registries", user_agent=APPS_USER_AGENT, api_key=self._api_key
         )
         return data["registries"]
 
@@ -471,6 +537,7 @@ class AppsApiClient:
         return await run_rest_request_async(
             "POST",
             "/v2/registries",
+            user_agent=APPS_USER_AGENT,
             api_key=self._api_key,
             json={"name": name, "username": username, "password": password},
         )
@@ -479,6 +546,7 @@ class AppsApiClient:
         await run_rest_request_async(
             "DELETE",
             f"/v2/registries/{_path_segment(auth_id)}",
+            user_agent=APPS_USER_AGENT,
             api_key=self._api_key,
         )
         return True
@@ -554,12 +622,22 @@ class AppsApiClient:
     async def get_auth_request_status(self, request_id: str) -> Dict[str, Any]:
         query = app_queries.QUERY_FLASH_AUTH_REQUEST_STATUS
         data = await self._execute(
-            query,
-            {"flashAuthRequestId": request_id},
-            anonymous=True,
-            retry=True,
+            query, {"flashAuthRequestId": request_id}, anonymous=True
         )
         return data.get("flashAuthRequestStatus") or {}
+
+    async def verify_api_key(self, api_key: str) -> bool:
+        """true when api_key authenticates; transport failures still raise."""
+        try:
+            response = await run_graphql_query_async(
+                user_queries.QUERY_USER,
+                api_key=api_key,
+                headers={"User-Agent": APPS_USER_AGENT},
+            )
+        except (AuthenticationError, QueryError):
+            return False
+        myself = (response.get("data") or {}).get("myself") or {}
+        return bool(myself.get("id"))
 
     async def prepare_artifact_upload(
         self, app_id: str, tarball_size: int
@@ -574,6 +652,8 @@ class AppsApiClient:
         self, app_id: str, object_key: str, manifest: Dict[str, Any]
     ) -> Dict[str, Any]:
         mutation = app_mutations.MUTATION_FINALIZE_ARTIFACT_UPLOAD
+        if any(r.get("kind") == "task" for r in manifest.get("resources", [])):
+            mutation = app_mutations.MUTATION_FINALIZE_TASK_ARTIFACT_UPLOAD
         data = await self._execute(
             mutation,
             {
@@ -635,7 +715,7 @@ class AppsApiClient:
             try:
                 await self._put_tarball(upload_url, _reader(), total, timeout)
                 return
-            except (aiohttp.ClientError, OSError):
+            except (AppHTTPError, aiohttp.ClientError, OSError):
                 if attempt == attempts - 1:
                     raise
                 await asyncio.sleep(2**attempt)
@@ -646,8 +726,9 @@ class AppsApiClient:
                 upload_url,
                 data=reader,
                 headers={
+                    "User-Agent": APPS_USER_AGENT,
                     "Content-Type": "application/gzip",
                     "Content-Length": str(total),
                 },
             ) as resp:
-                resp.raise_for_status()
+                await raise_for_status(resp)

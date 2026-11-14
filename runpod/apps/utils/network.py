@@ -1,9 +1,44 @@
 """shared authentication and lightweight data-plane requests."""
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import aiohttp
+
+from ...user_agent import APPS_USER_AGENT
+from .http import raise_for_status
+
+
+def runtime_headers() -> Optional[Dict[str, str]]:
+    from ..context import deployed_identity
+
+    if deployed_identity() is None:
+        return None
+    endpoint = os.getenv("RUNPOD_ENDPOINT_ID")
+    pod = os.getenv("RUNPOD_POD_ID")
+    if os.getenv("RUNPOD_RUNTIME_KIND") == "task":
+        endpoint = None
+    if not endpoint and not pod:
+        raise RuntimeError("production flash runtime source identity is missing")
+    key = os.getenv("RUNPOD_AI_API_KEY" if endpoint else "RUNPOD_API_KEY")
+    if not key or key != key.strip():
+        raise RuntimeError("production flash runtime credential is missing")
+    if (endpoint or pod) != (endpoint or pod).strip():
+        raise RuntimeError("production flash runtime source identity is malformed")
+    return {
+        "Authorization": f"Bearer {key}",
+        "X-RunPod-Endpoint-Id" if endpoint else "X-RunPod-Pod-Id": endpoint or pod,
+    }
+
+
+def validate_runtime_target(app_name: str, env_name: str) -> None:
+    from ..context import deployed_identity
+
+    identity = deployed_identity()
+    if identity is not None and (app_name, env_name) != identity[:2]:
+        raise ValueError(
+            "deployed flash calls require the same app and environment as the worker"
+        )
 
 
 def api_key() -> str:
@@ -28,6 +63,8 @@ def endpoint_url_base() -> str:
 async def get_json(url: str, headers: Dict[str, str], timeout: float) -> Dict[str, Any]:
     client_timeout = aiohttp.ClientTimeout(total=timeout)
     async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.get(url, headers=headers) as response:
-            response.raise_for_status()
+        async with session.get(
+            url, headers={**headers, "User-Agent": APPS_USER_AGENT}
+        ) as response:
+            await raise_for_status(response)
             return await response.json()

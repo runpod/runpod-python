@@ -9,6 +9,7 @@ import click
 
 from runpod.api.ctl_commands import _path_segment
 from runpod.api.rest import run_rest_request
+from runpod.apps.errors import AppHTTPError
 from runpod.apps.logs import stream_pod_logs
 from runpod.rp_cli import console as ui
 from runpod.rp_cli.api import api_errors
@@ -64,7 +65,7 @@ async def _show_logs(
                         return
                     else:
                         records.append((worker, event))
-            except aiohttp.ClientResponseError as exc:
+            except (AppHTTPError, aiohttp.ClientResponseError) as exc:
                 if endpoint_id and exc.status == 404:
                     return
                 if not follow or not (exc.status == 429 or 500 <= exc.status < 600):
@@ -153,5 +154,5 @@ def show_logs(
             )
     except KeyboardInterrupt:
         return
-    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+    except (AppHTTPError, aiohttp.ClientError, asyncio.TimeoutError) as exc:
         raise click.ClickException(str(exc)) from exc

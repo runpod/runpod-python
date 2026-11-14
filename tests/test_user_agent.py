@@ -1,12 +1,47 @@
-""" Tests for the user_agent module. """
+"""Tests for the user_agent module."""
 
 import os
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 from runpod import __version__ as runpod_version
 from runpod import agent
 from runpod.user_agent import construct_user_agent
+
+
+@pytest.mark.parametrize("integration", ["apps", "apps-dev", "SDK_2.1"])
+def test_explicit_integration_is_a_separate_token(monkeypatch, integration):
+    monkeypatch.delenv("RUNPOD_UA_INTEGRATION", raising=False)
+    with patch("runpod.user_agent.agent.suffix", return_value=" (via claude-code)"):
+        default = construct_user_agent()
+        tagged = construct_user_agent(integration=integration)
+        assert tagged == default.replace(" (via", f" Integration/{integration} (via")
+        assert construct_user_agent() == default
+
+
+@pytest.mark.parametrize(
+    "integration", ["", "apps dev", "apps/dev", "apps\r\nX-Header:value", "äpp"]
+)
+def test_explicit_integration_rejects_non_tokens(integration):
+    with pytest.raises(ValueError, match="integration must"):
+        construct_user_agent(integration=integration)
+
+
+@pytest.mark.parametrize("custom", ["SkyPilot", "apps", ""])
+def test_apps_preserves_user_integration(monkeypatch, custom):
+    monkeypatch.setenv("RUNPOD_UA_INTEGRATION", custom)
+    default = construct_user_agent()
+    tagged = construct_user_agent(integration="apps")
+    tokens = [token for token in tagged.split() if token.startswith("Integration/")]
+    assert tokens == (
+        ["Integration/apps", "Integration/SkyPilot"]
+        if custom == "SkyPilot"
+        else ["Integration/apps"]
+    )
+    assert construct_user_agent() == default
+    assert os.environ["RUNPOD_UA_INTEGRATION"] == custom
 
 
 def _agent_env_keys():
@@ -58,7 +93,6 @@ class TestConstructUserAgent(unittest.TestCase):
         assert mock_machine.called
         assert mock_release.called
         assert mock_system.called
-
 
     @patch("runpod.user_agent.platform.system", return_value="Linux")
     @patch("runpod.user_agent.platform.release", return_value="5.4")

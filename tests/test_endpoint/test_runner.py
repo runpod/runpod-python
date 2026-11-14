@@ -373,3 +373,17 @@ class TestJob(unittest.TestCase):
         job = runner.Job("endpoint_id", "job_id", mock_client)
         output = list(job.stream())
         self.assertEqual(output, ["Job output 1", "Job output 2"])
+
+    @patch("runpod.endpoint.runner.RunPodClient")
+    def test_output_after_stream_fetches_aggregate_result(self, mock_client):
+        """output() after a completed stream must fetch the aggregate result
+        from /status, not return the stream response's empty output."""
+        mock_client.get.side_effect = [
+            {"status": "IN_PROGRESS", "stream": [{"output": "chunk 1"}]},
+            {"status": "COMPLETED", "stream": []},
+            {"status": "COMPLETED", "output": "final result"},
+        ]
+
+        job = runner.Job("endpoint_id", "job_id", mock_client)
+        self.assertEqual(list(job.stream()), ["chunk 1"])
+        self.assertEqual(job.output(), "final result")

@@ -19,7 +19,7 @@ query getFlashAppByName($flashAppName: String!) {
             name
             state
             activeBuildId
-            endpoints { id name }
+            endpoints { id name template { name } }
         }
     }
 }
@@ -60,19 +60,18 @@ query getFlashEnvironmentByName($input: FlashEnvironmentByNameInput!) {
         state
         activeBuildId
         createdAt
-        endpoints { id name }
+        endpoints { id name template { name } }
         networkVolumes { id name }
     }
 }
 """
 
+# no apiKey: the console shows the key only to the approver.
 QUERY_FLASH_AUTH_REQUEST_STATUS = """
 query flashAuthRequestStatus($flashAuthRequestId: String!) {
     flashAuthRequestStatus(flashAuthRequestId: $flashAuthRequestId) {
         id
         status
-        expiresAt
-        apiKey
     }
 }
 """

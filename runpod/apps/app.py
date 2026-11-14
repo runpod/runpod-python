@@ -15,6 +15,8 @@ no persistent local state.
 """
 
 import os
+import sys
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 from .context import Context, current_context
@@ -57,6 +59,7 @@ class App:
             raise InvalidResourceError("App name must be a non-empty string")
         self.name = name
         self.env = env
+        self._source_file = Path(sys._getframe(1).f_code.co_filename).resolve()
         self._resources: Dict[str, Union[FunctionHandle, ApiHandle]] = {}
         self._dev_events: Optional[object] = None
         self._dev_targets: Dict[str, InvocationTarget] = {}
@@ -151,7 +154,11 @@ class App:
         accelerate_downloads: bool = True,
         container_disk_gb: Optional[int] = None,
     ) -> Callable[[Callable], FunctionHandle]:
-        """declare ephemeral pod compute from a function."""
+        """declare ephemeral pod compute from a function.
+
+        remote task arguments and results use json in every execution
+        context. use .local() for direct python execution without transport.
+        """
 
         def decorator(fn: Callable) -> FunctionHandle:
             spec = ResourceSpec(
@@ -222,6 +229,15 @@ class App:
                 server = FastAPI()
                 ...
                 return server
+
+        native routes use literal paths. GET methods take only self.
+        POST/PUT/PATCH/DELETE methods take self and optionally one required
+        positional argument containing the complete JSON object. its
+        annotation may be omitted, dict, typing.Dict, Any, dict[str, Any],
+        or typing.Dict[str, Any], including imported aliases. defaults,
+        keyword-only arguments, variadics, non-string dictionary keys,
+        and body schemas are unsupported.
+        use a fastapi factory for path/query binding and field validation.
         """
 
         def decorator(target: Any) -> ApiHandle:
@@ -259,6 +275,12 @@ class App:
         """resolve a resource spec to an invocation target."""
         spec.validate()
         if spec.kind is ResourceKind.TASK:
+            from .context import deployed_identity
+            from .targets import DeployedTaskTarget
+
+            identity = deployed_identity()
+            if identity is not None:
+                return DeployedTaskTarget(self.name, identity[1], spec.name)
             handle = self._resources.get(spec.name)
             fn = getattr(handle, "_fn", None)
             return PodTarget(

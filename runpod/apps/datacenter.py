@@ -40,6 +40,22 @@ class DataCenter(str, Enum):
     def all(cls) -> List["DataCenter"]:
         return list(cls)
 
+    @classmethod
+    def is_known(cls, datacenter_id: str) -> bool:
+        return datacenter_id in cls._value2member_map_
+
+
+def datacenter_id(value: str) -> str:
+    """api id for a datacenter: built-in ids normalize, others pass through.
+
+    the built-in list goes stale as datacenters come online, and the
+    backend validates ids anyway, so unrecognized ids are only stripped.
+    """
+    try:
+        return DataCenter.from_string(value).value
+    except ValueError:
+        return value.strip()
+
 
 # datacenters with high cpu serverless stock. storage support is checked
 # separately; cpu5c/cpu5g are only stocked in EU-RO-1.

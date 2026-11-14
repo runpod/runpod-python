@@ -5,14 +5,72 @@
 ### Features
 
 * Apps expose `NetworkVolume` and `GlobalVolume` resources with explicit path-keyed mounts, lazy create-if-missing provisioning, and execution-bound filesystem access. Global volumes use GraphQL for lookup and creation.
+* Deployed Flash calls use endpoint or pod runtime credentials. Release requires deployed support from [RunPod#6686](https://github.com/runpod/RunPod/pull/6686), [ai-api#1176](https://github.com/runpod/ai-api/pull/1176), and [sdk-runtime#4](https://github.com/runpod-workers/sdk-runtime/pull/4).
+
+### Breaking Changes
+
+* Native `@app.api` routes validate paths and signatures during class decoration. Invalid declarations raise immediately during module import and prevent worker startup. GET handlers take only `self`. POST, PUT, PATCH, and DELETE handlers take `self` and at most one required positional JSON-object body. Its annotation can be omitted, `dict`, `typing.Dict`, `Any`, `dict[str, Any]`, or `typing.Dict[str, Any]`. Migrate routes that need path parameters, query parameters, or body schemas to a zero-argument `@app.api` factory returning a FastAPI app.
+* Production endpoint environment variables reserve `RUNPOD_API_KEY` and runtime identity fields. Workers authenticate Flash calls with platform-issued runtime credentials; application credentials must use non-reserved environment names.
+* Deployed workers can invoke Flash resources only within their own app and environment, including through `Queue`, `Api`, and `Task` stubs. Local clients use account credentials subject to their permissions.
+* Remote queues, tasks, and JSON API calls require finite JSON-compatible arguments and results in local, dev, and deployed execution. Dev workers receive source separately from the JSON argument contract. Explicit `.local()` calls run Python directly.
 
 ### Bug Fixes
 
+* [BREAKING] `rp login` asks you to paste the API key shown in the console after approval. It no longer collects the key by polling the auth request, and it fails fast without an interactive terminal.
 * Task calls support indefinite execution with bounded interruption cleanup. Failed deletion retains the pod ID for recovery.
 * Network volume creation intersects catalog storage support with every sharing resource's hardware stock and datacenter constraints. Unsupported explicit pins fail before creation; existing volumes retain their authoritative IDs and datacenters.
 * Global volume attachments require GPU compute for tasks and endpoints.
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
+
+## [2.2.1](https://github.com/runpod/runpod-python/compare/v2.2.0...v2.2.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **apps:** a `runpod` pin in `dependencies=[...]` silently produces a mixed install on workers ([#700](https://github.com/runpod/runpod-python/issues/700)) ([16a0280](https://github.com/runpod/runpod-python/commit/16a0280085f7d3fee2f75ba1aa946a50d34ac854))
+* **apps:** give new deployed endpoints unique template names ([#696](https://github.com/runpod/runpod-python/issues/696)) ([c930098](https://github.com/runpod/runpod-python/commit/c930098a02540e327a695a855b49026c73508c14))
+* **cli:** make agent login a two-step flow ([#711](https://github.com/runpod/runpod-python/issues/711)) ([cbf681b](https://github.com/runpod/runpod-python/commit/cbf681b3c5cd4b3a42964472fe19aa1c5f100221))
+* **endpoint:** Endpoint.run_sync drops the error of a FAILED job ([#699](https://github.com/runpod/runpod-python/issues/699)) ([05a77b3](https://github.com/runpod/runpod-python/commit/05a77b3370fec18f6ba2f6201dbd8b585ee22260))
+* **version:** report the imported tree's version ([#708](https://github.com/runpod/runpod-python/issues/708)) ([13dfbe5](https://github.com/runpod/runpod-python/commit/13dfbe57ad36fbe8cb53a2d788cab88951f437e9))
+
+
+### Documentation
+
+* **examples:** fix broken and stale examples under examples/ ([#694](https://github.com/runpod/runpod-python/issues/694)) ([18d5fee](https://github.com/runpod/runpod-python/commit/18d5fee7a0612f800decb00d57d05fe439ca2f2c))
+
+## [2.2.0](https://github.com/runpod/runpod-python/compare/v2.1.0...v2.2.0) (2026-11-09)
+
+
+### Features
+
+* invoke deployed flash tasks with runtime credentials (SEC-375 CON-1833) ([#644](https://github.com/runpod/runpod-python/issues/644)) ([367f174](https://github.com/runpod/runpod-python/commit/367f174ef14cc7fcf909a3b26413c3f2d38cbd9b))
+* make console, proxy, and endpoint hosts configurable ([#684](https://github.com/runpod/runpod-python/issues/684)) ([b9583f7](https://github.com/runpod/runpod-python/commit/b9583f7c0a02e6c0cbb9598538393fc239d88852))
+* resumable network volume upload and download ([#655](https://github.com/runpod/runpod-python/issues/655)) ([a677ee9](https://github.com/runpod/runpod-python/commit/a677ee9f08f21da5a29cc126ed63032fc1063365))
+
+
+### Bug Fixes
+
+* **apps:** accept datacenter ids outside the built-in list ([#690](https://github.com/runpod/runpod-python/issues/690)) ([dbc251a](https://github.com/runpod/runpod-python/commit/dbc251ac8ba87ed4cc53f71010bc8c87dba1c77d))
+* **serverless:** stop taking jobs after a per-job refresh_worker (SLS-900) ([#663](https://github.com/runpod/runpod-python/issues/663)) ([8ca9d9b](https://github.com/runpod/runpod-python/commit/8ca9d9bcfdc0ad1792e899cdef49a4fd172fbb13))
+
+
+### Documentation
+
+* rename getting_Started.md to getting_started.md ([#697](https://github.com/runpod/runpod-python/issues/697)) ([fbcabcd](https://github.com/runpod/runpod-python/commit/fbcabcd73889783d8e03b6261154891f13b0d9d6))
+
+## [2.1.0](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.1.0) (2026-11-03)
+
+
+### Features
+
+* rp login prompts for the api key instead of polling ([#675](https://github.com/runpod/runpod-python/issues/675)) ([2217b6d](https://github.com/runpod/runpod-python/commit/2217b6d15a0554e2652506068f438d740392ad37))
+
+
+### Bug Fixes
+
+* coordinate REST API rate limits and bound retries ([#618](https://github.com/runpod/runpod-python/issues/618)) ([d6ce9a8](https://github.com/runpod/runpod-python/commit/d6ce9a8c572ac117f0641846f45dadaa40954e57))
+* require https for documented cli installation ([#674](https://github.com/runpod/runpod-python/issues/674)) ([946afb4](https://github.com/runpod/runpod-python/commit/946afb4ea45ac526c81106783faeac73caf17ee6))
 
 ## [2.1.0](https://github.com/runpod/runpod-python/compare/v2.0.0...v2.1.0) (2026-10-28)
 

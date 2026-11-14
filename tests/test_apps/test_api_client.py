@@ -6,7 +6,8 @@ import aiohttp
 import pytest
 
 from runpod.apps.api import AppsApiClient
-from runpod.error import QueryError
+from runpod.error import AuthenticationError, QueryError
+from runpod.user_agent import APPS_USER_AGENT
 
 
 def _respond(data):
@@ -95,7 +96,12 @@ class TestGlobalVolumes:
                 await AppsApiClient(api_key="test-key").list_global_volumes() == volumes
             )
         rest.assert_awaited_once_with(
-            "GET", "/v2/global-volumes", api_key="test-key", params={}, session=ANY
+            "GET",
+            "/v2/global-volumes",
+            api_key="test-key",
+            params={},
+            session=ANY,
+            user_agent=APPS_USER_AGENT,
         )
         graphql.assert_not_awaited()
 
@@ -123,6 +129,7 @@ class TestGlobalVolumes:
             call(
                 "GET",
                 "/v2/global-volumes",
+                user_agent=APPS_USER_AGENT,
                 api_key="test-key",
                 params=params,
                 session=ANY,
@@ -180,6 +187,7 @@ class TestGlobalVolumes:
         rest.assert_awaited_once_with(
             "POST",
             "/v2/global-volumes",
+            user_agent=APPS_USER_AGENT,
             api_key="test-key",
             json={"name": "training-data"},
         )
@@ -243,6 +251,7 @@ class TestNetworkVolumePagination:
             call(
                 "GET",
                 "/v2/network-volumes",
+                user_agent=APPS_USER_AGENT,
                 api_key="test-key",
                 params=params,
                 session=ANY,
@@ -272,7 +281,8 @@ class TestEndpoints:
         payload["template"]["containerRegistryAuthId"] = "registry1"
         payload["networkVolumeIds"] = [{"networkVolumeId": "volume1"}]
 
-        async def create(method, path, *, api_key, json):
+        async def create(method, path, *, api_key, json, user_agent):
+            assert user_agent == APPS_USER_AGENT
             assert (method, path) == ("POST", "/v2/serverless")
             assert json["gpu"]["count"] == 2
             assert json["dataCenterIds"] == ["EU-RO-1"]
@@ -608,7 +618,8 @@ class TestAppLifecycle:
 
 class TestStock:
     async def test_gpu_availability_respects_count_product_and_datacenter(self):
-        async def catalog(method, path, *, api_key, params):
+        async def catalog(method, path, *, api_key, params, user_agent):
+            assert user_agent == APPS_USER_AGENT
             available = (
                 params["product"] == "SERVERLESS"
                 and params["count"] == 1
@@ -629,7 +640,8 @@ class TestStock:
             assert await client.gpu_stock_status("4090", "US-KS-2") == "NONE"
 
     async def test_cpu_availability_respects_flavor_size_and_product(self):
-        async def catalog(method, path, *, api_key, params):
+        async def catalog(method, path, *, api_key, params, user_agent):
+            assert user_agent == APPS_USER_AGENT
             available = (
                 path == "/v2/catalog/cpus/cpu3c"
                 and params["vcpuCount"] == 2
@@ -657,7 +669,8 @@ class TestStock:
     @pytest.mark.parametrize("pods", [False, True])
     @pytest.mark.parametrize("instance_id", ["cpu3c-1-2", "cpu3c-3-6"])
     async def test_legacy_cpu_stock_keeps_exact_configuration(self, pods, instance_id):
-        async def graphql(query, *, api_key, variables, anonymous):
+        async def graphql(query, *, api_key, variables, anonymous, headers):
+            assert headers == {"User-Agent": APPS_USER_AGENT}
             flavor = variables["cpuFlavorInput"]
             specifics = variables["specificsInput"]
             available = flavor == {"id": "cpu3c", "isSls": not pods} and specifics == {
@@ -728,15 +741,48 @@ class TestAuthRequests:
         assert result["id"] == "req1"
         assert transport.call_args[1]["anonymous"] is True
 
-    async def test_status_poll_is_anonymous(self):
+    async def test_verify_api_key_sends_the_pasted_key(self):
+        client = AppsApiClient(api_key="stored-key")
+        transport = _respond({"myself": {"id": "user1"}})
+        with patch("runpod.apps.api.run_graphql_query_async", transport):
+            assert await client.verify_api_key("rpa_new") is True
+        assert transport.call_args[1]["api_key"] == "rpa_new"
+        assert transport.call_args[1].get("anonymous", False) is False
+
+    @pytest.mark.parametrize(
+        "outcome",
+        [
+            AuthenticationError("Unauthorized request"),
+            QueryError("invalid api key", "query"),
+            {"data": {"myself": None}},
+            {"data": None},
+        ],
+    )
+    async def test_verify_api_key_rejects(self, outcome):
+        transport = AsyncMock()
+        if isinstance(outcome, Exception):
+            transport.side_effect = outcome
+        else:
+            transport.return_value = outcome
+        with patch("runpod.apps.api.run_graphql_query_async", transport):
+            assert await AppsApiClient().verify_api_key("rpa_bad") is False
+
+    async def test_verify_api_key_raises_on_transport_error(self):
+        transport = AsyncMock(side_effect=aiohttp.ClientConnectionError("down"))
+        with patch("runpod.apps.api.run_graphql_query_async", transport):
+            with pytest.raises(aiohttp.ClientConnectionError):
+                await AppsApiClient().verify_api_key("rpa_new")
+
+    async def test_status_check_is_anonymous_and_never_asks_for_the_key(self):
         client = AppsApiClient(api_key="test-key")
         transport = _respond(
-            {"flashAuthRequestStatus": {"id": "req1", "status": "APPROVED"}}
+            {"flashAuthRequestStatus": {"id": "req1", "status": "DENIED"}}
         )
         with patch("runpod.apps.api.run_graphql_query_async", transport):
             result = await client.get_auth_request_status("req1")
-        assert result["status"] == "APPROVED"
+        assert result["status"] == "DENIED"
         assert transport.call_args[1]["anonymous"] is True
+        assert "apiKey" not in transport.call_args[0][0]
 
 
 class TestArtifacts:

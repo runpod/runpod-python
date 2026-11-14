@@ -66,6 +66,60 @@ def test_task_decorator():
     assert t.spec.cpu == ["cpu5c-2-4"]
 
 
+@pytest.mark.parametrize("decorator", ["queue", "task"])
+@pytest.mark.parametrize("name", [None, "inference"])
+def test_function_decorators_reject_classes_before_registration(decorator, name):
+    app = App("a")
+
+    @app.queue()
+    def existing():
+        return "ok"
+
+    class Inference:
+        def __init__(self):
+            raise AssertionError("class targets must not be instantiated")
+
+        def __call__(self, value):
+            return value
+
+    with patch.object(app, "_register") as register:
+        with pytest.raises(InvalidResourceError) as exc:
+            getattr(app, decorator)(name=name)(Inference)
+
+    register.assert_not_called()
+    assert app.resources == {"existing": existing}
+    assert f"@app.{decorator}" in str(exc.value)
+    assert "Inference" in str(exc.value)
+    assert "function" in str(exc.value)
+    assert "@function.init" in str(exc.value)
+
+
+@pytest.mark.parametrize("decorator", ["queue", "task"])
+@pytest.mark.parametrize("is_async", [False, True])
+async def test_function_decorators_support_functions_with_startup_hooks(
+    decorator, is_async
+):
+    app = App("a")
+
+    def sync_handler(value):
+        return value * 2
+
+    async def async_handler(value):
+        return value * 2
+
+    handler = async_handler if is_async else sync_handler
+    function = getattr(app, decorator)()(handler)
+
+    @function.init
+    def startup():
+        raise AssertionError("startup hooks must not run during decoration or locally")
+
+    assert app.resources == {handler.__name__: function}
+    assert function._init_fn is startup
+    result = function.local(21)
+    assert (await result if is_async else result) == 42
+
+
 @pytest.mark.parametrize("cpu", [[], "", ["cpu3c-2-4", ""], [None]])
 def test_cpu_selection_requires_nonempty_instance_ids(cpu):
     app = App("a")

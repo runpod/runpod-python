@@ -20,6 +20,8 @@ with the resource:
 
 import asyncio
 import inspect
+import sys
+from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -29,8 +31,12 @@ from typing import (
     List,
     Optional,
     Type,
+    get_args,
+    get_origin,
+    get_type_hints,
 )
 
+from .._serialization import normalize_json
 from .context import Context, block, current_context
 from .discovery_state import DiscoveryInvocationError, in_discovery
 from .errors import InvalidResourceError
@@ -53,6 +59,12 @@ class FunctionHandle:
         fn: Callable,
         spec: ResourceSpec,
     ):
+        if inspect.isclass(fn):
+            raise InvalidResourceError(
+                f"@app.{spec.kind.value} does not support class target '{fn.__name__}'. "
+                "Decorate a function and use @function.init for worker startup "
+                "initialization."
+            )
         self._app = app
         self._fn = fn
         self.spec = spec
@@ -123,6 +135,15 @@ class FunctionHandle:
         return list(result) if inspect.isgenerator(result) else result
 
     @staticmethod
+    def _json_value(value: Any) -> Any:
+        try:
+            return normalize_json(value)
+        except TypeError:
+            raise ValueError(
+                "remote arguments and results must be JSON-serializable"
+            ) from None
+
+    @staticmethod
     async def _await_local_result(result: Any) -> Any:
         if inspect.isawaitable(result):
             result = await result
@@ -139,10 +160,11 @@ class FunctionHandle:
         ):
             self._guard_discovery()
             self.spec.validate()
+            args, kwargs = self._json_value([args, kwargs])
             result = self._call_local_sync(*args, **kwargs)
             if inspect.isawaitable(result) or inspect.isasyncgen(result):
-                return block(self._await_local_result(result))
-            return result
+                result = block(self._await_local_result(result))
+            return self._json_value(result)
         return block(self._remote_async(*args, **kwargs))
 
     async def _remote_async(self, *args: Any, **kwargs: Any) -> Any:
@@ -151,13 +173,14 @@ class FunctionHandle:
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
+            args, kwargs = self._json_value([args, kwargs])
             if inspect.iscoroutinefunction(self._fn) or inspect.isasyncgenfunction(
                 self._fn
             ):
                 result = self._fn(*args, **kwargs)
             else:
                 result = await asyncio.to_thread(self._call_local_sync, *args, **kwargs)
-            return await self._await_local_result(result)
+            return self._json_value(await self._await_local_result(result))
 
         target = await self._app._resolve(self.spec)
         payload = target.build_payload(self._fn, self.spec, args, kwargs)
@@ -172,13 +195,14 @@ class FunctionHandle:
         ctx = current_context()
 
         if ctx is Context.WORKER and self._is_current_worker():
+            args, kwargs = self._json_value([args, kwargs])
             gen = self._fn(*args, **kwargs)
             if inspect.isasyncgen(gen):
                 async for chunk in gen:
-                    yield chunk
+                    yield self._json_value(chunk)
             else:
                 for chunk in gen:
-                    yield chunk
+                    yield self._json_value(chunk)
             return
 
         target = await self._app._resolve(self.spec)
@@ -233,6 +257,15 @@ class FunctionHandle:
     def _is_current_worker(self) -> bool:
         import os
 
+        from .context import deployed_identity
+
+        identity = deployed_identity()
+        if identity is not None:
+            return (
+                self.spec.kind is not ResourceKind.TASK
+                and identity[0] == self._app.name
+                and identity[2] == self.spec.name
+            )
         if dev_app := os.getenv("RUNPOD_DEV_APP"):
             return (
                 dev_app == self._app.name
@@ -285,6 +318,79 @@ class _RouteCaller:
         return await target.request(self._method, path, body, **kwargs)
 
 
+def _validate_native_route(cls: Type, name: str, method: str, path: str) -> None:
+    member = inspect.getattr_static(cls, name)
+    guidance = (
+        f"native API route {method} {path} ({cls.__name__}.{name}): "
+        "use an instance method with no arguments after self, or one required "
+        "positional JSON-object argument for POST/PUT/PATCH/DELETE. "
+        "The body annotation must be omitted, dict, typing.Dict, Any, "
+        "dict[str, Any], or typing.Dict[str, Any]. "
+        "Use an @app.api FastAPI factory for typed path/query parameters "
+        "or body schemas."
+    )
+    if not inspect.isfunction(member):
+        raise InvalidResourceError(guidance)
+
+    member = inspect.unwrap(member)
+    annotate = getattr(member, "__annotate__", None)
+    if sys.version_info >= (3, 14) and annotate is not None:
+        from annotationlib import Format
+
+        signature = inspect.signature(member, annotation_format=Format.STRING)
+    else:
+        signature = inspect.signature(member)
+    parameters = list(signature.parameters.values())
+    positional = (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
+    if not parameters or parameters[0].kind not in positional:
+        raise InvalidResourceError(guidance)
+    parameters = parameters[1:]
+    if len(parameters) > (0 if method == "GET" else 1):
+        raise InvalidResourceError(guidance)
+    if not parameters:
+        return
+
+    body = parameters[0]
+    if body.kind not in positional or body.default is not inspect.Parameter.empty:
+        raise InvalidResourceError(guidance)
+    annotation = body.annotation
+    if isinstance(annotation, str):
+        localns = dict(vars(cls))
+        if inspect.isfunction(annotate):
+            for variable, cell in zip(
+                annotate.__code__.co_freevars, annotate.__closure__ or ()
+            ):
+                try:
+                    localns[variable] = cell.cell_contents
+                except ValueError:
+                    continue
+        try:
+            annotation = get_type_hints(
+                SimpleNamespace(__annotations__={body.name: annotation}),
+                globalns=member.__globals__,
+                localns=localns,
+                include_extras=True,
+            )[body.name]
+        except (NameError, TypeError, SyntaxError, AttributeError):
+            annotation = None
+    valid_annotation = annotation in (inspect.Parameter.empty, dict, Dict, Any) or (
+        get_origin(annotation) is dict and get_args(annotation) == (str, Any)
+    )
+    if not valid_annotation:
+        annotation_label = (
+            body.annotation
+            if isinstance(body.annotation, str)
+            else inspect.formatannotation(body.annotation)
+        )
+        raise InvalidResourceError(
+            f"body argument {body.name!r} has unsupported annotation "
+            f"{annotation_label}. {guidance}"
+        )
+
+
 class ApiHandle:
     """handle for @app.api classes and asgi factories.
 
@@ -325,10 +431,11 @@ class ApiHandle:
     def _collect_routes(self, cls: Type) -> None:
         seen: Dict[tuple, str] = {}
         routes: List[RouteSpec] = []
-        for name, member in inspect.getmembers(cls, callable):
-            route = route_of(member)
+        for name, member in inspect.getmembers(cls):
+            route = route_of(member) or route_of(inspect.getattr_static(cls, name))
             if route is not None:
                 method, path = route
+                _validate_native_route(cls, name, method, path)
                 if (method, path) in seen:
                     raise InvalidResourceError(
                         f"duplicate route {method} {path} on {cls.__name__}: "

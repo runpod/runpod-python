@@ -2,10 +2,14 @@
 
 import runpod
 
-# Set your global API key with `runpod config` or uncomment the line below:
+# Run `rp login` once to store your API key, or uncomment the line below:
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
 
-endpoint = runpod.Endpoint("gwp4kx5yd3nur1")
+# This input targets an endpoint running the runpod/mock-worker image started
+# with --generator, which yields each item of mock_return with mock_delay
+# seconds between them. Replace it with the input your own streaming
+# handler expects.
+endpoint = runpod.Endpoint("YOUR_ENDPOINT_ID")
 
 run_request = endpoint.run(
     {

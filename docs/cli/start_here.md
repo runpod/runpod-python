@@ -8,9 +8,11 @@ Note: This CLI is not the same as runpodctl and provides a different set of feat
 
 ### Authenticate
 
-Store your Runpod API key by running `rp login` (browser approval) or `rp login --api-key YOUR_KEY`. Credentials are stored in `~/.runpod/config.toml`.
+Store your Runpod API key by running `rp login` (approve in the browser, then paste the key the console shows) or `rp login --api-key YOUR_KEY`. Credentials are stored in `~/.runpod/config.toml`.
 
 Pass `--profile staging` with either login method to update a named credential profile without changing the others. The default profile is `default`.
+
+Set `RUNPOD_PROFILE=staging` to use that profile for every command, including `rp login`. `--profile` takes precedence over `RUNPOD_PROFILE`, and `RUNPOD_API_KEY` takes precedence over any stored profile.
 
 ### SSH
 

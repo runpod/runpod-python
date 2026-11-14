@@ -20,6 +20,8 @@ from rich.progress import (
 from rich.spinner import SPINNERS
 from rich.theme import Theme
 
+from runpod._hosts import console_url
+
 # -- brand ----------------------------------------------------------------
 
 ACCENT = "#673de6"  # runpod purple
@@ -101,11 +103,8 @@ def _spinner_column(finished_text: str = "[ok]✓[/ok]") -> SpinnerColumn:
     )
 
 
-CONSOLE_URL = "https://console.runpod.io/serverless/user/endpoint"
-
-
 def endpoint_url(endpoint_id: str) -> str:
-    return f"{CONSOLE_URL}/{endpoint_id}?tab=overview"
+    return f"{console_url()}/serverless/user/endpoint/{endpoint_id}?tab=overview"
 
 
 def endpoint_link(endpoint_id: str) -> str:
@@ -233,11 +232,12 @@ def resources_table(rows: Iterable[tuple]) -> None:
     w_name = max(len(r[0]) for r in rows)
     w_hw = max(len(r[2]) for r in rows)
     for name, kind, hardware, endpoint_id in rows:
-        tail = (
-            "[dim]per-call[/dim]"
-            if not endpoint_id or endpoint_id == "per-call"
-            else endpoint_link(endpoint_id)
-        )
+        if endpoint_id == "registered":
+            tail = "[dim]registered / per-call[/dim]"
+        elif not endpoint_id or endpoint_id == "per-call":
+            tail = "[dim]per-call[/dim]"
+        else:
+            tail = endpoint_link(endpoint_id)
         console.print(
             f"  [white]{name:<{w_name}}[/white]"
             f"  {kind_badge(kind)}"
