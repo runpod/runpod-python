@@ -126,6 +126,13 @@ def normalize_cpu(
         )
     if not cpu or any(not isinstance(c, str) or not c.strip() for c in cpu):
         raise InvalidResourceError("cpu must contain non-empty instance ids")
+    from ..api.ctl_commands import _cpu_config
+
+    for instance_id in cpu:
+        try:
+            _cpu_config(instance_id)
+        except ValueError as exc:
+            raise InvalidResourceError(f"unknown cpu {instance_id!r}. {exc}") from exc
     return list(cpu)
 
 
@@ -245,6 +252,14 @@ class ResourceSpec:
         if self.gpu_count < 1:
             raise InvalidResourceError(
                 f"resource '{self.name}': gpu_count must be >= 1"
+            )
+        if (
+            isinstance(self.idle_timeout, bool)
+            or not isinstance(self.idle_timeout, int)
+            or not 1 <= self.idle_timeout <= 3600
+        ):
+            raise InvalidResourceError(
+                f"'{self.name}': idle_timeout must be a whole number from 1 to 3600 seconds"
             )
         if self.max_concurrency < 1:
             raise InvalidResourceError(

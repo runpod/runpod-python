@@ -5,6 +5,7 @@ auth, secrets, task provisioning, and endpoint capabilities
 absent from rest. management verbs for the wider sdk stay in runpod.api.ctl_commands.
 """
 
+from copy import deepcopy
 from typing import Any, Dict, List, Optional, Set
 
 import aiohttp
@@ -244,6 +245,39 @@ class AppsApiClient:
             headers={"User-Agent": APPS_USER_AGENT},
         )
         return response["data"]
+
+    async def snapshot_endpoint(self, endpoint_id: str) -> Dict[str, Any]:
+        """capture a saveable endpoint configuration in memory for rollback."""
+        data = await self._execute(
+            app_queries.QUERY_ENDPOINT_SNAPSHOT, {"id": endpoint_id}, retry=True
+        )
+        endpoint = (data.get("myself") or {}).get("endpoint")
+        template = (endpoint or {}).get("template")
+        if (
+            not endpoint
+            or endpoint.get("id") != endpoint_id
+            or not template
+            or not template.get("imageName")
+        ):
+            raise RuntimeError(
+                f"endpoint {endpoint_id} has no restorable configuration"
+            )
+        snapshot = deepcopy(endpoint)
+        template = snapshot["template"]
+        snapshot["template"]["containerRegistryAuthId"] = (
+            template.get("containerRegistryAuthId") or ""
+        )
+        snapshot["template"]["dockerArgs"] = template.get("dockerArgs") or ""
+        snapshot["template"]["env"] = template.get("env") or []
+        snapshot["env"] = snapshot.get("env") or []
+        snapshot["modelReferences"] = snapshot.get("modelReferences") or []
+        snapshot["networkVolumeIds"] = snapshot.get("networkVolumeIds") or []
+        snapshot["volumes"] = [
+            volume
+            for volume in snapshot.get("volumes") or []
+            if volume["volumeType"] == "OBJECT_STORE_VOLUME"
+        ]
+        return snapshot
 
     async def save_endpoint(self, endpoint_input: Dict[str, Any]) -> Dict[str, Any]:
         """save via rest unless the input requires an unsupported capability."""

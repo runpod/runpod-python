@@ -1,14 +1,18 @@
 """deploy pipeline: discovered apps -> manifest -> artifact -> activated build."""
 
+import asyncio
 import json
 import logging
 import os
 import secrets
+import shlex
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Set
+
+import aiohttp
 
 from .api import AppsApiClient
 from .app import App
@@ -19,7 +23,11 @@ from .build import (
     BuildResult,
     build_environment,
 )
-from .errors import InvalidResourceError, ScheduleNotSupported
+from .errors import (
+    EndpointReconciliationError,
+    InvalidResourceError,
+    ScheduleNotSupported,
+)
 from .discovery import resolve_project, validate_apps
 from .schedule import SCHEDULES_ENABLED
 from .shim import runtime_launcher
@@ -397,19 +405,18 @@ async def reconcile_endpoints(
     python_version: str,
     *,
     resolver=None,
+    activate_build: bool = False,
+    environment_created: bool = False,
+    events=None,
 ) -> Dict[str, str]:
-    """converge the environment's endpoints to the app's resources.
+    """snapshot and reconcile endpoints, restoring configurations on failure.
 
-    resource name -> endpoint id for everything provisioned. existing
-    endpoints (matched by name) are updated in place; endpoints whose
-    resources disappeared are deleted.
+    obsolete endpoints are removed after the deployment commits.
     """
     for handle in app.resources.values():
         handle.spec.validate()
     existing_endpoints = environment.get("endpoints") or []
     existing = {e["name"]: e["id"] for e in existing_endpoints}
-    # updates send the bound template's current name, so redeploying an
-    # existing endpoint sends the same template name as before.
     existing_templates = {
         e["name"]: (e.get("template") or {}).get("name") for e in existing_endpoints
     }
@@ -426,47 +433,179 @@ async def reconcile_endpoints(
 
     resolver = resolver or VolumeResolver(client)
     endpoints: Dict[str, str] = {}
-    for name, handle in sorted(provisionable.items()):
-        members = None
-        if needs_gpu_catalog(handle.spec.gpu):
-            members = await client.gpu_pool_members()
-        if name in existing:
-            template_name = existing_templates.get(name)
-        else:
-            template_name = _new_template_name(app, handle.spec, template_token)
-        payload = _deployed_endpoint_input(
-            app,
-            handle.spec,
-            environment["id"],
-            build_id,
-            python_version,
-            env_name=environment["name"],
-            pool_members=members or {},
-            template_name=template_name,
-        )
-        await attach_endpoint_volumes(payload, handle.spec, resolver, app)
-        auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
-        if auth_id:
-            payload["template"]["containerRegistryAuthId"] = auth_id
-        if handle.spec.model:
-            from .model import model_reference
+    snapshots = {}
+    undo = []
+    activation_attempted = False
+    creating = False
+    action = "prepare deployment"
+    try:
+        if provisionable.keys() & existing.keys():
+            _phase(events, "snapshot")
+        for name in sorted(provisionable.keys() & existing.keys()):
+            action = f"read '{name}'"
+            snapshots[name] = await client.snapshot_endpoint(existing[name])
+            snapshots[name]["flashEnvironmentId"] = environment["id"]
+        if activate_build:
+            action = "activate the build"
+            _phase(events, "activate")
+            activation_attempted = True
+            await client.deploy_build(environment["id"], build_id)
+        _phase(events, "endpoints")
+        for name, handle in sorted(provisionable.items()):
+            action = f"prepare '{name}'"
+            creating = False
+            members = None
+            if needs_gpu_catalog(handle.spec.gpu):
+                members = await client.gpu_pool_members()
+            if name in existing:
+                template_name = existing_templates.get(name)
+            else:
+                template_name = _new_template_name(app, handle.spec, template_token)
+            payload = _deployed_endpoint_input(
+                app,
+                handle.spec,
+                environment["id"],
+                build_id,
+                python_version,
+                env_name=environment["name"],
+                pool_members=members or {},
+                template_name=template_name,
+            )
+            await attach_endpoint_volumes(payload, handle.spec, resolver, app)
+            auth_id = await resolve_registry_auth(handle.spec.registry_auth, api=client)
+            if auth_id:
+                payload["template"]["containerRegistryAuthId"] = auth_id
+            if handle.spec.model:
+                from .model import model_reference
 
-            payload["modelReferences"] = [model_reference(handle.spec.model)]
-        if name in existing:
-            payload["id"] = existing[name]
-        result = await client.save_endpoint(payload)
-        endpoints[name] = result["id"]
-        log.info(
-            "%s endpoint %s (%s)",
-            "updated" if name in existing else "provisioned",
-            name,
-            result["id"],
-        )
+                payload["modelReferences"] = [model_reference(handle.spec.model)]
+            if name in existing:
+                payload["id"] = existing[name]
+                undo.append((name, existing[name], snapshots[name]))
+            action = f"deploy '{name}'"
+            creating = name not in existing
+            result = await client.save_endpoint(payload)
+            endpoints[name] = result["id"]
+            if creating:
+                undo.append((name, result["id"], None))
+            creating = False
+            log.info("saved endpoint %s (%s)", name, result["id"])
 
-    for name, endpoint_id in existing.items():
-        if name not in provisionable:
-            await client.delete_endpoint(endpoint_id)
-            log.info("deleted removed endpoint %s (%s)", name, endpoint_id)
+    except Exception as exc:
+        lines = [f"Couldn't {action}: {str(exc) or type(exc).__name__}"]
+        rollback_errors = []
+        rollback_allowed = True
+        if activation_attempted:
+            try:
+                current = await client.get_environment_by_name(
+                    app.name, environment["name"]
+                )
+                if not isinstance(current, dict) or "activeBuildId" not in current:
+                    raise RuntimeError("activation status unknown")
+                if current["activeBuildId"] != build_id and (
+                    undo or current["activeBuildId"] != environment.get("activeBuildId")
+                ):
+                    raise RuntimeError("environment changed during deployment")
+            except Exception as ownership_exc:
+                rollback_errors.append(
+                    f"build: {str(ownership_exc) or type(ownership_exc).__name__}"
+                )
+                rollback_allowed = False
+        if rollback_allowed and activation_attempted and not environment_created:
+            try:
+                previous_build = environment.get("activeBuildId")
+                if previous_build:
+                    await client.deploy_build(environment["id"], previous_build)
+                else:
+                    current = await client.get_environment_by_name(
+                        app.name, environment["name"]
+                    )
+                    if not isinstance(current, dict) or "activeBuildId" not in current:
+                        raise RuntimeError("activation status unknown")
+                    if current["activeBuildId"]:
+                        raise RuntimeError("no previous build to restore")
+            except Exception as restore_exc:
+                rollback_errors.append(
+                    f"build: {str(restore_exc) or type(restore_exc).__name__}"
+                )
+        if (
+            rollback_allowed
+            and creating
+            and isinstance(exc, (aiohttp.ClientError, OSError, asyncio.TimeoutError))
+        ):
+            try:
+                current = await client.get_environment_by_name(
+                    app.name, environment["name"]
+                )
+                matches = [
+                    endpoint
+                    for endpoint in (current or {}).get("endpoints", [])
+                    if (endpoint.get("template") or {}).get("name") == template_name
+                    and endpoint["id"] not in existing.values()
+                ]
+                if len(matches) != 1:
+                    raise RuntimeError("creation status unknown")
+                undo.append((name, matches[0]["id"], None))
+            except Exception:
+                rollback_errors.append(f"{name}: creation status unknown")
+        for resource, endpoint_id, snapshot in (
+            reversed(undo) if rollback_allowed else []
+        ):
+            try:
+                if snapshot is not None:
+                    await client.save_endpoint(snapshot)
+                elif not await client.delete_endpoint(endpoint_id):
+                    raise RuntimeError("endpoint deletion was not confirmed")
+            except Exception as cleanup_exc:
+                rollback_errors.append(
+                    f"{resource} ({endpoint_id}): {str(cleanup_exc) or type(cleanup_exc).__name__}"
+                )
+        if environment_created and not rollback_errors:
+            try:
+                current = await client.get_environment_by_name(
+                    app.name, environment["name"]
+                )
+                if (
+                    not isinstance(current, dict)
+                    or "endpoints" not in current
+                    or current["endpoints"]
+                ):
+                    raise RuntimeError("couldn't confirm the environment is empty")
+                if current.get("activeBuildId") not in (None, build_id):
+                    raise RuntimeError("environment changed during deployment")
+                if not await client.delete_environment(environment["id"]):
+                    raise RuntimeError("environment deletion was not confirmed")
+            except Exception as cleanup_exc:
+                rollback_errors.append(
+                    f"environment {environment['id']}: {str(cleanup_exc) or type(cleanup_exc).__name__}"
+                )
+        if rollback_errors:
+            lines.extend(
+                ["Rollback incomplete:", *(f"  {error}" for error in rollback_errors)]
+            )
+            lines.append(
+                f"Check `rp flash env get {shlex.quote(environment['name'])} "
+                f"--app {shlex.quote(app.name)}`. Remaining workers may still incur charges."
+            )
+        elif undo or activation_attempted:
+            lines.append("Changes rolled back.")
+        raise EndpointReconciliationError("\n".join(lines)) from exc
+
+    obsolete = existing.keys() - provisionable.keys()
+    if obsolete:
+        _phase(events, "cleanup")
+    for name in sorted(obsolete):
+        endpoint_id = existing[name]
+        try:
+            if not await client.delete_endpoint(endpoint_id):
+                raise RuntimeError("endpoint deletion was not confirmed")
+        except Exception as exc:
+            raise EndpointReconciliationError(
+                f"Deployed, but couldn't remove '{name}' ({endpoint_id}): {exc}\n"
+                f"Check `rp flash env get {shlex.quote(environment['name'])} "
+                f"--app {shlex.quote(app.name)}`."
+            ) from exc
+        log.info("deleted removed endpoint %s (%s)", name, endpoint_id)
 
     return endpoints
 
@@ -573,6 +712,7 @@ async def deploy_app(
 
     environments = {e["name"]: e for e in remote_app.get("flashEnvironments") or []}
     environment = environments.get(env_name)
+    environment_created = environment is None
     if environment is None:
         environment = await client.create_environment(app_id, env_name)
         log.info("created environment %s (%s)", env_name, environment["id"])
@@ -598,12 +738,10 @@ async def deploy_app(
         )
     log.info("uploaded build %s", build["id"])
 
-    await client.deploy_build(environment["id"], build["id"])
-    log.info("activated build %s on %s/%s", build["id"], app.name, env_name)
-
-    _phase(events, "endpoints")
     endpoints = await reconcile_endpoints(
-        client, app, environment, build["id"], python_version, resolver=resolver
+        client, app, environment, build["id"], python_version,
+        resolver=resolver, activate_build=True,
+        environment_created=environment_created, events=events,
     )
     endpoint_ready = getattr(events, "endpoint_ready", None)
     if endpoint_ready is not None:

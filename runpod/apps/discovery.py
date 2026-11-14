@@ -125,6 +125,9 @@ def _import_module(path: Path, project: Project) -> None:
                 "or standard-library module."
             )
     except (Exception, SystemExit) as exc:
+        if isinstance(exc, InvalidResourceError):
+            relative = path.relative_to(project.source_root)
+            raise DiscoveryError(f"{relative}: {exc}") from exc
         hint = ""
         if isinstance(exc, ModuleNotFoundError) and (
             project.source_root != project.import_root
