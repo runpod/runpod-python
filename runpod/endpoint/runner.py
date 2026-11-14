@@ -223,12 +223,12 @@ class Endpoint:
         Run the endpoint with the given input.
 
         Args:
-            request_input: The input to pass into the endpoint.
+            request_input: A full request containing "input", or a bare input dictionary.
 
         Returns:
             A Job instance for the run request.
         """
-        if not request_input.get("input"):
+        if "input" not in request_input:
             request_input = {"input": request_input}
 
         job_request = self.rp_client.post(
@@ -244,14 +244,14 @@ class Endpoint:
         Run the endpoint with the given input synchronously.
 
         Args:
-            request_input: The input to pass into the endpoint.
+            request_input: A full request containing "input", or a bare input dictionary.
             timeout: Maximum time to wait for the job to complete.
 
         Raises:
             TimeoutError: The job did not finish within timeout.
             JobError: The job ended FAILED, TIMED_OUT or CANCELLED.
         """
-        if not request_input.get("input"):
+        if "input" not in request_input:
             request_input = {"input": request_input}
 
         job_request = self.rp_client.post(
