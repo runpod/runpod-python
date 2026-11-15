@@ -59,7 +59,9 @@ vc.sync(background=False)           # persist new files back to the volume, inli
 | `namespace` | `RUNPOD_ENDPOINT_ID` | Isolation key for the on-volume mirror. Must be a single safe path component. |
 | `volume_path` | `/runpod-volume` | Network-volume mount point. |
 | `best_effort` | `True` | Swallow and log errors instead of raising. Set `False` while debugging. |
-| `max_workers` | `min(32, (os.cpu_count() or 4) * 4)` | Thread count for parallel copy of large files (I/O-bound). |
+| `max_workers` | `min(32, (os.cpu_count() or 4) * 4)` | Thread count for parallel copy of large files on sync (I/O-bound). |
+| `hydrate_workers` | `max_workers` if set, else `8` | Concurrent range reads when hydrating large files. |
+| `hydrate_chunk_size` | `512 MiB / hydrate_workers`, at most `64 MiB` | Bytes per hydrate range. Peak hydrate memory is about `hydrate_workers * hydrate_chunk_size`, so the default keeps it at or below 512 MiB. |
 
 ## How it works
 
@@ -77,9 +79,29 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   files are skipped. The `small.tar` archive is re-packed as a whole whenever
   any small file has changed, since unpacking and re-diffing many tiny files
   individually is slower than the network volume's per-file overhead.
-- **Parallel copy.** Large-file transfers run across a thread pool sized by
-  `max_workers` (default `min(32, (os.cpu_count() or 4) * 4)`), since the
-  work is I/O-bound.
+- **Parallel copy.** On sync, large files are copied whole across a thread
+  pool sized by `max_workers` (default `min(32, (os.cpu_count() or 4) * 4)`),
+  since the work is I/O-bound.
+- **Range-parallel hydrate.** On hydrate, every large file is split into
+  `hydrate_chunk_size` ranges, and one pool of `hydrate_workers` threads reads
+  the ranges of all files at once, each on its own file descriptor.
+  Object-store mounts such as Global Store serve one sequential stream at
+  roughly 140 MiB/s, and reading several whole files at once doesn't add up,
+  but independent range reads scale to the host's network (~1.1 GiB/s
+  measured). Transient `ENOMEM`/`EIO`/`EAGAIN` errors, which such mounts
+  return under load, are retried with jittered exponential backoff. A file is assembled in a temp
+  file and renamed into place only when every range has copied, so a failed
+  file leaves any existing local copy untouched and is simply not restored.
+  A mirror file whose size differs from the manifest, or whose size or mtime
+  changes between ranges because a concurrent `sync()` replaced it, is
+  likewise not restored. This is a best-effort check: an object-store mount
+  can serve a replacement that lands in the middle of a single range read
+  without it being visible. Keep `hydrate_workers * hydrate_chunk_size` near the default: past ~1 GiB in
+  flight, Global Store starts failing reads with `ENOMEM`. The default of 8 x
+  64 MiB ranges is about 2x faster than 64 x 8 MiB on network volumes and
+  within run-to-run noise on Global Store; if first-hydrate times on fresh
+  Global Store workers matter, `hydrate_workers=64` (8 MiB ranges) is worth
+  measuring.
 - **Packing/extraction.** Packing the small-file archive uses the `tar`
   binary when available (falling back to the stdlib `tarfile` module
   otherwise). Extraction always goes through `tarfile`, validating every
@@ -94,6 +116,18 @@ vc.sync(background=False)           # persist new files back to the volume, inli
   member and every big-file destination is checked to resolve inside one of
   the configured `dirs` before any write, so a mirror entry can't be used to
   write outside the cached directories.
+- **Logging.** Each hydrate that restores files, retries a range, or gives up
+  on a range logs one summary line:
+  `hydrated N file(s) from <mirror> (range retries: R, ranges given up: G)`.
+  A range is given up when its retries run out or its error is not
+  transient. The file it belongs to is then not restored, and its other
+  ranges are skipped without being counted. Every retry is logged at debug
+  level with the errno name, the attempt number, the file, and the range
+  offset. A hydrate that passes 64 range retries logs one warning, because
+  the mount is then under sustained pressure and backoff is slowing the
+  hydrate down. When a volume rejects `utime`/`chmod` with `EPERM` (as Global
+  Store does), the sync logs that once at debug level and skips metadata
+  updates for the rest of its files.
 
 ## Limitations
 

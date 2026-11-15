@@ -6,6 +6,9 @@ and GPU compute benchmarking with various system scenarios.
 """
 
 import asyncio
+import builtins
+import contextlib
+import sys
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
@@ -33,6 +36,27 @@ def _make_async_process(returncode=0, stdout="", stderr=""):
         return_value=(stdout.encode(), stderr.encode())
     )
     return mock_process
+
+
+@contextlib.contextmanager
+def _no_gpu_framework_loaded():
+    """Simulate a handler that has not imported torch or CuPy.
+
+    Yields the set of top-level module names the code under test tries to
+    import, so a test can assert the check did not import torch itself.
+    """
+    attempted_imports = set()
+    real_import = builtins.__import__
+
+    def recording_import(name, *args, **kwargs):
+        attempted_imports.add(name.split(".")[0])
+        return real_import(name, *args, **kwargs)
+
+    with patch.dict("sys.modules"):
+        sys.modules.pop("torch", None)
+        sys.modules.pop("cupy", None)
+        with patch("builtins.__import__", side_effect=recording_import):
+            yield attempted_imports
 
 
 # ============================================================================
@@ -327,6 +351,27 @@ class TestCudaInitialization:
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_skips_without_cuda_context(self, mock_gpu_available):
+        """The check never initializes CUDA in the handler process: an
+        in-process vLLM engine would then have to spawn instead of fork. With
+        torch imported but no context, nothing touches the device, and
+        is_available() is not called either (its default path initializes
+        the driver and poisons forks). Without the gate, is_available() is
+        the first assertion to fail."""
+        mock_gpu_available.return_value = True
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_initialized.return_value = False
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            await _check_cuda_initialization()
+
+        mock_torch.cuda.is_available.assert_not_called()
+        mock_torch.cuda.device_count.assert_not_called()
+        mock_torch.cuda.synchronize.assert_not_called()
+        mock_torch.zeros.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
     async def test_cuda_init_pytorch_success(self, mock_gpu_available):
         """Test successful CUDA initialization with PyTorch."""
         mock_gpu_available.return_value = True
@@ -446,6 +491,21 @@ class TestCudaInitialization:
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_cuda_init_skips_when_handler_has_not_loaded_torch(
+        self, mock_gpu_available
+    ):
+        """The check must not import torch itself; that import costs ~1.5s on a cold worker."""
+        mock_gpu_available.return_value = True
+
+        with _no_gpu_framework_loaded() as attempted_imports:
+            await _check_cuda_initialization()
+
+        assert "torch" not in attempted_imports
+        assert "cupy" not in attempted_imports
+        mock_gpu_available.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
     async def test_cuda_init_no_libraries(self, mock_gpu_available):
         """Test CUDA initialization skips gracefully when no libraries available."""
         mock_gpu_available.return_value = True
@@ -473,6 +533,23 @@ class TestGpuComputeBenchmark:
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_gpu_benchmark_skips_without_cuda_context(self, mock_gpu_available):
+        """Same rule as the initialization check: no context, no device work
+        and no is_available() call. Without the gate, is_available() is the
+        first assertion to fail."""
+        mock_gpu_available.return_value = True
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_initialized.return_value = False
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            await _check_gpu_compute_benchmark()
+
+        mock_torch.cuda.is_available.assert_not_called()
+        mock_torch.randn.assert_not_called()
+        mock_torch.matmul.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
     async def test_gpu_benchmark_with_torch_available(self, mock_gpu_available):
         """Test GPU benchmark handling when PyTorch is available."""
         mock_gpu_available.return_value = True
@@ -493,6 +570,36 @@ class TestGpuComputeBenchmark:
             # Reimport the module to pick up the mock
             # The function should complete without raising
             await _check_gpu_compute_benchmark()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_gpu_benchmark_skips_when_handler_has_not_loaded_torch(
+        self, mock_gpu_available
+    ):
+        """The benchmark must not import torch itself either."""
+        mock_gpu_available.return_value = True
+
+        with _no_gpu_framework_loaded() as attempted_imports:
+            await _check_gpu_compute_benchmark()
+
+        assert "torch" not in attempted_imports
+        assert "cupy" not in attempted_imports
+        mock_gpu_available.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")
+    async def test_gpu_benchmark_uses_cupy_when_handler_loaded_it(
+        self, mock_gpu_available
+    ):
+        """A handler that loaded CuPy but not torch still gets the benchmark."""
+        mock_gpu_available.return_value = True
+        mock_cupy = MagicMock()
+
+        with patch.dict("sys.modules", {"cupy": mock_cupy}):
+            sys.modules.pop("torch", None)
+            await _check_gpu_compute_benchmark()
+
+        mock_cupy.matmul.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("runpod.serverless.modules.rp_system_fitness.gpu_available")

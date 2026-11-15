@@ -1,10 +1,12 @@
-""" Used to launch the FastAPI web server when worker is running in API mode. """
+"""Used to launch the FastAPI web server when worker is running in API mode."""
 
 import os
 import threading
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import requests
 import uvicorn
@@ -14,9 +16,16 @@ from fastapi.responses import RedirectResponse
 
 from ...http_client import SyncClientSession
 from ...version import __version__ as runpod_version
+from . import rp_capture
+from .rp_fitness import _terminate_unhealthy
 from .rp_handler import is_generator
 from .rp_job import run_job, run_job_generator
 from .rp_ping import Heartbeat
+from .rp_prestart import (
+    get_prestart_hooks,
+    has_prestart_hooks,
+    run_prestart_phase,
+)
 from .worker_state import JobsProgress, PingJobMirror
 
 RUNPOD_ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", None)
@@ -37,7 +46,7 @@ if os.environ.get("RUNPOD_PROJECT_ID", None) is None:
 
     ℹ️ | Consider developing with our CLI tool to streamline your worker development process.
 
-    >_  wget -qO- cli.runpod.net | sudo bash
+    >_  curl -fsSL https://cli.runpod.net | sudo bash
     >_  runpodctl project create
     """
 
@@ -106,7 +115,7 @@ class Job:
     """Represents a job."""
 
     id: str
-    input: Union[dict, list, str, int, float, bool]
+    input: dict[str, Any] | list[Any] | str | int | float | bool
 
 
 @dataclass
@@ -115,17 +124,17 @@ class TestJob:
     input can be any type of data.
     """
 
-    id: Optional[str] = None
-    input: Optional[Union[dict, list, str, int, float, bool]] = None
-    webhook: Optional[str] = None
+    id: str | None = None
+    input: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    webhook: str | None = None
 
 
 @dataclass
 class DefaultRequest:
     """Represents a test input."""
 
-    input: Dict[str, Any]
-    webhook: Optional[str] = None
+    input: dict[str, Any]
+    webhook: str | None = None
 
 
 # ------------------------------ Output Objects ------------------------------ #
@@ -135,8 +144,8 @@ class JobOutput:
 
     id: str
     status: str
-    output: Optional[Union[dict, list, str, int, float, bool]] = None
-    error: Optional[str] = None
+    output: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -145,18 +154,18 @@ class StreamOutput:
 
     id: str
     status: str = "IN_PROGRESS"
-    stream: Optional[Union[dict, list, str, int, float, bool]] = None
-    error: Optional[str] = None
+    stream: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    error: str | None = None
 
 
 # ------------------------------ Webhook Sender ------------------------------ #
-def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
+def _send_webhook(url: str, payload: dict[str, Any]) -> bool:
     """
     Sends a webhook to the provided URL.
 
     Args:
         url (str): The URL to send the webhook to.
-        payload (Dict[str, Any]): The JSON payload to send.
+        payload (dict[str, Any]): The JSON payload to send.
 
     Returns:
         bool: True if the request was successful, False otherwise.
@@ -177,7 +186,17 @@ def _send_webhook(url: str, payload: Dict[str, Any]) -> bool:
 class WorkerAPI:
     """Used to launch the FastAPI web server when the worker is running in API mode."""
 
-    def __init__(self, config: Dict[str, Any]):
+    @asynccontextmanager
+    async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
+        """Finish prestart before the development API accepts requests."""
+        if await run_prestart_phase(
+            get_prestart_hooks(), self.config.get("prestart_timeout")
+        ):
+            # Never serve on a broken startup. _terminate_unhealthy does not return.
+            _terminate_unhealthy(1)
+        yield
+
+    def __init__(self, config: dict[str, Any]):
         """
         Initializes the WorkerAPI class.
         1. Starts the heartbeat thread.
@@ -194,6 +213,7 @@ class WorkerAPI:
         heartbeat.start_ping(mirror)
 
         self.config = config
+        rp_capture.install(hooks_registered=has_prestart_hooks())
 
         tags_metadata = [
             {
@@ -217,6 +237,7 @@ class WorkerAPI:
             version=runpod_version,
             docs_url="/",
             openapi_tags=tags_metadata,
+            lifespan=self._lifespan,
         )
 
         # Create an APIRouter and add the route for processing jobs.
@@ -246,7 +267,6 @@ class WorkerAPI:
             "/runsync",
             self._sim_runsync,
             methods=["POST"],
-            response_model_exclude_none=True,
             summary="Mimics the behavior of the runsync endpoint.",
             description=RUNSYNC_DESCRIPTION,
             tags=["Synchronously Submit Request & Get Job Results"],
@@ -260,15 +280,16 @@ class WorkerAPI:
             description=STREAM_DESCRIPTION,
             tags=["Check Job Results"],
         )
-        api_router.add_api_route(
-            "/status/{job_id}",
-            self._sim_status,
-            methods=["GET", "POST"],
-            response_model_exclude_none=True,
-            summary="Mimics the behavior of the status endpoint.",
-            description=STATUS_DESCRIPTION,
-            tags=["Check Job Results"],
-        )
+        # Separate routes give GET and POST distinct OpenAPI operation IDs.
+        for method in ("GET", "POST"):
+            api_router.add_api_route(
+                "/status/{job_id}",
+                self._sim_status,
+                methods=[method],
+                summary="Mimics the behavior of the status endpoint.",
+                description=STATUS_DESCRIPTION,
+                tags=["Check Job Results"],
+            )
 
         # Include the APIRouter in the FastAPI application.
         self.rp_app.include_router(api_router)
@@ -327,6 +348,9 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
             async for stream_output in generator_output:
+                if stream_output.get("error"):
+                    job_output = stream_output
+                    break
                 job_output["output"].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
@@ -345,7 +369,7 @@ class WorkerAPI:
             thread.start()
 
         return jsonable_encoder(
-            {"id": job.id, "status": "COMPLETED", "output": job_output["output"]}
+            {"id": job.id, "status": "COMPLETED", "output": job_output.get("output", {})}
         )
 
     # ---------------------------------- stream ---------------------------------- #
@@ -363,6 +387,11 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             stream_accumulator = []
             async for stream_output in generator_output:
+                if stream_output.get("error"):
+                    job_list.remove(job.id)
+                    return jsonable_encoder(
+                        {"id": job_id, "status": "FAILED", "error": stream_output["error"]}
+                    )
                 stream_accumulator.append({"output": stream_output["output"]})
         else:
             return jsonable_encoder(
@@ -402,6 +431,9 @@ class WorkerAPI:
             generator_output = run_job_generator(self.config["handler"], job.__dict__)
             job_output = {"output": []}
             async for stream_output in generator_output:
+                if stream_output.get("error"):
+                    job_output = stream_output
+                    break
                 job_output["output"].append(stream_output["output"])
         else:
             job_output = await run_job(self.config["handler"], job.__dict__)
@@ -422,5 +454,5 @@ class WorkerAPI:
             thread.start()
 
         return jsonable_encoder(
-            {"id": job_id, "status": "COMPLETED", "output": job_output["output"]}
+            {"id": job_id, "status": "COMPLETED", "output": job_output.get("output", {})}
         )

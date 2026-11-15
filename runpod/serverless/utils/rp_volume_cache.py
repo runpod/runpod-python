@@ -11,8 +11,11 @@ mounted network volume, and reconciles the two directions on demand:
 Transport adapts to the tree's shape: files below 256 KiB are packed into a
 single ``small.tar`` on the volume (collapsing per-file metadata round-trips),
 larger files are copied unpacked into ``big/`` across a thread pool, and a
-versioned ``manifest.json`` (written last) records the layout. Large-file
-transfers stay incremental (size/mtime diff); the small-file archive is
+versioned ``manifest.json`` (written last) records the layout. Hydrate restores
+large files with concurrent range reads instead of whole-file copies, which is
+what object-store mounts such as Global Store need to go faster than one
+sequential stream. Large-file transfers stay incremental (size/mtime diff); the
+small-file archive is
 re-packed whole when any small file changes. Packing uses the ``tar`` binary
 when present (else stdlib ``tarfile``); extraction always uses ``tarfile``,
 validating every member against the configured dirs. Best-effort: any failure
@@ -20,12 +23,16 @@ degrades to a cold worker and never raises unless ``best_effort=False``.
 """
 
 import atexit
+import collections
+import errno
 import json
 import os
+import random
 import shutil
 import subprocess
 import tarfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -39,6 +46,110 @@ _FORMAT_VERSION = 1
 _MANIFEST_NAME = "manifest.json"
 _SMALL_ARCHIVE_NAME = "small.tar"
 _BIG_SUBDIR = "big"
+# Hydrate copies big files in ranges. Bytes in flight (workers x chunk) is what
+# matters: Global Store's geesefs mount fails reads with ENOMEM much past ~1 GiB
+# in flight, so the default chunk is sized to keep the pool within the budget.
+# At 512 MiB, 8 x 64 MiB measured 2-2.8x faster than 64 x 8 MiB on a network
+# volume (7B: ~1420 vs ~730 MiB/s; 3B: ~1000 vs ~360) and within run-to-run
+# noise on Global Store, with no ENOMEM even on a busy 8-GPU host.
+_HYDRATE_WORKERS = 8
+_HYDRATE_BYTES_IN_FLIGHT = 512 * 1024 * 1024
+_HYDRATE_MAX_CHUNK_SIZE = 64 * 1024 * 1024
+# Transient errors an object-store FUSE mount returns under load; retried with
+# jittered exponential backoff (up to ~6s in total) before the file is given up
+# on. Jitter keeps ranges that failed together from retrying in lockstep.
+_RANGE_RETRY_ERRNOS = frozenset({errno.ENOMEM, errno.EIO, errno.EAGAIN})
+_RANGE_MAX_ATTEMPTS = 8
+_RANGE_RETRY_BASE_SECONDS = 0.05
+
+
+# A hydrate warns once its range retries pass this count. Isolated retries are
+# expected and stay at debug level. 64 is one retry for every range in flight
+# with a 64-worker pool, or eight rounds with an 8-worker pool. Past that, the
+# mount is under sustained pressure (e.g. geesefs ENOMEM) and backoff is
+# slowing the hydrate down.
+_HYDRATE_RETRY_WARN_THRESHOLD = 64
+
+_RangedFile = collections.namedtuple("_RangedFile", "src dst tmp size mtime identity")
+
+
+class _HydrateStats:
+    """Retry counters for one hydrate, safe to update from the range worker pool.
+
+    ``range_retries`` counts retried range attempts. ``ranges_given_up``
+    counts ranges that failed for good, either because their retries ran out
+    or because the error was not transient. The other ranges of a failed
+    file are skipped, and are not counted. ``as_dict()`` is the shape the
+    summary log reports.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.range_retries = 0
+        self.ranges_given_up = 0
+
+    def record_retry(self):
+        """Count one retry and return the hydrate's running total."""
+        with self._lock:
+            self.range_retries += 1
+            return self.range_retries
+
+    def record_given_up(self, count):
+        """Count ``count`` files given up for good (one per failed file)."""
+        if count <= 0:
+            return
+        with self._lock:
+            self.ranges_given_up += count
+
+    def as_dict(self):
+        with self._lock:
+            return {"range_retries": self.range_retries, "ranges_given_up": self.ranges_given_up}
+
+
+class _MetadataPolicy:
+    """Metadata stamping state for one sync or hydrate.
+
+    FUSE object stores such as Global Store reject utime and chmod with EPERM.
+    Denial is tracked per operation: once utime (or chmod) is rejected with
+    EPERM, later files skip that operation, but the other operation keeps
+    running. A volume that accepts utime but rejects chmod must still restore
+    each file's manifest mtime, or later files keep copy-time mtimes and churn
+    syncs. The rejection is logged once for the whole operation instead of two
+    failing syscalls and a debug line per file. Other errors are still logged
+    per file, because they may not repeat.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._utime_denied = False
+        self._chmod_denied = False
+        self._logged = False
+
+    @property
+    def utime_denied(self):
+        return self._utime_denied
+
+    @property
+    def chmod_denied(self):
+        return self._chmod_denied
+
+    def note_failure(self, dst, op, kept, exc):
+        """Record a failed metadata op (``op`` is ``"utime"`` or ``"chmod"``)."""
+        if exc.errno != errno.EPERM:
+            log.debug(f"VolumeCache: kept {kept} on {dst}: {exc}")
+            return
+        with self._lock:
+            if op == "utime":
+                self._utime_denied = True
+            else:
+                self._chmod_denied = True
+            should_log = not self._logged
+            self._logged = True
+        if should_log:
+            log.debug(
+                f"VolumeCache: metadata update rejected with EPERM on {dst}; "
+                "skipping the rejected operation for the rest of this operation"
+            )
 
 
 class VolumeCache:
@@ -62,9 +173,15 @@ class VolumeCache:
         volume_path: Network-volume mount point. Defaults to ``/runpod-volume``.
         best_effort: When True (default), swallow and log errors instead of
             raising.
-        max_workers: Thread count for parallel copy of large files. Defaults
-            to ``min(32, (os.cpu_count() or 4) * 4)`` (I/O-bound, so
+        max_workers: Thread count for parallel copy of large files on sync.
+            Defaults to ``min(32, (os.cpu_count() or 4) * 4)`` (I/O-bound, so
             oversubscribing the CPU count is fine).
+        hydrate_workers: Concurrent range reads on hydrate. Defaults to
+            ``max_workers`` when that is set, else 8.
+        hydrate_chunk_size: Bytes per hydrate range. Defaults to 512 MiB
+            divided by ``hydrate_workers``, capped at 64 MiB (64 MiB with the
+            default 8 workers). Peak hydrate memory is about
+            ``hydrate_workers * hydrate_chunk_size``.
 
     Example:
         >>> with VolumeCache(dirs=["/root/.cache/huggingface"]):
@@ -74,7 +191,15 @@ class VolumeCache:
     _EXCLUDE_SUBSTRINGS = (os.sep + "refs" + os.sep, os.sep + ".no_exist" + os.sep)
 
     def __init__(
-        self, dirs, *, namespace=None, volume_path="/runpod-volume", best_effort=True, max_workers=None
+        self,
+        dirs,
+        *,
+        namespace=None,
+        volume_path="/runpod-volume",
+        best_effort=True,
+        max_workers=None,
+        hydrate_workers=None,
+        hydrate_chunk_size=None,
     ):
         if isinstance(dirs, (str, bytes, os.PathLike)):
             # A bare path is one directory, not an iterable of path characters:
@@ -101,12 +226,17 @@ class VolumeCache:
         # the cache.
         self._volume_path = os.fsdecode(os.fspath(volume_path))
         self._best_effort = best_effort
-        # A non-positive max_workers is a caller bug: ThreadPoolExecutor would
-        # raise ValueError mid-sync, which best-effort mode swallows and silently
-        # disables syncing. Reject it up front like the namespace check above.
-        if max_workers is not None and max_workers < 1:
-            raise ValueError(f"max_workers must be a positive integer, got {max_workers!r}")
-        self._max_workers = max_workers or min(32, (os.cpu_count() or 4) * 4)
+        self._max_workers = _positive_or_default(
+            "max_workers", max_workers, min(32, (os.cpu_count() or 4) * 4)
+        )
+        # An explicit max_workers sized hydrate too before ranged hydrate; keep
+        # honoring it so a caller who set it low doesn't silently get 64 threads.
+        self._hydrate_workers = _positive_or_default(
+            "hydrate_workers", hydrate_workers, max_workers or _HYDRATE_WORKERS
+        )
+        self._hydrate_chunk_size = _positive_or_default(
+            "hydrate_chunk_size", hydrate_chunk_size, _default_chunk_size(self._hydrate_workers)
+        )
 
     @property
     def _mirror_root(self):
@@ -173,7 +303,7 @@ class VolumeCache:
             "small": small_meta,
             "big": big_meta,
         }
-        tmp = f"{self._manifest_path}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
+        tmp = _tmp_path(self._manifest_path)
         with open(tmp, "w") as fh:
             json.dump(payload, fh)
         os.replace(tmp, self._manifest_path)
@@ -219,19 +349,49 @@ class VolumeCache:
             return True
         return s.st_size != d.st_size or s.st_mtime > d.st_mtime + _MTIME_TOLERANCE
 
+    @staticmethod
+    def _sync_needs_copy(src_path, dst_path, prior):
+        """Container -> mirror: does dst need a fresh copy of src?
+
+        ``prior`` is src's entry in the previous manifest. It records the
+        source metadata the mirror copy was made from, which stays reliable
+        when the volume can't carry mtimes (the mirror then holds copy-time
+        mtimes). Without a prior entry, only an exact size+mtime match counts
+        as current.
+        """
+        try:
+            s = os.stat(src_path)
+        except OSError:
+            return False
+        try:
+            d = os.stat(dst_path)
+        except OSError:
+            return True
+        if s.st_size != d.st_size:
+            return True
+        if prior is None:
+            return abs(s.st_mtime - d.st_mtime) > _MTIME_TOLERANCE
+        # Only recopy when the source is NEWER than the metadata the mirror was
+        # made from. A source older than the manifest entry is a stale worker or
+        # a sibling that downloaded identical bytes at a different time; recopying
+        # there churns every big file across workers and can overwrite newer
+        # mirror bytes with older ones.
+        return prior["size"] != s.st_size or s.st_mtime > prior["mtime"] + _MTIME_TOLERANCE
+
     def _is_safe_dest(self, dst_abs):
         target = os.path.realpath(dst_abs)
         return any(target == d or target.startswith(d + os.sep) for d in self._dirs)
 
-    def _copy_file(self, src, dst):
-        tmp = f"{dst}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
+    def _copy_file(self, src, dst, *, metadata=None):
+        tmp = _tmp_path(dst)
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, tmp)  # preserves mtime so future diffs converge
+            shutil.copyfile(src, tmp)
+            _copy_metadata(src, tmp, policy=metadata)
             os.replace(tmp, dst)  # atomic; last-writer-wins under concurrency
             return True
         except OSError as exc:
-            log.debug(f"VolumeCache: skip {src} -> {dst}: {exc}")
+            log.warn(f"VolumeCache: failed to copy {src} -> {dst}: {exc}")
             try:
                 if os.path.exists(tmp):
                     os.remove(tmp)
@@ -240,8 +400,11 @@ class VolumeCache:
                 pass
             return False
 
-    def _copy_parallel(self, pairs):
+    def _copy_parallel(self, pairs, needs_copy=None):
         """Copy every (src, dst) that needs it, in parallel.
+
+        ``needs_copy(src, dst)`` decides which pairs to copy (default: compare
+        the two files).
 
         Returns ``(copied, current)`` sets of source paths:
         - ``copied``  -- sources transferred successfully this call.
@@ -250,11 +413,13 @@ class VolumeCache:
         Their union is the set of sources the destination now holds a current
         copy of; a source in neither failed to copy. Callers that record a
         "mirror complete" manifest MUST include only sources in that union, or
-        a failed copy would be marked present and later served stale. copy2 +
+        a failed copy would be marked present and later served stale. copyfile +
         atomic os.replace means a source in ``copied`` matches its destination
         at that instant, so no re-stat is needed to confirm it.
         """
-        todo = [(s, d) for s, d in pairs if self._needs_copy(s, d)]
+        needs_copy = needs_copy or self._needs_copy
+        metadata = _MetadataPolicy()
+        todo = [(s, d) for s, d in pairs if needs_copy(s, d)]
         current = {s for s, _ in pairs} - {s for s, _ in todo}
         if not todo:
             return set(), current
@@ -262,9 +427,103 @@ class VolumeCache:
             # pool.map preserves input order, so zip pairs each result with its
             # source. This holds one path per copied file (unavoidable: per-file
             # identity is required to keep failed copies out of the manifest).
-            results = pool.map(lambda sd: self._copy_file(sd[0], sd[1]), todo)
+            results = pool.map(lambda sd: self._copy_file(sd[0], sd[1], metadata=metadata), todo)
             copied = {s for (s, _), ok in zip(todo, results) if ok}
         return copied, current
+
+    def _hydrate_ranged(self, entries, stats):
+        """Restore ``(src, dst, manifest_entry)`` triples with concurrent range reads.
+
+        Every file is split into ``hydrate_chunk_size`` ranges, and one pool of
+        ``hydrate_workers`` threads copies the ranges of all files, each range on
+        its own descriptors. An object-store mount serves one sequential stream
+        at ~140 MiB/s however many whole files are read at once, but independent
+        range reads scale to the host NIC. Each source's size and mtime are pinned
+        (and checked against the manifest) before its first range, and every
+        range rejects a source that a concurrent sync() visibly replaced since.
+        A file is written to a temp file and
+        renamed into place only once every range copied, stamped with the
+        manifest's source mtime, so a failure leaves the local file untouched.
+
+        Retries and given-up ranges are counted in ``stats``. Returns the set
+        of sources restored.
+        """
+        # Temp paths are fixed before any is created so an interrupt (e.g.
+        # Ctrl-C) in preparation, copying or finalization removes every one.
+        # Temps are pre-sized to the full file and named per pid, so a later
+        # run never reuses them; leaking them can fill the disk. Removing an
+        # already published temp is a no-op.
+        tmps = [_tmp_path(dst) for _src, dst, _entry in entries]
+        try:
+            prepared = (self._prepare_ranged(*e, tmp) for e, tmp in zip(entries, tmps))
+            files = [f for f in prepared if f]
+            failed = self._copy_ranges(files, stats)
+            metadata = _MetadataPolicy()
+            return {
+                f.src for i, f in enumerate(files) if self._finish_ranged(f, i in failed, metadata)
+            }
+        except BaseException:
+            for tmp in tmps:
+                _silent_remove(tmp)
+            raise
+
+    def _prepare_ranged(self, src, dst, entry, tmp):
+        try:
+            st = os.stat(src)
+            if st.st_size != entry["size"]:
+                # A sync replaced the mirror file after the manifest was read;
+                # copying entry["size"] bytes of it would publish a truncated file.
+                raise OSError(f"mirror size {st.st_size} != manifest size {entry['size']}")
+            identity = _file_identity(st)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(tmp, "wb") as fh:
+                fh.truncate(entry["size"])
+        except OSError as exc:
+            log.warn(f"VolumeCache: failed to hydrate {src} -> {dst}: {exc}")
+            _silent_remove(tmp)
+            return None
+        return _RangedFile(src, dst, tmp, entry["size"], entry["mtime"], identity)
+
+    def _copy_ranges(self, files, stats):
+        """Copy every range of ``files`` into their temp files; return indexes that failed."""
+        failed = set()
+
+        def run(item):
+            off, i, length = item
+            if i in failed:
+                return
+            f = files[i]
+
+            def on_retry(exc, attempt):
+                _note_range_retry(stats, f.src, off, exc, attempt)
+
+            try:
+                _with_range_retry(
+                    _copy_range, f.src, f.tmp, off, length, f.identity, on_retry=on_retry
+                )
+            except OSError as exc:
+                failed.add(i)
+                log.warn(f"VolumeCache: failed to hydrate {f.src} at offset {off}: {exc}")
+
+        _run_bounded(_iter_ranges(files, self._hydrate_chunk_size), run, self._hydrate_workers)
+        # Count once per failed file: concurrent ranges of one file can each
+        # raise, but the file is given up only once. ``failed`` is drained.
+        stats.record_given_up(len(failed))
+        return failed
+
+    @staticmethod
+    def _finish_ranged(f, failed, metadata):
+        if failed:
+            _silent_remove(f.tmp)
+            return False
+        try:
+            _copy_metadata(f.src, f.tmp, f.mtime, policy=metadata)
+            os.replace(f.tmp, f.dst)
+            return True
+        except OSError as exc:
+            log.warn(f"VolumeCache: failed to hydrate {f.src} -> {f.dst}: {exc}")
+            _silent_remove(f.tmp)
+            return False
 
     @staticmethod
     def _within(base, path):
@@ -287,7 +546,7 @@ class VolumeCache:
 
     def _pack_small(self, files):
         os.makedirs(self._mirror_root, exist_ok=True)
-        tmp = f"{self._small_archive_path}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
+        tmp = _tmp_path(self._small_archive_path)
         rels = [os.path.relpath(f, "/") for f in files]
         try:
             if self._tar_binary():
@@ -382,20 +641,32 @@ class VolumeCache:
         restored = 0
         if manifest.get("small"):
             restored += self._extract_small()
-        big_pairs = []
+        todo = []
         for entry in manifest.get("big", []):
             rel = os.path.relpath(entry["path"], "/")
             dst = os.path.join("/", rel)
             src = os.path.join(self._big_root, rel)
             # Guard both ends against a crafted manifest: the destination must
             # stay inside a configured dir, and the source must resolve inside
-            # big/ so a malicious entry can't read outside the mirror.
-            if self._is_safe_dest(dst) and self._within(self._big_root, src):
-                big_pairs.append((src, dst))
-        copied, _current = self._copy_parallel(big_pairs)
-        restored += len(copied)
-        if restored:
-            log.info(f"VolumeCache: hydrated {restored} file(s) from {self._mirror_root}")
+            # big/ so a malicious entry can't read outside the mirror. Compare
+            # the container against the manifest's source metadata, not the
+            # mirror file's own mtime.
+            if (
+                self._is_safe_dest(dst)
+                and self._within(self._big_root, src)
+                and os.path.isfile(src)
+                and not self._meta_satisfied_by_local(entry)
+            ):
+                todo.append((src, dst, entry))
+        stats = _HydrateStats()
+        restored += len(self._hydrate_ranged(todo, stats))
+        counts = stats.as_dict()
+        if restored or any(counts.values()):
+            log.info(
+                f"VolumeCache: hydrated {restored} file(s) from {self._mirror_root} "
+                f"(range retries: {counts['range_retries']}, "
+                f"ranges given up: {counts['ranges_given_up']})"
+            )
         return restored
 
     def sync(self, *, background=True):
@@ -450,7 +721,11 @@ class VolumeCache:
             _silent_remove(self._small_archive_path)
 
         big_pairs = [(f, os.path.join(self._big_root, os.path.relpath(f, "/"))) for f in big_files]
-        copied, current = self._copy_parallel(big_pairs)
+        prior_big = {e["path"]: e for e in (manifest.get("big", []) if manifest else [])}
+        copied, current = self._copy_parallel(
+            big_pairs,
+            needs_copy=lambda src, dst: self._sync_needs_copy(src, dst, prior_big.get(src)),
+        )
         # Record only sources the volume actually holds a current copy of.
         # A big file whose copy failed is in neither set, so it is omitted and
         # the manifest never claims it present -- hydrate then skips it rather
@@ -483,6 +758,198 @@ class VolumeCache:
 # ----------------------------------------------------------------------- #
 # utilities
 # ----------------------------------------------------------------------- #
+
+
+def _copy_metadata(src, dst, mtime=None, *, policy=None):
+    """Stamp dst with an mtime and src's permission bits, each best-effort.
+
+    The mtime is ``mtime`` when given (hydrate passes the manifest's source
+    mtime), else src's own. Some volume filesystems (FUSE object stores such
+    as Global Store) reject utime and chmod with EPERM. The copy is still
+    valid then: reconciliation compares against the manifest's recorded
+    source metadata, not the mirror file's copy-time mtime. Only the
+    permission bits are lost on such a volume.
+
+    ``policy`` carries EPERM detection across one sync or hydrate: once the
+    filesystem has rejected utime (or chmod) with EPERM, later files skip that
+    operation. Denial is per operation, so a volume that rejects chmod but
+    accepts utime still restores every file's mtime. Without a policy, each
+    call detects EPERM on its own.
+    """
+    policy = policy or _MetadataPolicy()
+    if not policy.utime_denied:
+        try:
+            if mtime is None:
+                st = os.stat(src)
+                os.utime(dst, ns=(st.st_atime_ns, st.st_mtime_ns))
+            else:
+                os.utime(dst, (mtime, mtime))
+        except OSError as exc:
+            policy.note_failure(dst, "utime", "copy-time mtime", exc)
+    if policy.chmod_denied:
+        return
+    try:
+        shutil.copymode(src, dst)
+    except OSError as exc:
+        policy.note_failure(dst, "chmod", "default mode", exc)
+
+
+def _default_chunk_size(workers):
+    # Larger pools get smaller ranges so bytes in flight stay within budget.
+    return max(1, min(_HYDRATE_MAX_CHUNK_SIZE, _HYDRATE_BYTES_IN_FLIGHT // workers))
+
+
+def _positive_or_default(name, value, default):
+    # A non-positive or non-integer pool size or chunk is a caller bug that
+    # best-effort mode would otherwise swallow mid-operation (range() and
+    # ThreadPoolExecutor reject floats), silently disabling the cache. bool is
+    # an int subclass, so it is rejected explicitly.
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a positive integer, got {value!r}")
+    return value
+
+
+def _tmp_path(path):
+    return f"{path}.{os.getpid()}.{threading.get_ident()}.rpvc.tmp"
+
+
+def _iter_ranges(files, chunk):
+    """Lazily yield ``(offset, index, length)`` for every range of ``files``.
+
+    Offset-major order spreads concurrent readers across every file. Files
+    drop out once exhausted, so the cost is O(ranges + files) and nothing is
+    materialized up front.
+    """
+    active = sorted((i for i, f in enumerate(files) if f.size > 0), key=lambda i: files[i].src)
+    offset = 0
+    while active:
+        for i in active:
+            yield offset, i, min(chunk, files[i].size - offset)
+        offset += chunk
+        active = [i for i in active if offset < files[i].size]
+
+
+def _run_bounded(items, fn, workers):
+    """Call fn on each of ``items`` across ``workers`` threads.
+
+    Each thread pulls the next item from the shared iterator, so outstanding
+    work stays O(workers) however many items there are; ``pool.map`` would
+    submit a future per item up front. An exception escaping fn stops every
+    thread from taking further items and propagates once the pool shuts down.
+    """
+    items = iter(items)
+    lock = threading.Lock()  # generators are not thread-safe
+    stop = threading.Event()
+
+    def drain():
+        while not stop.is_set():
+            with lock:
+                item = next(items, None)
+            if item is None:
+                return
+            try:
+                fn(item)
+            except BaseException:
+                stop.set()
+                raise
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        try:
+            for future in [pool.submit(drain) for _ in range(workers)]:
+                future.result()
+        except BaseException:
+            # The waiting thread was interrupted (e.g. Ctrl-C): stop the workers
+            # before the pool's shutdown waits on them, or they drain every item.
+            stop.set()
+            raise
+
+
+def _with_range_retry(fn, *args, on_retry=None):
+    """Call fn, retrying transient FUSE errors with jittered exponential backoff.
+
+    ``on_retry(exc, attempt)`` is called before each retry with the error and
+    the 1-based number of the attempt that failed.
+    """
+    for attempt in range(_RANGE_MAX_ATTEMPTS - 1):
+        try:
+            fn(*args)
+            return
+        except OSError as exc:
+            if exc.errno not in _RANGE_RETRY_ERRNOS:
+                raise
+            if on_retry is not None:
+                on_retry(exc, attempt + 1)
+            time.sleep(random.uniform(0, _RANGE_RETRY_BASE_SECONDS * 2**attempt))
+    fn(*args)  # final attempt: any error propagates
+
+
+def _note_range_retry(stats, src, offset, exc, attempt):
+    """Count and log one range retry. Never raises: instrumentation must not fail a hydrate."""
+    try:
+        total = stats.record_retry()
+        log.debug(
+            f"VolumeCache: retrying {src} at offset {offset} after "
+            f"{errno.errorcode.get(exc.errno, exc.errno)} "
+            f"(attempt {attempt}/{_RANGE_MAX_ATTEMPTS})"
+        )
+        if total == _HYDRATE_RETRY_WARN_THRESHOLD + 1:
+            log.warn(
+                f"VolumeCache: hydrate passed {_HYDRATE_RETRY_WARN_THRESHOLD} range retries; "
+                "the volume mount is under sustained pressure and hydrate is slowing down"
+            )
+    except Exception:  # noqa: BLE001 - instrumentation is best-effort by design
+        pass
+
+
+def _file_identity(st):
+    """The generation of a file: changes when sync() replaces it.
+
+    Size and mtime only. Inode numbers on a FUSE object-store mount are
+    assigned by the filesystem and can change for an unchanged object (e.g.
+    after eviction), which would reject valid files, while a cross-host
+    replacement there keeps the inode and changes size or mtime instead.
+    """
+    return (st.st_size, st.st_mtime_ns)
+
+
+def _copy_range(src, dst, offset, length, identity):
+    """Copy ``length`` bytes at ``offset`` of src to the same offset of dst.
+
+    Each call opens its own descriptors so an object-store mount serves the
+    range as an independent read. The opened source must still match the
+    ``identity`` pinned before the first range, so a replacement by a
+    concurrent sync() seen between ranges fails the file instead of splicing
+    two generations together. An object-store mount resolves reads by key, so
+    a replacement landing mid-read is detected only by later ranges. A
+    short read means the mirror file is smaller than the manifest says. Both
+    raise without an errno, so they are not retried.
+    """
+    src_fd = os.open(src, os.O_RDONLY)
+    try:
+        if _file_identity(os.fstat(src_fd)) != identity:
+            raise OSError(f"source replaced during hydrate at offset {offset}")
+        dst_fd = os.open(dst, os.O_WRONLY)
+        try:
+            done = 0
+            while done < length:
+                buf = os.pread(src_fd, length - done, offset + done)
+                if not buf:
+                    raise OSError(f"short read: {done} of {length} bytes at offset {offset}")
+                _pwrite_all(dst_fd, buf, offset + done)
+                done += len(buf)
+        finally:
+            os.close(dst_fd)
+    finally:
+        os.close(src_fd)
+
+
+def _pwrite_all(fd, buf, offset):
+    view = memoryview(buf)
+    written = 0
+    while written < len(view):
+        written += os.pwrite(fd, view[written:], offset + written)
 
 
 def _silent_remove(path):

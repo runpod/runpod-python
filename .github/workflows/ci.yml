@@ -19,7 +19,7 @@ jobs:
 
   test:
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
@@ -40,13 +40,24 @@ jobs:
           UV_PYTHON: ${{ matrix.python-version }}
 
       - name: Run tests
-        run: make test
+        run: make test-coverage
         env:
           UV_PYTHON: ${{ matrix.python-version }}
 
+      # Consumed by the weekly coverage report, which reads the artifact from
+      # the newest successful run on main. Name is per-matrix-version because
+      # upload-artifact@v4 requires unique names within a run.
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: error
+
   e2e:
     if: github.event_name != 'schedule' && github.repository == 'runpod/runpod-python'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -71,12 +82,15 @@ jobs:
           source .venv/bin/activate
           pytest tests/e2e/ -v -p no:xdist --timeout=600 --reruns 1 --reruns-delay 5 --log-cli-level=INFO -o "addopts="
         env:
+          # the e2e provisioner still drives runpod-flash, whose import-time
+          # sunset FutureWarning is an error under pytest.ini filterwarnings
+          RUNPOD_FLASH_SILENCE_DEPRECATION: "1"
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_SDK_GIT_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
   codeql:
     if: github.event_name == 'schedule' || github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       actions: read
       contents: read
@@ -85,16 +99,16 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.37.6
+        uses: github/codeql-action/init@v4.39.1
         with:
           languages: python
           queries: security-extended,security-and-quality
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4.37.6
+        uses: github/codeql-action/autobuild@v4.39.1
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.37.6
+        uses: github/codeql-action/analyze@v4.39.1
         with:
           category: "/language:python"
 
@@ -103,7 +117,7 @@ jobs:
   # ──────────────────────────────────────────────
 
   validation:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: [test, e2e, codeql]
     if: always()
     steps:

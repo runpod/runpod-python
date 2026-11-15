@@ -103,9 +103,9 @@ def test_report_unhealthy_posts_check_and_reason(monkeypatch):
     monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping/$RUNPOD_POD_ID")
     monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
 
+    monkeypatch.setenv("RUNPOD_POD_ID", "podABC")
     fake_session = MagicMock()
-    with patch("runpod.http_client.SyncClientSession", return_value=fake_session), \
-        patch("runpod.serverless.modules.worker_state.WORKER_ID", "podABC"):
+    with patch("requests.Session", return_value=fake_session):
         rp_fitness._report_unhealthy("_cuda_init_check", "RuntimeError: boom")
 
     assert fake_session.get.call_count == 1
@@ -122,7 +122,7 @@ def test_report_unhealthy_posts_check_and_reason(monkeypatch):
 def test_report_unhealthy_skipped_without_ping_url(monkeypatch):
     monkeypatch.delenv("RUNPOD_WEBHOOK_PING", raising=False)
     monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
-    with patch("runpod.http_client.SyncClientSession") as session_cls:
+    with patch("requests.Session") as session_cls:
         rp_fitness._report_unhealthy("_memory_check", "RuntimeError: low")
     session_cls.assert_not_called()
 
@@ -132,7 +132,7 @@ def test_report_unhealthy_truncates_long_reason(monkeypatch):
     monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
 
     fake_session = MagicMock()
-    with patch("runpod.http_client.SyncClientSession", return_value=fake_session):
+    with patch("requests.Session", return_value=fake_session):
         rp_fitness._report_unhealthy("_disk_check", "x" * 300)
 
     params = fake_session.get.call_args.kwargs["params"]
@@ -142,7 +142,7 @@ def test_report_unhealthy_truncates_long_reason(monkeypatch):
 def test_report_unhealthy_skipped_without_api_key(monkeypatch):
     monkeypatch.setenv("RUNPOD_WEBHOOK_PING", "https://api.test/ping")
     monkeypatch.delenv("RUNPOD_AI_API_KEY", raising=False)
-    with patch("runpod.http_client.SyncClientSession") as session_cls:
+    with patch("requests.Session") as session_cls:
         rp_fitness._report_unhealthy("_memory_check", "RuntimeError: low")
     session_cls.assert_not_called()
 
@@ -152,7 +152,7 @@ def test_report_unhealthy_swallows_errors(monkeypatch):
     monkeypatch.setenv("RUNPOD_AI_API_KEY", "key-123")
     fake_session = MagicMock()
     fake_session.get.side_effect = RuntimeError("network down")
-    with patch("runpod.http_client.SyncClientSession", return_value=fake_session):
+    with patch("requests.Session", return_value=fake_session):
         rp_fitness._report_unhealthy("_disk_check", "RuntimeError: full")  # must not raise
 
 

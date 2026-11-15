@@ -1,0 +1,525 @@
+"""ephemeral pod execution for @app.task.
+
+lifecycle per call:
+  1. deploy a pod on a runpod/task runtime image. custom images install
+     the independently released runtime package via dockerArgs.
+  2. wait for the runner's /ping via the pod http proxy
+  3. POST the FunctionRequest to /execute (remote) or /submit (spawn)
+  4. collect the response, terminate the pod
+"""
+
+import asyncio
+import logging
+import math
+import os as _os
+import secrets
+import sys
+import time
+from typing import Any, Dict, List, Optional
+
+import aiohttp
+
+from .._hosts import proxy_url
+from ..user_agent import APPS_USER_AGENT
+from .api import AppsApiClient, is_capacity_error
+from .context import CLEANUP_TIMEOUT
+from .spec import ResourceSpec
+from .utils.http import raise_for_status
+
+log = logging.getLogger(__name__)
+
+TASK_PORT = 8080
+
+READY_POLL_INTERVAL = 2.0
+READY_TIMEOUT = 600.0
+RESULT_POLL_INTERVAL = 2.0
+DELETE_ATTEMPTS = 3
+DELETE_TIMEOUT = 5.0
+_pending_cleanups = set()
+
+
+def _validate_timeout(timeout):
+    if timeout is not None and (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+        or timeout < 0
+    ):
+        raise ValueError("task timeout must be a finite non-negative number")
+
+
+async def finish_cleanup(coro) -> None:
+    """finish cleanup despite repeated cancellation, without hiding its cause."""
+    original = sys.exc_info()[1]
+    task = asyncio.create_task(coro)
+    deadline = asyncio.get_running_loop().time() + CLEANUP_TIMEOUT
+    cancellation = None
+    try:
+        while not task.done():
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("task pod cleanup is still pending")
+            try:
+                await asyncio.wait({task}, timeout=remaining)
+            except asyncio.CancelledError as exc:
+                if cancellation is None:
+                    cancellation = exc
+        task.result()
+    except Exception:
+        if original is None and cancellation is None:
+            raise
+        log.warning(
+            "task cleanup failed while handling %r",
+            original or cancellation,
+            exc_info=True,
+        )
+    finally:
+        if not task.done():
+            _pending_cleanups.add(task)
+            task.add_done_callback(_cleanup_finished)
+    if original is None and cancellation is not None:
+        raise cancellation
+
+
+def _cleanup_finished(task) -> None:
+    _pending_cleanups.discard(task)
+    if task.cancelled():
+        return
+    try:
+        task.result()
+    except Exception:
+        log.warning("background task pod cleanup failed", exc_info=True)
+
+
+def _runtime_command() -> str:
+    """shell command that installs and starts the task runtime."""
+    from .shim import runtime_launcher
+
+    return runtime_launcher("task")
+
+
+def cuda_versions_at_least(minimum: str) -> List[str]:
+    """all platform cuda versions >= minimum, ascending."""
+    from .spec import CUDA_VERSIONS
+
+    def _key(version: str):
+        major, minor = version.split(".")
+        return (int(major), int(minor))
+
+    floor = _key(minimum)
+    return sorted((v for v in CUDA_VERSIONS if _key(v) >= floor), key=_key)
+
+
+def _device_names(gpu: Optional[List[str]]) -> List[str]:
+    """pods take exact device names, not pool ids; expand pool ids
+    (e.g. ADA_24 -> NVIDIA GeForce RTX 4090) and pass device names
+    through. no gpu constraint means any device, which the pod api
+    only understands as the full device list."""
+    from .gpu import POOLS_TO_TYPES, GpuGroup
+
+    if not gpu or GpuGroup.ANY.value in gpu:
+        return sorted({t.value for types in POOLS_TO_TYPES.values() for t in types})
+    names: List[str] = []
+    for entry in gpu:
+        try:
+            names.extend(GpuGroup(entry).device_names() or [entry])
+        except ValueError:
+            names.append(entry)
+    return names
+
+
+def _proxy_url(pod_id: str) -> str:
+    return proxy_url(pod_id, TASK_PORT)
+
+
+def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]:
+    """build the pod deploy input for one task execution.
+
+    runtime images have the runner baked in; custom images install and
+    start the runtime package via dockerArgs.
+    """
+    spec.validate()
+
+    from .secret import render_env
+
+    env = {
+        "RUNPOD_TASK_TOKEN": token,
+        "RUNPOD_TASK_PORT": str(TASK_PORT),
+        **render_env(spec.env),
+    }
+
+    from .images import image_for_spec, local_python_version
+
+    pod: Dict[str, Any] = {
+        "name": f"task-{task_name}-{secrets.token_hex(4)}",
+        "imageName": image_for_spec(spec, python_version=local_python_version()),
+        "ports": f"{TASK_PORT}/http",
+        "containerDiskInGb": spec.container_disk_gb or (10 if spec.is_cpu else 30),
+        "supportPublicIp": True,
+    }
+
+    if spec.image:
+        for key in ("RUNPOD_RUNTIME_PACKAGE_SPEC", "RUNPOD_PACKAGE_SPEC"):
+            if value := _os.environ.get(key):
+                env[key] = value
+        pod["dockerArgs"] = _runtime_command()
+
+    pod["env"] = [{"key": k, "value": v} for k, v in env.items()]
+    if spec.datacenter:
+        pod["dataCenterIds"] = spec.datacenter
+    else:
+        # spread across the storage-supported set; a null DC can pin
+        # repeated deploys to one (possibly broken) machine
+        from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
+
+        if spec.is_cpu:
+            pool = dict.fromkeys(
+                dc
+                for instance in spec.cpu or []
+                for dc in (
+                    CPU5_DATACENTERS
+                    if instance.startswith("cpu5")
+                    else CPU3_DATACENTERS
+                )
+            )
+        else:
+            pool = DataCenter.all()
+        pod["dataCenterIds"] = [dc.value for dc in pool]
+    if spec.is_cpu:
+        pod["instanceIds"] = spec.cpu
+    else:
+        pod["gpuTypeIdList"] = _device_names(spec.gpu)
+        pod["gpuCount"] = spec.gpu_count
+        if spec.min_cuda_version:
+            # pods have no min-version filter; allow every version at
+            # or above the requested floor
+            pod["allowedCudaVersions"] = cuda_versions_at_least(spec.min_cuda_version)
+    return pod
+
+
+class _TaskTransport:
+    """token-authenticated execution transport with cancellation-safe cleanup."""
+
+    def __init__(self, api):
+        self.api = api
+        self.token = secrets.token_urlsafe(32)
+        self.pod_id: Optional[str] = None
+        self._deployment: Optional[asyncio.Task] = None
+
+    @property
+    def _headers(self) -> Dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}", "User-Agent": APPS_USER_AGENT}
+
+    async def wait_ready(self, timeout: float = READY_TIMEOUT) -> None:
+        """poll the runner's /ping through the pod proxy until it answers."""
+        url = f"{_proxy_url(self.pod_id)}/ping"
+        deadline = time.monotonic() + timeout
+        async with aiohttp.ClientSession() as session:
+            while time.monotonic() < deadline:
+                try:
+                    async with session.get(
+                        url,
+                        timeout=aiohttp.ClientTimeout(total=5),
+                        headers={"User-Agent": APPS_USER_AGENT},
+                    ) as resp:
+                        if resp.status == 200:
+                            return
+                except (aiohttp.ClientError, asyncio.TimeoutError):
+                    # pod not reachable yet; the surrounding deadline
+                    # decides when to stop trying
+                    pass
+                await asyncio.sleep(READY_POLL_INTERVAL)
+        raise TimeoutError(
+            f"task pod {self.pod_id} did not become ready within {timeout}s"
+        )
+
+    async def execute(
+        self, request: Dict[str, Any], timeout: Optional[float]
+    ) -> Dict[str, Any]:
+        """run to completion: submit, then poll for the result.
+
+        the pod proxy caps how long a single request can stay open
+        (long jobs would 524), so completion always goes through the
+        background slot + short /result polls.
+        """
+        await self.submit({**request, "timeout": timeout})
+        deadline = time.monotonic() + timeout if timeout is not None else None
+        while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"task on pod {self.pod_id} did not finish in {timeout}s"
+                )
+            response = await self.poll_result()
+            if response is not None:
+                return response
+            await asyncio.sleep(RESULT_POLL_INTERVAL)
+
+    async def submit(self, request: Dict[str, Any]) -> None:
+        """start in the background via /submit.
+
+        the proxy answers 404 for pods an edge node has not learned
+        about yet; since this pod demonstrably exists (we created it
+        and /ping succeeded), 404s here are propagation races and are
+        retried briefly rather than surfaced.
+        """
+        await self._post("/submit", request)
+
+    async def set_timeout(self, timeout: float) -> None:
+        await self._post("/timeout", {"timeout": timeout})
+
+    async def _post(self, path: str, request: Dict[str, Any]) -> None:
+        from .serialization import require_json_value
+
+        timeout = request.get("timeout")
+        _validate_timeout(timeout)
+        require_json_value(request, "task request body must be JSON-serializable")
+        url = f"{_proxy_url(self.pod_id)}{path}"
+        attempts = 6
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(attempts):
+                async with session.post(
+                    url,
+                    json=request,
+                    headers=self._headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status == 404 and attempt < attempts - 1:
+                        await asyncio.sleep(2 * (attempt + 1))
+                        continue
+                    await raise_for_status(resp)
+                    if timeout is not None:
+                        response = await resp.json()
+                        if (
+                            not isinstance(response, dict)
+                            or response.get("timeout") != timeout
+                        ):
+                            raise RuntimeError(
+                                "task runtime did not acknowledge the timeout; "
+                                "update the task runtime image"
+                            )
+                    return
+
+    async def poll_result(self) -> Optional[Dict[str, Any]]:
+        """fetch /result; returns the response dict once DONE, else None.
+
+        the proxy answers 404 for pods an edge node has not learned
+        about yet (the same race /submit tolerates), so 404s are
+        retried briefly; a persistent 404 means the pod is gone and
+        surfaces as an error.
+        """
+        url = f"{_proxy_url(self.pod_id)}/result"
+        attempts = 6
+        data: Dict[str, Any] = {}
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(attempts):
+                async with session.get(
+                    url,
+                    headers=self._headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status == 404 and attempt < attempts - 1:
+                        await asyncio.sleep(2 * (attempt + 1))
+                        continue
+                    await raise_for_status(resp)
+                    data = await resp.json()
+                    break
+        if data.get("status") == "DONE":
+            return data.get("response")
+        return None
+
+    async def terminate(self) -> None:
+        if self._deployment is not None:
+            try:
+                await asyncio.shield(self._deployment)
+            except Exception:
+                if self.pod_id is None:
+                    return
+        if self.pod_id is None:
+            return
+        try:
+            for attempt in range(DELETE_ATTEMPTS):
+                try:
+                    await asyncio.wait_for(self._terminate_pod(), DELETE_TIMEOUT)
+                    break
+                except Exception as exc:
+                    status = getattr(exc, "status_code", None) or getattr(
+                        exc, "status", None
+                    )
+                    if status == 404:
+                        break
+                    retryable = (
+                        status == 429
+                        or (status is not None and 500 <= status < 600)
+                        or isinstance(
+                            exc,
+                            (
+                                aiohttp.ClientConnectionError,
+                                asyncio.TimeoutError,
+                                OSError,
+                            ),
+                        )
+                    )
+                    if not retryable or attempt == DELETE_ATTEMPTS - 1:
+                        raise
+                    await asyncio.sleep(0.5 * (2**attempt))
+            log.info("task pod %s terminated", self.pod_id)
+        except Exception as exc:
+            log.warning(
+                "failed to terminate task pod %s; terminate it in the console: %s",
+                self.pod_id,
+                exc,
+            )
+            raise
+        self.pod_id = None
+
+    async def _terminate_pod(self):
+        raise NotImplementedError
+
+
+class TaskExecution(_TaskTransport):
+    """one pod running one function."""
+
+    def __init__(
+        self,
+        spec: ResourceSpec,
+        api: Optional[AppsApiClient] = None,
+        *,
+        specs: Optional[List[ResourceSpec]] = None,
+    ):
+        self.spec = spec
+        self.specs = specs if specs is not None else [spec]
+        super().__init__(api or AppsApiClient())
+
+    async def start(self) -> None:
+        pod = _pod_input(self.spec, self.token, self.spec.name)
+        if self.spec.registry_auth:
+            from .registry import resolve_registry_auth
+
+            pod["containerRegistryAuthId"] = await resolve_registry_auth(
+                self.spec.registry_auth, api=self.api
+            )
+        pod = await self._attach_mounts(pod)
+        self._deployment = asyncio.create_task(self._deploy_and_record(pod))
+        await asyncio.shield(self._deployment)
+
+    async def _deploy_and_record(self, pod: Dict[str, Any]) -> None:
+        result = await self._deploy_pod(pod)
+        self.pod_id = result["id"]
+        log.info("task pod %s deployed for %s", self.pod_id, self.spec.name)
+
+    async def _deploy_pod(self, pod: Dict[str, Any]) -> Dict[str, Any]:
+        from ..error import QueryError
+
+        try:
+            return await self.api.deploy_task_pod(pod, is_cpu=self.spec.is_cpu)
+        except QueryError as exc:
+            if not is_capacity_error(exc):
+                raise
+            capacity_error = exc
+
+        datacenters = pod.get("dataCenterIds") or []
+        if len(datacenters) < 2:
+            raise capacity_error
+
+        for datacenter in datacenters:
+            candidate = dict(pod, dataCenterIds=[datacenter])
+            try:
+                return await self.api.deploy_task_pod(
+                    candidate, is_cpu=self.spec.is_cpu
+                )
+            except QueryError as exc:
+                if not is_capacity_error(exc):
+                    raise
+        raise capacity_error
+
+    async def _attach_mounts(self, pod: Dict[str, Any]) -> Dict[str, Any]:
+        """resolve storage mounts and apply their placement constraints."""
+        from .volume import VolumeResolver, attach_pod_mounts
+
+        await attach_pod_mounts(pod, self.spec, VolumeResolver(self.api), self.specs)
+        return pod
+
+    async def _terminate_pod(self):
+        await self.api.terminate_pod(self.pod_id)
+
+
+class DeployedTaskExecution(_TaskTransport):
+    """one approved named task using the task transport and cleanup lifecycle."""
+
+    def __init__(self, app, env, name, api=None, *, timeout=None):
+        from .api import FlashTaskApiClient
+
+        _validate_timeout(timeout)
+        if timeout == 0:
+            raise ValueError("deployed task timeout must be a finite positive number")
+        self.app_name = app
+        self.env_name = env
+        self.resource_name = name
+        self.timeout = timeout
+        super().__init__(api or FlashTaskApiClient())
+
+    async def start(self):
+        self._deployment = asyncio.create_task(self._create_and_record())
+        await asyncio.shield(self._deployment)
+
+    async def _create_and_record(self):
+        task_input = {
+            "flashAppName": self.app_name,
+            "flashEnvironmentName": self.env_name,
+            "resourceName": self.resource_name,
+            "executionToken": self.token,
+        }
+        if self.timeout is not None:
+            task_input["executionTimeoutSeconds"] = self.timeout
+        result = await self.api.create(task_input)
+        self.pod_id = result["podId"]
+
+    async def _terminate_pod(self):
+        await self.api.terminate(self.pod_id, self.token)
+
+
+def unwrap_task_response(response: Dict[str, Any]) -> Any:
+    """extract the function result from a runner response."""
+    from .serialization import require_json_value, unwrap_function_response
+
+    require_json_value(response, "task results must be JSON-serializable")
+    return unwrap_function_response(response)
+
+
+class TaskJob:
+    """handle for a spawned task; owns the pod until the result is read."""
+
+    def __init__(self, execution: _TaskTransport):
+        self._execution = execution
+        self._result: Any = None
+        self._done = False
+
+    @property
+    def pod_id(self) -> Optional[str]:
+        return self._execution.pod_id
+
+    async def wait(self, timeout: Optional[float] = None) -> Any:
+        """wait for the result, terminating the pod on every exit."""
+        try:
+            deadline = time.monotonic() + timeout if timeout is not None else None
+            if not self._done and timeout is not None:
+                await self._execution.set_timeout(timeout)
+            while not self._done:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"task on pod {self.pod_id} did not finish in {timeout}s"
+                    )
+                response = await self._execution.poll_result()
+                if response is not None:
+                    self._result = unwrap_task_response(response)
+                    self._done = True
+                    break
+                await asyncio.sleep(RESULT_POLL_INTERVAL)
+        finally:
+            await finish_cleanup(self._execution.terminate())
+        return self._result
+
+    async def cancel(self) -> None:
+        """terminate the pod, abandoning the task."""
+        await finish_cleanup(self._execution.terminate())
+        self._done = True

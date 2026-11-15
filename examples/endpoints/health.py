@@ -2,10 +2,10 @@
 
 import runpod
 
-# Set your global API key with `runpod config` or uncomment the line below:
+# Run `rp login` once to store your API key, or uncomment the line below:
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
 
-endpoint = runpod.Endpoint("gwp4kx5yd3nur1")
+endpoint = runpod.Endpoint("YOUR_ENDPOINT_ID")
 
 endpoint_health = endpoint.health()
 

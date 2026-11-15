@@ -1,0 +1,837 @@
+"""deploy-time environment build: vendor dependencies into the artifact."""
+
+import csv
+import logging
+import os
+import posixpath
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from collections import deque
+from email.parser import HeaderParser
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from packaging.markers import Marker
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import (
+    InvalidSdistFilename,
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_sdist_filename,
+    parse_wheel_filename,
+)
+
+from .errors import AppError
+from .images import DEFAULT_PYTHON_VERSION, SUPPORTED_PYTHON_VERSIONS
+
+log = logging.getLogger(__name__)
+
+# manylinux tags matching runpod worker glibc, newest first
+MANYLINUX_PLATFORMS = (
+    "manylinux_2_28_x86_64",
+    "manylinux_2_17_x86_64",
+    "manylinux2014_x86_64",
+)
+
+# CUDA-scale packages provided by the gpu worker images. excluded by
+# size, not by image contents: do not add packages just because an
+# image happens to ship them.
+SIZE_PROHIBITIVE_PACKAGES = frozenset(
+    {
+        "torch",
+        "torchvision",
+        "torchaudio",
+        "triton",
+    }
+)
+
+# the worker's runpod dependency closure, a small subset of the full sdk
+# dependency list. the package is vendored without sdk/cli-only packages
+# that never load in a worker.
+RUNTIME_REQUIREMENTS = (
+    "aiohttp[speedups]",
+    "aiohttp-retry",
+    "backoff",
+    "py-cpuinfo",
+    "requests",
+    "tomli",
+    "tomlkit",
+    "tqdm-loggable",
+)
+
+# api workers additionally serve over fastapi/uvicorn
+API_RUNTIME_REQUIREMENTS = ("fastapi[standard]", "uvicorn>=0.30")
+
+# runpod's serverless limit for build artifacts
+MAX_ARTIFACT_MB = 1500
+
+_REQ_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+class BuildError(AppError):
+    """environment vendoring failed."""
+
+
+@dataclass
+class BuildResult:
+    """output of build_environment."""
+
+    env_dir: Path
+    requirements: List[str] = field(default_factory=list)
+    excluded: List[str] = field(default_factory=list)
+
+
+def requirement_name(requirement: str) -> str:
+    """distribution name from a requirement string (drops extras/pins)."""
+    match = _REQ_NAME_RE.match(requirement)
+    return (match.group(1) if match else requirement).lower().replace("_", "-")
+
+
+def _requirements_txt(project_root: Path) -> List[str]:
+    """requirement lines from the project's requirements.txt."""
+    requirements: List[str] = []
+    req_file = project_root / "requirements.txt"
+    if req_file.exists():
+        for line in req_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and not line.startswith("-"):
+                requirements.append(line)
+    return requirements
+
+
+def collect_requirements(project_root: Path, app) -> List[str]:
+    """collect constraints and reject incompatible unconditional version pins."""
+    requirements = [
+        (req, "requirements.txt") for req in _requirements_txt(project_root)
+    ]
+
+    for name, handle in app.resources.items():
+        for dep in handle.spec.dependencies or []:
+            requirements.append((dep, f"resource {name!r}"))
+
+    seen = set()
+    unique = []
+    unconditional: Dict[str, List[Tuple[Requirement, str, str]]] = {}
+    for req, source in requirements:
+        parsed = _parse_requirement(req)
+        if parsed is not None and parsed.marker is None:
+            entries = unconditional.setdefault(canonicalize_name(parsed.name), [])
+            if entries and req.strip() == parsed.name:
+                continue
+            entries.append((parsed, req, source))
+        if req not in seen:
+            seen.add(req)
+            unique.append(req)
+
+    for name, entries in unconditional.items():
+        constraints = [entry for entry in entries if entry[0].specifier]
+        pins = {
+            spec.version
+            for parsed, _, _ in constraints
+            for spec in parsed.specifier
+            if spec.operator == "==" and not spec.version.endswith(".*")
+        }
+        if pins and not any(
+            all(
+                parsed.specifier.contains(pin, prereleases=True)
+                for parsed, _, _ in constraints
+            )
+            for pin in pins
+        ):
+            details = ", ".join(
+                f"{req!r} from {source}" for _, req, source in constraints
+            )
+            raise BuildError(
+                f"conflicting dependency requirements for {name}: {details}. "
+                "use compatible versions across requirements.txt and all resources"
+            )
+    return unique
+
+
+# archive extensions a url or path requirement can point at, longest first
+_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tgz", ".whl", ".zip", ".tar")
+
+
+def _named_distribution(value: str) -> str:
+    """the canonical distribution name of a PEP 508 requirement string.
+
+    handles a bare name, a version pin, extras (``runpod[all]``), and a
+    direct reference (``runpod @ https://.../sdk.tar.gz``). a value that is
+    not a valid requirement (a bare archive filename) is named by its file.
+    """
+    try:
+        return canonicalize_name(Requirement(value).name)
+    except InvalidRequirement:
+        return _archive_distribution(posixpath.basename(value))
+
+
+def _archive_distribution(basename: str) -> str:
+    """the canonical distribution name a wheel or sdist filename declares.
+
+    wheel and sdist names escape the version differently, so the pep 427 /
+    pep 625 parsers are used before falling back to the leading name token
+    for an archive that carries a name but no version (``runpod.tar.gz``).
+    """
+    try:
+        return parse_wheel_filename(basename)[0]
+    except InvalidWheelFilename:
+        pass
+    try:
+        return parse_sdist_filename(basename)[0]
+    except InvalidSdistFilename:
+        pass
+    for suffix in _ARCHIVE_SUFFIXES:
+        if basename.endswith(suffix):
+            basename = basename[: -len(suffix)]
+            break
+    return canonicalize_name(basename.split("-", 1)[0])
+
+
+def _spec_distribution(spec: str) -> str:
+    """the canonical distribution name a requirement spec installs.
+
+    a named spec (bare name, version pin, extras, or ``name @ url``)
+    resolves by its name; a direct url, vcs ref, or path resolves by its
+    ``#egg=`` fragment or the wheel/sdist filename it points at, so a
+    pinned runpod build is still recognised as runpod.
+    """
+    spec = spec.strip()
+    base, _, fragment = spec.partition("#")
+    for part in fragment.split("&"):
+        if part.startswith("egg="):
+            return _named_distribution(part[len("egg=") :])
+
+    basename = posixpath.basename(base.split("?", 1)[0].rstrip("/"))
+    if basename.endswith(_ARCHIVE_SUFFIXES) and " @ " not in spec:
+        return _archive_distribution(basename)
+    return _named_distribution(spec)
+
+
+def reject_runpod_dependency(requirements: List[str]) -> None:
+    """fail when an app pins the runpod sdk through its dependencies.
+
+    deploy installs the app's dependencies and then overlays the client's
+    own runpod tree (``sync_running_package``), so a runpod entry in
+    ``dependencies`` or requirements.txt produces a worker running a
+    silent mix of the two builds. RUNPOD_PACKAGE_SPEC is the supported way
+    to choose the worker's runpod build.
+    """
+    for req in requirements:
+        if _spec_distribution(req) == "runpod":
+            raise BuildError(
+                f"{req!r} pins the runpod sdk through dependencies, which "
+                f"would overlay the client build and run a mixed install on "
+                f"the worker. Remove it and set the RUNPOD_PACKAGE_SPEC "
+                f"environment variable to choose the worker's runpod build."
+            )
+
+
+def split_exclusions(
+    requirements: List[str],
+    extra_excludes: Optional[List[str]] = None,
+    *,
+    auto_exclude: bool = True,
+) -> Tuple[List[str], List[str]]:
+    """(vendored, excluded-names). excluded packages resolve from the
+    worker image at runtime instead of the artifact.
+
+    auto_exclude applies the size-prohibitive set; it is only sound
+    when the workers run on builtin gpu images that preinstall those
+    packages. custom images vendor everything unless the user excludes
+    explicitly.
+    """
+    excluded_names = {requirement_name(e) for e in (extra_excludes or [])}
+    if auto_exclude:
+        excluded_names |= SIZE_PROHIBITIVE_PACKAGES
+    kept: List[str] = []
+    excluded: List[str] = []
+    for req in requirements:
+        name = requirement_name(req)
+        if name in excluded_names:
+            excluded.append(name)
+        else:
+            kept.append(req)
+    # size-prohibitive packages are expected from the image whether or
+    # not the user listed them, so the manifest always records the auto
+    # set that user requirements referenced
+    return kept, sorted(set(excluded))
+
+
+def _parse_requirement(requirement: str) -> Optional[Requirement]:
+    """parse a named requirement, or None for unnamed or invalid inputs."""
+    try:
+        parsed = Requirement(requirement)
+    except InvalidRequirement:
+        return None
+    if requirement.strip() == parsed.name and re.search(
+        r"\.(whl|zip|tar\.gz|tgz)$", parsed.name, re.I
+    ):
+        return None
+    return parsed
+
+
+def _dist_info_name(dist_info_dir: str) -> str:
+    """distribution name from a "name-version.dist-info" directory name."""
+    stem = dist_info_dir[: -len(".dist-info")]
+    match = re.search(r"-\d", stem)
+    return stem[: match.start()] if match else stem
+
+
+def _read_record(dist_info: Path) -> Optional[set]:
+    """paths a wheel installed, relative to the install dir, or None.
+
+    pip --target records scripts and data files relative to its staging
+    lib/python dir ("../../bin/torchrun") and then moves them to the top
+    of the target, so one leading "../../" maps onto the target.
+    """
+    record = dist_info / "RECORD"
+    if not record.is_file():
+        return None
+    paths = set()
+    with record.open(newline="", encoding="utf-8", errors="replace") as f:
+        for row in csv.reader(f):
+            if not row:
+                continue
+            path = posixpath.normpath(row[0].replace("\\", "/"))
+            if path.startswith("../../"):
+                path = path[len("../../") :]
+            if not path.startswith("../") and path not in (".", ".."):
+                paths.add(path)
+    return paths
+
+
+def _installed_dist_infos(env_dir: Path) -> Dict[str, Path]:
+    """canonical distribution name -> its .dist-info dir in env_dir."""
+    return {
+        canonicalize_name(_dist_info_name(d.name)): d
+        for d in env_dir.glob("*.dist-info")
+        if d.is_dir()
+    }
+
+
+def _requires_dist(dist_info: Path) -> Optional[List[Requirement]]:
+    """a wheel's requirements, or None for missing or invalid metadata."""
+    metadata = dist_info / "METADATA"
+    if not metadata.is_file():
+        return None
+    headers = HeaderParser().parsestr(
+        metadata.read_text(encoding="utf-8", errors="replace")
+    )
+    requirements = [
+        _parse_requirement(line) for line in headers.get_all("Requires-Dist") or []
+    ]
+    return None if None in requirements else requirements
+
+
+def _extra_marker_applies(markers: list, extra: str) -> bool:
+    """evaluate a parsed marker's extra conditions, preserving grouping.
+
+    non-extra comparisons are conservatively true: the builder's platform
+    and python patch version do not describe the worker environment.
+    """
+    groups = [True]
+    for marker in markers:
+        if isinstance(marker, list):
+            groups[-1] &= _extra_marker_applies(marker, extra)
+        elif isinstance(marker, tuple):
+            lhs, _, rhs = marker
+            if lhs.serialize() == "extra" or rhs.serialize() == "extra":
+                comparison = Marker(" ".join(part.serialize() for part in marker))
+                groups[-1] &= comparison.evaluate({"extra": extra})
+        elif marker == "or":
+            groups.append(True)
+    return any(groups)
+
+
+def _active_requirements(requirements: List[Requirement], extras: set) -> list:
+    """(dependency, its extras) for each Requires-Dist entry that an install
+    with these extras pulls in. non-extra markers are ignored."""
+    return [
+        (canonicalize_name(req.name), {canonicalize_name(e) for e in req.extras})
+        for req in requirements
+        if req.marker is None
+        or any(
+            _extra_marker_applies(req.marker._markers, extra) for extra in {""} | extras
+        )
+    ]
+
+
+def installed_closure(env_dir: Path, roots: List[str]) -> set:
+    """canonical names of installed distributions the roots pull in,
+    roots included. a dependency behind an extra counts only when that
+    extra was asked for (transformers does not pull torch, while
+    transformers[torch] does). unreadable metadata counts every
+    installed distribution as pulled in."""
+    requires = {
+        name: _requires_dist(d)
+        for name, d in _installed_dist_infos(env_dir).items()
+    }
+    parsed_roots = [_parse_requirement(r) for r in roots]
+    stack = [
+        (canonicalize_name(r.name), {canonicalize_name(e) for e in r.extras})
+        for r in parsed_roots
+        if r is not None
+    ]
+    names = {name for name, _ in stack}
+    if None in parsed_roots or None in requires.values():
+        return set(requires) | names
+    activated: Dict[str, set] = {}
+    while stack:
+        node, extras = stack.pop()
+        known = activated.get(node)
+        if known is not None and extras <= known:
+            continue
+        active = activated[node] = (known or set()) | extras
+        stack.extend(_active_requirements(requires.get(node) or (), active))
+    return set(activated)
+
+
+def _dependency_closure(requires: Dict[str, set], start: set, stop: set) -> set:
+    """installed distributions reachable from start, not walking into stop."""
+    seen = set()
+    stack = [n for n in start if n in requires]
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(d for d in requires[node] if d in requires and d not in stop)
+    return seen
+
+
+def _remove_files(env_dir: Path, rel_paths: set) -> set:
+    """delete files under env_dir, returning the top-level entries touched.
+    paths that resolve outside env_dir are skipped."""
+    root = env_dir.resolve()
+    touched = set()
+    for rel in rel_paths:
+        path = env_dir / rel
+        if not path.resolve().is_relative_to(root):
+            continue
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+            touched.add(rel.split("/", 1)[0])
+    return touched
+
+
+def _remove_empty_dirs(env_dir: Path, tops: set) -> None:
+    """remove directories under each top that the deletions emptied."""
+    for top in tops:
+        top_path = env_dir / top
+        if not top_path.is_dir() or top_path.is_symlink():
+            continue
+        subdirs = [p for p in top_path.rglob("*") if p.is_dir() and not p.is_symlink()]
+        # deepest first, so a parent is empty by the time it is checked
+        for directory in sorted(subdirs, key=lambda p: len(p.parts), reverse=True):
+            if not any(directory.iterdir()):
+                directory.rmdir()
+        if not any(top_path.iterdir()):
+            top_path.rmdir()
+
+
+def prune_excluded(
+    env_dir: Path,
+    excluded: List[str],
+    roots: List[str],
+    image_provided: List[str],
+) -> List[str]:
+    """remove excluded distributions that pip installed as dependencies.
+
+    split_exclusions only drops excluded packages the user listed. a
+    listed package that depends on one (peft -> torch) still installs it,
+    and on the worker the vendored copy shadows the image's build. this
+    removes every installed excluded distribution, plus the wheels that
+    only image_provided packages depend on (torch's nvidia/cuda, sympy,
+    networkx), since the image installs those alongside its own torch.
+
+    fails closed: without METADATA and RECORD for every wheel, or with a
+    root requirement that has no name (url, path), only the excluded
+    distributions themselves are removed. roots and their dependencies
+    are never removed unless excluded.
+
+    returns the canonical names of removed distributions.
+    """
+    dist_infos = _installed_dist_infos(env_dir)
+    excluded_set = {canonicalize_name(n) for n in excluded}
+    if not set(dist_infos) & excluded_set:
+        return []
+    records = {name: _read_record(d) for name, d in dist_infos.items()}
+    dropped = _distributions_to_drop(
+        dist_infos, records, excluded_set, roots, image_provided
+    )
+    _delete_distributions(env_dir, dist_infos, records, dropped)
+    return sorted(dropped)
+
+
+def _distributions_to_drop(
+    dist_infos: Dict[str, Path],
+    records: Dict[str, Optional[set]],
+    excluded: set,
+    roots: List[str],
+    image_provided: List[str],
+) -> set:
+    """the excluded distributions, plus the wheels only image-provided
+    packages need. just the excluded ones when metadata is incomplete
+    or a root has no name."""
+    installed = set(dist_infos)
+    targets = installed & excluded
+    parsed_roots = [_parse_requirement(r) for r in roots]
+    if None in records.values() or None in parsed_roots:
+        return targets
+    root_names = {canonicalize_name(r.name) for r in parsed_roots}
+    requires = {}
+    for name, dist_info in dist_infos.items():
+        dependencies = _requires_dist(dist_info)
+        if dependencies is None:
+            return targets
+        requires[name] = {canonicalize_name(r.name) for r in dependencies}
+
+    provided = {canonicalize_name(n) for n in image_provided}
+    pulled_by_provided = _dependency_closure(requires, installed & provided, set())
+    # keep what the roots, unrelated wheels, and user exclusions (which
+    # remove only the named package) need, without walking into
+    # image-provided packages
+    seed = (installed - pulled_by_provided) | (installed & root_names)
+    seed |= installed & (excluded - provided)
+    kept = _dependency_closure(requires, seed - provided, stop=provided)
+    return targets | (installed - kept)
+
+
+def _delete_distributions(
+    env_dir: Path,
+    dist_infos: Dict[str, Path],
+    records: Dict[str, Optional[set]],
+    dropped: set,
+) -> None:
+    """delete the dropped distributions' files, keeping any file a kept
+    distribution also installed."""
+    dropped_files = set()
+    kept_files = set()
+    for name, paths in records.items():
+        (dropped_files if name in dropped else kept_files).update(paths or ())
+    touched = _remove_files(env_dir, dropped_files - kept_files)
+
+    for name in dropped:
+        shutil.rmtree(dist_infos[name], ignore_errors=True)
+        # a wheel without a RECORD: fall back to its import-name directory
+        fallback = env_dir / name.replace("-", "_")
+        if records[name] is None and fallback.is_dir() and not fallback.is_symlink():
+            shutil.rmtree(fallback, ignore_errors=True)
+
+    _remove_empty_dirs(env_dir, touched)
+
+
+def _is_pinnable_name(spec: str) -> bool:
+    """true if the spec is a plain requirement (name, optional pin), as
+    opposed to a url, git ref, or filesystem path."""
+    return not any(token in spec for token in ("/", "\\", ":", "@")) or bool(
+        _REQ_NAME_RE.match(spec)
+        and re.match(r"^[A-Za-z0-9._-]+(\[[^\]]+\])?([<>=!~;].*)?$", spec)
+    )
+
+
+def runpod_requirement(scratch_dir: Path) -> str:
+    """the runpod sdk spec to vendor into the artifact.
+
+    RUNPOD_PACKAGE_SPEC overrides the published package (version pins,
+    git refs, tarball urls, local checkouts). non-index specs are
+    built into a wheel first so the platform-targeted vendoring
+    install can stay binary-only.
+
+    without an override the published package is vendored for its
+    dependency closure, then sync_running_package overlays the
+    client's own package tree so the worker always runs exactly the
+    client's code regardless of what pypi has.
+    """
+    spec = os.environ.get("RUNPOD_PACKAGE_SPEC", "runpod")
+    if _is_pinnable_name(spec):
+        return spec
+    return str(_build_wheel(spec, scratch_dir))
+
+
+def sync_running_package(env_dir: Path) -> None:
+    """overlay the running runpod package onto the vendored env.
+
+    the package is pure python (py3-none-any), so the client's installed
+    tree is valid on the worker platform. this pins sdk contracts and
+    manifest handling to the client that produced the artifact.
+    """
+    import runpod as _runpod
+
+    src = Path(_runpod.__file__).resolve().parent
+    dest = env_dir / "runpod"
+    shutil.copytree(
+        src,
+        dest,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        dirs_exist_ok=True,
+    )
+
+
+def _ensure_pip() -> None:
+    """make `python -m pip` work in venvs created without pip (uv)."""
+    probe = subprocess.run(
+        [sys.executable, "-m", "pip", "--version"],
+        capture_output=True,
+    )
+    if probe.returncode == 0:
+        return
+    bootstrap = subprocess.run(
+        [sys.executable, "-m", "ensurepip", "--upgrade"],
+        capture_output=True,
+        text=True,
+    )
+    if bootstrap.returncode != 0:
+        raise BuildError(
+            f"pip is not available in this environment and ensurepip "
+            f"failed: {bootstrap.stderr[-500:]}"
+        )
+
+
+def _build_wheel(spec: str, scratch_dir: Path) -> Path:
+    """build a wheel from a url/path spec for binary-only vendoring."""
+    _ensure_pip()
+    wheel_dir = scratch_dir / "wheels"
+    wheel_dir.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    # tarball specs (e.g. github archive urls) have no .git for
+    # setuptools-scm version inference; pretend a version so they build
+    env.setdefault("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RUNPOD", "0.0.0.dev0")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "-q",
+            "-w",
+            str(wheel_dir),
+            spec,
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise BuildError(
+            f"failed to build wheel from RUNPOD_PACKAGE_SPEC={spec!r}: "
+            f"{result.stderr[-2000:]}"
+        )
+    wheels = sorted(wheel_dir.glob("runpod-*.whl"))
+    if not wheels:
+        raise BuildError(
+            f"pip wheel produced no runpod wheel from {spec!r} "
+            f"(found: {[w.name for w in wheel_dir.glob('*.whl')]})"
+        )
+    return wheels[-1]
+
+
+def vendor(
+    env_dir: Path,
+    requirements: List[str],
+    python_version: str,
+    *,
+    no_deps: bool = False,
+    progress: Optional[callable] = None,
+) -> None:
+    """resolve requirements into env_dir for the worker platform.
+
+    progress, if given, is called as progress(count, package) each time
+    pip starts resolving another distribution.
+    """
+    if not requirements:
+        return
+    _ensure_pip()
+    cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--no-color",
+        "--target",
+        str(env_dir),
+        "--python-version",
+        python_version,
+        "--implementation",
+        "cp",
+        "--only-binary",
+        ":all:",
+    ]
+    for platform in MANYLINUX_PLATFORMS:
+        cmd.extend(["--platform", platform])
+    if no_deps:
+        cmd.append("--no-deps")
+    cmd.extend(requirements)
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    count = 0
+    output = deque(maxlen=30)
+    for line in proc.stdout:
+        output.append(line)
+        line = line.strip()
+        # pip emits one "Collecting <dist>" per resolved distribution
+        if line.startswith("Collecting "):
+            count += 1
+            if progress is not None:
+                name = re.split(r"[><=!~\[ (]", line[11:], maxsplit=1)[0]
+                progress(count, name)
+    proc.wait()
+    if proc.returncode != 0:
+        raise BuildError(
+            f"dependency vendoring failed: {''.join(output)[-3000:]}\n"
+            f"packages without linux wheels cannot be vendored; "
+            f"exclude them (they must then come from the image)"
+        )
+
+
+def _cpu_requirements_closure(project_root: Path, resources, env_dir: Path) -> set:
+    """installed distributions the cpu resources' requirements pull in."""
+    roots = _requirements_txt(project_root)
+    roots += [
+        dep for h in resources if not h.spec.gpu for dep in h.spec.dependencies or []
+    ]
+    return installed_closure(env_dir, roots)
+
+
+def _exclusions_for_cpu_workers(
+    excluded: List[str], user_exclude: List[str], cpu_needs: set
+) -> List[str]:
+    """the manifest exclusions for a mixed cpu and gpu app.
+
+    workers pip-install manifest-excluded packages their image lacks at
+    cold start. the gpu images ship the torch family, so only cpu workers
+    act on those entries: keep one only when the cpu resources need it.
+    """
+    user_excluded = {canonicalize_name(requirement_name(e)) for e in user_exclude}
+    kept = [
+        name
+        for name in excluded
+        if name in user_excluded
+        or name not in SIZE_PROHIBITIVE_PACKAGES
+        or name in cpu_needs
+    ]
+    for name in sorted(set(kept) & SIZE_PROHIBITIVE_PACKAGES):
+        log.warning(
+            "cpu resources need %s, which is not bundled; their workers "
+            "install it at cold start, so give them container disk for it",
+            name,
+        )
+    return kept
+
+
+def build_environment(
+    app,
+    project_root: Path,
+    *,
+    python_version: str = DEFAULT_PYTHON_VERSION,
+    exclude: Optional[List[str]] = None,
+    scratch_dir: Optional[Path] = None,
+    events: Optional[object] = None,
+) -> BuildResult:
+    """vendor the app's full runtime environment into a directory tree."""
+    if python_version not in SUPPORTED_PYTHON_VERSIONS:
+        raise BuildError(
+            f"python {python_version} is not supported "
+            f"(supported: {', '.join(SUPPORTED_PYTHON_VERSIONS)})"
+        )
+    scratch = scratch_dir or Path(tempfile.mkdtemp(prefix="rp-build-"))
+    env_dir = scratch / "env"
+    env_dir.mkdir(parents=True, exist_ok=True)
+
+    user_requirements = collect_requirements(project_root, app)
+    reject_runpod_dependency(user_requirements)
+    # size-prohibitive packages come preinstalled only on the builtin
+    # gpu images, and custom images carry no guarantee. builtin cpu
+    # images ship without them, but a vendored pypi torch cannot serve
+    # them either: built off linux it lacks the nvidia libraries and
+    # fails to import, and on linux those libraries exceed the artifact
+    # limit. it would still shadow the gpu image's torch, so an app with
+    # any builtin gpu resource excludes them app-wide (the artifact is
+    # shared), as runpod-flash did
+    resources = list(app.resources.values())
+    auto_exclude = not any(h.spec.image for h in resources) and any(
+        h.spec.gpu for h in resources
+    )
+    vendored, excluded = split_exclusions(
+        user_requirements, exclude, auto_exclude=auto_exclude
+    )
+
+    from .spec import ResourceKind
+
+    runtime_deps = list(RUNTIME_REQUIREMENTS)
+    if any(h.spec.kind is ResourceKind.API for h in app.resources.values()):
+        runtime_deps.extend(API_RUNTIME_REQUIREMENTS)
+
+    package_spec = os.environ.get("RUNPOD_PACKAGE_SPEC")
+    progress = getattr(events, "vendor_progress", None)
+
+    # the runpod package ships without its own dependency closure; the
+    # worker runtime pulls only runtime_deps. with an override the pinned
+    # version is installed no-deps; otherwise the client's own package
+    # tree is overlaid below, so no index install of runpod is needed.
+    if package_spec:
+        vendor(
+            env_dir,
+            [runpod_requirement(scratch)],
+            python_version,
+            no_deps=True,
+            progress=progress,
+        )
+
+    all_requirements = runtime_deps + vendored
+    log.info(
+        "vendoring %d packages for python %s (%d excluded: %s)",
+        len(all_requirements),
+        python_version,
+        len(excluded),
+        ", ".join(excluded) or "none",
+    )
+    vendor(env_dir, all_requirements, python_version, progress=progress)
+
+    # dependencies of vendored packages can pull excluded packages back
+    # in (peft -> torch). a vendored torch shadows the image's build on
+    # the worker and fails its cuda check, so remove them here
+    prune_names = {requirement_name(e) for e in (exclude or [])}
+    if auto_exclude:
+        prune_names |= SIZE_PROHIBITIVE_PACKAGES
+    cpu_needs = None
+    if auto_exclude and any(not h.spec.gpu for h in resources):
+        cpu_needs = _cpu_requirements_closure(project_root, resources, env_dir)
+    pruned = prune_excluded(
+        env_dir,
+        sorted(prune_names),
+        all_requirements,
+        sorted(SIZE_PROHIBITIVE_PACKAGES) if auto_exclude else [],
+    )
+    if pruned:
+        log.info(
+            "removed %d dependency packages provided by the worker image "
+            "or excluded: %s",
+            len(pruned),
+            ", ".join(pruned),
+        )
+        excluded = sorted(
+            set(excluded) | ({canonicalize_name(n) for n in prune_names} & set(pruned))
+        )
+    if cpu_needs is not None:
+        excluded = _exclusions_for_cpu_workers(excluded, exclude or [], cpu_needs)
+
+    if not package_spec:
+        sync_running_package(env_dir)
+
+    return BuildResult(
+        env_dir=env_dir,
+        requirements=all_requirements,
+        excluded=excluded,
+    )

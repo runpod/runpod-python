@@ -288,6 +288,45 @@ class TestGpuHealthCheck:
             # Should not raise
             await _check_gpu_health()
 
+    @staticmethod
+    def _run_health_check(binary_output: str, nvidia_smi_lists_gpu: bool = True):
+        """Run _check_gpu_health with gpu_test printing binary_output."""
+        process = AsyncMock()
+        process.communicate = AsyncMock(return_value=(binary_output.encode(), b""))
+        nvidia_smi = MagicMock(
+            returncode=0 if nvidia_smi_lists_gpu else 1,
+            stdout="GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-1)\n",
+            stderr="",
+        )
+
+        with patch(
+            "runpod.serverless.modules.rp_gpu_fitness._get_gpu_test_binary_path",
+            return_value=Path("/fake/gpu_test"),
+        ), patch("os.access", return_value=True), patch(
+            "asyncio.create_subprocess_exec", return_value=process
+        ), patch("subprocess.run", return_value=nvidia_smi) as mock_run:
+            return mock_run, asyncio.run(_check_gpu_health())
+
+    def test_health_check_rejects_allocation_failure_reported_by_binary(self):
+        """nvidia-smi still listing the GPU must not override a failed allocation."""
+        output = (
+            "Found 1 GPUs:\n"
+            "GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-1)\n"
+            "GPU 0 memory allocation test failed. Error code: 2 (out of memory)\n"
+        )
+
+        with pytest.raises(RuntimeError, match="GPU memory allocation test failed"):
+            self._run_health_check(output)
+
+    def test_health_check_falls_back_when_binary_cannot_enumerate_gpus(self):
+        """A binary that never reached the GPUs (e.g. NVML init) still falls back."""
+        mock_run, _ = self._run_health_check(
+            "Failed to initialize NVML: version mismatch\n"
+        )
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[0] == ["nvidia-smi", "--list-gpus"]
+
 
 
 # ============================================================================

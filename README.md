@@ -1,69 +1,103 @@
 <div align="center">
-<h1>Runpod | Python Library </h1>
+
+<h1>Runpod Python</h1>
+
+**Define GPU functions in Python. Run them in the cloud with one decorator.**
 
 [![PyPI Package](https://badge.fury.io/py/runpod.svg)](https://badge.fury.io/py/runpod)
-&nbsp;
-[![Downloads](https://static.pepy.tech/personalized-badge/runpod?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/runpod)
-
-[![CI | End-to-End Runpod Python Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-e2e.yml)
-
+[![Downloads](https://static.pepy.tech/personalized-badge/runpod?period=total&units=international_system&left_color=grey&right_color=blue&left_text=downloads)](https://pepy.tech/project/runpod)
 [![CI | Unit Tests](https://github.com/runpod/runpod-python/actions/workflows/CI-pytests.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-pytests.yml)
-&nbsp;
-[![CI | CodeQL](https://github.com/runpod/runpod-python/actions/workflows/CI-codeql.yml/badge.svg)](https://github.com/runpod/runpod-python/actions/workflows/CI-codeql.yml)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+
+[Documentation](https://docs.runpod.io) • [Examples](examples) • [Discord](https://discord.gg/pJ3P2DbUUq)
 
 </div>
 
-Welcome to the official Python library for Runpod API &amp; SDK.
+<!-- runpod-agent-setup:start -->
+**Using an AI agent?** Point it to https://docs.runpod.io/agent-setup.md to install the Runpod skills and MCP server.
+<!-- runpod-agent-setup:end -->
 
-## Table of Contents
-
-- [Table of Contents](#table-of-contents)
-- [💻 | Installation](#--installation)
-- [⚡ | Serverless Worker (SDK)](#--serverless-worker-sdk)
-  - [Quick Start](#quick-start)
-  - [Local Test Worker](#local-test-worker)
-- [📚 | API Language Library (GraphQL Wrapper)](#--api-language-library-graphql-wrapper)
-  - [Endpoints](#endpoints)
-  - [GPU Cloud (Pods)](#gpu-cloud-pods)
-- [📁 | Directory](#--directory)
-- [🤝 | Community and Contributing](#--community-and-contributing)
-
-## 💻 | Installation
-
-### Install from PyPI (Stable Release)
+## Installation
 
 ```bash
-# Install with pip
-pip install runpod
-
-# Install with uv (faster alternative)
-uv add runpod
+pip install runpod    # or: uv add runpod
+rp login              # authenticate once
 ```
 
-### Install from GitHub (Latest Changes)
+Requires Python 3.10+. Installing the package also installs the `rp` CLI.
 
-To get the latest changes that haven't been released to PyPI yet:
+## Example
+
+```python
+import runpod
+from runpod import App, Model, NetworkVolume, Secret
+
+app = App("inference")
+
+checkpoints = NetworkVolume("checkpoints", size=100)
+llama = Model("meta-llama/Llama-3.1-8B-Instruct")
+
+
+# an autoscaling job queue on cloud H100s: weights pre-cached,
+# dependencies vendored at deploy time, scale-to-zero when idle
+@app.queue(
+    gpu="H100",
+    workers=(0, 3),
+    dependencies=["vllm"],
+    model=llama,
+    env={"HF_TOKEN": Secret("hf-token")},
+)
+def chat(prompt: str):
+    import vllm
+
+    llm = vllm.LLM(model=str(llama.path))   # weights already on disk
+    result = llm.generate([prompt])[0]
+    return result.outputs[0].text           # results must be JSON values
+
+
+# one ephemeral pod per call: provisions, runs to completion, terminates
+@app.task(gpu="H100", mounts={"/checkpoints": checkpoints})
+def finetune(steps: int = 1000):
+    if steps < 1:
+        raise ValueError("steps must be a positive integer")
+
+    import torch
+
+    model = torch.nn.Linear(1, 1).cuda()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.05)
+    x = torch.randn(1024, 1, device="cuda")
+    y = 3 * x + 1
+    for _ in range(steps):
+        loss = ((model(x) - y) ** 2).mean()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    torch.save(model.state_dict(), checkpoints.path / "model.pt")
+    return {"loss": loss.item()}
+
+
+@runpod.local_entrypoint
+def main():
+    print(chat.remote("why is the sky blue?"))   # blocks for the result
+    print(finetune.remote(steps=500))            # pod terminates on return
+```
 
 ```bash
-# Install latest development version from main branch with pip
-pip install git+https://github.com/runpod/runpod-python.git
+rp secret add hf-token  # store your Hugging Face token once
+rp flash dev main.py    # live dev session: edit, re-run, logs stream back
+rp flash deploy         # deploy production endpoints
+```
 
-# Install with uv
-uv add git+https://github.com/runpod/runpod-python.git
+## Contributing
 
-# Install a specific branch
-pip install git+https://github.com/runpod/runpod-python.git@branch-name
+Pull requests and issues are welcome — see the [contributing guide](CONTRIBUTING.md) to get started.
 
-# Install a specific tag/release
-pip install git+https://github.com/runpod/runpod-python.git@v1.0.0
-
-# Install in editable mode for development
+```bash
 git clone https://github.com/runpod/runpod-python.git
 cd runpod-python
-pip install -e .
+make setup
+make test
 ```
-
-*Python 3.10 or higher is required to use the latest version of this package.*
 
 ## ⚡ | Serverless Worker (SDK)
 
@@ -106,203 +140,6 @@ You can also test your worker locally before deploying it to Runpod. This is use
 python my_worker.py --rp_serve_api
 ```
 
-### Worker Fitness Checks
-
-Fitness checks allow you to validate your worker environment at startup before processing jobs. If any check fails, the worker exits immediately, allowing your orchestrator to restart it.
-
-```python
-# my_worker.py
-
-import runpod
-import torch
-
-# Register fitness checks using the decorator
-@runpod.serverless.register_fitness_check
-def check_gpu_available():
-    """Verify GPU is available."""
-    if not torch.cuda.is_available():
-        raise RuntimeError("GPU not available")
-
-@runpod.serverless.register_fitness_check
-def check_disk_space():
-    """Verify sufficient disk space."""
-    import shutil
-    stat = shutil.disk_usage("/")
-    free_gb = stat.free / (1024**3)
-    if free_gb < 10:
-        raise RuntimeError(f"Insufficient disk space: {free_gb:.2f}GB free")
-
-def handler(job):
-    job_input = job["input"]
-    # Your handler code here
-    return {"output": "success"}
-
-# Fitness checks run before handler initialization (production only)
-runpod.serverless.start({"handler": handler})
-```
-
-**Key Features:**
-- Supports both synchronous and asynchronous check functions
-- Checks run only once at worker startup (production mode)
-- Runs before handler initialization and job processing begins
-- Any check failure exits with code 1 (worker marked unhealthy)
-
-See [Worker Fitness Checks](https://github.com/runpod/runpod-python/blob/main/docs/serverless/worker_fitness_checks.md) documentation for more examples and best practices.
-
-### Network-Volume Warm Cache
-
-When a network volume is attached, `VolumeCache` warms local directories (such as a model cache) across cold starts — hydrating them on startup and syncing new files back on exit — so a repeated multi-GB model download becomes a one-time cost per endpoint. It is stdlib-only and best-effort.
-
-```python
-from runpod.serverless import VolumeCache
-
-with VolumeCache(dirs=["/root/.cache/huggingface"]):
-    model = load_model()
-```
-
-See [Network-Volume Warm Cache](https://github.com/runpod/runpod-python/blob/main/docs/serverless/volume_cache.md) documentation for configuration and details.
-
-## 📚 | API Language Library (GraphQL Wrapper)
-
-When interacting with the Runpod API you can use this library to make requests to the API.
-
-```python
-import runpod
-
-runpod.api_key = "your_runpod_api_key_found_under_settings"
-```
-
-### Endpoints
-
-You can interact with Runpod endpoints via a `run` or `run_sync` method.
-
-#### Basic Usage
-
-```python
-endpoint = runpod.Endpoint("ENDPOINT_ID")
-
-run_request = endpoint.run(
-    {"your_model_input_key": "your_model_input_value"}
-)
-
-# Check the status of the endpoint run request
-print(run_request.status())
-
-# Get the output of the endpoint run request, blocking until the endpoint run is complete.
-print(run_request.output())
-```
-
-```python
-endpoint = runpod.Endpoint("ENDPOINT_ID")
-
-run_request = endpoint.run_sync(
-    {"your_model_input_key": "your_model_input_value"}
-)
-
-# Returns the job results if completed within 90 seconds, otherwise, returns the job status.
-print(run_request )
-```
-
-#### API Key Management
-
-The SDK supports multiple ways to set API keys:
-
-**1. Global API Key** (Default)
-```python
-import runpod
-
-# Set global API key
-runpod.api_key = "your_runpod_api_key"
-
-# All endpoints will use this key by default
-endpoint = runpod.Endpoint("ENDPOINT_ID")
-result = endpoint.run_sync({"input": "data"})
-```
-
-**2. Endpoint-Specific API Key**
-```python
-# Create endpoint with its own API key
-endpoint = runpod.Endpoint("ENDPOINT_ID", api_key="specific_api_key")
-
-# This endpoint will always use the provided API key
-result = endpoint.run_sync({"input": "data"})
-```
-
-#### API Key Precedence
-
-The SDK uses this precedence order (highest to lowest):
-1. Endpoint instance API key (if provided to `Endpoint()`)
-2. Global API key (set via `runpod.api_key`)
-
-```python
-import runpod
-
-# Example showing precedence
-runpod.api_key = "GLOBAL_KEY"
-
-# This endpoint uses GLOBAL_KEY
-endpoint1 = runpod.Endpoint("ENDPOINT_ID")
-
-# This endpoint uses ENDPOINT_KEY (overrides global)
-endpoint2 = runpod.Endpoint("ENDPOINT_ID", api_key="ENDPOINT_KEY")
-
-# All requests from endpoint2 will use ENDPOINT_KEY
-result = endpoint2.run_sync({"input": "data"})
-```
-
-#### Thread-Safe Operations
-
-Each `Endpoint` instance maintains its own API key, making concurrent operations safe:
-
-```python
-import threading
-import runpod
-
-def process_request(api_key, endpoint_id, input_data):
-    # Each thread gets its own Endpoint instance
-    endpoint = runpod.Endpoint(endpoint_id, api_key=api_key)
-    return endpoint.run_sync(input_data)
-
-# Safe concurrent usage with different API keys
-threads = []
-for customer in customers:
-    t = threading.Thread(
-        target=process_request,
-        args=(customer["api_key"], customer["endpoint_id"], customer["input"])
-    )
-    threads.append(t)
-    t.start()
-```
-
-### GPU Cloud (Pods)
-
-```python
-import runpod
-
-runpod.api_key = "your_runpod_api_key_found_under_settings"
-
-# Get all my pods
-pods = runpod.get_pods()
-
-# Get a specific pod
-pod = runpod.get_pod(pod.id)
-
-# Create a pod with GPU
-pod = runpod.create_pod("test", "runpod/stack", "NVIDIA GeForce RTX 3070")
-
-# Create a pod with CPU
-pod = runpod.create_pod("test", "runpod/stack", instance_id="cpu3c-2-4")
-
-# Stop the pod
-runpod.stop_pod(pod.id)
-
-# Resume the pod
-runpod.resume_pod(pod.id)
-
-# Terminate the pod
-runpod.terminate_pod(pod.id)
-```
-
 ## 📁 | Directory
 
 ```BASH
@@ -310,19 +147,15 @@ runpod.terminate_pod(pod.id)
 ├── docs               # Documentation
 ├── examples           # Examples
 ├── runpod             # Package source code
-│   ├── api_wrapper    # Language library - API (GraphQL)
+│   ├── api            # rest api v2 wrapper
 │   ├── cli            # Command Line Interface Functions
 │   ├── endpoint       # Language library - Endpoints
 │   └── serverless     # SDK - Serverless Worker
 └── tests              # Package tests
 ```
 
-## 🤝 | Community and Contributing
-
-We welcome both pull requests and issues on [GitHub](https://github.com/runpod/runpod-python). Bug fixes and new features are encouraged, but please read our [contributing guide](CONTRIBUTING.md) first.
-
 <div align="center">
 
-<a target="_blank" href="https://discord.gg/pJ3P2DbUUq">![Discord Banner 2](https://discordapp.com/api/guilds/912829806415085598/widget.png?style=banner2)</a>
+<a target="_blank" href="https://discord.gg/pJ3P2DbUUq">![Discord](https://discordapp.com/api/guilds/912829806415085598/widget.png?style=banner2)</a>
 
 </div>

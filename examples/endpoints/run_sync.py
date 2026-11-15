@@ -2,12 +2,14 @@
 Example of calling an endpoint using the Runpod Python Language Library.
 """
 
+import requests
+
 import runpod
 
-# Set your global API key with `runpod config` or uncomment the line below:
+# Run `rp login` once to store your API key, or uncomment the line below:
 # runpod.api_key = "YOUR_RUNPOD_API_KEY"
 
-endpoint = runpod.Endpoint("sdxl")  # Where "sdxl" is the endpoint ID
+endpoint = runpod.Endpoint("YOUR_ENDPOINT_ID")
 
 try:
     # Run the endpoint synchronously, blocking until the endpoint run is complete.
@@ -17,5 +19,7 @@ try:
     )
 
     print(run_request)
-except TimeoutError:
+except (TimeoutError, requests.exceptions.Timeout):
+    # TimeoutError: the job was still running when the timeout expired.
+    # requests.exceptions.Timeout: the HTTP request itself timed out.
     print("Job timed out.")

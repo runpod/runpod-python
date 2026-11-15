@@ -1,0 +1,388 @@
+"""gpu and cpu selection enums.
+
+GpuGroup values are backend pool ids; GpuType values are exact device
+display names. either (or plain strings) are accepted anywhere a gpu is
+configured. CpuInstanceType values are backend cpu flavor ids.
+"""
+
+import logging
+import time
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+from ..user_agent import APPS_USER_AGENT
+
+log = logging.getLogger(__name__)
+
+
+class GpuGroup(Enum):
+    ANY = "any"
+    """any gpu"""
+
+    ADA_24 = "ADA_24"
+    """NVIDIA GeForce RTX 4090"""
+
+    ADA_32_PRO = "ADA_32_PRO"
+    """NVIDIA GeForce RTX 5090"""
+
+    ADA_48_PRO = "ADA_48_PRO"
+    """NVIDIA RTX 6000 Ada Generation, NVIDIA L40, NVIDIA L40S"""
+
+    ADA_80_PRO = "ADA_80_PRO"
+    """NVIDIA H100 PCIe, NVIDIA H100 80GB HBM3, NVIDIA H100 NVL"""
+
+    AMPERE_16 = "AMPERE_16"
+    """NVIDIA RTX A4000, NVIDIA RTX A4500, NVIDIA RTX 4000 Ada Generation, NVIDIA RTX 2000 Ada Generation"""
+
+    AMPERE_24 = "AMPERE_24"
+    """NVIDIA RTX A5000, NVIDIA L4, NVIDIA GeForce RTX 3090"""
+
+    AMPERE_48 = "AMPERE_48"
+    """NVIDIA A40, NVIDIA RTX A6000"""
+
+    AMPERE_80 = "AMPERE_80"
+    """NVIDIA A100 80GB PCIe, NVIDIA A100-SXM4-80GB"""
+
+    HOPPER_141 = "HOPPER_141"
+    """NVIDIA H200"""
+
+    BLACKWELL_96 = "BLACKWELL_96"
+    """NVIDIA RTX PRO 6000 Blackwell Server/Workstation/Max-Q editions"""
+
+    BLACKWELL_180 = "BLACKWELL_180"
+    """NVIDIA B200"""
+
+    @classmethod
+    def all(cls) -> List["GpuGroup"]:
+        """all gpu groups except ANY."""
+        return [g for g in cls if g is not cls.ANY]
+
+    def device_names(self) -> List[str]:
+        """exact device display names in this pool.
+
+        serverless endpoints take pool ids directly (gpuIds), but pods
+        take device names (gpuTypeIdList), so tasks need the expansion.
+        """
+        return [t.value for t in POOLS_TO_TYPES.get(self, [])]
+
+
+class GpuType(Enum):
+    ANY = "any"
+    """any gpu"""
+
+    NVIDIA_GEFORCE_RTX_4090 = "NVIDIA GeForce RTX 4090"
+    NVIDIA_GEFORCE_RTX_5090 = "NVIDIA GeForce RTX 5090"
+    NVIDIA_RTX_6000_ADA_GENERATION = "NVIDIA RTX 6000 Ada Generation"
+    NVIDIA_RTX_PRO_6000_BLACKWELL_SERVER_EDITION = (
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+    )
+    NVIDIA_RTX_PRO_6000_BLACKWELL_WORKSTATION_EDITION = (
+        "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"
+    )
+    NVIDIA_RTX_PRO_6000_BLACKWELL_MAX_Q_WORKSTATION_EDITION = (
+        "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+    )
+    NVIDIA_H100_80GB_HBM3 = "NVIDIA H100 80GB HBM3"
+    NVIDIA_H100_PCIe = "NVIDIA H100 PCIe"
+    NVIDIA_H100_NVL = "NVIDIA H100 NVL"
+    NVIDIA_RTX_A4000 = "NVIDIA RTX A4000"
+    NVIDIA_RTX_A4500 = "NVIDIA RTX A4500"
+    NVIDIA_RTX_4000_ADA_GENERATION = "NVIDIA RTX 4000 Ada Generation"
+    NVIDIA_RTX_2000_ADA_GENERATION = "NVIDIA RTX 2000 Ada Generation"
+    NVIDIA_RTX_A5000 = "NVIDIA RTX A5000"
+    NVIDIA_L4 = "NVIDIA L4"
+    NVIDIA_GEFORCE_RTX_3090 = "NVIDIA GeForce RTX 3090"
+    NVIDIA_A40 = "NVIDIA A40"
+    NVIDIA_RTX_A6000 = "NVIDIA RTX A6000"
+    NVIDIA_A100_80GB_PCIe = "NVIDIA A100 80GB PCIe"
+    NVIDIA_A100_SXM4_80GB = "NVIDIA A100-SXM4-80GB"
+    NVIDIA_H200 = "NVIDIA H200"
+    NVIDIA_B200 = "NVIDIA B200"
+
+    @classmethod
+    def all(cls) -> List["GpuType"]:
+        """all gpu types except ANY."""
+        return [g for g in cls if g is not cls.ANY]
+
+
+POOLS_TO_TYPES = {
+    GpuGroup.ADA_24: [GpuType.NVIDIA_GEFORCE_RTX_4090],
+    GpuGroup.ADA_32_PRO: [GpuType.NVIDIA_GEFORCE_RTX_5090],
+    GpuGroup.ADA_48_PRO: [GpuType.NVIDIA_RTX_6000_ADA_GENERATION],
+    GpuGroup.ADA_80_PRO: [
+        GpuType.NVIDIA_H100_80GB_HBM3,
+        GpuType.NVIDIA_H100_PCIe,
+        GpuType.NVIDIA_H100_NVL,
+    ],
+    GpuGroup.AMPERE_16: [
+        GpuType.NVIDIA_RTX_A4000,
+        GpuType.NVIDIA_RTX_A4500,
+        GpuType.NVIDIA_RTX_4000_ADA_GENERATION,
+        GpuType.NVIDIA_RTX_2000_ADA_GENERATION,
+    ],
+    GpuGroup.AMPERE_24: [
+        GpuType.NVIDIA_RTX_A5000,
+        GpuType.NVIDIA_L4,
+        GpuType.NVIDIA_GEFORCE_RTX_3090,
+    ],
+    GpuGroup.AMPERE_48: [GpuType.NVIDIA_A40, GpuType.NVIDIA_RTX_A6000],
+    GpuGroup.AMPERE_80: [
+        GpuType.NVIDIA_A100_80GB_PCIe,
+        GpuType.NVIDIA_A100_SXM4_80GB,
+    ],
+    GpuGroup.HOPPER_141: [GpuType.NVIDIA_H200],
+    GpuGroup.BLACKWELL_96: [
+        GpuType.NVIDIA_RTX_PRO_6000_BLACKWELL_SERVER_EDITION,
+        GpuType.NVIDIA_RTX_PRO_6000_BLACKWELL_WORKSTATION_EDITION,
+        GpuType.NVIDIA_RTX_PRO_6000_BLACKWELL_MAX_Q_WORKSTATION_EDITION,
+    ],
+    GpuGroup.BLACKWELL_180: [GpuType.NVIDIA_B200],
+}
+
+
+def pool_for_gpu_type(gpu_type: GpuType) -> Optional[GpuGroup]:
+    """the pool a specific gpu type belongs to, if any."""
+    for group, types in POOLS_TO_TYPES.items():
+        if gpu_type in types:
+            return group
+    return None
+
+
+class CpuInstanceType(str, Enum):
+    """cpu instance flavors: {generation}{type}-{vcpu}-{memory_gb}."""
+
+    CPU3G_1_4 = "cpu3g-1-4"
+    CPU3G_2_8 = "cpu3g-2-8"
+    CPU3G_4_16 = "cpu3g-4-16"
+    CPU3G_8_32 = "cpu3g-8-32"
+    CPU3C_1_2 = "cpu3c-1-2"
+    CPU3C_2_4 = "cpu3c-2-4"
+    CPU3C_4_8 = "cpu3c-4-8"
+    CPU3C_8_16 = "cpu3c-8-16"
+    CPU5C_1_2 = "cpu5c-1-2"
+    CPU5C_2_4 = "cpu5c-2-4"
+    CPU5C_4_8 = "cpu5c-4-8"
+    CPU5C_8_16 = "cpu5c-8-16"
+
+
+GpuLike = Union[GpuGroup, GpuType, str]
+
+
+def resolve_gpu_string(value: str) -> List[str]:
+    """resolve a user-supplied gpu string to api-facing values.
+
+    accepted forms, in match order:
+      - "any"
+      - pool ids ("ADA_24", case-insensitive)
+      - exact device names ("NVIDIA B200")
+      - enum-style names ("NVIDIA_B200")
+      - shorthand device fragments ("B200", "4090", "h100"): every
+        device whose name contains the fragment matches, so "H100"
+        selects all H100 variants
+
+    unknown strings raise with the full list of valid options.
+    """
+    text = value.strip()
+    if text.lower() == "any":
+        return [GpuGroup.ANY.value]
+
+    upper = text.upper()
+    for group in GpuGroup.all():
+        if group.value.upper() == upper:
+            return [group.value]
+
+    for gpu_type in GpuType.all():
+        if gpu_type.value.upper() == upper or gpu_type.name == upper:
+            return [gpu_type.value]
+
+    fragment = upper.replace("_", " ")
+    matches = [
+        gpu_type.value
+        for gpu_type in GpuType.all()
+        if fragment in gpu_type.value.upper()
+    ]
+    if matches:
+        return matches
+
+    from .errors import InvalidResourceError
+
+    pools = ", ".join(g.value for g in GpuGroup.all())
+    devices = ", ".join(t.value for t in GpuType.all())
+    raise InvalidResourceError(
+        f"unknown gpu '{value}'. use a pool id ({pools}), a device "
+        f"name ({devices}), or a fragment like '4090' or 'H100'"
+    )
+
+
+CATALOG_PATH = "/v2/catalog/gpus"
+CATALOG_RETRY_SECONDS = 60.0
+
+
+@dataclass
+class _CatalogCache:
+    """the live catalog's pool membership, or when fetching it last failed."""
+
+    members: Optional[Dict[str, Set[str]]] = None
+    failed_at: Optional[float] = None
+
+    def may_fetch(self) -> bool:
+        """true until a fetch succeeds, except within a minute of a failure."""
+        if self.members is not None:
+            return False
+        return (
+            self.failed_at is None
+            or time.monotonic() - self.failed_at >= CATALOG_RETRY_SECONDS
+        )
+
+    def fail(self, exc: Exception) -> None:
+        self.failed_at = time.monotonic()
+        log.warning(
+            "gpu catalog unavailable (%s); device pins use the static pool "
+            "table, which can miss newer devices in a pool",
+            exc,
+        )
+
+
+_catalog_caches: Dict[Tuple[str, str], _CatalogCache] = {}
+
+
+def _clear_catalog_cache() -> None:
+    _catalog_caches.clear()
+
+
+def _catalog_context(api_key: Optional[str] = None) -> Tuple[str, str]:
+    from ..api.rest import _build_url, _resolve_api_key
+    from ..error import AuthenticationError
+
+    try:
+        key = _resolve_api_key(api_key)
+    except AuthenticationError:
+        key = ""
+    return _build_url(CATALOG_PATH), key
+
+
+def _parse_catalog(data: Any) -> Dict[str, Set[str]]:
+    """pool id -> device ids from a catalog response."""
+    gpus = data.get("gpus", []) if isinstance(data, dict) else data
+    members: Dict[str, Set[str]] = {}
+    for gpu in gpus:
+        if gpu.get("pool") and gpu.get("id"):
+            members.setdefault(gpu["pool"], set()).add(gpu["id"])
+    if not members:
+        raise ValueError("catalog lists no pools")
+    return members
+
+
+def live_pool_members() -> Optional[Dict[str, Set[str]]]:
+    """pool id -> device ids, from the platform's gpu catalog.
+
+    the static POOLS_TO_TYPES table lags the platform (pools gain mig
+    slices and new skus), so exact-device pinning reads the live
+    membership. returns None when the catalog is unreachable. a result
+    is kept for the process; a failure is retried after a minute.
+    """
+    from ..api.ctl_commands import get_gpus
+
+    context = _catalog_context()
+    cache = _catalog_caches.setdefault(context, _CatalogCache())
+    if cache.may_fetch():
+        try:
+            cache.members = _parse_catalog(
+                get_gpus(api_key=context[1], user_agent=APPS_USER_AGENT)
+            )
+        except Exception as exc:  # noqa: BLE001 - offline, auth, or malformed
+            cache.fail(exc)
+    return cache.members
+
+
+async def live_pool_members_async(
+    api_key: Optional[str] = None,
+) -> Optional[Dict[str, Set[str]]]:
+    """fetch pool membership without blocking, cached by catalog url and credentials."""
+    from ..api.rest import run_rest_request_async
+
+    context = _catalog_context(api_key)
+    cache = _catalog_caches.setdefault(context, _CatalogCache())
+    if cache.may_fetch():
+        try:
+            data = await run_rest_request_async(
+                "GET",
+                CATALOG_PATH,
+                api_key=context[1],
+                timeout=10,
+                user_agent=APPS_USER_AGENT,
+            )
+            cache.members = _parse_catalog(data)
+        except Exception as exc:
+            cache.fail(exc)
+    return cache.members
+
+
+def _pool_members(pool: str, live: Optional[Dict[str, Set[str]]]) -> Set[str]:
+    if live is not None and pool in live:
+        return live[pool]
+    try:
+        return {t.value for t in POOLS_TO_TYPES.get(GpuGroup(pool), [])}
+    except ValueError:
+        return set()
+
+
+def _device_pool(value: str) -> Optional[str]:
+    """the pool id of a known device name, or None."""
+    try:
+        pool = pool_for_gpu_type(GpuType(value))
+    except ValueError:
+        return None
+    return pool.value if pool is not None else None
+
+
+def needs_gpu_catalog(gpu: Optional[List[str]]) -> bool:
+    if not gpu or any(str(g).lower() == "any" for g in gpu):
+        return False
+    return any(
+        (pool := _device_pool(str(g))) is not None and pool not in gpu for g in gpu
+    )
+
+
+def gpu_ids_value(
+    gpu: Optional[List[str]], *, pool_members: Optional[Dict[str, Set[str]]] = None
+) -> str:
+    """the gpuIds string for an endpoint payload.
+
+    "any gpu" (no selection, or the ANY sentinel) means every pool id:
+    the api has no wildcard and rejects "any". endpoints select by
+    pool, so device names map to their pool, and every other device in
+    that pool is excluded with a "-<device id>" token so workers only
+    land on the requested devices. pools named directly allow all of
+    their devices.
+
+    supplying pool_members keeps serialization offline; an empty mapping
+    uses the static pool table. omitted membership is fetched synchronously.
+    """
+    if not gpu or any(str(g).lower() == "any" for g in gpu):
+        return ",".join(g.value for g in GpuGroup.all())
+    pools: List[str] = []
+    named_pools: Set[str] = set()
+    devices: Set[str] = set()
+    for entry in gpu:
+        value = str(entry)
+        pool = _device_pool(value)
+        if pool is None:
+            # a pool id allows every device in it; other ids pass through
+            named_pools.add(value)
+        else:
+            devices.add(value)
+            value = pool
+        if value not in pools:
+            pools.append(value)
+    device_pools = {_device_pool(d) for d in devices} - named_pools
+    if pool_members is None and device_pools:
+        pool_members = live_pool_members()
+    exclusions = sorted(
+        member
+        for pool in device_pools
+        for member in _pool_members(pool, pool_members)
+        if member not in devices
+    )
+    return ",".join(pools + [f"-{m}" for m in exclusions])

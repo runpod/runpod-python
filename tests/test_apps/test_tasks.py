@@ -1,0 +1,728 @@
+"""tests for the task runner and pod task transport."""
+
+import asyncio
+import base64
+import json
+import pickle
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from runpod.apps import App
+from runpod.apps.app import _clear_registry
+from runpod.apps.errors import RemoteExecutionError
+from runpod.apps.spec import ResourceKind, ResourceSpec
+from runpod.apps.targets import PodTarget
+from runpod.apps.tasks import _pod_input, unwrap_task_response
+from runpod.apps.volume import GlobalVolume, NetworkVolume
+
+# the sync bridge finalizes coroutines on a background loop thread;
+# asyncmock coroutines observed there trip the unraisable checker
+# non-deterministically under full-suite gc timing
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::pytest.PytestUnraisableExceptionWarning"
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_registry():
+    _clear_registry()
+    yield
+    _clear_registry()
+
+
+class TestPodInput:
+    def _spec(self, **kw):
+        defaults = dict(kind=ResourceKind.TASK, name="t")
+        defaults.update(kw)
+        return ResourceSpec(**defaults)
+
+    def test_cpu_pod_input(self):
+        pod = _pod_input(self._spec(cpu=["cpu3c-1-2"]), "tok", "t")
+        assert pod["instanceIds"] == ["cpu3c-1-2"]
+        from runpod.apps.images import local_python_version
+
+        assert pod["imageName"] == f"runpod/task:py{local_python_version()}-latest"
+        assert pod["ports"] == "8080/http"
+        env = {e["key"]: e["value"] for e in pod["env"]}
+        assert env["RUNPOD_TASK_TOKEN"] == "tok"
+        assert "RUNPOD_RUNTIME_PACKAGE_SPEC" not in env
+        assert "dockerArgs" not in pod
+
+    def test_gpu_pod_input(self):
+        pod = _pod_input(
+            self._spec(gpu=["NVIDIA GeForce RTX 4090"], gpu_count=2), "tok", "t"
+        )
+        assert pod["gpuTypeIdList"] == ["NVIDIA GeForce RTX 4090"]
+        assert pod["gpuCount"] == 2
+        # gpu runtime image matched to the local python version
+        from runpod.apps.images import local_python_version
+
+        assert pod["imageName"] == f"runpod/task-gpu:py{local_python_version()}-latest"
+
+    def test_any_gpu_selects_all_supported_devices(self):
+        from runpod.apps.gpu import GpuType
+
+        pod = _pod_input(self._spec(gpu="any"), "tok", "t")
+
+        assert set(pod["gpuTypeIdList"]) == {gpu.value for gpu in GpuType.all()}
+
+    @pytest.mark.parametrize("gpu", ["H100", "ADA_80_PRO"])
+    def test_h100_selection_includes_all_catalog_variants(self, gpu):
+        pod = _pod_input(self._spec(gpu=gpu), "tok", "t")
+
+        assert set(pod["gpuTypeIdList"]) == {
+            "NVIDIA H100 80GB HBM3",
+            "NVIDIA H100 PCIe",
+            "NVIDIA H100 NVL",
+        }
+
+    def test_custom_image_starts_runtime_package(self, monkeypatch):
+        monkeypatch.setenv("RUNPOD_RUNTIME_PACKAGE_SPEC", "runpod-sdk-runtime==1.2.3")
+        monkeypatch.setenv("RUNPOD_PACKAGE_SPEC", "runpod==2.0.0")
+        pod = _pod_input(
+            self._spec(cpu=["cpu3c-1-2"], image="my/image:1"),
+            "tok",
+            "t",
+        )
+        assert pod["imageName"] == "my/image:1"
+        env = {e["key"]: e["value"] for e in pod["env"]}
+        assert env["RUNPOD_RUNTIME_PACKAGE_SPEC"] == "runpod-sdk-runtime==1.2.3"
+        assert env["RUNPOD_PACKAGE_SPEC"] == "runpod==2.0.0"
+        assert "runpod_sdk_runtime.task.runner" in pod["dockerArgs"]
+
+    def test_datacenter_forwarded(self):
+        pod = _pod_input(
+            self._spec(cpu=["cpu3c-1-2"], datacenter=["EU-RO-1"]), "tok", "t"
+        )
+        assert pod["dataCenterIds"] == ["EU-RO-1"]
+
+    def test_cpu5_uses_supported_datacenters(self):
+        from runpod.apps.datacenter import CPU5_DATACENTERS
+
+        pod = _pod_input(self._spec(cpu=["cpu5c-1-2"]), "tok", "t")
+        assert pod["dataCenterIds"] == [dc.value for dc in CPU5_DATACENTERS]
+
+
+class TestUnwrapTaskResponse:
+    def test_pickled_result_is_rejected(self):
+        payload = base64.b64encode(pickle.dumps(42)).decode("utf-8")
+        with pytest.raises(RemoteExecutionError, match="must use json_result"):
+            unwrap_task_response({"success": True, "result": payload})
+
+    def test_success_json(self):
+        assert unwrap_task_response({"success": True, "json_result": {"a": 1}}) == {
+            "a": 1
+        }
+
+    def test_failure_raises(self):
+        with pytest.raises(RemoteExecutionError, match="boom"):
+            unwrap_task_response({"success": False, "error": "boom"})
+
+
+class TestPodTargetPayload:
+    def test_payload_carries_source_and_args(self):
+        app = App("a")
+
+        @app.task(name="t", cpu="cpu3c-1-2", dependencies=["numpy"])
+        def t(x):
+            return x
+
+        target = PodTarget(t.spec, t._fn)
+        payload = target.build_payload(t._fn, t.spec, (5,), {})
+        assert payload["function_name"] == "t"
+        assert "def t(x):" in payload["function_code"]
+        assert payload["args"] == [5]
+        assert payload["serialization_format"] == "json"
+        assert payload["dependencies"] == ["numpy"]
+
+    def test_task_remote_runs_past_one_hour_and_cleans_up(self):
+        from types import SimpleNamespace
+
+        from runpod.apps.tasks import TaskExecution
+
+        app = App("a")
+
+        @app.task(name="t", cpu="cpu3c-1-2")
+        def t(x):
+            return x * 2
+
+        clock = [0.0]
+        pods = {"pod-1"}
+
+        async def poll_result():
+            if clock[0] == 0:
+                clock[0] = 7200.0
+                return None
+            return {"success": True, "json_result": 10}
+
+        async def delete(pod_id):
+            pods.remove(pod_id)
+
+        execution = TaskExecution(t.spec, api=MagicMock(terminate_pod=delete))
+        execution.pod_id = "pod-1"
+        execution.start = AsyncMock()
+        execution.wait_ready = AsyncMock()
+        execution.submit = AsyncMock()
+        execution.poll_result = poll_result
+        with (
+            patch("runpod.apps.tasks.TaskExecution", return_value=execution),
+            patch(
+                "runpod.apps.tasks.time",
+                SimpleNamespace(monotonic=lambda: clock[0]),
+            ),
+            patch("runpod.apps.tasks.RESULT_POLL_INTERVAL", 0),
+        ):
+            assert t.remote(5) == 10
+        assert not pods
+
+    def test_task_terminates_pod_on_failure(self):
+        app = App("a")
+
+        @app.task(name="t", cpu="cpu3c-1-2")
+        def t():
+            pass
+
+        with patch("runpod.apps.tasks.TaskExecution") as MockExec:
+            instance = MockExec.return_value
+            instance.start = AsyncMock()
+            instance.wait_ready = AsyncMock(side_effect=TimeoutError("never ready"))
+            instance.terminate = AsyncMock()
+
+            with pytest.raises(TimeoutError):
+                t.remote()
+
+        instance.terminate.assert_awaited_once()
+
+    def test_task_spawn_returns_job(self):
+        app = App("a")
+
+        @app.task(name="t", cpu="cpu3c-1-2")
+        def t():
+            pass
+
+        with patch("runpod.apps.tasks.TaskExecution") as MockExec:
+            instance = MockExec.return_value
+            instance.start = AsyncMock()
+            instance.wait_ready = AsyncMock()
+            instance.submit = AsyncMock()
+            instance.pod_id = "pod-1"
+
+            job = t.spawn()
+
+        from runpod.apps.tasks import TaskJob
+
+        assert isinstance(job, TaskJob)
+        assert job.pod_id == "pod-1"
+        instance.submit.assert_awaited_once()
+
+
+class TestPollResult:
+    """poll_result must tolerate proxy propagation 404s."""
+
+    def _server(self, responses):
+        """a local server that pops one canned (status, body) per hit."""
+        import http.server
+        import threading
+
+        hits = {"count": 0}
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                hits["count"] += 1
+                status, body = responses[min(hits["count"], len(responses)) - 1]
+                payload = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *args):
+                pass
+
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        httpd.daemon_threads = True
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        return httpd, hits
+
+    def _poll(self, url):
+        from runpod.apps.tasks import TaskExecution
+
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(spec)
+        execution.pod_id = "fake"
+        with (
+            patch("runpod.apps.tasks._proxy_url", return_value=url),
+            patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()),
+        ):
+            return asyncio.run(execution.poll_result())
+
+    def test_retries_transient_404_then_returns_result(self):
+        httpd, hits = self._server(
+            [
+                (404, {"error": "not found"}),
+                (404, {"error": "not found"}),
+                (200, {"status": "DONE", "response": {"success": True}}),
+            ]
+        )
+        try:
+            url = f"http://127.0.0.1:{httpd.server_port}"
+            assert self._poll(url) == {"success": True}
+            assert hits["count"] == 3
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_persistent_404_raises(self):
+        from runpod.apps import AppHTTPError
+
+        httpd, hits = self._server([(404, {"error": "not found"})])
+        try:
+            url = f"http://127.0.0.1:{httpd.server_port}"
+            with pytest.raises(AppHTTPError) as raised:
+                self._poll(url)
+            assert raised.value.status == 404
+            assert raised.value.body_excerpt == '{"error": "not found"}'
+            assert hits["count"] == 6
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_running_returns_none(self):
+        httpd, _ = self._server([(200, {"status": "RUNNING", "response": None})])
+        try:
+            url = f"http://127.0.0.1:{httpd.server_port}"
+            assert self._poll(url) is None
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+
+class TestGpuPoolExpansion:
+    def test_pool_id_expands_to_device_names(self):
+        from runpod.apps.tasks import _device_names
+
+        assert _device_names(["ADA_24"]) == ["NVIDIA GeForce RTX 4090"]
+
+    def test_device_name_passes_through(self):
+        from runpod.apps.tasks import _device_names
+
+        assert _device_names(["NVIDIA L40S"]) == ["NVIDIA L40S"]
+
+    def test_none_expands_to_all_devices(self):
+        # the pod api has no "any" wildcard; unconstrained gpu means
+        # every known device name
+        from runpod.apps.gpu import POOLS_TO_TYPES
+        from runpod.apps.tasks import _device_names
+
+        names = _device_names(None)
+        assert "any" not in names
+        all_devices = {t.value for types in POOLS_TO_TYPES.values() for t in types}
+        assert set(names) == all_devices
+
+    def test_mixed_pool_and_device(self):
+        from runpod.apps.tasks import _device_names
+
+        names = _device_names(["AMPERE_48", "NVIDIA L40S"])
+        assert "NVIDIA A40" in names and "NVIDIA L40S" in names
+
+
+class TestTaskExecutionLifecycle:
+    def _spec(self, **overrides):
+        from runpod.apps.spec import ResourceKind, ResourceSpec
+
+        defaults = dict(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        defaults.update(overrides)
+        return ResourceSpec(**defaults)
+
+    async def test_start_deploys_pod(self):
+        from runpod.apps.tasks import TaskExecution
+
+        api = MagicMock()
+        api.deploy_task_pod = AsyncMock(return_value={"id": "pod-9"})
+        execution = TaskExecution(self._spec(), api=api)
+        await execution.start()
+        assert execution.pod_id == "pod-9"
+        assert api.deploy_task_pod.call_args[1]["is_cpu"] is True
+
+    @pytest.mark.parametrize("mounts", [{}, {"/data": GlobalVolume("global-1")}])
+    async def test_start_retries_datacenters_after_capacity_error(self, mounts):
+        from runpod.apps.tasks import TaskExecution
+        from runpod.error import QueryError
+
+        api = MagicMock()
+        api.list_global_volumes = AsyncMock(
+            return_value=[{"id": "global-1", "name": "models"}]
+        )
+        capacity = "This machine does not have the resources to deploy your pod"
+        api.deploy_task_pod = AsyncMock(
+            side_effect=[
+                QueryError(capacity),
+                QueryError(capacity),
+                {"id": "pod-9"},
+            ]
+        )
+        execution = TaskExecution(
+            self._spec(
+                gpu=["NVIDIA GeForce RTX 4090"],
+                cpu=None,
+                datacenter=["US-IL-1", "EU-RO-1"],
+                mounts=mounts,
+            ),
+            api=api,
+        )
+        await execution.start()
+
+        calls = api.deploy_task_pod.await_args_list
+        assert calls[0].args[0]["dataCenterIds"] == ["US-IL-1", "EU-RO-1"]
+        assert calls[1].args[0]["dataCenterIds"] == ["US-IL-1"]
+        assert calls[2].args[0]["dataCenterIds"] == ["EU-RO-1"]
+        assert execution.pod_id == "pod-9"
+
+    async def test_start_does_not_retry_non_capacity_error(self):
+        from runpod.apps.tasks import TaskExecution
+        from runpod.error import QueryError
+
+        api = MagicMock()
+        api.deploy_task_pod = AsyncMock(side_effect=QueryError("invalid image"))
+        execution = TaskExecution(self._spec(), api=api)
+
+        with pytest.raises(QueryError, match="invalid image"):
+            await execution.start()
+        api.deploy_task_pod.assert_awaited_once()
+
+    async def test_shared_volume_placement_accounts_for_siblings(self):
+        from runpod.apps.tasks import TaskExecution
+
+        volume = NetworkVolume("shared")
+        spec = self._spec(mounts={"/data": volume}, datacenter=["US-IL-1", "EU-RO-1"])
+        sibling = ResourceSpec(
+            kind=ResourceKind.QUEUE,
+            name="sibling",
+            cpu=["cpu3c-1-2"],
+            mounts={"/runpod-volume": volume},
+            datacenter=["EU-RO-1"],
+        )
+        unrelated = ResourceSpec(
+            kind=ResourceKind.QUEUE,
+            name="unrelated",
+            cpu=["cpu3c-1-2"],
+            mounts={"/runpod-volume": NetworkVolume("other")},
+            datacenter=["US-IL-1"],
+        )
+        api = AsyncMock()
+        api.network_volume_datacenters.return_value = {"EU-RO-1", "US-IL-1"}
+        api.list_network_volumes.return_value = []
+        api.network_volume_datacenters.return_value = {"EU-RO-1", "US-IL-1"}
+        api.cpu_stock_status.side_effect = lambda instance, dc, *, pods=False: (
+            "High" if dc == "US-IL-1" else "Low"
+        )
+        api.create_network_volume.return_value = {"id": "volume-1"}
+        api.deploy_task_pod.return_value = {"id": "pod-9"}
+        execution = TaskExecution(spec, api=api, specs=[spec, sibling, unrelated])
+        await execution.start()
+        assert api.create_network_volume.call_args.kwargs["data_center_id"] == "EU-RO-1"
+        assert api.deploy_task_pod.call_args.args[0]["dataCenterIds"] == ["EU-RO-1"]
+
+    async def test_start_resolves_registry_auth(self):
+        from runpod.apps.tasks import TaskExecution
+
+        api = MagicMock()
+        api.deploy_task_pod = AsyncMock(return_value={"id": "pod-9"})
+        execution = TaskExecution(
+            self._spec(image="private/img", registry_auth="dh"), api=api
+        )
+        with patch(
+            "runpod.apps.registry.resolve_registry_auth",
+            AsyncMock(return_value="auth-1"),
+        ):
+            await execution.start()
+        pod = api.deploy_task_pod.call_args[0][0]
+        assert pod["containerRegistryAuthId"] == "auth-1"
+
+    async def test_failed_termination_retains_id_for_retry(self):
+        from runpod.apps.tasks import TaskExecution
+
+        api = MagicMock()
+        api.terminate_pod = AsyncMock(side_effect=[RuntimeError("api down"), None])
+        execution = TaskExecution(self._spec(), api=api)
+        execution.pod_id = "pod-9"
+        with pytest.raises(RuntimeError, match="api down"):
+            await execution.terminate()
+        assert execution.pod_id == "pod-9"
+        await execution.terminate()
+        assert execution.pod_id is None
+
+    async def test_terminate_noop_without_pod(self):
+        from runpod.apps.tasks import TaskExecution
+
+        api = MagicMock()
+        api.terminate_pod = AsyncMock()
+        execution = TaskExecution(self._spec(), api=api)
+        await execution.terminate()
+        api.terminate_pod.assert_not_awaited()
+
+    async def test_execute_polls_to_done(self):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(self._spec(), api=MagicMock())
+        execution.pod_id = "pod-9"
+        execution.submit = AsyncMock()
+        polls = [None, {"success": True, "json_result": 4}]
+        execution.poll_result = AsyncMock(side_effect=polls)
+        with patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()):
+            response = await execution.execute({"fn": "t"}, timeout=60)
+        assert response == {"success": True, "json_result": 4}
+        execution.submit.assert_awaited_once_with({"fn": "t", "timeout": 60})
+
+    async def test_execute_timeout(self):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(self._spec(), api=MagicMock())
+        execution.pod_id = "pod-9"
+        execution.submit = AsyncMock()
+        execution.poll_result = AsyncMock(return_value=None)
+        with (
+            patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()),
+            patch(
+                "runpod.apps.tasks.time.monotonic",
+                side_effect=[0, 0, 100],
+            ),
+        ):
+            with pytest.raises(TimeoutError, match="did not finish"):
+                await execution.execute({"fn": "t"}, timeout=10)
+
+
+class TestTaskTimeoutTransport:
+    @pytest.mark.parametrize("method", ["submit", "set_timeout"])
+    @pytest.mark.parametrize("acknowledged", [False, True])
+    async def test_runtime_must_acknowledge_timeout(self, method, acknowledged):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(
+            ResourceSpec(kind=ResourceKind.TASK, name="t"), api=MagicMock()
+        )
+        execution.pod_id = "pod-9"
+        response = MagicMock(status=200)
+        response.json = AsyncMock(
+            return_value={"timeout": 60} if acknowledged else {"status": "RUNNING"}
+        )
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.post.return_value.__aenter__.return_value = response
+        with patch("runpod.apps.tasks.aiohttp.ClientSession", return_value=session):
+            argument = {"timeout": 60} if method == "submit" else 60
+            if acknowledged:
+                await getattr(execution, method)(argument)
+            else:
+                with pytest.raises(RuntimeError, match="did not acknowledge"):
+                    await getattr(execution, method)(argument)
+        assert session.post.call_args.kwargs["json"] == {"timeout": 60}
+        assert session.post.call_args.kwargs["headers"] == execution._headers
+
+    @pytest.mark.parametrize("timeout", [-1, True, "60", float("nan"), float("inf")])
+    async def test_invalid_timeouts_fail_before_http(self, timeout):
+        from runpod.apps.tasks import TaskExecution
+
+        execution = TaskExecution(
+            ResourceSpec(kind=ResourceKind.TASK, name="t"), api=MagicMock()
+        )
+        with patch("runpod.apps.tasks.aiohttp.ClientSession") as session:
+            with pytest.raises(ValueError, match="finite non-negative"):
+                await execution.set_timeout(timeout)
+        session.assert_not_called()
+
+
+class TestTaskJob:
+    def _job(self):
+        from runpod.apps.tasks import TaskExecution, TaskJob
+
+        execution = MagicMock(spec=TaskExecution)
+        execution.pod_id = "pod-9"
+        execution.terminate = AsyncMock()
+        return TaskJob(execution), execution
+
+    async def test_wait_returns_result_and_terminates(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(
+            side_effect=[None, {"success": True, "json_result": 9}]
+        )
+        with patch("runpod.apps.tasks.asyncio.sleep", AsyncMock()):
+            result = await job.wait()
+        assert result == 9
+        execution.terminate.assert_awaited_once()
+
+    async def test_wait_sends_timeout_to_runtime(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(
+            return_value={"success": True, "json_result": 9}
+        )
+        assert await job.wait(timeout=60) == 9
+        execution.set_timeout.assert_awaited_once_with(60)
+        execution.terminate.assert_awaited_once()
+
+    async def test_timeout_configuration_failure_terminates_pod(self):
+        job, execution = self._job()
+        execution.set_timeout = AsyncMock(side_effect=RuntimeError("unsupported"))
+        with pytest.raises(RuntimeError, match="unsupported"):
+            await job.wait(timeout=60)
+        execution.poll_result.assert_not_called()
+        execution.terminate.assert_awaited_once()
+
+    async def test_wait_timeout_terminates_pod(self):
+        from runpod.apps.tasks import TaskExecution, TaskJob
+
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(spec, api=MagicMock())
+        execution.pod_id = "pod-9"
+        pods = {"pod-9"}
+
+        async def delete(pod_id):
+            pods.remove(pod_id)
+
+        execution.api.terminate_pod = delete
+        execution.set_timeout = AsyncMock()
+        job = TaskJob(execution)
+        with pytest.raises(TimeoutError):
+            await job.wait(timeout=0)
+        assert not pods
+        assert job.pod_id is None
+        execution.set_timeout.assert_awaited_once_with(0)
+
+    @pytest.mark.parametrize(
+        "failure",
+        [RuntimeError("poll failed"), asyncio.CancelledError()],
+    )
+    async def test_poll_failure_terminates_pod(self, failure):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(side_effect=failure)
+        with pytest.raises(type(failure)):
+            await job.wait()
+        execution.terminate.assert_awaited_once()
+
+    async def test_failed_result_terminates_pod(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(
+            return_value={"success": False, "error": "task failed"}
+        )
+        with pytest.raises(RemoteExecutionError, match="task failed"):
+            await job.wait()
+        execution.terminate.assert_awaited_once()
+
+    async def test_wait_after_done_returns_cached(self):
+        job, execution = self._job()
+        execution.poll_result = AsyncMock(
+            return_value={"success": True, "json_result": 9}
+        )
+        assert await job.wait() == 9
+        assert await job.wait() == 9
+        assert execution.poll_result.await_count == 1
+
+    async def test_cancel_terminates(self):
+        job, execution = self._job()
+        await job.cancel()
+        execution.terminate.assert_awaited_once()
+        assert job._done
+
+
+class TestSpawnCleanup:
+    @pytest.mark.parametrize("stage", ["start", "wait_ready", "submit"])
+    @pytest.mark.parametrize("cancelled", [False, True])
+    async def test_setup_failure_terminates_pod(self, stage, cancelled):
+        from runpod.apps.tasks import TaskExecution
+
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(spec, api=MagicMock())
+        pods = set()
+        failure = (
+            asyncio.CancelledError() if cancelled else RuntimeError("setup failed")
+        )
+
+        async def start():
+            execution.pod_id = "pod-9"
+            pods.add("pod-9")
+            if stage == "start":
+                raise failure
+
+        async def terminate(pod_id):
+            pods.remove(pod_id)
+
+        execution.start = start
+        execution.api.terminate_pod = terminate
+        execution.wait_ready = AsyncMock(
+            side_effect=failure if stage == "wait_ready" else None
+        )
+        execution.submit = AsyncMock(side_effect=failure if stage == "submit" else None)
+        with patch("runpod.apps.tasks.TaskExecution", return_value=execution):
+            with pytest.raises(type(failure)):
+                await PodTarget(spec, lambda: None).submit({})
+        assert not pods
+        assert execution.pod_id is None
+
+
+class TestCancellationCleanup:
+    @pytest.mark.parametrize("method", ["invoke", "submit"])
+    async def test_cancel_during_creation_recovers_and_deletes_pod(self, method):
+        from runpod.apps.tasks import TaskExecution
+        from runpod.error import QueryError
+
+        creating, release_create = asyncio.Event(), asyncio.Event()
+        deleting, release_delete = asyncio.Event(), asyncio.Event()
+        pods = set()
+        failures = iter([QueryError("rate limited", status_code=429), None])
+
+        async def deploy(*args, **kwargs):
+            creating.set()
+            await release_create.wait()
+            pods.add("pod-late")
+            return {"id": "pod-late"}
+
+        async def delete(pod_id):
+            deleting.set()
+            await release_delete.wait()
+            failure = next(failures)
+            if failure:
+                raise failure
+            pods.remove(pod_id)
+
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        execution = TaskExecution(
+            spec, api=MagicMock(deploy_task_pod=deploy, terminate_pod=delete)
+        )
+        with patch("runpod.apps.tasks.TaskExecution", return_value=execution):
+            task = asyncio.create_task(
+                getattr(PodTarget(spec, lambda: None), method)({})
+            )
+            await creating.wait()
+            task.cancel()
+            release_create.set()
+            await deleting.wait()
+            task.cancel()
+            release_delete.set()
+            await asyncio.wait({task})
+            assert task.cancelled()
+        assert not pods
+
+    async def test_failed_cleanup_preserves_error_and_recoverable_pod(self):
+        from runpod.apps.tasks import TaskExecution, TaskJob
+
+        failure = ValueError("work failed")
+        spec = ResourceSpec(kind=ResourceKind.TASK, name="t", cpu=["cpu3c-1-2"])
+        api = MagicMock(
+            terminate_pod=AsyncMock(side_effect=RuntimeError("delete failed"))
+        )
+        execution = TaskExecution(spec, api=api)
+        execution.pod_id = "pod-recoverable"
+        execution.poll_result = AsyncMock(side_effect=failure)
+        with pytest.raises(ValueError) as caught:
+            await TaskJob(execution).wait()
+        assert caught.value is failure
+        assert execution.pod_id == "pod-recoverable"
+
+
+def test_proxy_url_honors_proxy_domain_override(monkeypatch):
+    from runpod.apps.tasks import TASK_PORT, _proxy_url
+
+    monkeypatch.setenv("RUNPOD_PROXY_DOMAIN", "proxy.example.test")
+    assert _proxy_url("pod1") == f"https://pod1-{TASK_PORT}.proxy.example.test"

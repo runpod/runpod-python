@@ -242,6 +242,19 @@ def test_cold_start_benchmark(tmp_path):
     ), "Import time exceeds 2000ms"
 
 
+def test_worker_import_path_skips_cpu_probe():
+    """
+    The worker job module must not load cpuinfo at import time.
+
+    rp_job imports rp_debugger unconditionally; probing the CPU there costs
+    ~75ms on every worker cold start even though the result is only used when
+    a job enables rp_debugger.
+    """
+    assert not check_module_loaded(
+        "import runpod.serverless.modules.rp_job", "cpuinfo"
+    )
+
+
 if __name__ == "__main__":
     results = run_full_benchmark()
     print("\nFull Results:")

@@ -1,0 +1,546 @@
+"""tests for rp flash deploy and rp flash dev command wiring."""
+
+import sys
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from click.testing import CliRunner
+
+from runpod.apps.deploy import DeployResult
+from runpod.rp_cli.main import cli
+from runpod.apps.utils.names import dev_endpoint_name
+
+
+@pytest.fixture(autouse=True)
+def clean_entrypoints():
+    from runpod.apps.entrypoint import _clear_entrypoints
+
+    _clear_entrypoints()
+    yield
+    _clear_entrypoints()
+
+APP_SOURCE = '''
+import runpod
+
+app = runpod.App("demo")
+
+
+@app.queue(name="chat", gpu="4090")
+def chat(prompt: str):
+    return prompt
+'''
+
+TWO_APP_SOURCE = APP_SOURCE + '''
+
+other = runpod.App("other")
+
+
+@other.queue(name="embed", gpu="4090")
+def embed(text: str):
+    return text
+'''
+
+ENTRYPOINT_SOURCE = APP_SOURCE + '''
+
+@runpod.local_entrypoint
+def main():
+    pass
+'''
+
+
+def _runner():
+    return CliRunner()
+
+
+def _result(name="demo", endpoints=None):
+    return DeployResult(
+        app_name=name,
+        build_id="b1",
+        environment_id="env1",
+        resources=["chat"],
+        endpoints=endpoints or {"chat": "ep1"},
+    )
+
+
+class TestDeploy:
+
+    def test_task_only_deployment_shows_registered_per_call(
+        self, tmp_path, monkeypatch
+    ):
+        source = """
+import runpod
+app = runpod.App("tasks")
+@app.task(name="batch", cpu="cpu3c-1-2")
+def batch():
+    return 1
+"""
+        (tmp_path / "main.py").write_text(source)
+        monkeypatch.chdir(tmp_path)
+        deployed = DeployResult(
+            app_name="tasks",
+            build_id="build",
+            environment_id="env",
+            resources=["batch"],
+            endpoints={},
+        )
+        with patch("runpod.apps.deploy.deploy_app", AsyncMock(return_value=deployed)):
+            result = _runner().invoke(cli, ["flash", "deploy"])
+        assert result.exit_code == 0, result.output
+        assert "batch" in result.output
+        assert "task" in result.output
+        assert "cpu3c-1-2" in result.output
+        assert "registered / per-call" in result.output
+
+    def test_deploys_discovered_app(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(return_value=_result())
+        with patch("runpod.apps.deploy.deploy_app", deploy_app):
+            result = _runner().invoke(cli, ["flash", "deploy"])
+        assert result.exit_code == 0, result.output
+        assert "demo/default" in result.output
+        assert "ep1" in result.output
+        deploy_app.assert_awaited_once()
+
+    def test_env_flag(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(return_value=_result())
+        with patch("runpod.apps.deploy.deploy_app", deploy_app):
+            result = _runner().invoke(cli, ["flash", "deploy", "--env", "prod"])
+        assert result.exit_code == 0
+        assert deploy_app.call_args[1]["env_name"] == "prod"
+        assert "demo/prod" in result.output
+
+    def test_multi_app_plan(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(TWO_APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(
+            side_effect=[_result("demo"), _result("other", {"embed": "ep2"})]
+        )
+        with patch("runpod.apps.deploy.deploy_app", deploy_app):
+            result = _runner().invoke(cli, ["flash", "deploy"])
+        assert result.exit_code == 0, result.output
+        assert "2 apps" in result.output
+        assert deploy_app.await_count == 2
+
+    def test_missing_target(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = _runner().invoke(cli, ["flash", "deploy", "missing_dir"])
+        assert result.exit_code == 1
+        assert "does not exist" in result.output
+
+    def test_no_apps_found(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text("x = 1\n")
+        monkeypatch.chdir(tmp_path)
+        result = _runner().invoke(cli, ["flash", "deploy"])
+        assert result.exit_code == 1
+        assert "no runpod.App found" in result.output
+
+    def test_engine_error_is_clean(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(side_effect=RuntimeError("upload failed"))
+        with patch("runpod.apps.deploy.deploy_app", deploy_app):
+            result = _runner().invoke(cli, ["flash", "deploy"])
+        assert result.exit_code == 1
+        assert "upload failed" in result.output
+        assert "Traceback" not in result.output
+
+    def test_build_only(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        artifact = tmp_path / "demo-artifact.tar.gz"
+        artifact.write_bytes(b"x" * 100)
+        build = MagicMock(return_value=artifact)
+        with patch("runpod.apps.deploy.build_artifact", build):
+            result = _runner().invoke(cli, ["flash", "deploy", "--build-only"])
+        assert result.exit_code == 0, result.output
+        assert "demo-artifact.tar.gz" in result.output
+        assert build.call_args[1]["output"] == artifact
+
+    def test_exclude_passthrough(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(return_value=_result())
+        with patch("runpod.apps.deploy.deploy_app", deploy_app):
+            result = _runner().invoke(
+                cli, ["flash", "deploy", "--exclude", "torch,numpy"]
+            )
+        assert result.exit_code == 0
+        assert deploy_app.call_args[1]["exclude"] == ["torch", "numpy"]
+
+    def test_python_version_fallback_warns(self, tmp_path, monkeypatch):
+        (tmp_path / "main.py").write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deploy_app = AsyncMock(return_value=_result())
+        with (
+            patch("runpod.apps.deploy.deploy_app", deploy_app),
+            patch(
+                "runpod.apps.images.local_python_version",
+                side_effect=RuntimeError("3.9 unsupported"),
+            ),
+        ):
+            result = _runner().invoke(cli, ["flash", "deploy"])
+        assert result.exit_code == 0
+        assert "no runtime image" in result.output
+
+
+class TestDev:
+    def test_once_runs_entrypoint_and_stops(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+
+        session = MagicMock()
+        session.start = AsyncMock()
+        session.stop = AsyncMock()
+        session.refresh = AsyncMock()
+        session._endpoints = {dev_endpoint_name("demo", "chat"): "ep1"}
+
+        def make_session(apps, events=None):
+            session.apps = apps
+            return session
+
+        with patch("runpod.apps.dev.DevSession", side_effect=make_session):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        assert result.exit_code == 0, result.output
+        session.start.assert_awaited_once()
+        session.stop.assert_awaited_once()
+        assert "ep1" in result.output
+
+    def test_once_entrypoint_failure_exits_nonzero(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(
+            APP_SOURCE
+            + "\n@runpod.local_entrypoint\ndef main():\n"
+            + "    raise RuntimeError('assertion blew up')\n"
+        )
+        monkeypatch.chdir(tmp_path)
+
+        session = MagicMock()
+        session.start = AsyncMock()
+        session.stop = AsyncMock()
+        session._endpoints = {}
+
+        def make_session(apps, events=None):
+            session.apps = apps
+            return session
+
+        with patch("runpod.apps.dev.DevSession", side_effect=make_session):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        assert result.exit_code == 1
+        session.stop.assert_awaited_once()
+
+    def test_partial_start_failure_deletes_created_endpoints(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(
+            ENTRYPOINT_SOURCE
+            + '\n@app.queue(name="later", cpu="cpu3c-1-2")\n'
+            + "def later():\n    return 1\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.side_effect = [
+            {"id": "ep-created"}, RuntimeError("no capacity")
+        ]
+        api.delete_endpoint.return_value = True
+
+        with patch("runpod.apps.dev.AppsApiClient", return_value=api):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+
+        assert result.exit_code == 1, result.output
+        assert "no capacity" in result.output
+        api.delete_endpoint.assert_awaited_once_with("ep-created")
+
+    def test_cleanup_failure_reports_billable_endpoint(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-billed"}
+        api.delete_endpoint.side_effect = RuntimeError("permission denied")
+
+        with patch("runpod.apps.dev.AppsApiClient", return_value=api):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+
+        assert result.exit_code == 1, result.output
+        assert "ep-billed" in result.output
+        assert "permission denied" in result.output
+
+    def test_cancellation_waits_for_entrypoint_before_cleanup(self, tmp_path, monkeypatch):
+        import asyncio
+        import threading
+
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        release = threading.Event()
+        events = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        loop = None
+        session_task = None
+
+        async def provision(payload):
+            nonlocal loop, session_task
+            loop = asyncio.get_running_loop()
+            session_task = asyncio.current_task()
+            return {"id": "ep-active"}
+
+        def cancel():
+            events.append("cancelled")
+            session_task.cancel()
+            loop.call_later(0.05, release.set)
+
+        def entrypoint(fn):
+            loop.call_soon_threadsafe(cancel)
+            if not release.wait(5):
+                raise TimeoutError("entrypoint was not released")
+            events.append("finished")
+
+        async def delete(endpoint_id):
+            events.append("deleted")
+            return True
+
+        api.save_endpoint.side_effect = provision
+        api.delete_endpoint.side_effect = delete
+        try:
+            with (
+                patch("runpod.apps.dev.AppsApiClient", return_value=api),
+                patch("runpod.apps.entrypoint.run_entrypoint", side_effect=entrypoint),
+            ):
+                result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        finally:
+            release.set()
+
+        assert result.exit_code == 0, result.output
+        assert events == ["cancelled", "finished", "deleted"]
+
+    def _signal_session(self, tmp_path, monkeypatch, entrypoint):
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        events = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-active"}
+
+        async def delete(endpoint_id):
+            events.append("deleted")
+            return True
+
+        api.delete_endpoint.side_effect = delete
+        with (
+            patch("runpod.apps.dev.AppsApiClient", return_value=api),
+            patch(
+                "runpod.apps.entrypoint.run_entrypoint",
+                side_effect=lambda fn: entrypoint(events),
+            ),
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module)])
+        return result, events
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_sigterm_deletes_endpoints(self, tmp_path, monkeypatch):
+        import os
+        import signal
+        import time
+
+        def entrypoint(events):
+            os.kill(os.getpid(), signal.SIGTERM)
+            time.sleep(0.1)
+            events.append("finished")
+
+        result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+        assert result.exit_code == 0, result.output
+        assert events == ["finished", "deleted"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    @pytest.mark.parametrize("stop_signal", ["SIGINT", "SIGTERM"])
+    def test_stop_signal_preserves_cancellation_on_entrypoint_failure(
+        self, tmp_path, monkeypatch, stop_signal
+    ):
+        import asyncio
+        import signal
+
+        handlers = {}
+        shield = asyncio.shield
+
+        def install_handler(loop, sig, callback):
+            handlers[sig] = callback
+
+        def stop_on_completion(future):
+            waiter = shield(future)
+            if not isinstance(future, asyncio.Task):
+                future.add_done_callback(
+                    lambda _: handlers[getattr(signal, stop_signal)]()
+                )
+            return waiter
+
+        def entrypoint(events):
+            events.append("failed")
+            raise RuntimeError("entrypoint failed while stopping")
+
+        with (
+            patch.object(
+                asyncio.SelectorEventLoop, "add_signal_handler", install_handler
+            ),
+            patch("asyncio.shield", side_effect=stop_on_completion),
+            patch(
+                "runpod.apps.watch.FileWatcher.changed",
+                side_effect=AssertionError("a stopped session must not resume watching"),
+            ) as changed,
+        ):
+            result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+
+        assert result.exit_code == 0, result.output
+        assert events == ["failed", "deleted"]
+        changed.assert_not_called()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_sigint_cleans_up_even_when_ignored_at_start(self, tmp_path, monkeypatch):
+        import os
+        import signal
+        import time
+
+        # shells start background jobs with sigint ignored
+        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+        def entrypoint(events):
+            os.kill(os.getpid(), signal.SIGINT)
+            time.sleep(0.1)
+            events.append("finished")
+
+        try:
+            result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+        finally:
+            signal.signal(signal.SIGINT, previous)
+        assert result.exit_code == 0, result.output
+        assert events == ["finished", "deleted"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_second_signal_forces_teardown(self, tmp_path, monkeypatch):
+        import os
+        import signal
+        import threading
+
+        release = threading.Event()
+
+        def entrypoint(events):
+            os.kill(os.getpid(), signal.SIGTERM)
+            threading.Timer(0.2, os.kill, (os.getpid(), signal.SIGTERM)).start()
+            # a long remote call that outlives the stop request
+            release.wait(5)
+            events.append("finished")
+
+        try:
+            result, events = self._signal_session(tmp_path, monkeypatch, entrypoint)
+        finally:
+            release.set()
+        assert result.exit_code == 0, result.output
+        assert events[0] == "deleted"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_signal_during_teardown_still_deletes(self, tmp_path, monkeypatch):
+        import asyncio
+        import os
+        import signal
+
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        events = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+        api.save_endpoint.return_value = {"id": "ep-active"}
+
+        async def delete(endpoint_id):
+            os.kill(os.getpid(), signal.SIGTERM)
+            await asyncio.sleep(0.1)
+            events.append(("deleted", endpoint_id))
+            return True
+
+        api.delete_endpoint.side_effect = delete
+        with (
+            patch("runpod.apps.dev.AppsApiClient", return_value=api),
+            patch("runpod.apps.entrypoint.run_entrypoint"),
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        assert result.exit_code == 0, result.output
+        assert events == [("deleted", "ep-active")]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="posix signals")
+    def test_signal_during_create_deletes_the_new_endpoint(self, tmp_path, monkeypatch):
+        import asyncio
+        import os
+        import signal
+
+        module = tmp_path / "main.py"
+        module.write_text(ENTRYPOINT_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        deleted = []
+        api = AsyncMock()
+        api.list_my_endpoints.return_value = []
+
+        async def create(payload):
+            # the platform creates the endpoint before the reply arrives
+            os.kill(os.getpid(), signal.SIGTERM)
+            await asyncio.sleep(0.1)
+            return {"id": "ep-new"}
+
+        async def delete(endpoint_id):
+            deleted.append(endpoint_id)
+            return True
+
+        api.save_endpoint.side_effect = create
+        api.delete_endpoint.side_effect = delete
+        with (
+            patch("runpod.apps.dev.AppsApiClient", return_value=api),
+            patch("runpod.apps.entrypoint.run_entrypoint"),
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module)])
+        assert result.exit_code == 0, result.output
+        assert deleted == ["ep-new"]
+
+    def test_module_without_entrypoint(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text(APP_SOURCE)
+        monkeypatch.chdir(tmp_path)
+        session = MagicMock()
+        session.start = AsyncMock()
+        session.stop = AsyncMock()
+        session._endpoints = {dev_endpoint_name("demo", "chat"): "ep1"}
+
+        def make_session(apps, events=None):
+            session.apps = apps
+            return session
+
+        with (
+            patch("runpod.apps.dev.DevSession", side_effect=make_session),
+            patch("runpod.apps.entrypoint.run_entrypoint") as run,
+        ):
+            result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        assert result.exit_code == 0, result.output
+        session.start.assert_awaited_once()
+        session.stop.assert_awaited_once()
+        run.assert_not_called()
+        assert [(app.name, list(app.resources)) for app in session.apps] == [
+            ("demo", ["chat"])
+        ]
+        assert "ep1" in result.output
+
+    def test_module_without_app(self, tmp_path, monkeypatch):
+        module = tmp_path / "main.py"
+        module.write_text("x = 1\n")
+        monkeypatch.chdir(tmp_path)
+        result = _runner().invoke(cli, ["flash", "dev", str(module), "--once"])
+        assert result.exit_code == 1
+        assert "no runpod.App" in result.output
+
+    def test_missing_module(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = _runner().invoke(cli, ["flash", "dev", "missing.py", "--once"])
+        assert result.exit_code == 2

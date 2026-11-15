@@ -1,23 +1,25 @@
-# [BETA] | Runpod Python CLI Reference
+# Runpod CLI Reference
 
 Note: This CLI is not the same as runpodctl and provides a different set of features.
 
 ## Getting Started
 
-![runpod --help](demos/help.gif)
+![rp --help](demos/help.gif)
 
-### Configure
+### Authenticate
 
-![runpod config](demos/config.gif)
+Store your Runpod API key by running `rp login` (approve in the browser, then paste the key the console shows) or `rp login --api-key YOUR_KEY`. Credentials are stored in `~/.runpod/config.toml`.
 
-Store your Runpod API key by running `runpod config`. Optionally you can also call the command with your API key `runpod config YOUR_API_KEY` or include the `--profile` to save multiple keys (stored under "default" profile is not specified) Credentials are stored in `~/.runpod/config.toml`.
+Pass `--profile staging` with either login method to update a named credential profile without changing the others. The default profile is `default`.
 
-![runpod ssh add-key](demos/ssh.gif)
+Set `RUNPOD_PROFILE=staging` to use that profile for every command, including `rp login`. `--profile` takes precedence over `RUNPOD_PROFILE`, and `RUNPOD_API_KEY` takes precedence over any stored profile.
 
-Add a SSH key to you account by running `runpod ssh add-key`. To specify and existing key pass in `--key` or `--key-file` to use a file. Keys are stored in `~/.runpod/ssh/`.  If no key is specified a new one will be generated and stored.
+### SSH
 
-## Runpod Project
+Add an SSH key to your account by running `rp ssh add`. To use an existing key pass `--key` or `--key-file`. Keys are stored in `~/.runpod/ssh/`. If no key is specified a new one is generated and stored.
 
-A "project" is the start of a serverless worker. To get started call `runpod project new`, you will be asked a few questions about the project you are creating, a project folder will be created. You can now navigate into your repo and run `runpod project start`.
+Once a key is added, open a terminal on any pod with `rp ssh <pod_id>` (or the equivalent `rp pod connect <pod_id>`).
 
-Once you are finished developing you can run `runpod project deploy` to deploy your project and create an endpoint.
+## Apps
+
+An app is a collection of Python functions that run on Runpod. Scaffold one with `rp flash init`, iterate on it live with `rp flash dev main.py`, and ship it with `rp flash deploy`. See the [README](../../README.md) for the full workflow.

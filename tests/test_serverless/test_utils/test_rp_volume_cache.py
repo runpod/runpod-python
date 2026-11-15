@@ -1,3 +1,5 @@
+import collections
+import errno
 import json
 import os
 import shutil
@@ -11,6 +13,7 @@ import pytest
 import runpod.serverless.utils.rp_volume_cache as vcmod
 
 VolumeCache = vcmod.VolumeCache
+MIB = 1024 * 1024
 
 
 @pytest.fixture(autouse=True)
@@ -404,12 +407,201 @@ def test_copy_file_returns_false_and_cleans_tmp_on_failure(tmp_path, monkeypatch
     src.write_text("data")
     dst = cache / "dst.bin"
 
-    def flaky_copy2(_src, _dst):
+    def flaky_copyfile(_src, _dst, **_kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(shutil, "copy2", flaky_copy2)
+    monkeypatch.setattr(shutil, "copyfile", flaky_copyfile)
     assert vc._copy_file(str(src), str(dst)) is False
     assert not os.path.exists(str(dst) + ".rpvc.tmp")
+
+
+def test_copy_failure_is_logged_as_warning(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    src = cache / "f.bin"
+    src.write_text("data")
+    warnings = []
+
+    def flaky_copyfile(_src, _dst, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(shutil, "copyfile", flaky_copyfile)
+    monkeypatch.setattr(vcmod.log, "warn", lambda msg, *_a, **_kw: warnings.append(msg))
+    vc._copy_file(str(src), str(cache / "dst.bin"))
+
+    assert any("f.bin" in w and "disk full" in w for w in warnings)
+
+
+def test_copy_file_preserves_mtime_and_mode(tmp_path):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    src = cache / "run.sh"
+    src.write_text("#!/bin/sh\n")
+    os.chmod(src, 0o700)
+    os.utime(src, (1_000_000_000, 1_000_000_000))
+    dst = cache / "copy.sh"
+
+    assert vc._copy_file(str(src), str(dst)) is True
+    assert os.stat(dst).st_mtime == 1_000_000_000
+    assert os.stat(dst).st_mode & 0o777 == 0o700
+
+
+def _deny_metadata_ops(monkeypatch):
+    """Simulate a FUSE object store (such as Global Store) that rejects chmod/utime."""
+
+    def deny(*_args, **_kwargs):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "chmod", deny)
+    monkeypatch.setattr(os, "utime", deny)
+
+
+def _deny_metadata_ops_under(monkeypatch, root):
+    """Like _deny_metadata_ops, but only for paths on the volume; local disk behaves normally."""
+    root = str(root)
+    real_chmod, real_utime = os.chmod, os.utime
+
+    def guarded(real):
+        def call(path, *args, **kwargs):
+            if str(path).startswith(root):
+                raise PermissionError(errno.EPERM, "Operation not permitted")
+            return real(path, *args, **kwargs)
+
+        return call
+
+    monkeypatch.setattr(os, "chmod", guarded(real_chmod))
+    monkeypatch.setattr(os, "utime", guarded(real_utime))
+
+
+def _big_payload(fill):
+    return bytes([fill]) * (vcmod._SMALL_FILE_THRESHOLD + 1)
+
+
+def _set_mtime(path, mtime):
+    os.utime(path, (mtime, mtime))
+
+
+def test_sync_recopies_same_size_update_when_volume_rejects_utime(tmp_path, monkeypatch):
+    # The mirror copy carries its copy time, not the source's mtime. A same-size
+    # update with an mtime between the original and that copy time must still
+    # be detected, via the manifest's recorded source metadata.
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "model.safetensors"
+    now = time.time()
+    f.write_bytes(_big_payload(1))
+    _set_mtime(f, now - 1000)
+    _deny_metadata_ops_under(monkeypatch, vol)
+    vc.sync(background=False)
+
+    f.write_bytes(_big_payload(2))
+    _set_mtime(f, now - 500)
+    vc.sync(background=False)
+    f.unlink()
+    VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol)).hydrate()
+
+    assert f.read_bytes() == _big_payload(2)
+
+
+def test_hydrate_keeps_newer_local_file_when_volume_rejects_utime(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "model.safetensors"
+    now = time.time()
+    f.write_bytes(_big_payload(1))
+    _set_mtime(f, now - 1000)
+    _deny_metadata_ops_under(monkeypatch, vol)
+    vc.sync(background=False)
+
+    # Newer than the synced source, older than the mirror's copy-time mtime.
+    f.write_bytes(_big_payload(2))
+    _set_mtime(f, now - 500)
+    VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol)).hydrate()
+
+    assert f.read_bytes() == _big_payload(2)
+
+
+def test_sync_needs_copy_ignores_source_older_than_manifest(tmp_path):
+    # Container -> mirror sync must only recopy when the source is NEWER than the
+    # metadata the mirror was last made from. A source whose mtime is older than
+    # the manifest entry (a stale worker, or a sibling that downloaded identical
+    # bytes at a different time) must not trigger a rewrite: recopying there
+    # churns every big file across workers and can clobber newer mirror bytes.
+    src = tmp_path / "src.bin"
+    dst = tmp_path / "dst.bin"
+    payload = b"x" * 1024
+    src.write_bytes(payload)
+    dst.write_bytes(payload)  # same size, so the size early-return does not fire
+    mid = time.time() - 1000
+    prior = {"size": len(payload), "mtime": mid}
+
+    _set_mtime(src, mid - 100)  # source older than the manifest record
+    assert VolumeCache._sync_needs_copy(str(src), str(dst), prior) is False
+
+    _set_mtime(src, mid + 100)  # source newer: a genuine update still copies
+    assert VolumeCache._sync_needs_copy(str(src), str(dst), prior) is True
+
+    # A size change relative to the manifest always recopies, regardless of mtime.
+    _set_mtime(src, mid - 100)
+    assert VolumeCache._sync_needs_copy(str(src), str(dst), {"size": len(payload) + 1, "mtime": mid}) is True
+
+
+def test_hydrate_restores_source_mtime_so_next_sync_is_noop(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "model.safetensors"
+    f.write_bytes(_big_payload(1))
+    _set_mtime(f, time.time() - 1000)
+    source_mtime = os.stat(f).st_mtime
+    _deny_metadata_ops_under(monkeypatch, vol)
+    vc.sync(background=False)
+    f.unlink()
+
+    fresh = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol))
+    assert fresh.hydrate() == 1
+    assert abs(os.stat(f).st_mtime - source_mtime) < 1e-3
+
+    copies = []
+    real_copy = fresh._copy_file
+    monkeypatch.setattr(fresh, "_copy_file", lambda src, dst, **kw: copies.append(src) or real_copy(src, dst, **kw))
+    fresh.sync(background=False)
+    assert copies == []
+
+
+def test_sync_recopies_when_mirror_file_is_missing(tmp_path):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    f = cache / "model.safetensors"
+    f.write_bytes(_big_payload(1))
+    vc.sync(background=False)
+    mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(f), "/")
+    mirrored.unlink()
+
+    vc.sync(background=False)
+
+    assert mirrored.read_bytes() == _big_payload(1)
+
+
+def test_big_file_round_trips_when_volume_rejects_metadata_ops(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    payload = os.urandom(vcmod._SMALL_FILE_THRESHOLD + 1)
+    (cache / "model.safetensors").write_bytes(payload)
+    _deny_metadata_ops(monkeypatch)
+
+    vc.sync(background=False)
+    (cache / "model.safetensors").unlink()
+    restored = VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol)).hydrate()
+
+    assert restored == 1
+    assert (cache / "model.safetensors").read_bytes() == payload
+
+
+def test_sync_converges_when_volume_rejects_metadata_ops(tmp_path, monkeypatch):
+    vc, cache, _vol = _mk_cache_with_volume(tmp_path)
+    (cache / "model.safetensors").write_bytes(os.urandom(vcmod._SMALL_FILE_THRESHOLD + 1))
+    _deny_metadata_ops(monkeypatch)
+    vc.sync(background=False)
+
+    copies = []
+    real_copy = vc._copy_file
+    monkeypatch.setattr(vc, "_copy_file", lambda src, dst, **kw: copies.append(src) or real_copy(src, dst, **kw))
+    vc.sync(background=False)
+
+    assert copies == []
 
 
 def test_join_pending_syncs_swallows_join_exception():
@@ -684,10 +876,10 @@ def test_sync_omits_big_file_from_manifest_when_copy_fails(tmp_path, monkeypatch
     bad.write_bytes(b"new-v2" + big + b"-and-then-some-extra-bytes")
     real_copy_file = vc._copy_file
 
-    def flaky_copy(src, dst):
+    def flaky_copy(src, dst, **kwargs):
         if src == str(bad):
             return False  # simulate a failed overwrite (leaves stale v1 on volume)
-        return real_copy_file(src, dst)
+        return real_copy_file(src, dst, **kwargs)
 
     monkeypatch.setattr(vc, "_copy_file", flaky_copy)
     vc._do_sync()
@@ -898,3 +1090,742 @@ def test_copy_parallel_copies_needed_only(tmp_path):
 def test_copy_parallel_empty_is_zero(tmp_path):
     vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
     assert vc._copy_parallel([]) == (set(), set())
+
+
+# --------------------------------------------------------------------------- #
+# range-parallel hydrate
+# --------------------------------------------------------------------------- #
+
+_CHUNK = 64 * 1024
+
+
+def _synced_big_files(tmp_path, monkeypatch, names, size=None):
+    """Sync big files to the volume, delete them locally; return (cache, vol, payloads)."""
+    monkeypatch.setattr(vcmod, "_RANGE_RETRY_BASE_SECONDS", 0)
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    size = size or vcmod._SMALL_FILE_THRESHOLD * 3 + 123  # not a multiple of the chunk
+    payloads = {}
+    for name in names:
+        payloads[name] = os.urandom(size)
+        (cache / name).write_bytes(payloads[name])
+    vc.sync(background=False)
+    for name in names:
+        (cache / name).unlink()
+    return cache, vol, payloads
+
+
+def _hydrating_cache(cache, vol, **kwargs):
+    kwargs.setdefault("hydrate_chunk_size", _CHUNK)
+    return VolumeCache([str(cache)], namespace="ep1", volume_path=str(vol), **kwargs)
+
+
+def _fail_pread_on(monkeypatch, marker, err, times=None):
+    """Make os.pread raise OSError(err) for fds of files whose path contains marker."""
+    real_open, real_pread = os.open, os.pread
+    marked, calls = set(), []
+
+    def tracking_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if marker in str(path) and not flags & os.O_WRONLY:
+            marked.add(fd)
+        else:
+            marked.discard(fd)
+        return fd
+
+    def flaky_pread(fd, n, off):
+        if fd in marked and (times is None or len(calls) < times):
+            calls.append(off)
+            raise OSError(err, os.strerror(err))
+        return real_pread(fd, n, off)
+
+    monkeypatch.setattr(os, "open", tracking_open)
+    monkeypatch.setattr(os, "pread", flaky_pread)
+    return calls
+
+
+def test_hydrate_copies_big_file_in_ranges(tmp_path, monkeypatch):
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    ranges = []
+    real_copy_range = vcmod._copy_range
+    monkeypatch.setattr(
+        vcmod, "_copy_range", lambda *a: ranges.append(a[2:4]) or real_copy_range(*a)
+    )
+
+    restored = _hydrating_cache(cache, vol).hydrate()
+
+    size = len(payloads["model.safetensors"])
+    assert restored == 1
+    assert (cache / "model.safetensors").read_bytes() == payloads["model.safetensors"]
+    assert sorted(ranges) == [(off, min(_CHUNK, size - off)) for off in range(0, size, _CHUNK)]
+
+
+def test_hydrate_interleaves_ranges_across_files(tmp_path, monkeypatch):
+    # Concurrent readers must spread over every file: on an object-store mount,
+    # parallel reads of one sequential stream don't add up.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    order = []
+    real_copy_range = vcmod._copy_range
+    monkeypatch.setattr(
+        vcmod,
+        "_copy_range",
+        lambda src, *a: order.append(os.path.basename(src)) or real_copy_range(src, *a),
+    )
+
+    _hydrating_cache(cache, vol, hydrate_workers=1).hydrate()
+
+    assert order[:4] == ["a.bin", "b.bin", "a.bin", "b.bin"]
+
+
+def test_hydrate_retries_transient_range_errors(tmp_path, monkeypatch):
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    failures = _fail_pread_on(monkeypatch, "/big/", errno.ENOMEM, times=3)
+
+    restored = _hydrating_cache(cache, vol).hydrate()
+
+    assert len(failures) == 3
+    assert restored == 1
+    assert (cache / "model.safetensors").read_bytes() == payloads["model.safetensors"]
+
+
+def test_hydrate_does_not_retry_non_transient_errors(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    failures = _fail_pread_on(monkeypatch, "/big/", errno.EACCES)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=1).hydrate()
+
+    assert restored == 0
+    assert len(failures) == 1  # first failure aborts the file; its other ranges are skipped
+
+
+def test_hydrate_gives_up_after_max_range_attempts(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    failures = _fail_pread_on(monkeypatch, "/big/", errno.EIO)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=1).hydrate()
+
+    assert restored == 0
+    assert len(failures) == vcmod._RANGE_MAX_ATTEMPTS
+
+
+def test_hydrate_skips_only_the_failing_file(tmp_path, monkeypatch):
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["bad.bin", "good.bin"])
+    _fail_pread_on(monkeypatch, "bad.bin", errno.EIO)
+
+    restored = _hydrating_cache(cache, vol).hydrate()
+
+    assert restored == 1
+    assert (cache / "good.bin").read_bytes() == payloads["good.bin"]
+    assert not (cache / "bad.bin").exists()
+    assert [p for p in os.listdir(cache) if p.endswith(".rpvc.tmp")] == []
+
+
+def test_hydrate_failure_leaves_existing_local_file_untouched(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    stale = cache / "model.safetensors"
+    stale.write_bytes(b"older local bytes")
+    _set_mtime(stale, 1_000_000_000)
+    _fail_pread_on(monkeypatch, "/big/", errno.EIO)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 0
+    assert stale.read_bytes() == b"older local bytes"
+
+
+def test_hydrate_treats_short_read_as_failure(tmp_path, monkeypatch):
+    # A mirror file truncated after the manifest was written must not be
+    # restored as a zero-padded copy of the expected size.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(cache / "model.safetensors"), "/")
+    with open(mirrored, "r+b") as fh:
+        fh.truncate(_CHUNK + 1)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 0
+    assert not (cache / "model.safetensors").exists()
+
+
+@pytest.mark.parametrize("arg", ["hydrate_workers", "hydrate_chunk_size"])
+@pytest.mark.parametrize("bad", [0, -1])
+def test_hydrate_tuning_rejects_non_positive(tmp_path, arg, bad):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    with pytest.raises(ValueError):
+        VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), **{arg: bad})
+
+
+@pytest.mark.parametrize("arg", ["max_workers", "hydrate_workers", "hydrate_chunk_size"])
+@pytest.mark.parametrize("bad", [8388608.0, 2.5, True, "64"])
+def test_tuning_rejects_non_integer(tmp_path, arg, bad):
+    # A float chunk passes a `< 1` check but fails in range() mid-hydrate, after
+    # temp files exist; reject it at construction instead.
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    with pytest.raises(ValueError):
+        VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), **{arg: bad})
+
+
+def test_hydrate_rejects_source_replaced_between_ranges(tmp_path, monkeypatch):
+    # A concurrent sync() atomically replaces the mirror file. Ranges read from
+    # two generations would assemble a mixed file of the right size; hydrate must
+    # give that file up instead of publishing it.
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(cache / "model.safetensors"), "/")
+    replacement = mirrored.with_name("replacement")
+    replacement.write_bytes(os.urandom(len(payloads["model.safetensors"])))
+    # Identity is size + mtime, so force a distinct mtime instead of relying on timestamp granularity.
+    st = mirrored.stat()
+    os.utime(replacement, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+    real_copy_range = vcmod._copy_range
+    calls = []
+
+    def copy_then_replace(*args):
+        real_copy_range(*args)
+        calls.append(args)
+        if len(calls) == 1:
+            os.replace(replacement, mirrored)
+
+    monkeypatch.setattr(vcmod, "_copy_range", copy_then_replace)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=1).hydrate()
+
+    assert restored == 0
+    assert not (cache / "model.safetensors").exists()
+    assert [p for p in os.listdir(cache) if p.endswith(".rpvc.tmp")] == []
+
+
+def test_hydrate_rejects_source_whose_size_differs_from_manifest(tmp_path, monkeypatch):
+    # A sync that replaced the mirror file after hydrate read the manifest would
+    # otherwise have only the manifest's (older, shorter) length copied out of
+    # the newer file, publishing a truncated model with no error.
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    mirrored = vol / ".cache" / "ep1" / "big" / os.path.relpath(str(cache / "model.safetensors"), "/")
+    mirrored.write_bytes(os.urandom(len(payloads["model.safetensors"]) + _CHUNK))
+
+    restored = _hydrating_cache(cache, vol).hydrate()
+
+    assert restored == 0
+    assert not (cache / "model.safetensors").exists()
+    assert [p for p in os.listdir(cache) if p.endswith(".rpvc.tmp")] == []
+
+
+def test_hydrate_unexpected_error_stops_ranges_and_cleans_temps(tmp_path, monkeypatch):
+    # A non-OSError escaping a range (e.g. MemoryError) aborts the hydrate; the
+    # remaining ranges must not keep running, and no full-size temp may linger.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    calls = []
+
+    def boom(*args):
+        calls.append(args)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(vcmod, "_copy_range", boom)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=2).hydrate()
+
+    assert restored == 0
+    assert len(calls) <= 2
+    assert [p for p in os.listdir(cache) if p.endswith(".rpvc.tmp")] == []
+
+
+def test_hydrate_bounds_outstanding_range_tasks(tmp_path, monkeypatch):
+    # Scheduling must stay O(workers), not O(total bytes / chunk): a large
+    # tree with a small chunk would otherwise queue millions of futures.
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    submitted = []
+
+    class CountingPool(vcmod.ThreadPoolExecutor):
+        def submit(self, *args, **kwargs):
+            submitted.append(args)
+            return super().submit(*args, **kwargs)
+
+    monkeypatch.setattr(vcmod, "ThreadPoolExecutor", CountingPool)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=2).hydrate()
+
+    assert restored == 2
+    assert len(submitted) <= 2
+    for name, payload in payloads.items():
+        assert (cache / name).read_bytes() == payload
+
+
+def test_hydrate_tuning_defaults(tmp_path):
+    # 8 x 64 MiB: ~2.8x faster than 64 x 8 MiB on network volumes and no slower
+    # on Global Store, at the same 512 MiB in flight.
+    vc, _cache, _vol = _mk_cache_with_volume(tmp_path)
+    assert vc._hydrate_workers == 8
+    assert vc._hydrate_chunk_size == 64 * MIB
+
+
+@pytest.mark.parametrize(
+    ("workers", "chunk"),
+    [(4, 64 * MIB), (16, 32 * MIB), (32, 16 * MIB), (64, 8 * MIB)],
+)
+def test_default_hydrate_chunk_keeps_bytes_in_flight_bounded(tmp_path, workers, chunk):
+    # geesefs fails reads with ENOMEM much past ~1 GiB in flight, so a larger
+    # pool must get smaller default ranges, capped at 64 MiB for small pools.
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache(
+        [str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), hydrate_workers=workers
+    )
+    assert vc._hydrate_chunk_size == chunk
+    assert vc._hydrate_workers * vc._hydrate_chunk_size <= 512 * MIB
+
+
+def test_default_hydrate_chunk_follows_explicit_max_workers(tmp_path):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), max_workers=32)
+    assert vc._hydrate_workers == 32
+    assert vc._hydrate_chunk_size == 16 * MIB
+
+
+def test_explicit_hydrate_chunk_size_is_not_rescaled(tmp_path):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache(
+        [str(tmp_path / "cache")],
+        namespace="ep1",
+        volume_path=str(vol),
+        hydrate_workers=32,
+        hydrate_chunk_size=32 * MIB,
+    )
+    assert vc._hydrate_chunk_size == 32 * MIB
+
+
+def test_hydrate_skips_file_when_local_temp_cannot_be_created(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+
+    def no_space(*_args, **_kwargs):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(os, "makedirs", no_space)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 0
+    assert os.listdir(cache) == []
+
+
+def test_hydrate_cleans_temp_when_rename_fails(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+
+    def busy(*_args, **_kwargs):
+        raise OSError(errno.EBUSY, "Device or resource busy")
+
+    monkeypatch.setattr(os, "replace", busy)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 0
+    assert os.listdir(cache) == []
+
+
+def test_hydrate_workers_follow_explicit_max_workers(tmp_path):
+    # Before range-parallel hydrate, max_workers sized the hydrate pool too. A
+    # caller who set it low to keep hydrate light must not silently get 64.
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache([str(tmp_path / "cache")], namespace="ep1", volume_path=str(vol), max_workers=4)
+    assert vc._hydrate_workers == 4
+
+
+def test_explicit_hydrate_workers_override_max_workers(tmp_path):
+    vol = tmp_path / "volume"
+    vol.mkdir()
+    vc = VolumeCache(
+        [str(tmp_path / "cache")],
+        namespace="ep1",
+        volume_path=str(vol),
+        max_workers=4,
+        hydrate_workers=16,
+    )
+    assert vc._hydrate_workers == 16
+
+
+def test_range_retry_jitters_backoff(monkeypatch):
+    # Ranges failing together under load must not all retry at the same instant.
+    delays = []
+    monkeypatch.setattr(vcmod.time, "sleep", delays.append)
+
+    def flaky():
+        failures = iter([True])
+
+        def fn():
+            if next(failures, False):
+                raise OSError(errno.EIO, "Input/output error")
+
+        return fn
+
+    for _ in range(20):
+        vcmod._with_range_retry(flaky())
+
+    assert all(0 <= d <= vcmod._RANGE_RETRY_BASE_SECONDS for d in delays)
+    assert len(set(delays)) > 1
+
+
+def test_run_bounded_stops_workers_when_wait_is_interrupted(monkeypatch):
+    # Ctrl-C lands in the main thread while it waits on the pool. The workers
+    # must stop taking items instead of draining every remaining range.
+    import concurrent.futures
+
+    real_result = concurrent.futures.Future.result
+    interrupted = []
+
+    def interrupting_result(self, *args, **kwargs):
+        if not interrupted:
+            interrupted.append(True)
+            raise KeyboardInterrupt
+        return real_result(self, *args, **kwargs)
+
+    monkeypatch.setattr(concurrent.futures.Future, "result", interrupting_result)
+    processed = []
+
+    def slow(item):
+        time.sleep(0.002)
+        processed.append(item)
+
+    with pytest.raises(KeyboardInterrupt):
+        vcmod._run_bounded(range(2000), slow, workers=2)
+
+    assert len(processed) < 100
+
+
+def _leftover_temps(root):
+    return [os.path.join(d, n) for d, _s, files in os.walk(root) for n in files if n.endswith(".rpvc.tmp")]
+
+
+def _interrupt_on_call(n, real):
+    calls = []
+
+    def wrapper(*args, **kwargs):
+        calls.append(True)
+        if len(calls) == n:
+            raise KeyboardInterrupt
+        return real(*args, **kwargs)
+
+    return wrapper
+
+
+def test_hydrate_interrupted_during_preparation_leaves_no_temps(tmp_path, monkeypatch):
+    # Temps are pre-sized to the full file, so one left behind by Ctrl-C while
+    # later files are still being prepared can hold gigabytes.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.safetensors", "b.safetensors"])
+    # _file_identity's second call is the second file's preparation, after the
+    # first file's temp exists.
+    monkeypatch.setattr(vcmod, "_file_identity", _interrupt_on_call(2, vcmod._file_identity))
+
+    with pytest.raises(KeyboardInterrupt):
+        _hydrating_cache(cache, vol).hydrate()
+
+    assert _leftover_temps(cache) == []
+
+
+def test_hydrate_interrupted_during_finalization_leaves_no_temps(tmp_path, monkeypatch):
+    # A temp interrupted between its last range and the rename is a fully
+    # copied file that nothing will ever publish or reuse.
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.safetensors", "b.safetensors"])
+    monkeypatch.setattr(vcmod, "_copy_metadata", _interrupt_on_call(1, vcmod._copy_metadata))
+
+    with pytest.raises(KeyboardInterrupt):
+        _hydrating_cache(cache, vol).hydrate()
+
+    assert _leftover_temps(cache) == []
+
+
+# --------------------------------------------------------------------------- #
+# hydrate retry instrumentation and metadata EPERM logging
+# --------------------------------------------------------------------------- #
+
+
+def _capture_logs(monkeypatch):
+    """Record (level, message) for every VolumeCache log call."""
+    records = []
+    for level in ("debug", "info", "warn"):
+        monkeypatch.setattr(
+            vcmod.log, level, lambda msg, *_a, _lvl=level, **_kw: records.append((_lvl, msg))
+        )
+    return records
+
+
+def _messages(records, level, needle):
+    return [msg for lvl, msg in records if lvl == level and needle in msg]
+
+
+def _summary(records):
+    (line,) = _messages(records, "info", "hydrated")
+    return line
+
+
+def _fail_pread_n_times(monkeypatch, marker, err, times, per_range=None):
+    """Thread-safe: raise OSError(err) from the first ``times`` preads of marked files.
+
+    ``per_range`` caps the failures injected into any single (file, offset)
+    range. Without a cap, one range can absorb enough of the shared budget to
+    exhaust its retries, depending on thread scheduling.
+    """
+    real_open, real_pread = os.open, os.pread
+    lock = threading.Lock()
+    marked, failures = {}, []
+    per_key = collections.Counter()
+
+    def tracking_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        with lock:
+            if marker in str(path) and not flags & os.O_WRONLY:
+                marked[fd] = str(path)
+            else:
+                marked.pop(fd, None)
+        return fd
+
+    def flaky_pread(fd, n, off):
+        with lock:
+            key = (marked.get(fd), off)
+            fail = (
+                fd in marked
+                and len(failures) < times
+                and (per_range is None or per_key[key] < per_range)
+            )
+            if fail:
+                failures.append(off)
+                per_key[key] += 1
+        if fail:
+            raise OSError(err, os.strerror(err))
+        return real_pread(fd, n, off)
+
+    monkeypatch.setattr(os, "open", tracking_open)
+    monkeypatch.setattr(os, "pread", flaky_pread)
+    return failures
+
+
+def test_hydrate_logs_each_range_retry_at_debug(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    _fail_pread_n_times(monkeypatch, "/big/", errno.ENOMEM, times=3)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=1).hydrate() == 1
+
+    retries = _messages(records, "debug", "retrying")
+    assert len(retries) == 3
+    for attempt, msg in enumerate(retries, start=1):
+        assert "ENOMEM" in msg
+        assert f"attempt {attempt}/{vcmod._RANGE_MAX_ATTEMPTS}" in msg
+        assert "model.safetensors" in msg
+        assert "offset 0" in msg
+
+
+def test_hydrate_summary_reports_retry_and_given_up_counts(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    _fail_pread_n_times(monkeypatch, "/big/", errno.EAGAIN, times=2)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 1
+
+    summary = _summary(records)
+    assert "range retries: 2" in summary
+    assert "ranges given up: 0" in summary
+
+
+def test_hydrate_summary_reports_zero_counters_when_clean(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol).hydrate() == 1
+
+    summary = _summary(records)
+    assert "range retries: 0" in summary
+    assert "ranges given up: 0" in summary
+    assert _messages(records, "warn", "retr") == []
+
+
+def test_hydrate_counts_ranges_given_up_when_retries_exhausted(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    _fail_pread_on(monkeypatch, "/big/", errno.EIO)  # every read fails, forever
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=1).hydrate() == 0
+
+    # One range per file exhausts its attempts; the file's other ranges are
+    # skipped, not given up. The summary still appears when nothing restored.
+    summary = _summary(records)
+    assert "ranges given up: 2" in summary
+    assert f"range retries: {2 * (vcmod._RANGE_MAX_ATTEMPTS - 1)}" in summary
+
+
+def test_hydrate_counts_non_retryable_failure_as_given_up(tmp_path, monkeypatch):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    _fail_pread_on(monkeypatch, "/big/", errno.EACCES)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=1).hydrate() == 0
+
+    summary = _summary(records)
+    assert "range retries: 0" in summary
+    assert "ranges given up: 1" in summary
+
+
+def test_hydrate_counts_a_failed_file_once_under_concurrent_ranges(tmp_path, monkeypatch):
+    # Several ranges of one file can be in flight when the first range fails.
+    # The file is given up once; the other in-flight ranges must not each add
+    # to the counter. A barrier holds every range past the already-failed
+    # guard before any raises, so a per-range count is exposed deterministically.
+    ranges = 4
+    cache, vol, _payloads = _synced_big_files(
+        tmp_path, monkeypatch, ["model.safetensors"], size=_CHUNK * ranges
+    )
+    gate = threading.Barrier(ranges)
+
+    def fail_together(*_a):
+        gate.wait()
+        raise OSError(errno.EACCES, os.strerror(errno.EACCES))
+
+    monkeypatch.setattr(vcmod, "_copy_range", fail_together)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=ranges).hydrate() == 0
+
+    assert "ranges given up: 1" in _summary(records)
+
+
+@pytest.mark.parametrize(("failures", "warned"), [(3, False), (4, True), (6, True)])
+def test_hydrate_warns_once_when_retries_exceed_threshold(tmp_path, monkeypatch, failures, warned):
+    cache, vol, _payloads = _synced_big_files(tmp_path, monkeypatch, ["a.bin", "b.bin"])
+    monkeypatch.setattr(vcmod, "_HYDRATE_RETRY_WARN_THRESHOLD", 3)
+    _fail_pread_n_times(monkeypatch, "/big/", errno.ENOMEM, times=failures)
+    records = _capture_logs(monkeypatch)
+
+    assert _hydrating_cache(cache, vol, hydrate_workers=1).hydrate() == 2
+
+    warnings = _messages(records, "warn", "range retries")
+    assert len(warnings) == (1 if warned else 0)
+
+
+def test_hydrate_retry_counters_are_exact_under_concurrent_ranges(tmp_path, monkeypatch):
+    names = [f"shard-{i}.bin" for i in range(6)]
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, names, size=_CHUNK * 8)
+    # Each range fails fewer times than it has attempts, so every range
+    # eventually succeeds and every failure is a counted retry, whatever the
+    # thread scheduling.
+    failures = _fail_pread_n_times(
+        monkeypatch,
+        "/big/",
+        errno.ENOMEM,
+        times=40,
+        per_range=vcmod._RANGE_MAX_ATTEMPTS - 1,
+    )
+    records = _capture_logs(monkeypatch)
+
+    restored = _hydrating_cache(cache, vol, hydrate_workers=16).hydrate()
+
+    assert restored == len(names)
+    for name, payload in payloads.items():
+        assert (cache / name).read_bytes() == payload
+    assert len(failures) == 40
+    summary = _summary(records)
+    assert "range retries: 40" in summary
+    assert "ranges given up: 0" in summary
+    assert len(_messages(records, "debug", "retrying")) == 40
+
+
+def test_hydrate_survives_failing_retry_instrumentation(tmp_path, monkeypatch):
+    cache, vol, payloads = _synced_big_files(tmp_path, monkeypatch, ["model.safetensors"])
+    _fail_pread_n_times(monkeypatch, "/big/", errno.ENOMEM, times=2)
+
+    def broken_debug(*_a, **_kw):
+        raise RuntimeError("log sink down")
+
+    monkeypatch.setattr(vcmod.log, "debug", broken_debug)
+
+    assert _hydrating_cache(cache, vol, best_effort=False).hydrate() == 1
+    assert (cache / "model.safetensors").read_bytes() == payloads["model.safetensors"]
+
+
+def test_sync_logs_metadata_eperm_once_and_stops_retrying(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._max_workers = 1  # exact syscall counts; serialize the sync pool
+    for i in range(5):
+        (cache / f"shard-{i}.bin").write_bytes(_big_payload(i))
+    attempts = []
+    real_chmod, real_utime = os.chmod, os.utime
+
+    def deny_on_volume(real, name):
+        def call(path, *args, **kwargs):
+            if str(path).startswith(str(vol)):
+                attempts.append(name)
+                raise PermissionError(errno.EPERM, "Operation not permitted")
+            return real(path, *args, **kwargs)
+
+        return call
+
+    monkeypatch.setattr(os, "chmod", deny_on_volume(real_chmod, "chmod"))
+    monkeypatch.setattr(os, "utime", deny_on_volume(real_utime, "utime"))
+    records = _capture_logs(monkeypatch)
+
+    vc.sync(background=False)
+
+    assert len(_messages(records, "debug", "EPERM")) == 1
+    assert _messages(records, "debug", "kept") == []  # no per-file metadata lines
+    assert attempts.count("utime") == 1
+    assert attempts.count("chmod") <= 1
+    assert len(json.loads((vol / ".cache" / "ep1" / "manifest.json").read_text())["big"]) == 5
+
+
+def test_sync_still_logs_non_eperm_metadata_errors_per_file(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    for i in range(3):
+        (cache / f"shard-{i}.bin").write_bytes(_big_payload(i))
+    real_utime = os.utime
+
+    def flaky_utime(path, *args, **kwargs):
+        if str(path).startswith(str(vol)):
+            raise OSError(errno.EIO, "Input/output error")
+        return real_utime(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "utime", flaky_utime)
+    records = _capture_logs(monkeypatch)
+
+    vc.sync(background=False)
+
+    assert len(_messages(records, "debug", "kept copy-time mtime")) == 3
+
+
+def test_each_sync_detects_metadata_eperm_afresh(tmp_path, monkeypatch):
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    (cache / "a.bin").write_bytes(_big_payload(1))
+    _deny_metadata_ops_under(monkeypatch, vol)
+    records = _capture_logs(monkeypatch)
+    vc.sync(background=False)
+    (cache / "b.bin").write_bytes(_big_payload(2))
+
+    vc.sync(background=False)
+
+    assert len(_messages(records, "debug", "EPERM")) == 2
+
+
+def test_sync_keeps_mtime_on_every_file_when_only_chmod_is_denied(tmp_path, monkeypatch):
+    # A volume that accepts utime but rejects chmod: every file still gets its
+    # mtime restored, the chmod rejection is logged once, and later files skip
+    # only the chmod. A chmod EPERM must not stop the manifest mtime being
+    # restored on later files, or they keep copy-time mtimes and churn syncs.
+    vc, cache, vol = _mk_cache_with_volume(tmp_path)
+    vc._max_workers = 1  # exact syscall counts; serialize the sync pool
+    for i in range(3):
+        (cache / f"shard-{i}.bin").write_bytes(_big_payload(i))
+    chmods, utimes = [], []
+    real_chmod, real_utime = os.chmod, os.utime
+
+    def deny_chmod(path, *args, **kwargs):
+        if str(path).startswith(str(vol)):
+            chmods.append(path)
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+        return real_chmod(path, *args, **kwargs)
+
+    def track_utime(path, *args, **kwargs):
+        if str(path).startswith(str(vol)):
+            utimes.append(path)
+        return real_utime(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "chmod", deny_chmod)
+    monkeypatch.setattr(os, "utime", track_utime)
+    records = _capture_logs(monkeypatch)
+
+    vc.sync(background=False)
+
+    assert len(chmods) == 1  # chmod denied once, then skipped for later files
+    assert len(utimes) == 3  # mtime still restored on every file
+    assert len(_messages(records, "debug", "EPERM")) == 1
+    assert len(json.loads((vol / ".cache" / "ep1" / "manifest.json").read_text())["big"]) == 3

@@ -597,14 +597,14 @@ log.error(message, job_id=None)
 
 ---
 
-### Fitness Checks: `modules/rp_fitness.py`
+### Fitness Checks: `_health/fitness.py`
 
-**Location**: `runpod/serverless/modules/rp_fitness.py`
+**Location**: `runpod/_health/fitness.py` (legacy `serverless.modules.rp_fitness` imports remain aliases)
 
 **Responsibilities**:
 - Validate worker health at startup before handler initialization
 - Support both synchronous and asynchronous check functions
-- Exit immediately with sys.exit(1) on any check failure
+- Exit immediately with os._exit(1) on any check failure
 - Enable fail-fast deployment validation
 
 **Key Functions**:
@@ -613,11 +613,11 @@ log.error(message, job_id=None)
 - `clear_fitness_checks()`: Clear registry (testing only)
 
 **Execution Flow**:
-1. Called from `worker.py:40` before heartbeat starts: `asyncio.run(run_fitness_checks())`
+1. The first top-level `import runpod` with both `RUNPOD_ENDPOINT_ID` and `RUNPOD_WEBHOOK_GET_JOB` runs the built-in hardware checks (RAM, disk, CUDA version, native GPU test), excluding `RUNPOD_TEST`, `--test_input`, and `--rp_serve_api` invocations. On success the process sets `RUNPOD_EARLY_FITNESS_CHECKS_DONE=1`, which child processes inherit so they skip the pass. Network, Python CUDA initialization, compute, and custom checks remain at worker start. `RUNPOD_DEFER_FITNESS_CHECKS=true` postpones early checks. No custom launcher or entrypoint changes are required.
 2. Runs only in production mode (skipped for local testing)
 3. Auto-detects sync vs async using `inspect.iscoroutinefunction()`
 4. Executes checks in registration order (list preserves order)
-5. On failure: log detailed error, call `sys.exit(1)`
+5. On health failure: log, best-effort unhealthy report, force-kill via `os._exit(1)`. Registration is atomic; early setup errors defer, unresolved worker-start setup errors report `fitness_check_setup` and force-exit.
 6. On success: log completion, proceed with worker startup
 
 **Performance**: ~0.5ms framework overhead per check, total depends on check logic
@@ -765,7 +765,7 @@ sequenceDiagram
             CHECK->>CHECK: Log success
         else Check fails
             CHECK->>SYS: Log error + traceback
-            CHECK->>SYS: sys.exit(1)
+            CHECK->>SYS: os._exit(1)
         end
     end
 
@@ -1456,7 +1456,7 @@ stateDiagram-v2
 - Heartbeat: `runpod/serverless/modules/rp_ping.py`
 - Progress updates: `runpod/serverless/modules/rp_progress.py`
 - Local API: `runpod/serverless/modules/rp_fastapi.py`
-- Fitness checks: `runpod/serverless/modules/rp_fitness.py`
+- Fitness checks: `runpod/_health/fitness.py` (legacy `serverless/modules/rp_fitness.py` alias)
 
 **Performance analysis**: See [TODO.md](TODO.md)
 

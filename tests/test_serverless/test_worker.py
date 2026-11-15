@@ -185,7 +185,7 @@ class TestRunWorker(TestCase):
         fitness_patcher = patch(
             "runpod.serverless.worker.run_fitness_checks", new=AsyncMock()
         )
-        fitness_patcher.start()
+        self.mock_fitness_checks = fitness_patcher.start()
         self.addCleanup(fitness_patcher.stop)
 
         # Set up the config
@@ -229,6 +229,9 @@ class TestRunWorker(TestCase):
 
         assert not mock_stream_result.called
         assert mock_session.called
+
+        # The wiring this class relies on: run_worker must run fitness checks.
+        self.mock_fitness_checks.assert_awaited_once()
 
     @patch("runpod.serverless.modules.rp_scale.get_job")
     @patch("runpod.serverless.modules.rp_job.run_job")
@@ -532,14 +535,19 @@ class TestRunWorker(TestCase):
         }
 
         # Let's mock job_scaler.is_alive so that it returns False
-        # when scale_behavior's counter is now 5.
-        def mock_is_alive():
+        # when scale_behavior's counter reaches 10. Stopping must also set the
+        # shutdown event, as a real stop does, or event waiters never wake.
+        def mock_is_alive(job_scaler):
             res = scale_behavior["counter"] < 10
             scale_behavior["counter"] += 1
+            if not res:
+                job_scaler.kill_worker()
             return res
 
         with patch(
-            "runpod.serverless.modules.rp_scale.JobScaler.is_alive", wraps=mock_is_alive
+            "runpod.serverless.modules.rp_scale.JobScaler.is_alive",
+            autospec=True,
+            side_effect=mock_is_alive,
         ):
             runpod.serverless.start(config)
 

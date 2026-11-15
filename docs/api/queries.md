@@ -11,25 +11,43 @@ for gpu in gpus:
     print(gpu)
 ```
 
-### get_gpus Output
+### get_gpus output
 
-```json
-{'id': 'NVIDIA A100 80GB PCIe', 'displayName': 'A100 80GB', 'memoryInGb': 80}
-{'id': 'NVIDIA A100-SXM4-80GB', 'displayName': 'A100 SXM 80GB', 'memoryInGb': 80}
-{'id': 'NVIDIA A30', 'displayName': 'A30', 'memoryInGb': 24}
+```python
+[{
+    "id": "NVIDIA GeForce RTX 4090",
+    "name": "RTX 4090",
+    "pool": "ADA_24",
+    "manufacturer": "NVIDIA",
+    "memory": 24,
+    "secure": True,
+    "community": True,
+    "price": {"secure": 0.44, "community": 0.31, "serverless": 1.1},
+    "maxCount": {"secure": 8, "community": 4},
+}]
 ```
 
 ## get_gpu
 
 ```python
-gpu_id = "NVIDIA A100 80GB PCIe"
-gpu = runpod.get_gpu(gpu_id)
+gpu_id = "NVIDIA GeForce RTX 4090"
+gpu = runpod.get_gpu(gpu_id, gpu_quantity=2)
 
 print(gpu)
 ```
 
-### get_gpu Output
+`get_gpu` requests pod availability for the requested GPU count.
 
-```json
-{'id': 'NVIDIA A100 80GB PCIe', 'displayName': 'A100 80GB', 'memoryInGb': 80, 'secureCloud': True, 'communityCloud': True, 'lowestPrice': {'minimumBidPrice': 1.158, 'uninterruptablePrice': 1.89}}
+### get_gpu output
+
+```python
+{
+    "id": "NVIDIA GeForce RTX 4090",
+    "name": "RTX 4090",
+    "memory": 24,
+    "availability": "HIGH",
+    "dataCenters": [
+        {"id": "US-KS-2", "name": "US Kansas 2", "availability": "HIGH"}
+    ],
+}
 ```
