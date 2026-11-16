@@ -22,6 +22,7 @@ The `config` parameter is a dictionary containing the following keys:
 |-------------------|------------|--------------------------------------------------------------------|
 | `handler`         | `function` | The handler function called with each job input.                   |
 | `prestart_timeout`| `number`   | Optional deadline in seconds for all registered prestart hooks.    |
+| `take_ahead`      | `int`      | Optional. Extra jobs a busy worker may hold while the queue is deep. Defaults to `RUNPOD_TAKE_AHEAD`, or `0` (off). See [Take-ahead](#take-ahead). |
 
 ### handler
 
@@ -117,6 +118,25 @@ For more complex operations where you are downloading files or making changes to
 A worker can process more than one job concurrently. When a single request is cancelled, expires, or times out, the Runpod server signals the worker to stop just that request without affecting the worker's other in-progress jobs. The worker continuously polls a dedicated stop channel; the server is expected to hold each request open (long-poll) until a stop signal is available or the poll times out. When a signal arrives, the worker cancels the task running the matching job, so a stopped job no longer consumes worker time.
 
 No handler changes are required to support this. Async handlers that hold resources can perform cleanup by catching `asyncio.CancelledError`, but they **must re-raise** it after cleaning up. Swallowing the cancellation makes the worker report the job as completed instead of stopped.
+
+## Take-ahead
+
+A job-take sent while jobs are already queued costs a roughly flat round trip, however many jobs it asks for ([#647](https://github.com/runpod/runpod-python/issues/647)). By default a full worker waits for a slot to free before it sends the next take, so on a saturated high-concurrency worker the slots sit idle for that round trip on every cycle.
+
+Take-ahead is an opt-in way to hide that wait. When the last take came back full (the queue is deep), the worker asks for its free slots plus up to `take_ahead` extra jobs and holds the extras until slots free up, so the next take overlaps the jobs that are running.
+
+```python
+runpod.serverless.start({"handler": handler, "concurrency_modifier": lambda _: 32, "take_ahead": 32})
+```
+
+or set `RUNPOD_TAKE_AHEAD=32` in the endpoint's environment. A value around your concurrency is a good start.
+
+Trade-offs:
+
+- A worker holding jobs keeps them even if another worker frees up first, so it only takes ahead while takes are coming back full. With a shallow queue, takes ask only for free slots, as before.
+- A held job counts as in progress on this worker while it waits for a slot, for up to about one job's run time.
+- Stop signals still apply to held jobs: a stopped job is dropped before it starts.
+- It is disabled when `refresh_worker` is set in the config, and should not be combined with handlers that return `refresh_worker`, since held jobs would be lost when the worker restarts.
 
 ## See Also
 
