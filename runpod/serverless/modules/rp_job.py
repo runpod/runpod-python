@@ -6,7 +6,7 @@ import inspect
 import json
 import os
 import traceback
-from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union, List
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional, Union, List
 
 import aiohttp
 
@@ -198,13 +198,16 @@ async def handle_job(
     session: ClientSession,
     config: Dict[str, Any],
     job,
-    on_result_ready: Optional[Callable[[Dict[str, Any]], None]] = None,
+    on_result_ready: Optional[
+        Callable[[Dict[str, Any]], Optional[Awaitable[None]]]
+    ] = None,
 ) -> dict:
     """Run a job and send its result.
 
     on_result_ready, if given, is called with the final result just before it
     is sent, so the caller can free the job's slot and take the next job
-    while the result upload is still in flight.
+    while the result upload is still in flight. It may return an awaitable,
+    which is awaited before the result is sent.
     """
     if is_generator(config["handler"]):
         is_stream = True
@@ -249,7 +252,9 @@ async def handle_job(
         rp_debugger.clear_debugger_output()
 
     if on_result_ready is not None:
-        on_result_ready(job_result)
+        maybe_awaitable = on_result_ready(job_result)
+        if inspect.isawaitable(maybe_awaitable):
+            await maybe_awaitable
 
     # Send the job result back to JOB_DONE_URL
     await send_result(session, job_result, job, is_stream=is_stream)

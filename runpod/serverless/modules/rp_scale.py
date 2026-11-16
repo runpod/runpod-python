@@ -32,6 +32,13 @@ PRESTART_FAILURE_REPORT_TIMEOUT_SECONDS = 15
 # wait so one long job can't hold the other slots idle, and so set_scale still
 # runs as often as it did under the old fixed sleep.
 FULL_WAIT_SECONDS = 1
+# Cap the result uploads that may overlap new work. The shared HTTP client sets
+# no connection limit (TCPConnector(limit=0)) and a 600 s timeout, so without a
+# ceiling a stalled result endpoint would let a worker retain unbounded results
+# and open unbounded connections while it keeps taking jobs. Normal pipelines
+# stay well under this; it only applies backpressure to a persistently slow
+# result endpoint.
+MAX_PENDING_RESULT_UPLOADS = 50
 
 
 def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
@@ -127,8 +134,9 @@ class JobScaler:
             # no need to resize
             return
 
-        while self.current_occupancy() > 0:
-            # not safe to scale when jobs are in flight
+        while self.current_occupancy() > 0 or self._sending_results:
+            # not safe to scale while jobs are in flight or results are still
+            # uploading: a swapped queue would receive the upload's task_done()
             await asyncio.sleep(1)
             continue
 
@@ -420,9 +428,12 @@ class JobScaler:
             self._jobs_available.clear()
 
             # Fetch as many jobs as the concurrency allows; a task that is only
-            # sending its result no longer counts against it
+            # sending its result no longer counts against it. Stop once too many
+            # uploads are already in flight so a slow result endpoint cannot
+            # accumulate unbounded tasks, connections, and retained results.
             while (
                 len(tasks) - len(self._sending_results) < self.current_concurrency
+                and len(self._sending_results) < MAX_PENDING_RESULT_UPLOADS
                 and not self.jobs_queue.empty()
             ):
                 job = await self.jobs_queue.get()
@@ -603,18 +614,23 @@ class JobScaler:
             log.debug("Finished Job", job["id"])
             _reset_batch_id(batch_id_token)
 
+    def _requests_refresh(self, job_result: Any) -> bool:
+        """Whether this job asks the worker to refresh (restart) after it."""
+        return bool(
+            self.config.get("refresh_worker", False)
+            or (isinstance(job_result, dict) and job_result.get("stopPod"))
+        )
+
     def _stop_intake_if_refreshing(self, job: dict[str, Any], job_result: Any) -> None:
         """Stop intake before this job's slot is freed: the platform restarts
         the worker on stopPod, killing any job taken meanwhile."""
         if not self.is_alive():
             return
-        if self.config.get("refresh_worker", False) or (
-            isinstance(job_result, dict) and job_result.get("stopPod")
-        ):
+        if self._requests_refresh(job_result):
             log.info("Refresh requested, taking no more jobs.", job["id"])
             self.kill_worker()
 
-    def _release_slot(self, job: dict[str, Any], job_result: Any) -> None:
+    async def _release_slot(self, job: dict[str, Any], job_result: Any) -> None:
         """Free a finished job's slot before its result is sent.
 
         The result upload takes a full round trip (~0.3 s measured on
@@ -622,10 +638,27 @@ class JobScaler:
         asking for the next job. Taking the next job while the upload is in
         flight hides it for every job queued behind another.
         """
+        refreshing = self._requests_refresh(job_result)
         self._stop_intake_if_refreshing(job, job_result)
         self._sending_results.add(job["id"])
         self.job_progress.remove(job)
         self._slot_freed.set()
+        if refreshing:
+            # Let earlier uploads land before this refresh result reaches the
+            # platform: once it sees stopPod it can restart the worker and kill
+            # a result still in flight.
+            await self._drain_earlier_uploads(job["id"])
+
+    async def _drain_earlier_uploads(self, job_id: str) -> None:
+        """Wait for every in-flight result upload other than this job's."""
+        pending = [
+            task
+            for other_id in list(self._sending_results)
+            if other_id != job_id
+            and (task := self.jobs_tasks.get(other_id)) is not None
+        ]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def _wait_for_prestart(self) -> None:
         """Wait for prestart to finish or shutdown to begin."""

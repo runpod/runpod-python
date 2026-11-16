@@ -15,7 +15,13 @@ import pytest
 
 from runpod.serverless.modules import rp_http, rp_job, rp_scale
 
-from .test_refresh_worker import DEADLINE, FakeAiApi, _sync_handler, generate_job
+from .test_refresh_worker import (
+    DEADLINE,
+    DummyProgress,
+    FakeAiApi,
+    _sync_handler,
+    generate_job,
+)
 
 UPLOAD_S = 0.3
 
@@ -115,6 +121,144 @@ async def test_refresh_still_leaves_the_next_job_queued(slow_upload_worker):
         scaler.kill_worker()
         run.cancel()
         await asyncio.gather(run, return_exceptions=True)
+
+
+class PerJobUploadAiApi(FakeAiApi):
+    """ai-api that delays job-done only for named jobs and records the order in
+    which results are received."""
+
+    def __init__(self, jobs, slow_jobs, delay=UPLOAD_S):
+        super().__init__(jobs)
+        self.slow_jobs = set(slow_jobs)
+        self.delay = delay
+        self.done_order: list[str] = []
+
+    async def job_done(self, request):
+        job_id = request.match_info["job_id"]
+        if job_id in self.slow_jobs:
+            await asyncio.sleep(self.delay)
+        response = await super().job_done(request)
+        self.done_order.append(job_id)
+        return response
+
+
+class BlockingUploadAiApi(FakeAiApi):
+    """ai-api whose job-done blocks until released, so a test can watch how many
+    uploads the worker keeps in flight at once."""
+
+    def __init__(self, jobs):
+        super().__init__(jobs)
+        self.release = asyncio.Event()
+        self.uploading = 0
+        self.max_uploading = 0
+
+    async def job_done(self, request):
+        self.uploading += 1
+        self.max_uploading = max(self.max_uploading, self.uploading)
+        try:
+            await self.release.wait()
+        finally:
+            self.uploading -= 1
+        return await super().job_done(request)
+
+
+def _point_sdk_at(monkeypatch, server):
+    monkeypatch.setattr(
+        rp_job, "JOB_GET_URL", server.job_take_url.replace("$ID", "pod-1")
+    )
+    monkeypatch.setattr(
+        rp_http, "JOB_DONE_URL", server.job_done_url.replace("$RUNPOD_POD_ID", "pod-1")
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_waits_for_an_earlier_slow_upload(monkeypatch):
+    """A normal job A whose result is still uploading must land before a later
+    refreshing job B sends stopPod: once the platform sees stopPod it can
+    restart the worker and kill A's upload."""
+    server = PerJobUploadAiApi(
+        [generate_job("A", n=1), generate_job("B", n=2, refresh=True)],
+        slow_jobs={"A"},
+    )
+    await server.start()
+    _point_sdk_at(monkeypatch, server)
+    scaler = rp_scale.JobScaler({"handler": _sync_handler})
+    run = asyncio.create_task(scaler.run())
+    try:
+        _, pending = await asyncio.wait({run}, timeout=DEADLINE)
+        assert server.takes == ["A", "B"]
+        assert server.done_order == ["A", "B"], (
+            "B's stopPod reached the platform before A's result landed"
+        )
+        assert server.done["A"] == {"output": {"echo": 1}}
+        assert server.done["B"] == {"output": {"echo": 2}, "stopPod": True}
+        assert not pending
+    finally:
+        scaler.kill_worker()
+        run.cancel()
+        await asyncio.gather(run, return_exceptions=True)
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_pending_uploads_are_bounded(monkeypatch):
+    """A stalled result endpoint must not let a single-slot worker accumulate
+    unbounded in-flight uploads; intake pauses at the ceiling."""
+    monkeypatch.setattr(rp_scale, "MAX_PENDING_RESULT_UPLOADS", 2)
+    server = BlockingUploadAiApi([generate_job(f"J{i}", n=i) for i in range(10)])
+    await server.start()
+    _point_sdk_at(monkeypatch, server)
+    scaler = rp_scale.JobScaler({"handler": _sync_handler})
+    run = asyncio.create_task(scaler.run())
+    try:
+        # Let uploads pile up against the ceiling.
+        for _ in range(100):
+            if server.uploading >= 2:
+                break
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)  # give intake every chance to overrun
+        assert server.max_uploading == 2, (
+            f"uploads were not bounded: {server.max_uploading} in flight"
+        )
+        assert server.done == {}, "no upload should have completed yet"
+
+        server.release.set()  # drain
+        await asyncio.wait_for(server.polled_empty.wait(), timeout=DEADLINE)
+        deadline = time.monotonic() + DEADLINE
+        while len(server.done) < 10 and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        assert len(server.done) == 10
+    finally:
+        server.release.set()
+        scaler.kill_worker()
+        run.cancel()
+        await asyncio.gather(run, return_exceptions=True)
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_set_scale_waits_for_pending_uploads(monkeypatch):
+    """A concurrency change must not swap jobs_queue while a result upload is
+    still in flight: the upload's task_done() would target the new queue."""
+    monkeypatch.setattr(rp_scale, "JobsProgress", DummyProgress)
+    scaler = rp_scale.JobScaler({"handler": _sync_handler})
+    original_queue = scaler.jobs_queue
+    scaler._sending_results.add("A")  # a result still uploading
+    scaler.concurrency_modifier = lambda _current: 5
+
+    task = asyncio.create_task(scaler.set_scale())
+    try:
+        await asyncio.sleep(0.05)
+        assert not task.done(), "set_scale resized while an upload was in flight"
+        assert scaler.jobs_queue is original_queue
+
+        scaler._sending_results.discard("A")  # upload finished
+        await asyncio.wait_for(task, timeout=DEADLINE)
+        assert scaler.jobs_queue is not original_queue
+        assert scaler.jobs_queue.maxsize == 5
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
