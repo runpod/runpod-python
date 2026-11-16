@@ -252,9 +252,11 @@ async def handle_job(
         rp_debugger.clear_debugger_output()
 
     if on_result_ready is not None:
-        maybe_awaitable = on_result_ready(job_result)
-        if inspect.isawaitable(maybe_awaitable):
-            await maybe_awaitable
+        callback_result = on_result_ready(job_result)
+        if inspect.isawaitable(callback_result):
+            # Await the callback's coroutine for its side effects (freeing the
+            # slot, draining earlier uploads); it resolves to None.
+            callback_result = await callback_result
 
     # Send the job result back to JOB_DONE_URL
     await send_result(session, job_result, job, is_stream=is_stream)
