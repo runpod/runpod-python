@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from runpod.rp_cli import compute
+from runpod.cli import compute
 
 GPUS = [
     {"id": "NVIDIA GeForce RTX 4090", "name": "RTX 4090", "pool": "ADA_24"},

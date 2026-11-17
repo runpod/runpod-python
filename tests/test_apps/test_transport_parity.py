@@ -76,7 +76,7 @@ def test_dev_task_json_arguments_match_deployed_payload():
 @pytest.mark.parametrize("value", [b"bytes", float("nan"), float("inf")])
 async def test_api_body_validation_precedes_requests_and_source_sync(target, value):
     with (
-        patch("runpod.apps.targets.aiohttp.ClientSession") as session,
+        patch("runpod.apps.targets.HTTPClient") as session,
         patch.object(LiveTarget, "_sync_source", AsyncMock()) as sync,
     ):
         with pytest.raises(
@@ -88,7 +88,7 @@ async def test_api_body_validation_precedes_requests_and_source_sync(target, val
 
 
 async def test_raw_queue_requests_reject_non_json_options_before_network():
-    with patch("runpod.apps.targets.aiohttp.ClientSession") as session:
+    with patch("runpod.apps.targets.HTTPClient") as session:
         with pytest.raises(ValueError, match="remote request body"):
             await _request_json(
                 "POST",
@@ -120,16 +120,16 @@ def test_queue_and_task_results_reject_non_finite_json(value):
 async def test_api_json_and_text_responses_share_transport(target, text, expected):
     with (
         patch.object(target._client, "_headers", return_value={}),
-        patch("runpod.apps.targets.aiohttp.ClientSession") as factory,
+        patch("runpod.apps.targets.HTTPClient") as factory,
     ):
         session = factory.return_value.__aenter__.return_value
-        session.request = MagicMock()
-        response = session.request.return_value.__aenter__.return_value
+        session.stream = MagicMock()
+        response = session.stream.return_value.__aenter__.return_value
         response.status = 200
         response.text = AsyncMock(return_value=text)
         response.raise_for_status = lambda: None
         assert await target.request("POST", "/work", {"value": 1}) == expected
-        assert session.request.call_args.kwargs["json"] == {"value": 1}
+        assert session.stream.call_args.kwargs["json"] == {"value": 1}
 
 
 @pytest.mark.parametrize("async_call", [False, True])

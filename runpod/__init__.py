@@ -37,9 +37,9 @@ _LAZY_ATTRS = {
     "update_endpoint_template": "runpod.api.ctl_commands",
     "update_user_settings": "runpod.api.ctl_commands",
     # config helpers
-    "check_credentials": "runpod.cli.groups.config.functions",
-    "get_credentials": "runpod.cli.groups.config.functions",
-    "set_credentials": "runpod.cli.groups.config.functions",
+    "check_credentials": "runpod.auth.credentials",
+    "get_credentials": "runpod.auth.credentials",
+    "set_credentials": "runpod.auth.credentials",
     # endpoint clients
     "AsyncioEndpoint": "runpod.endpoint",
     "AsyncioJob": "runpod.endpoint",
@@ -100,22 +100,10 @@ def _selected_profile() -> str:
 
 
 def _load_api_key():
-    """resolve the api key from the environment, then stored credentials.
+    """resolve the api key from the environment or selected profile."""
+    from .auth import load_api_key
 
-    the credential lookup is deferred (and tolerant of a missing cli
-    dependency closure) so a bare `import runpod` never drags in the
-    config/cli modules; the deployed worker gets its key from the env.
-    """
-    key = os.environ.get("RUNPOD_API_KEY")
-    if key:
-        return key
-    try:
-        creds = importlib.import_module(
-            "runpod.cli.groups.config.functions"
-        ).get_credentials(profile)
-    except Exception:  # noqa: BLE001 - no stored key is a valid state
-        return None
-    return creds.get("api_key") if creds else None
+    return load_api_key(profile)
 
 
 def __getattr__(name):

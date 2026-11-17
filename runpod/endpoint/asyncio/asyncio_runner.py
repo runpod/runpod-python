@@ -5,6 +5,8 @@
 import asyncio
 from typing import Any, Dict, Optional
 
+from runpod.api.http import HTTPClient
+from runpod.api.routes import Route, endpoint_base_url
 from runpod.endpoint.helpers import FINAL_STATES, is_completed, raise_for_job_state
 from runpod.http_client import ClientSession
 
@@ -22,14 +24,10 @@ class Job:
             session: The aiohttp ClientSession.
             headers: Headers to use for requests.
         """
-        from runpod import (  # pylint: disable=import-outside-toplevel,cyclic-import
-            endpoint_url_base,
-        )
-        
         self.endpoint_id = endpoint_id
         self.job_id = job_id
         self.session = session
-        self.endpoint_url_base = endpoint_url_base
+        self.endpoint_url_base = endpoint_base_url()
         self.headers = headers
 
         self.job_status = None
@@ -42,11 +40,18 @@ class Job:
         Args:
             source: The URL source path of the job status.
         """
-        status_url = (
-            f"{self.endpoint_url_base}/{self.endpoint_id}/{source}/{self.job_id}"
+        route = Route(
+            "GET",
+            "{endpoint_id}/{source}/{job_id}",
+            endpoint_id=self.endpoint_id,
+            source=source,
+            job_id=self.job_id,
         )
-        job_state = await self.session.get(status_url, headers=self.headers)
-        job_state = await job_state.json()
+        client = HTTPClient(self.endpoint_url_base, session=self.session)
+        async with client.stream(
+            route, headers=self.headers, timeout=self.session.timeout
+        ) as response:
+            job_state = await response.json()
 
         if is_completed(job_state["status"]):
             self.job_status = job_state["status"]
@@ -117,8 +122,16 @@ class Job:
         Returns:
             Output of cancel operation
         """
-        cancel_url = f"{self.endpoint_url_base}/{self.endpoint_id}/cancel/{self.job_id}"
-        async with self.session.post(cancel_url, headers=self.headers) as resp:
+        route = Route(
+            "POST",
+            "{endpoint_id}/cancel/{job_id}",
+            endpoint_id=self.endpoint_id,
+            job_id=self.job_id,
+        )
+        client = HTTPClient(self.endpoint_url_base, session=self.session)
+        async with client.stream(
+            route, headers=self.headers, timeout=self.session.timeout
+        ) as resp:
             return await resp.json()
 
 
@@ -137,13 +150,14 @@ class Endpoint:
         """
         from runpod import (  # pylint: disable=import-outside-toplevel
             api_key as global_api_key,
-            endpoint_url_base,
         )
         
         self.endpoint_id = endpoint_id
         self.session = session
-        self.endpoint_url_base = endpoint_url_base
-        self.endpoint_url = f"{endpoint_url_base}/{self.endpoint_id}/run"
+        self.endpoint_url_base = endpoint_base_url()
+        self.endpoint_url = Route(
+            "POST", "{endpoint_id}/run", endpoint_id=self.endpoint_id
+        ).url(self.endpoint_url_base)
         
         # Store instance API key for future requests
         self.api_key = api_key or global_api_key
@@ -166,8 +180,12 @@ class Endpoint:
         Returns:
             Newly created job
         """
-        async with self.session.post(
-            self.endpoint_url, headers=self.headers, json={"input": endpoint_input}
+        client = HTTPClient(self.endpoint_url_base, session=self.session)
+        async with client.stream(
+            Route("POST", "{endpoint_id}/run", endpoint_id=self.endpoint_id),
+            headers=self.headers,
+            json={"input": endpoint_input},
+            timeout=self.session.timeout,
         ) as resp:
             json_resp = await resp.json()
 
@@ -183,9 +201,12 @@ class Endpoint:
         Returns:
             Health of endpoint
         """
-        health_url = f"{self.endpoint_url_base}/{self.endpoint_id}/health"
-        
-        async with self.session.get(health_url, headers=self.headers) as resp:
+        client = HTTPClient(self.endpoint_url_base, session=self.session)
+        async with client.stream(
+            Route("GET", "{endpoint_id}/health", endpoint_id=self.endpoint_id),
+            headers=self.headers,
+            timeout=self.session.timeout,
+        ) as resp:
             return await resp.json()
 
     async def purge_queue(self) -> dict:
@@ -195,7 +216,10 @@ class Endpoint:
         Returns:
             Purge status
         """
-        purge_url = f"{self.endpoint_url_base}/{self.endpoint_id}/purge-queue"
-        
-        async with self.session.post(purge_url, headers=self.headers) as resp:
+        client = HTTPClient(self.endpoint_url_base, session=self.session)
+        async with client.stream(
+            Route("POST", "{endpoint_id}/purge-queue", endpoint_id=self.endpoint_id),
+            headers=self.headers,
+            timeout=self.session.timeout,
+        ) as resp:
             return await resp.json()

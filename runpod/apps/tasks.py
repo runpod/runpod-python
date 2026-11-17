@@ -19,7 +19,8 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from .._hosts import proxy_url
+from ..api.http import HTTPClient
+from ..api.routes import Route, pod_proxy_base_url
 from ..user_agent import APPS_USER_AGENT
 from .api import AppsApiClient, is_capacity_error
 from .context import CLEANUP_TIMEOUT
@@ -129,7 +130,7 @@ def _device_names(gpu: Optional[List[str]]) -> List[str]:
 
 
 def _proxy_url(pod_id: str) -> str:
-    return proxy_url(pod_id, TASK_PORT)
+    return pod_proxy_base_url(pod_id, TASK_PORT)
 
 
 def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]:
@@ -212,14 +213,12 @@ class _TaskTransport:
 
     async def wait_ready(self, timeout: float = READY_TIMEOUT) -> None:
         """poll the runner's /ping through the pod proxy until it answers."""
-        url = f"{_proxy_url(self.pod_id)}/ping"
         deadline = time.monotonic() + timeout
-        async with aiohttp.ClientSession() as session:
+        async with HTTPClient(base_url=_proxy_url(self.pod_id)) as client:
             while time.monotonic() < deadline:
                 try:
-                    async with session.get(
-                        url,
-                        timeout=aiohttp.ClientTimeout(total=5),
+                    async with client.stream(
+                        Route("GET", "/ping"), timeout=5,
                         headers={"User-Agent": APPS_USER_AGENT},
                     ) as resp:
                         if resp.status == 200:
@@ -273,15 +272,14 @@ class _TaskTransport:
         timeout = request.get("timeout")
         _validate_timeout(timeout)
         require_json_value(request, "task request body must be JSON-serializable")
-        url = f"{_proxy_url(self.pod_id)}{path}"
         attempts = 6
-        async with aiohttp.ClientSession() as session:
+        async with HTTPClient(base_url=_proxy_url(self.pod_id)) as client:
             for attempt in range(attempts):
-                async with session.post(
-                    url,
+                async with client.stream(
+                    Route("POST", path),
                     json=request,
                     headers=self._headers,
-                    timeout=aiohttp.ClientTimeout(total=30),
+                    timeout=30,
                 ) as resp:
                     if resp.status == 404 and attempt < attempts - 1:
                         await asyncio.sleep(2 * (attempt + 1))
@@ -307,15 +305,14 @@ class _TaskTransport:
         retried briefly; a persistent 404 means the pod is gone and
         surfaces as an error.
         """
-        url = f"{_proxy_url(self.pod_id)}/result"
         attempts = 6
         data: Dict[str, Any] = {}
-        async with aiohttp.ClientSession() as session:
+        async with HTTPClient(base_url=_proxy_url(self.pod_id)) as client:
             for attempt in range(attempts):
-                async with session.get(
-                    url,
+                async with client.stream(
+                    Route("GET", "/result"),
                     headers=self._headers,
-                    timeout=aiohttp.ClientTimeout(total=30),
+                    timeout=30,
                 ) as resp:
                     if resp.status == 404 and attempt < attempts - 1:
                         await asyncio.sleep(2 * (attempt + 1))

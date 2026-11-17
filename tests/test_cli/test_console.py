@@ -5,7 +5,7 @@ import io
 import pytest
 from rich.console import Console
 
-from runpod.rp_cli import console as ui
+from runpod.cli import console as ui
 
 
 @pytest.fixture(autouse=True)

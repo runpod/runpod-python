@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from runpod.apps.manage import UndeployResult
-from runpod.rp_cli.main import cli
+from runpod.cli.main import cli
 
 
 def _runner():
@@ -352,7 +352,7 @@ class TestLoginCommand:
     def test_login_updates_only_selected_profile(
         self, tmp_path, monkeypatch, browser, profile
     ):
-        from runpod.cli.groups.config import functions
+        from runpod.auth import credentials as functions
 
         credentials = tmp_path / "config.toml"
         credentials.write_text(
@@ -361,13 +361,13 @@ class TestLoginCommand:
             '[production]\napi_key = "keep-production"\n'
         )
         monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(credentials))
-        monkeypatch.setattr("runpod.rp_cli.main._stdin_is_tty", lambda: True)
+        monkeypatch.setattr("runpod.cli.main._stdin_is_tty", lambda: True)
         args = ["login"]
         if profile != "default":
             args.extend(["--profile", profile])
         args.extend(["--no-open"] if browser else ["--api-key", "new-key"])
         with patch(
-            "runpod.apps.auth.browser_login", AsyncMock(return_value="new-key")
+            "runpod.auth.login.browser_login", AsyncMock(return_value="new-key")
         ):
             result = _runner().invoke(cli, args)
 
@@ -378,7 +378,7 @@ class TestLoginCommand:
         assert functions.get_credentials("production")["api_key"] == "keep-production"
 
     def test_login_saves_to_profile_from_env(self, tmp_path, monkeypatch):
-        from runpod.cli.groups.config import functions
+        from runpod.auth import credentials as functions
 
         credentials = tmp_path / "config.toml"
         credentials.write_text('[default]\napi_key = "keep-default"\n')
@@ -392,7 +392,7 @@ class TestLoginCommand:
         assert functions.get_credentials("default")["api_key"] == "keep-default"
 
     def test_login_profile_flag_overrides_env(self, tmp_path, monkeypatch):
-        from runpod.cli.groups.config import functions
+        from runpod.auth import credentials as functions
 
         credentials = tmp_path / "config.toml"
         monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(credentials))
@@ -407,12 +407,12 @@ class TestLoginCommand:
         assert functions.get_credentials("team") is None
 
     def test_browser_flow_error(self):
-        from runpod.apps.auth import LoginError
+        from runpod.auth.login import LoginError
 
         with (
-            patch("runpod.rp_cli.main._stdin_is_tty", return_value=True),
+            patch("runpod.cli.main._stdin_is_tty", return_value=True),
             patch(
-                "runpod.apps.auth.browser_login",
+                "runpod.auth.login.browser_login",
                 AsyncMock(side_effect=LoginError("api key was rejected")),
             ),
         ):
@@ -422,24 +422,24 @@ class TestLoginCommand:
 
     def test_browser_flow_fails_fast_without_tty(self):
         login = AsyncMock()
-        with patch("runpod.apps.auth.browser_login", login):
+        with patch("runpod.auth.login.browser_login", login):
             result = _runner().invoke(cli, ["login", "--no-open"])
         assert result.exit_code == 1
         assert "RUNPOD_API_KEY" in result.output
         login.assert_not_called()
 
     def test_browser_flow_prompts_with_hidden_input(self, tmp_path, monkeypatch):
-        from runpod.cli.groups.config import functions
+        from runpod.auth import credentials as functions
 
         monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(tmp_path / "c.toml"))
         api = MagicMock()
         api.create_auth_request = AsyncMock(return_value={"id": "req-1"})
         api.verify_api_key = AsyncMock(return_value=True)
         with (
-            patch("runpod.rp_cli.main._stdin_is_tty", return_value=True),
-            patch("runpod.apps.auth.AppsApiClient", return_value=api),
+            patch("runpod.cli.main._stdin_is_tty", return_value=True),
+            patch("runpod.auth.login.AuthApiClient", return_value=api),
             patch(
-                "runpod.rp_cli.main.click.prompt", return_value=" rpa_new "
+                "runpod.cli.main.click.prompt", return_value=" rpa_new "
             ) as prompt,
         ):
             result = _runner().invoke(cli, ["login", "--no-open"])

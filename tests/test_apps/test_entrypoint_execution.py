@@ -92,7 +92,7 @@ from unittest.mock import AsyncMock, patch
 from click.testing import CliRunner
 from runpod.apps.entrypoint import run_entrypoint
 from runpod.apps.targets import SentinelTarget
-from runpod.rp_cli.main import cli
+from runpod.cli.main import cli
 
 async def start(session):
     for app in session.apps:

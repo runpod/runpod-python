@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from runpod.rp_cli.main import cli
+from runpod.cli.main import cli
 
 
 class TestSSHDispatch:

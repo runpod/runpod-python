@@ -37,17 +37,17 @@ class TestTailSummary:
 
 
 def _mock_session(response):
-    """a ClientSession whose get() context manager yields `response`."""
+    """an HTTPClient whose stream yields the response."""
     response.status = 200
     get_cm = MagicMock()
     get_cm.__aenter__ = AsyncMock(return_value=response)
     get_cm.__aexit__ = AsyncMock(return_value=False)
     session = MagicMock()
-    session.get = MagicMock(return_value=get_cm)
-    session_cm = MagicMock()
-    session_cm.__aenter__ = AsyncMock(return_value=session)
-    session_cm.__aexit__ = AsyncMock(return_value=False)
-    return session_cm, session
+    session.stream = MagicMock(return_value=get_cm)
+    session.request = response.json
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=False)
+    return session, session
 
 
 class TestPodLogs:
@@ -58,13 +58,13 @@ class TestPodLogs:
         response.json = AsyncMock(return_value={"container": ["hello"], "system": None})
         session_cm, session = _mock_session(response)
 
-        with patch("aiohttp.ClientSession", return_value=session_cm):
+        with patch("runpod.apps.logs.HTTPClient", return_value=session_cm):
             result = await pod_logs("pod123")
 
         assert result == {"container": ["hello"], "system": []}
-        url = session.get.call_args[0][0]
-        assert "pod123" in url
-        headers = session.get.call_args[1]["headers"]
+        route = session.stream.call_args[0][0]
+        assert "pod123" in route.resolved_path
+        headers = session.stream.call_args[1]["headers"]
         assert headers["Authorization"] == "Bearer test-key"
 
 
@@ -97,7 +97,7 @@ class TestStreamPodLogs:
         )
         session_cm, session = _mock_session(response)
         cursors = []
-        with patch("aiohttp.ClientSession", return_value=session_cm):
+        with patch("runpod.apps.logs.HTTPClient", return_value=session_cm):
             entries = [
                 entry
                 async for entry in stream_pod_logs(
@@ -108,15 +108,15 @@ class TestStreamPodLogs:
                     on_event_id=cursors.append,
                 )
             ]
-        url = session.get.call_args.args[0]
+        url = session.stream.call_args.args[0].resolved_path
         suffix = (
             "/v2/serverless/ep1/workers/pod1/logs"
             if endpoint_id
             else "/v2/pods/pod1/logs"
         )
         assert url.endswith(suffix)
-        assert session.get.call_args.kwargs["params"] == {"tail": "100"}
-        assert session.get.call_args.kwargs["headers"]["Last-Event-ID"] == "cursor1"
+        assert session.stream.call_args.kwargs["params"] == {"tail": "100"}
+        assert session.stream.call_args.kwargs["headers"]["Last-Event-ID"] == "cursor1"
         assert cursors == ["cursor2"]
         assert entries == [{"source": "system", "line": "ready", "ts": "t2"}]
 
@@ -141,14 +141,14 @@ class TestStreamPodLogs:
         response.content = _FakeContent(frames)
         session_cm, session = _mock_session(response)
 
-        with patch("aiohttp.ClientSession", return_value=session_cm):
+        with patch("runpod.apps.logs.HTTPClient", return_value=session_cm):
             events = [e async for e in stream_pod_logs("pod123")]
 
         assert events == [
             {"source": "container", "line": "hi", "ts": "t1"},
             {"source": "system", "line": "boot", "ts": "t2"},
         ]
-        params = session.get.call_args[1]["params"]
+        params = session.stream.call_args[1]["params"]
         assert params["stream"] == "true"
         assert params["tail"] == "100"
 
@@ -167,7 +167,7 @@ class TestStreamPodLogs:
         response.content = _FakeContent(frames)
         session_cm, _ = _mock_session(response)
         cursors = []
-        with patch("aiohttp.ClientSession", return_value=session_cm):
+        with patch("runpod.apps.logs.HTTPClient", return_value=session_cm):
             stream = stream_pod_logs("pod1", on_event_id=cursors.append)
             assert await anext(stream) == {"line": 0}
             assert cursors == ["cursor0"]
@@ -190,7 +190,7 @@ class TestStreamPodLogs:
         )
         session_cm, _ = _mock_session(response)
         cursors = []
-        with patch("aiohttp.ClientSession", return_value=session_cm):
+        with patch("runpod.apps.logs.HTTPClient", return_value=session_cm):
             events = [
                 e async for e in stream_pod_logs("pod1", on_event_id=cursors.append)
             ]
@@ -220,8 +220,8 @@ class TestStreamPodLogs:
             await asyncio.sleep(0.03)
             return response
 
-        session.get.return_value.__aenter__.side_effect = connect
-        with patch("aiohttp.ClientSession", return_value=session_cm):
+        session.stream.return_value.__aenter__.side_effect = connect
+        with patch("runpod.apps.logs.HTTPClient", return_value=session_cm):
             stream = stream_pod_logs("pod1", idle_timeout=0.001)
             if status == 403:
                 with pytest.raises(AppHTTPError) as raised:
@@ -230,7 +230,7 @@ class TestStreamPodLogs:
                 assert raised.value.body_excerpt == "forbidden"
             else:
                 assert [e async for e in stream] == [{"line": "ready"}]
-        session.get.return_value.__aexit__.assert_awaited_once()
+        session.stream.return_value.__aexit__.assert_awaited_once()
 
     async def test_idle_timeout_closes_established_stream(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
@@ -247,19 +247,19 @@ class TestStreamPodLogs:
         response = MagicMock()
         response.content = content()
         session_cm, session = _mock_session(response)
-        with patch("aiohttp.ClientSession", return_value=session_cm):
+        with patch("runpod.apps.logs.HTTPClient", return_value=session_cm):
             events = [e async for e in stream_pod_logs("pod1", idle_timeout=0.001)]
         assert events == [{"line": "ready"}]
         assert closed == [True]
-        session.get.return_value.__aexit__.assert_awaited_once()
+        session.stream.return_value.__aexit__.assert_awaited_once()
 
     async def test_connection_timeout_propagates(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
         session_cm, session = _mock_session(MagicMock())
-        session.get.return_value.__aenter__.side_effect = asyncio.TimeoutError(
+        session.stream.return_value.__aenter__.side_effect = asyncio.TimeoutError(
             "connection timed out"
         )
-        with patch("aiohttp.ClientSession", return_value=session_cm):
+        with patch("runpod.apps.logs.HTTPClient", return_value=session_cm):
             with pytest.raises(asyncio.TimeoutError, match="connection timed out"):
                 await anext(stream_pod_logs("pod1", idle_timeout=0.001))
 

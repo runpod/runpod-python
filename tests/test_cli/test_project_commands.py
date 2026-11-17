@@ -9,7 +9,7 @@ from click.testing import CliRunner
 
 from runpod.apps.app import _clear_registry, get_registered_apps
 from runpod.apps.entrypoint import _clear_entrypoints, get_entrypoints
-from runpod.rp_cli.main import cli
+from runpod.cli.main import cli
 
 APP_SOURCE = """
 import runpod
@@ -31,7 +31,7 @@ def clean_project_state(tmp_path, monkeypatch):
     _clear_registry()
     _clear_entrypoints()
     monkeypatch.delenv("RUNPOD_DEV_SESSION", raising=False)
-    monkeypatch.setattr("runpod.rp_cli.update.start_background_check", lambda: None)
+    monkeypatch.setattr("runpod.cli.update.start_background_check", lambda: None)
     yield
     _clear_registry()
     _clear_entrypoints()

@@ -6,7 +6,7 @@ from click.shell_completion import ShellComplete
 from click.testing import CliRunner
 
 from runpod import error
-from runpod.rp_cli.main import cli
+from runpod.cli.main import cli
 
 VOLUME = {
     "id": "vol1",
@@ -40,20 +40,20 @@ def invoke(command, **kwargs):
 
 @pytest.fixture
 def rest():
-    with patch("runpod.rp_cli.volume.run_rest_request", return_value=VOLUME) as mock:
+    with patch("runpod.cli.volume.run_rest_request", return_value=VOLUME) as mock:
         yield mock
 
 
 @pytest.fixture
 def listing():
-    with patch("runpod.rp_cli.volume.list_all", return_value=[VOLUME]) as mock:
+    with patch("runpod.cli.volume.list_all", return_value=[VOLUME]) as mock:
         yield mock
 
 
 @pytest.fixture
 def datacenters():
     with patch(
-        "runpod.rp_cli.compute.list_datacenters", return_value=DATACENTERS
+        "runpod.cli.compute.list_datacenters", return_value=DATACENTERS
     ) as mock:
         yield mock
 
@@ -100,7 +100,7 @@ def test_get_fields_and_json(resource, rest):
 
 
 def test_get_picker(rest, listing):
-    with patch("runpod.rp_cli.volume.pick", return_value="vol1") as pick:
+    with patch("runpod.cli.volume.pick", return_value="vol1") as pick:
         result = invoke("get")
     assert result.exit_code == 0, result.output
     assert pick.call_args.args[1] == [("vol1", "models  100 GB  EU-RO-1  standard")]
@@ -160,7 +160,7 @@ def test_create_exact_data_center(rest, datacenters):
     ],
 )
 def test_create_filters_picker_candidates(rest, datacenters, options, candidates):
-    with patch("runpod.rp_cli.volume.pick", return_value=candidates[0]) as pick:
+    with patch("runpod.cli.volume.pick", return_value=candidates[0]) as pick:
         result = invoke(f"create --name m --size 10 {options} --json")
     assert result.exit_code == 0, result.output
     assert [value for value, _ in pick.call_args.args[1]] == candidates
@@ -303,7 +303,7 @@ def test_delete_yes(resource, rest):
 
 @pytest.mark.parametrize("answer,code", [("y", 0), ("n", 1)])
 def test_delete_confirmation(rest, answer, code):
-    with patch("runpod.rp_cli.output.interactive", return_value=True):
+    with patch("runpod.cli.output.interactive", return_value=True):
         result = invoke("delete vol1", input=f"{answer}\n")
     assert result.exit_code == code
     assert "models  100 GB  EU-RO-1  standard" in result.output

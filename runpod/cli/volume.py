@@ -6,9 +6,9 @@ from pathlib import Path
 import click
 
 from runpod.api.rest import run_rest_request
-from runpod.rp_cli import compute, console as ui
-from runpod.rp_cli.api import api_errors, list_all
-from runpod.rp_cli.output import (
+from runpod.cli import compute, console as ui
+from runpod.cli.api import api_errors, list_all
+from runpod.cli.output import (
     completer,
     confirm,
     json_option,
@@ -461,8 +461,8 @@ def _ensure_logged_in(ctx) -> None:
     needs one."""
     import runpod
     import runpod.network_volume_transfer as nvt
-    from runpod.cli.groups.config.functions import get_credentials
-    from runpod.rp_cli.main import login
+    from runpod.auth.credentials import get_credentials
+    from runpod.cli.main import login
 
     if runpod.api_key:
         return
@@ -513,7 +513,7 @@ def _prompt_s3_keys():
     """ask for the s3 keys, offering to save them for next time."""
     import runpod
     import runpod.network_volume_transfer as nvt
-    from runpod.cli.groups.config.functions import set_s3_keys
+    from runpod.auth.credentials import set_s3_keys
 
     if not _interactive():
         raise click.ClickException(_missing_keys_message())

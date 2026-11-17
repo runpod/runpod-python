@@ -65,13 +65,3 @@ query getFlashEnvironmentByName($input: FlashEnvironmentByNameInput!) {
     }
 }
 """
-
-# no apiKey: the console shows the key only to the approver.
-QUERY_FLASH_AUTH_REQUEST_STATUS = """
-query flashAuthRequestStatus($flashAuthRequestId: String!) {
-    flashAuthRequestStatus(flashAuthRequestId: $flashAuthRequestId) {
-        id
-        status
-    }
-}
-"""

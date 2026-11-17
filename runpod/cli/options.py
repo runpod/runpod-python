@@ -5,8 +5,8 @@ from collections.abc import Iterable
 
 import click
 
-from runpod.rp_cli.api import list_all
-from runpod.rp_cli.compute import ResolutionError
+from runpod.cli.api import list_all
+from runpod.cli.compute import ResolutionError
 
 
 def parse_env(values: Iterable[str]) -> dict[str, str]:

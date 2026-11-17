@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from runpod import error
-from runpod.rp_cli.main import cli
+from runpod.cli.main import cli
 
 GPUS = [
     {
@@ -88,16 +88,16 @@ DATACENTERS = [
 
 @pytest.fixture(autouse=True)
 def wide_console(monkeypatch):
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     monkeypatch.setattr(ui.console, "_width", 200)
 
 
 def _invoke(args, gpus=GPUS, cpus=CPUS, datacenters=DATACENTERS):
     with (
-        patch("runpod.rp_cli.compute.list_gpus", return_value=gpus) as list_gpus,
-        patch("runpod.rp_cli.compute.list_cpus", return_value=cpus) as list_cpus,
-        patch("runpod.rp_cli.compute.list_datacenters", return_value=datacenters),
+        patch("runpod.cli.compute.list_gpus", return_value=gpus) as list_gpus,
+        patch("runpod.cli.compute.list_cpus", return_value=cpus) as list_cpus,
+        patch("runpod.cli.compute.list_datacenters", return_value=datacenters),
     ):
         result = CliRunner().invoke(cli, ["catalog", *args])
     return result, list_gpus, list_cpus
@@ -108,7 +108,7 @@ class TestGpuCatalog:
         "cloud, expected", [(None, 10), ("secure", 1), ("community", 10)]
     )
     def test_max_count_matches_cloud(self, cloud, expected):
-        from runpod.rp_cli.catalog import _gpu_columns
+        from runpod.cli.catalog import _gpu_columns
 
         columns = dict(_gpu_columns("POD", 1, cloud))
         assert columns["MAX"](GPUS[1]) == expected
@@ -209,7 +209,7 @@ class TestGpuCatalog:
 
     def test_api_error_is_clean(self):
         with patch(
-            "runpod.rp_cli.compute.list_gpus",
+            "runpod.cli.compute.list_gpus",
             side_effect=error.AuthenticationError("Unauthorized request"),
         ):
             result = CliRunner().invoke(cli, ["catalog"])
@@ -249,7 +249,7 @@ class TestCpuCatalog:
         ],
     )
     def test_per_vcpu_price_precision(self, product, price, expected):
-        from runpod.rp_cli.catalog import _cpu_columns
+        from runpod.cli.catalog import _cpu_columns
 
         tier = "serverlessPerVcpu" if product == "SERVERLESS" else "securePerVcpu"
         row = dict(CPUS[0], price={tier: price})
@@ -285,9 +285,9 @@ class TestCpuCatalog:
 )
 def test_inapplicable_flags_fail_before_fetch(mode, options, offending_flag, as_json):
     with (
-        patch("runpod.rp_cli.compute.list_datacenters") as list_datacenters,
-        patch("runpod.rp_cli.compute.list_gpus") as list_gpus,
-        patch("runpod.rp_cli.compute.list_cpus") as list_cpus,
+        patch("runpod.cli.compute.list_datacenters") as list_datacenters,
+        patch("runpod.cli.compute.list_gpus") as list_gpus,
+        patch("runpod.cli.compute.list_cpus") as list_cpus,
     ):
         result = CliRunner().invoke(
             cli, ["catalog", *mode, *options, *(["--json"] if as_json else [])]

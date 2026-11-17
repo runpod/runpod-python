@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
+from runpod.api.http import SyncHTTPClient
+from runpod.api.routes import Route, endpoint_base_url
 from runpod.endpoint.helpers import (
     API_KEY_NOT_SET_MSG,
     FINAL_STATES,
@@ -35,7 +37,6 @@ class RunPodClient:
         """
         from runpod import (  # pylint: disable=import-outside-toplevel, cyclic-import
             api_key as global_api_key,
-            endpoint_url_base,
         )
         
         # Use provided api_key or fall back to global
@@ -53,7 +54,17 @@ class RunPodClient:
             "Authorization": f"Bearer {self.api_key}",
         }
 
-        self.endpoint_url_base = endpoint_url_base
+        self.endpoint_url_base = endpoint_base_url()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def close(self):
+        """Close the client's connection pool."""
+        self.rp_session.close()
 
     def _request(
         self, method: str, endpoint: str, data: Optional[dict] = None, 
@@ -75,16 +86,15 @@ class RunPodClient:
             RuntimeError: If the response returns a 401 Unauthorized status.
             requests.HTTPError: If the response contains an unsuccessful status code.
         """
-        url = f"{self.endpoint_url_base}/{endpoint}"
-        response = self.rp_session.request(
-            method, url, headers=self.headers, json=data, timeout=timeout
-        )
+        client = SyncHTTPClient(self.endpoint_url_base, session=self.rp_session)
+        with client.stream(
+            Route(method, endpoint), headers=self.headers, json=data, timeout=timeout
+        ) as response:
+            if response.status_code == 401:
+                raise RuntimeError(UNAUTHORIZED_MSG)
 
-        if response.status_code == 401:
-            raise RuntimeError(UNAUTHORIZED_MSG)
-
-        response.raise_for_status()
-        return response.json()
+            response.raise_for_status()
+            return response.json()
 
     def post(self, endpoint: str, data: dict, timeout: int = 10):
         """Post to the endpoint."""
@@ -120,7 +130,13 @@ class Job:
 
     def _fetch_job(self, source: str = "status") -> Dict[str, Any]:
         """Returns the raw json of the status, raises an exception if invalid"""
-        status_url = f"{self.endpoint_id}/{source}/{self.job_id}"
+        status_url = Route(
+            "GET",
+            "{endpoint_id}/{source}/{job_id}",
+            endpoint_id=self.endpoint_id,
+            source=source,
+            job_id=self.job_id,
+        ).resolved_path
         job_state = self.rp_client.get(endpoint=status_url)
 
         if is_completed(job_state["status"]):
@@ -189,7 +205,12 @@ class Job:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
         return self.rp_client.post(
-            f"{self.endpoint_id}/cancel/{self.job_id}", 
+            Route(
+                "POST",
+                "{endpoint_id}/cancel/{job_id}",
+                endpoint_id=self.endpoint_id,
+                job_id=self.job_id,
+            ).resolved_path,
             data=None, 
             timeout=timeout
         )
@@ -218,6 +239,16 @@ class Endpoint:
         self.endpoint_id = endpoint_id
         self.rp_client = RunPodClient(api_key=api_key)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def close(self):
+        """Close the endpoint's connection pool after its jobs finish."""
+        self.rp_client.close()
+
     def run(self, request_input: Dict[str, Any]) -> Job:
         """
         Run the endpoint with the given input.
@@ -232,7 +263,7 @@ class Endpoint:
             request_input = {"input": request_input}
 
         job_request = self.rp_client.post(
-            f"{self.endpoint_id}/run", 
+            Route("POST", "{endpoint_id}/run", endpoint_id=self.endpoint_id).resolved_path,
             request_input
         )
         return Job(self.endpoint_id, job_request["id"], self.rp_client)
@@ -255,7 +286,9 @@ class Endpoint:
             request_input = {"input": request_input}
 
         job_request = self.rp_client.post(
-            f"{self.endpoint_id}/runsync", 
+            Route(
+                "POST", "{endpoint_id}/runsync", endpoint_id=self.endpoint_id
+            ).resolved_path,
             request_input, 
             timeout=timeout
         )
@@ -278,7 +311,7 @@ class Endpoint:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
         return self.rp_client.get(
-            f"{self.endpoint_id}/health", 
+            Route("GET", "{endpoint_id}/health", endpoint_id=self.endpoint_id).resolved_path,
             timeout=timeout
         )
 
@@ -290,7 +323,9 @@ class Endpoint:
             timeout: The number of seconds to wait for the server to respond before giving up.
         """
         return self.rp_client.post(
-            f"{self.endpoint_id}/purge-queue", 
+            Route(
+                "POST", "{endpoint_id}/purge-queue", endpoint_id=self.endpoint_id
+            ).resolved_path,
             data=None, 
             timeout=timeout
         )

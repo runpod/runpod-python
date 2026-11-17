@@ -5,7 +5,7 @@ import click
 import pytest
 
 from runpod.apps.errors import AppHTTPError
-from runpod.rp_cli import logs
+from runpod.cli import logs
 
 
 def event(line="hello", ts="2026-01-01T00:00:00Z"):

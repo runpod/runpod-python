@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from runpod.rp_cli import update as upd
-from runpod.rp_cli.main import cli
+from runpod.cli import update as upd
+from runpod.cli.main import cli
 
 
 class TestParseVersion:
@@ -50,7 +50,7 @@ class TestUpdateCommand:
         with patch.object(
             upd, "fetch_pypi_metadata", return_value=("9.9.9", {"9.9.9"})
         ), patch.object(upd, "current_version", return_value="9.9.9"), patch(
-            "runpod.rp_cli.main.cli.callback"
+            "runpod.cli.main.cli.callback"
         ):
             result = runner.invoke(cli, ["update"])
         assert result.exit_code == 0, result.output

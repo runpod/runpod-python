@@ -66,16 +66,6 @@ mutation deleteFlashEnvironment($flashEnvironmentId: String!) {
 }
 """
 
-MUTATION_CREATE_FLASH_AUTH_REQUEST = """
-mutation createFlashAuthRequest {
-    createFlashAuthRequest {
-        id
-        status
-        expiresAt
-    }
-}
-"""
-
 MUTATION_PREPARE_ARTIFACT_UPLOAD = """
 mutation PrepareArtifactUpload($input: PrepareFlashArtifactUploadInput!) {
     prepareFlashArtifactUpload(input: $input) {

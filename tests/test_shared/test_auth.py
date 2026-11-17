@@ -18,7 +18,7 @@ class TestAPIKey(unittest.TestCase):
     """
 
     @patch("builtins.open", new_callable=mock_open, read_data=CREDENTIALS)
-    @patch("runpod.cli.groups.config.functions.os.path.exists", return_value=True)
+    @patch("runpod.auth.credentials.os.path.exists", return_value=True)
     def test_use_file_credentials(self, _mock_exists, mock_file):
         """
         Test that the API key is read from the credentials file

@@ -16,9 +16,9 @@ from runpod.api.rest import run_rest_request
 from runpod.apps.utils.network import api_key
 from runpod.endpoint import runner
 from runpod.endpoint.helpers import is_completed
-from runpod.rp_cli import compute, console as ui, endpoint_config as config
-from runpod.rp_cli.api import api_errors, list_all
-from runpod.rp_cli.output import (
+from runpod.cli import compute, console as ui, endpoint_config as config
+from runpod.cli.api import api_errors, list_all
+from runpod.cli.output import (
     completer,
     confirm,
     interactive,
@@ -988,7 +988,7 @@ def logs(endpoint_id, worker_ids, follow, source, tail, since, as_json):
     Without --worker, every worker's logs are multiplexed, and with
     --follow newly created workers are attached automatically.
     """
-    from runpod.rp_cli.logs import show_logs
+    from runpod.cli.logs import show_logs
 
     show_logs(
         endpoint_id=endpoint_id,

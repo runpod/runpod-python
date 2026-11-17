@@ -79,7 +79,7 @@ async def test_transports_report_body_without_credentials(
     error_server, monkeypatch, tmp_path, operation, method, path, attempts
 ):
     monkeypatch.setattr("runpod.endpoint_url_base", "https://api.runpod.ai/v2")
-    monkeypatch.setattr("runpod.apps.logs.HAPI_BASE", "https://logs.example")
+    monkeypatch.setenv("RUNPOD_HAPI_URL", "https://logs.example")
     client = QueueClient(
         "ep", lambda: {"Authorization": "Bearer synthetic-account-key"}
     )

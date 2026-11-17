@@ -7,7 +7,7 @@ from requests import RequestException
 
 from runpod import error
 from runpod.api.rest import run_rest_request
-from runpod.rp_cli.compute import ResolutionError
+from runpod.cli.compute import ResolutionError
 
 
 def list_all(path: str, collection: str, params: dict | None = None) -> list[dict]:

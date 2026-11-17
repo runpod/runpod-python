@@ -11,8 +11,8 @@ from runpod.api.ctl_commands import _path_segment
 from runpod.api.rest import run_rest_request
 from runpod.apps.errors import AppHTTPError
 from runpod.apps.logs import stream_pod_logs
-from runpod.rp_cli import console as ui
-from runpod.rp_cli.api import api_errors
+from runpod.cli import console as ui
+from runpod.cli.api import api_errors
 
 SNAPSHOT_IDLE_SECONDS = 3
 WORKER_POLL_SECONDS = 5

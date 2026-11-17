@@ -8,7 +8,7 @@ import textwrap
 
 import pytest
 
-from runpod.rp_cli import main
+from runpod.cli import main
 
 
 @pytest.mark.parametrize("encoding", ["cp1252", "ascii", "utf-8"])
@@ -25,7 +25,7 @@ def test_redirected_deploy_output(tmp_path, encoding, destination, build_only):
         from unittest.mock import patch
 
         from runpod.apps.deploy import DeployResult
-        from runpod.rp_cli.main import run
+        from runpod.cli.main import run
 
         def build(app, root, *, events, output, **kwargs):
             events.phase("package")
@@ -46,7 +46,7 @@ def test_redirected_deploy_output(tmp_path, encoding, destination, build_only):
         with (
             patch("runpod.apps.deploy.build_artifact", side_effect=build),
             patch("runpod.apps.deploy.deploy_app", side_effect=deploy),
-            patch("runpod.rp_cli.update.start_background_check"),
+            patch("runpod.cli.update.start_background_check"),
         ):
             run()
         """)

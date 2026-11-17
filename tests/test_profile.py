@@ -28,7 +28,7 @@ class TestSelectedProfile:
 
 class TestApiKeyFromSelectedProfile:
     def test_loads_key_from_selected_profile(self, tmp_path, monkeypatch):
-        from runpod.cli.groups.config import functions
+        from runpod.auth import credentials as functions
 
         credentials = tmp_path / "config.toml"
         credentials.write_text(
@@ -41,7 +41,7 @@ class TestApiKeyFromSelectedProfile:
         assert runpod._load_api_key() == "team-key"
 
     def test_api_key_env_wins_over_profile(self, tmp_path, monkeypatch):
-        from runpod.cli.groups.config import functions
+        from runpod.auth import credentials as functions
 
         credentials = tmp_path / "config.toml"
         credentials.write_text('[team]\napi_key = "team-key"\n')
@@ -63,7 +63,7 @@ class TestImportWithSelectedProfile:
     def test_s3_only_profile_imports_without_api_key(
         self, tmp_path, monkeypatch, reload_runpod
     ):
-        from runpod.cli.groups.config import functions
+        from runpod.auth import credentials as functions
 
         credentials = tmp_path / "config.toml"
         credentials.write_text(

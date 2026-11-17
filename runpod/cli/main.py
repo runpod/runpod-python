@@ -36,7 +36,7 @@ def cli(ctx):
     Using an AI agent? Point it to https://docs.runpod.io/agent-setup.md
     """
     if ctx.invoked_subcommand not in _UPDATE_CHECK_EXCLUDED:
-        from runpod.rp_cli.update import start_background_check
+        from runpod.cli.update import start_background_check
 
         start_background_check()
 
@@ -46,7 +46,7 @@ def cli(ctx):
 def flash(ctx):
     """Build, develop, and manage Flash apps."""
     if ctx.invoked_subcommand not in _FLASH_UPDATE_CHECK_EXCLUDED:
-        from runpod.rp_cli.update import start_background_check
+        from runpod.cli.update import start_background_check
 
         start_background_check()
 
@@ -79,7 +79,7 @@ def _app_source(found, project_root: Path) -> str:
 def init(project_name, force):
     """Create a new app project (PROJECT_NAME, or '.' for the cwd)."""
     from runpod.apps.init import create_project, detect_conflicts
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     if project_name is None or project_name == ".":
         project_dir = Path.cwd()
@@ -118,8 +118,8 @@ def init(project_name, force):
 )
 def update(version_opt):
     """Update the runpod package to the latest (or a given) version."""
-    from runpod.rp_cli import console as ui
-    from runpod.rp_cli.update import (
+    from runpod.cli import console as ui
+    from runpod.cli.update import (
         compare_versions,
         current_version,
         fetch_pypi_metadata,
@@ -187,7 +187,7 @@ def deploy(target, env, python_version, exclude, build_only):
 
     from runpod.apps.deploy import build_artifact, deploy_app
     from runpod.apps.discovery import discover_apps, resolve_project
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
 
@@ -338,7 +338,7 @@ def dev(target, once, entrypoint_selector):
     )
     from runpod.apps.utils.names import dev_endpoint_name
     from runpod.apps.watch import FileWatcher
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     logging.getLogger("runpod.apps").setLevel(logging.WARNING)
 
@@ -676,7 +676,7 @@ def login(no_open, api_key_opt, profile, agent, email, code):
     deleted after credentials are saved. Treat the code as a secret.
     Command arguments can appear in shell history and process listings.
     """
-    from runpod.apps.auth import (
+    from runpod.auth.login import (
         LoginError,
         browser_login,
         load_agent_login,
@@ -685,8 +685,8 @@ def login(no_open, api_key_opt, profile, agent, email, code):
         start_agent_login,
         verify_agent_login,
     )
-    from runpod.cli.groups.config.functions import set_credentials
-    from runpod.rp_cli import console as ui
+    from runpod.auth.credentials import set_credentials
+    from runpod.cli import console as ui
 
     if agent and api_key_opt is not None:
         raise click.UsageError("--agent cannot be combined with --api-key")
@@ -786,7 +786,7 @@ def app():
 def app_list():
     """List all apps and their environments."""
     from runpod.apps.manage import list_apps
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     try:
         apps = asyncio.run(list_apps())
@@ -815,7 +815,7 @@ def app_list():
 def app_get(app_name):
     """Show one app with its environments."""
     from runpod.apps.manage import get_app
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     try:
         entry = asyncio.run(get_app(app_name))
@@ -841,7 +841,7 @@ def app_get(app_name):
 def app_delete(app_name, yes):
     """Delete an app, undeploying every environment in it."""
     from runpod.apps.manage import delete_app
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     if not yes:
         click.confirm(
@@ -878,7 +878,7 @@ def registry():
 def registry_add(name, username, password):
     """Create a registry credential. Reference it with registry_auth=NAME."""
     from runpod.apps.api import AppsApiClient
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     if name is None:
         name = click.prompt("name")
@@ -903,7 +903,7 @@ def registry_add(name, username, password):
 def registry_list():
     """List registry credential names."""
     from runpod.apps.api import AppsApiClient
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     try:
         creds = asyncio.run(AppsApiClient().list_registry_auths())
@@ -927,7 +927,7 @@ def registry_list():
 def registry_delete(name, yes):
     """Delete a registry credential by name."""
     from runpod.apps.api import AppsApiClient
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     async def _delete():
         client = AppsApiClient()
@@ -964,7 +964,7 @@ def secret_add(name, value, description):
     name and value, `rp secret add NAME` asks for just the value.
     """
     from runpod.apps.api import AppsApiClient
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     if name is None:
         name = click.prompt("name")
@@ -985,7 +985,7 @@ def secret_add(name, value, description):
 def secret_list():
     """List secret names (values are never shown)."""
     from runpod.apps.api import AppsApiClient
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     try:
         secrets = asyncio.run(AppsApiClient().list_secrets())
@@ -1011,7 +1011,7 @@ def secret_list():
 def secret_delete(name, yes):
     """Delete a secret by name."""
     from runpod.apps.api import AppsApiClient
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     async def _delete():
         client = AppsApiClient()
@@ -1057,7 +1057,7 @@ def _resolve_app_name(app_name) -> str:
 def env_list(app_name):
     """List environments for an app."""
     from runpod.apps.manage import get_app
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     name = _resolve_app_name(app_name)
     try:
@@ -1089,7 +1089,7 @@ def env_list(app_name):
 def env_get(env_name, app_name):
     """Show an environment with its endpoints."""
     from runpod.apps.manage import get_environment
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     name = _resolve_app_name(app_name)
     try:
@@ -1120,7 +1120,7 @@ def env_add(env_name, app_name):
     """Create a new environment in an app."""
     from runpod.apps.api import AppsApiClient
     from runpod.apps.manage import get_app
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     name = _resolve_app_name(app_name)
 
@@ -1143,7 +1143,7 @@ def env_add(env_name, app_name):
 def env_delete(env_name, app_name, yes):
     """Undeploy and delete an environment."""
     from runpod.apps.manage import undeploy_environment
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     name = _resolve_app_name(app_name)
     if not yes:
@@ -1182,7 +1182,7 @@ def undeploy(app_name, env_name, yes):
     the app and its build history remain.
     """
     from runpod.apps.manage import undeploy_environment
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     name = _resolve_app_name(app_name)
     if not yes:
@@ -1213,10 +1213,10 @@ def undeploy(app_name, env_name, yes):
 
 def _mount_groups() -> None:
     from runpod.cli.groups.ssh.commands import ssh_cli
-    from runpod.rp_cli.catalog import catalog
-    from runpod.rp_cli.endpoint import endpoint
-    from runpod.rp_cli.pod import pod
-    from runpod.rp_cli.volume import volume
+    from runpod.cli.catalog import catalog
+    from runpod.cli.endpoint import endpoint
+    from runpod.cli.pod import pod
+    from runpod.cli.volume import volume
 
     for command in (ssh_cli, pod, catalog, volume, endpoint):
         cli.add_command(command)

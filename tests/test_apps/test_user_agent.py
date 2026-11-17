@@ -15,7 +15,8 @@ from runpod.api.graphql import run_graphql_query, run_graphql_query_async
 from runpod.api.rest import run_rest_request, run_rest_request_async
 from runpod.apps import gpu, logs, tasks
 from runpod.apps.api import AppsApiClient, FlashTaskApiClient
-from runpod.apps.auth import agent_login
+from runpod.auth.api import AuthApiClient
+from runpod.auth.login import agent_login
 from runpod.apps.gpu import live_pool_members, live_pool_members_async
 from runpod.apps.targets import LiveTarget, SentinelTarget
 from runpod.apps.utils.network import get_json
@@ -55,7 +56,7 @@ def server(monkeypatch):
     monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
     monkeypatch.setattr(runpod, "api_key", "test-key")
     monkeypatch.setattr(runpod, "endpoint_url_base", state.url)
-    monkeypatch.setattr(logs, "HAPI_BASE", state.url)
+    monkeypatch.setenv("RUNPOD_HAPI_URL", state.url)
     monkeypatch.setattr(tasks, "_proxy_url", lambda pod_id: state.url)
     monkeypatch.setattr("runpod.apps.context.deployed_identity", lambda: None)
     gpu._clear_catalog_cache()
@@ -104,7 +105,7 @@ async def test_graphql_retry_keeps_attribution(server):
 
 async def test_verify_api_key(server):
     server.responses = [{"data": {"myself": {"id": "user"}}}]
-    assert await AppsApiClient().verify_api_key("test-key")
+    assert await AuthApiClient().verify_api_key("test-key")
 
 
 @pytest.mark.parametrize("runtime", [None, "endpoint", "pod"])
@@ -219,7 +220,7 @@ async def test_queue_and_load_balancer(server, target, operation, monkeypatch):
         original = aiohttp.ClientSession._request
 
         async def request(session, method, url, **kwargs):
-            assert url.startswith("https://")
+            assert str(url).startswith(f"http://{client.endpoint_id}.127.0.0.1:")
             return await original(session, method, server.url + "/route", **kwargs)
 
         monkeypatch.setattr(aiohttp.ClientSession, "_request", request)
@@ -333,7 +334,7 @@ def test_volume_transfer_caller_attribution(
     from click.testing import CliRunner
 
     from runpod.apps import NetworkVolume
-    from runpod.rp_cli.main import cli
+    from runpod.cli.main import cli
 
     server.user_agent = APPS_USER_AGENT if caller == "apps" else USER_AGENT
     server.responses = [
@@ -342,7 +343,7 @@ def test_volume_transfer_caller_attribution(
             "pagination": {"hasNextPage": False},
         }
     ]
-    monkeypatch.setattr("runpod.rp_cli.update.start_background_check", lambda: None)
+    monkeypatch.setattr("runpod.cli.update.start_background_check", lambda: None)
     local = tmp_path / "model.bin"
     local.write_bytes(b"model")
     source, target = (

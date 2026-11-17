@@ -5,9 +5,9 @@ from typing import Optional
 import click
 from click.core import ParameterSource
 
-from runpod.rp_cli import compute
-from runpod.rp_cli.api import api_errors
-from runpod.rp_cli.output import json_option, print_json, print_table
+from runpod.cli import compute
+from runpod.cli.api import api_errors
+from runpod.cli.output import json_option, print_json, print_table
 
 
 def _money(value: Optional[float], format_spec: str = ".2f") -> str:

@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from runpod.apps.deploy import DeployResult
-from runpod.rp_cli.main import cli
+from runpod.cli.main import cli
 from runpod.apps.utils.names import dev_endpoint_name
 
 

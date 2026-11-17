@@ -4,12 +4,14 @@ import asyncio
 import json
 import socket
 import threading
+from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
 import aiohttp
 import pytest
 
+from runpod.api.http import HTTPClient
 from runpod.apps.errors import AppHTTPError, EndpointNotFound
 from runpod.apps.targets import (
     JOB_PROPAGATION_ATTEMPTS,
@@ -72,6 +74,27 @@ async def test_retries_transient_5xx_then_succeeds(flaky_server):
         data = await _request_json("GET", flaky_server.url, {}, timeout=10)
     assert data["ok"] is True
     assert data["hits"] == 3
+
+
+async def test_read_retries_share_one_session_and_close_it(flaky_server):
+    flaky_server.state["script"] = [520, 502]
+    sessions = []
+    original_stream = HTTPClient.stream
+
+    @asynccontextmanager
+    async def stream(client, *args, **kwargs):
+        sessions.append(client.session)
+        async with original_stream(client, *args, **kwargs) as response:
+            yield response
+
+    with (
+        patch("runpod.apps.targets.RETRY_BASE_DELAY", 0.01),
+        patch.object(HTTPClient, "stream", stream),
+    ):
+        assert (await _request_json("GET", flaky_server.url, {}, timeout=10))["ok"]
+    assert len(sessions) == 3
+    assert all(session is sessions[0] for session in sessions)
+    assert sessions[0].closed
 
 
 async def test_exhausted_retries_raise_last_error(flaky_server):

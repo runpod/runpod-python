@@ -10,20 +10,17 @@ import secrets
 import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
-from urllib.parse import quote
 from uuid import uuid4
 
 import aiohttp
 
 from runpod._hosts import console_url
-from runpod.api.rest import _build_url
+from runpod.api.http import HTTPClient
+from runpod.api.routes import Route
 from runpod.user_agent import APPS_USER_AGENT
 
-import aiohttp
-
-from ..error import QueryError
-from .api import AppsApiClient
-from .errors import AppError
+from ..error import AuthenticationError, QueryError
+from .api import AuthApiClient
 
 MAX_KEY_ATTEMPTS = 3
 
@@ -33,7 +30,7 @@ _CLOSED_REASONS = {
 }
 
 
-class LoginError(AppError):
+class LoginError(AuthenticationError):
     pass
 
 
@@ -42,15 +39,15 @@ class _VerificationCodeRejected(LoginError):
 
 
 async def _post_authentication_attempt(
-    session: aiohttp.ClientSession,
-    path: str,
+    session: HTTPClient,
+    route: Route,
     body: dict,
     *,
     creating: bool = False,
 ) -> dict:
     try:
-        async with session.post(
-            _build_url(path),
+        async with session.stream(
+            route,
             json=body,
             headers={"Idempotency-Key": str(uuid4())} if creating else {},
             allow_redirects=False,
@@ -93,7 +90,7 @@ async def _post_authentication_attempt(
 
 
 def pending_agent_login_path(profile: str) -> Path:
-    from runpod.cli.groups.config.functions import CREDENTIAL_FILE
+    from runpod.auth.credentials import CREDENTIAL_FILE
 
     profile_id = hashlib.sha256(profile.encode("utf-8")).hexdigest()
     return Path(CREDENTIAL_FILE).parent / f"login-{profile_id}.json"
@@ -135,11 +132,9 @@ def load_agent_login(profile: str) -> dict:
     return attempt
 
 
-def _agent_session() -> aiohttp.ClientSession:
-    return aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=30),
+def _agent_session() -> HTTPClient:
+    return HTTPClient(
         headers={"Accept": "application/json", "User-Agent": APPS_USER_AGENT},
-        cookie_jar=aiohttp.DummyCookieJar(),
     )
 
 
@@ -151,12 +146,12 @@ async def start_agent_login(email: str) -> dict:
         .decode("ascii")
         .rstrip("=")
     )
-    path = "/v2/signup/authentication-attempts"
+    route = Route("POST", "/v2/signup/authentication-attempts")
 
     async with _agent_session() as session:
         attempt = await _post_authentication_attempt(
             session,
-            path,
+            route,
             {"email": email, "keyName": "runpod-cli-agent", "codeChallenge": challenge},
             creating=True,
         )
@@ -164,18 +159,21 @@ async def start_agent_login(email: str) -> dict:
         if not isinstance(attempt_id, str) or not attempt_id:
             raise LoginError("auth attempt failed to initialize")
 
-    return {"attempt_id": attempt_id, "verifier": verifier, "api_url": _build_url(path)}
+    return {"attempt_id": attempt_id, "verifier": verifier, "api_url": route.url()}
 
 
 async def verify_agent_login(attempt: dict, code: str) -> str:
     """exchange a code and its saved verifier for an api key."""
-    path = "/v2/signup/authentication-attempts"
-    if attempt["api_url"] != _build_url(path):
+    if attempt["api_url"] != Route("POST", "/v2/signup/authentication-attempts").url():
         raise LoginError("pending login belongs to a different API. Request a new code")
     async with _agent_session() as session:
         result = await _post_authentication_attempt(
             session,
-            f"{path}/{quote(attempt['attempt_id'], safe='')}/verify",
+            Route(
+                "POST",
+                "/v2/signup/authentication-attempts/{attempt_id}/verify",
+                attempt_id=attempt["attempt_id"],
+            ),
             {"code": code, "codeVerifier": attempt["verifier"]},
         )
         credential = result.get("credential")
@@ -209,7 +207,7 @@ def auth_url(request_id: str) -> str:
     return f"{console_url()}/flash/login?request={request_id}"
 
 
-async def _closed_reason(client: AppsApiClient, request_id: str) -> Optional[str]:
+async def _closed_reason(client: AuthApiClient, request_id: str) -> Optional[str]:
     """why the request can no longer produce a key, or None to keep prompting."""
     try:
         request = await client.get_auth_request_status(request_id)
@@ -223,7 +221,7 @@ async def browser_login(
     prompt_key: Callable[[], str],
     on_url: Optional[Callable[[str], None]] = None,
     on_rejected: Optional[Callable[[str], None]] = None,
-    api: Optional[AppsApiClient] = None,
+    api: Optional[AuthApiClient] = None,
     max_attempts: int = MAX_KEY_ATTEMPTS,
 ) -> str:
     """run the browser-approval flow and return the pasted api key.
@@ -233,7 +231,7 @@ async def browser_login(
     only to the signed-in approver, so the user pastes it via prompt_key.
     on_rejected is called with a reason before each re-prompt.
     """
-    client = api or AppsApiClient()
+    client = api or AuthApiClient()
     request: Dict[str, Any] = await client.create_auth_request()
     request_id = request.get("id")
 

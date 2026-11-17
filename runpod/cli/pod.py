@@ -7,10 +7,10 @@ import click
 from runpod._hosts import proxy_url
 from runpod.api.rest import run_rest_request
 from runpod.cli.groups.pod.commands import sync_pods
-from runpod.rp_cli import compute
-from runpod.rp_cli.api import api_errors, list_all
-from runpod.rp_cli.options import container_fields
-from runpod.rp_cli.output import (
+from runpod.cli import compute
+from runpod.cli.api import api_errors, list_all
+from runpod.cli.options import container_fields
+from runpod.cli.output import (
     completer,
     confirm,
     interactive,
@@ -72,7 +72,7 @@ def _say(message: str, as_json: bool, warning: bool = False) -> None:
         return
     from rich.markup import escape
 
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     (ui.warn if warning else ui.info)(escape(message))
 
@@ -166,7 +166,7 @@ def _show(pod: dict, as_json: bool) -> None:
 
 
 def _wait_running(pod_id: str, since: float, previous: Optional[dict] = None) -> dict:
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     deadline = time.monotonic() + WAIT_TIMEOUT
     previous_uptime = ((previous or {}).get("runtime") or {}).get("uptime") or 0
@@ -723,7 +723,7 @@ def restart(pod_id, wait, as_json):
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
 def terminate(pod_id, yes):
     """Terminate a pod permanently."""
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     pod_id = _resolve_pod_id(pod_id, "terminate")
     with api_errors():
@@ -750,7 +750,7 @@ pod.add_command(terminate, "delete")
 @json_option
 def logs(pod_id, follow, tail, source, since, as_json):
     """Read a pod's container or system logs."""
-    from runpod.rp_cli.logs import show_logs
+    from runpod.cli.logs import show_logs
 
     pod_id = _resolve_pod_id(pod_id)
     show_logs(

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import aiohttp
 import pytest
 
-from runpod.apps.auth import LoginError, auth_url, browser_login
+from runpod.auth.login import LoginError, auth_url, browser_login
 
 
 def _api(valid_keys=("rpa_new",), status="PENDING"):

@@ -13,7 +13,8 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import aiohttp
 
-from .._hosts import endpoint_domain
+from ..api.http import HTTPClient
+from ..api.routes import Route, endpoint_base_url, load_balancer_base_url
 from ..user_agent import APPS_USER_AGENT
 from .errors import AppHTTPError, EndpointNotFound, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest
@@ -22,7 +23,6 @@ from .spec import ResourceSpec
 from .utils.events import emit
 from .utils.http import raise_for_status
 from .utils.network import api_key as _api_key
-from .utils.network import endpoint_url_base as _endpoint_url_base
 
 # the sentinel pseudo-endpoint id; ai-api resolves the real endpoint from
 # the X-Flash-App / X-Flash-Environment / X-Flash-Endpoint headers.
@@ -32,11 +32,6 @@ DEFAULT_TIMEOUT_SECONDS = 300.0
 
 # terminal job statuses on the queue data plane
 FINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"})
-
-
-def _lb_domain() -> str:
-    """host portion of the data-plane base url, for lb subdomain urls."""
-    return endpoint_domain()
 
 
 def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
@@ -232,20 +227,19 @@ async def _request_json(
     require_json_value(payload, "remote request body must be JSON-serializable")
     retry_transient = method.upper() in {"GET", "HEAD", "OPTIONS"}
 
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
     last_exc: Optional[Exception] = None
     attempts = (
         JOB_PROPAGATION_ATTEMPTS
         if retry_not_found
         else RETRY_ATTEMPTS if retry_transient else 1
     )
-    for attempt in range(attempts):
-        if attempt:
-            await asyncio.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
-        try:
-            async with aiohttp.ClientSession(timeout=client_timeout) as session:
-                async with session.request(
-                    method, url, json=payload, headers=headers
+    async with HTTPClient(base_url=url) as client:
+        for attempt in range(attempts):
+            if attempt:
+                await asyncio.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+            try:
+                async with client.stream(
+                    Route(method, ""), json=payload, headers=headers, timeout=timeout
                 ) as resp:
                     if resp.status == 404 and job_id is None:
                         last_exc = EndpointNotFound(app_name, resource_name)
@@ -254,18 +248,18 @@ async def _request_json(
                         raise last_exc
                     await raise_for_status(resp, job_id=job_id)
                     return await resp.json()
-        except AppHTTPError as exc:
-            if (exc.status == 404 and retry_not_found) or (
-                exc.status in RETRYABLE_STATUSES and retry_transient
-            ):
+            except AppHTTPError as exc:
+                if (exc.status == 404 and retry_not_found) or (
+                    exc.status in RETRYABLE_STATUSES and retry_transient
+                ):
+                    last_exc = exc
+                    continue
+                raise
+            except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exc:
+                if not retry_transient:
+                    raise
                 last_exc = exc
                 continue
-            raise
-        except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exc:
-            if not retry_transient:
-                raise
-            last_exc = exc
-            continue
     if last_exc is None:  # pragma: no cover - loop always runs once
         raise RuntimeError("request retry loop exited cleanly")
     raise last_exc
@@ -352,7 +346,7 @@ async def _wait_terminal(
         await asyncio.sleep(interval)
         interval = min(interval * 1.5, max_interval)
         data = await _get_json(
-            f"{base_url}/status/{job_id}",
+            Route("GET", "/status/{job_id}", job_id=job_id).url(base_url),
             headers,
             30.0,
             app_name=app_name,
@@ -389,7 +383,7 @@ class QueueClient:
 
     @property
     def base_url(self) -> str:
-        return f"{_endpoint_url_base()}/{self.endpoint_id}"
+        return endpoint_base_url(self.endpoint_id)
 
     async def _call(
         self,
@@ -397,10 +391,12 @@ class QueueClient:
         path: str,
         payload: Any = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        *,
+        job_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         return await _request_json(
             method,
-            f"{self.base_url}/{path}",
+            Route(method, path).url(self.base_url),
             self._headers(),
             timeout,
             payload=payload,
@@ -409,7 +405,7 @@ class QueueClient:
             retry_not_found=path.startswith(
                 ("status/", "stream/", "cancel/", "retry/")
             ),
-            job_id=path[len("status/") :] if path.startswith("status/") else None,
+            job_id=job_id,
         )
 
     async def run(
@@ -439,13 +435,20 @@ class QueueClient:
         )
 
     async def status(self, job_id: str) -> Dict[str, Any]:
-        return await self._call("GET", f"status/{job_id}")
+        return await self._call(
+            "GET", Route("GET", "status/{job_id}", job_id=job_id).resolved_path,
+            job_id=job_id,
+        )
 
     async def cancel(self, job_id: str) -> Dict[str, Any]:
-        return await self._call("POST", f"cancel/{job_id}")
+        return await self._call(
+            "POST", Route("POST", "cancel/{job_id}", job_id=job_id).resolved_path
+        )
 
     async def retry(self, job_id: str) -> Dict[str, Any]:
-        return await self._call("POST", f"retry/{job_id}")
+        return await self._call(
+            "POST", Route("POST", "retry/{job_id}", job_id=job_id).resolved_path
+        )
 
     async def stream(self, job_id: str, *, timeout: float) -> AsyncIterator[Any]:
         """yield partial outputs from /stream until the job is terminal.
@@ -461,7 +464,9 @@ class QueueClient:
                 raise TimeoutError(
                     f"job {job_id} stream did not complete within {timeout}s"
                 )
-            data = await self._call("GET", f"stream/{job_id}")
+            data = await self._call(
+                "GET", Route("GET", "stream/{job_id}", job_id=job_id).resolved_path
+            )
             if data.get("status") == "FAILED" or data.get("error"):
                 unwrap_job_output(data)
             for chunk in data.get("stream") or []:
@@ -499,11 +504,14 @@ class QueueClient:
     ) -> Any:
         """plain http call through the endpoint's lb subdomain."""
         require_json_value(body, "api request body must be JSON-serializable")
-        url = f"https://{self.endpoint_id}.{_lb_domain()}{path}"
-        client_timeout = aiohttp.ClientTimeout(total=timeout)
-        async with aiohttp.ClientSession(timeout=client_timeout) as session:
-            async with session.request(
-                method, url, json=body, headers=self._headers()
+        async with HTTPClient(
+            base_url=load_balancer_base_url(self.endpoint_id)
+        ) as client:
+            async with client.stream(
+                Route(method, path),
+                json=body,
+                headers=self._headers(),
+                timeout=timeout,
             ) as resp:
                 if resp.status == 404 and self._app_name:
                     raise EndpointNotFound(self._app_name, self._resource_name)
@@ -648,7 +656,9 @@ class LiveTarget(InvocationTarget):
             digest = hashlib.sha256(source.encode()).hexdigest()
             if digest == self._synced_hash:
                 return
-            url = f"https://{self.endpoint_id}.{_lb_domain()}/_runpod/sync"
+            url = Route("POST", "/_runpod/sync").url(
+                load_balancer_base_url(self.endpoint_id)
+            )
             payload: Dict[str, Any] = {
                 "source": source,
                 "resource": self._source_resource,

@@ -3,29 +3,16 @@ Runpod | API Wrapper | GraphQL
 """
 
 import json
-import os
 from typing import Any, Dict, Optional
 
-import requests
-
 from runpod import error
+from runpod.auth import resolve_api_key as _resolve_api_key
 from runpod.user_agent import USER_AGENT
 
+from .http import HTTPClient, SyncHTTPClient
+from .routes import Route
+
 HTTP_STATUS_UNAUTHORIZED = 401
-
-
-def _graphql_url() -> str:
-    api_url_base = os.environ.get("RUNPOD_API_BASE_URL", "https://api.runpod.io")
-    return f"{api_url_base}/graphql"
-
-
-def _resolve_api_key(api_key: Optional[str]) -> str:
-    from runpod import api_key as global_api_key  # pylint: disable=import-outside-toplevel, cyclic-import
-
-    effective_api_key = api_key or global_api_key
-    if not effective_api_key:
-        raise error.AuthenticationError("No API key provided")
-    return effective_api_key
 
 
 def _build_headers(api_key: Optional[str]) -> Dict[str, str]:
@@ -66,19 +53,17 @@ def run_graphql_query(
     """
     effective_api_key = _resolve_api_key(api_key)
 
-    response = requests.post(
-        _graphql_url(),
+    with SyncHTTPClient().stream(
+        Route("POST", "/graphql"),
         headers=_build_headers(effective_api_key),
         data=json.dumps(_build_payload(query, variables)),
         timeout=30,
-    )
-
-    if response.status_code == HTTP_STATUS_UNAUTHORIZED:
-        raise error.AuthenticationError(
-            "Unauthorized request, please check your API key."
-        )
-
-    return _check_response(response.json(), query)
+    ) as response:
+        if response.status_code == HTTP_STATUS_UNAUTHORIZED:
+            raise error.AuthenticationError(
+                "Unauthorized request, please check your API key."
+            )
+        return _check_response(response.json(), query)
 
 
 async def run_graphql_query_async(
@@ -102,21 +87,18 @@ async def run_graphql_query_async(
             is available. Login creates its auth request this way so a
             stale stored key cannot fail the request.
     """
-    import aiohttp  # pylint: disable=import-outside-toplevel
-
     effective_api_key = None if anonymous else _resolve_api_key(api_key)
 
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.post(
-            _graphql_url(),
-            headers={**_build_headers(effective_api_key), **(headers or {})},
-            json=_build_payload(query, variables),
-        ) as response:
-            if response.status == HTTP_STATUS_UNAUTHORIZED:
-                raise error.AuthenticationError(
-                    "Unauthorized request, please check your API key."
-                )
-            response_json = await response.json()
+    async with HTTPClient().stream(
+        Route("POST", "/graphql"),
+        headers={**_build_headers(effective_api_key), **(headers or {})},
+        json=_build_payload(query, variables),
+        timeout=timeout,
+    ) as response:
+        if response.status == HTTP_STATUS_UNAUTHORIZED:
+            raise error.AuthenticationError(
+                "Unauthorized request, please check your API key."
+            )
+        response_json = await response.json()
 
     return _check_response(response_json, query)

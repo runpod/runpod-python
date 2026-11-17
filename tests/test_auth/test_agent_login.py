@@ -14,7 +14,8 @@ import aiohttp
 import pytest
 
 import runpod
-from runpod.apps.auth import LoginError, _post_authentication_attempt, agent_login
+from runpod.auth.login import LoginError, _post_authentication_attempt, agent_login
+from runpod.api.routes import Route
 from runpod.user_agent import APPS_USER_AGENT
 
 
@@ -235,11 +236,11 @@ def test_aborted_code_prompt_does_not_verify(signup_server):
 @pytest.mark.parametrize("error", [asyncio.TimeoutError, aiohttp.ClientConnectionError])
 def test_transport_failures_are_sanitized(error):
     session = MagicMock()
-    session.post.return_value.__aenter__ = AsyncMock(side_effect=error("secret"))
+    session.stream.return_value.__aenter__ = AsyncMock(side_effect=error("secret"))
     with pytest.raises(LoginError, match="check your connection") as exc:
-        asyncio.run(_post_authentication_attempt(session, "/path", {}))
+        asyncio.run(_post_authentication_attempt(session, Route("POST", "/path"), {}))
     assert "secret" not in str(exc.value)
-    session.post.assert_called_once()
+    session.stream.assert_called_once()
 
 
 def test_two_step_login_across_processes(signup_server, tmp_path):
@@ -257,9 +258,9 @@ def test_two_step_login_across_processes(signup_server, tmp_path):
     command = [
         sys.executable,
         "-c",
-        "from runpod.rp_cli import update; "
+        "from runpod.cli import update; "
         "update.start_background_check = lambda: None; "
-        "from runpod.rp_cli.main import run; run()",
+        "from runpod.cli.main import run; run()",
         "login",
         "--agent",
         "--profile",
@@ -313,12 +314,12 @@ def test_two_step_login_across_processes(signup_server, tmp_path):
 def test_two_step_rejected_code_can_be_retried(signup_server, monkeypatch, tmp_path):
     from click.testing import CliRunner
 
-    from runpod.apps.auth import load_agent_login, pending_agent_login_path
-    from runpod.cli.groups.config import functions
-    from runpod.rp_cli.main import cli
+    from runpod.auth.login import load_agent_login, pending_agent_login_path
+    from runpod.auth import credentials as functions
+    from runpod.cli.main import cli
 
     monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(tmp_path / "config.toml"))
-    monkeypatch.setattr("runpod.rp_cli.update.start_background_check", lambda: None)
+    monkeypatch.setattr("runpod.cli.update.start_background_check", lambda: None)
     monkeypatch.setattr(
         "click.prompt", MagicMock(side_effect=AssertionError("unexpected prompt"))
     )

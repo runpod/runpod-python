@@ -3,8 +3,8 @@ from typing import Any, Optional
 
 import click
 
-from runpod.rp_cli import compute
-from runpod.rp_cli.options import container_fields
+from runpod.cli import compute
+from runpod.cli.options import container_fields
 
 FLASHBOOT = {"off": "OFF", "standard": "FLASHBOOT", "priority": "PRIORITY_FLASHBOOT"}
 

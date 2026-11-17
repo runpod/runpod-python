@@ -7,7 +7,7 @@ import os
 import requests
 from aiohttp import ClientSession, ClientTimeout, TCPConnector, ClientResponseError
 
-from .cli.groups.config.functions import get_credentials
+from .auth.credentials import get_credentials
 from .user_agent import USER_AGENT
 
 

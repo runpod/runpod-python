@@ -43,7 +43,7 @@ def table(rows: Sequence[dict], columns: Sequence[Column]):
 
 
 def print_table(rows: Sequence[dict], columns: Sequence[Column], empty: str) -> None:
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     ui.console.print(table(rows, columns) if rows else f"[dim]{empty}[/dim]")
 
@@ -52,7 +52,7 @@ def print_fields(record: dict, fields: Sequence[Column]) -> None:
     from rich.markup import escape
     from rich.table import Table
 
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     result = Table.grid(padding=(0, 2))
     result.add_column(style="dim", no_wrap=True)

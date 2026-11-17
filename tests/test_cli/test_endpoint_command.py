@@ -9,9 +9,9 @@ from click.testing import CliRunner
 
 from runpod import error
 from runpod.endpoint import runner
-from runpod.rp_cli import api as cli_api, compute, endpoint_config as config, output
-from runpod.rp_cli import endpoint as ep
-from runpod.rp_cli.main import cli
+from runpod.cli import api as cli_api, compute, endpoint_config as config, output
+from runpod.cli import endpoint as ep
+from runpod.cli.main import cli
 
 PAGE = {"hasNextPage": False, "nextCursor": None}
 
@@ -192,7 +192,7 @@ def cli_environment(monkeypatch):
         pytest.fail("endpoint tests must not make real network requests")
 
     monkeypatch.setattr(requests.sessions.Session, "request", no_network)
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     monkeypatch.setattr(ui.console, "_width", 200)
 
@@ -952,7 +952,7 @@ def test_releases(api):
 
 
 def test_logs_routes_options_to_shared_streamer(api, monkeypatch):
-    from runpod.rp_cli import logs
+    from runpod.cli import logs
 
     show = MagicMock()
     monkeypatch.setattr(logs, "show_logs", show)
