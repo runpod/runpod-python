@@ -34,6 +34,16 @@ def get_processor_info():
 PYTHON_VERSION = platform.python_version()
 
 
+def _start_entry(entry):
+    entry["start"] = time.perf_counter()
+    entry["start_utc"] = datetime.datetime.now(timezone.utc).isoformat() + "Z"
+
+
+def _stop_entry(entry):
+    entry["end"] = time.perf_counter()
+    entry["stop_utc"] = datetime.datetime.now(timezone.utc).isoformat() + "Z"
+
+
 class Checkpoints:
     """
     A singleton class to store checkpoint times.
@@ -94,11 +104,7 @@ class Checkpoints:
         if name not in self.name_lookup:
             raise KeyError(f"Checkpoint name '{name}' does not exist.")
 
-        index = self.name_lookup[name]
-        self.checkpoints[index]["start"] = time.perf_counter()
-        self.checkpoints[index]["start_utc"] = (
-            datetime.datetime.now(timezone.utc).isoformat() + "Z"
-        )
+        _start_entry(self.checkpoints[self.name_lookup[name]])
 
     def stop(self, name):
         """
@@ -112,10 +118,20 @@ class Checkpoints:
         if "start" not in self.checkpoints[index]:
             raise KeyError("Checkpoint has not been started.")
 
-        self.checkpoints[index]["end"] = time.perf_counter()
-        self.checkpoints[index]["stop_utc"] = (
-            datetime.datetime.now(timezone.utc).isoformat() + "Z"
-        )
+        _stop_entry(self.checkpoints[index])
+
+    def new_timer_entry(self, name):
+        """
+        Append a checkpoint for a timer and return it.
+
+        Unlike add(), the name may repeat. A worker running several jobs at once
+        (concurrency_modifier) can time the same function or block in each job,
+        and every timer starts and stops its own entry, so neither a duplicate
+        name nor a clear() from a job that finished first raises.
+        """
+        entry = {"name": name}
+        self.checkpoints.append(entry)
+        return entry
 
     def get_checkpoints(self):
         """
@@ -153,13 +169,14 @@ class LineTimer:
     def __init__(self, name):
         self.checkpoints = Checkpoints()
         self.name = name
-        self.checkpoints.add(self.name)
+        self.entry = None
 
     def __enter__(self):
-        self.checkpoints.start(self.name)
+        self.entry = self.checkpoints.new_timer_entry(self.name)
+        _start_entry(self.entry)
 
     def __exit__(self, *args):
-        self.checkpoints.stop(self.name)
+        _stop_entry(self.entry)
 
 
 class FunctionTimer:  # pylint: disable=too-few-public-methods
@@ -172,17 +189,13 @@ class FunctionTimer:  # pylint: disable=too-few-public-methods
         self.checkpoints = Checkpoints()
 
     def __call__(self, *args, **kwargs):
-        self.checkpoints.add(self.function.__name__)
+        entry = self.checkpoints.new_timer_entry(self.function.__name__)
+        _start_entry(entry)
 
         try:
-            self.checkpoints.start(self.function.__name__)
-            result = self.function(*args, **kwargs)
-
+            return self.function(*args, **kwargs)
         finally:
-            if self.function.__name__ in self.checkpoints.name_lookup:
-                self.checkpoints.stop(self.function.__name__)
-
-        return result
+            _stop_entry(entry)
 
 
 def get_debugger_output():
