@@ -1,6 +1,7 @@
 """shared authentication and package boundaries."""
 
 import os
+import importlib
 import subprocess
 import sys
 
@@ -57,6 +58,18 @@ def test_public_credential_functions_use_auth_package():
     assert runpod.get_credentials is credentials.get_credentials
     assert runpod.set_credentials is credentials.set_credentials
     assert runpod.check_credentials is credentials.check_credentials
+
+
+def test_flash_credential_import_uses_shared_module(monkeypatch, tmp_path):
+    import runpod.cli.groups.config.functions as flash_credentials
+
+    assert flash_credentials is credentials
+    assert importlib.import_module("runpod.cli.groups.config.functions") is credentials
+    monkeypatch.setattr(
+        flash_credentials, "CREDENTIAL_FILE", str(tmp_path / "config.toml")
+    )
+    flash_credentials.set_credentials("profile-key")
+    assert credentials.get_credentials() == {"api_key": "profile-key"}
 
 
 def test_login_import_does_not_load_apps_or_cli():
