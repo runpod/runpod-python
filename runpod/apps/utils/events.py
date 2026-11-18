@@ -12,9 +12,9 @@ def emit(sink: Optional[object], event: str, *args: Any) -> None:
     handler failures are swallowed and logged: a broken event
     renderer must never break the operation it observes.
     """
-    handler = getattr(sink, event, None)
-    if handler is not None:
-        try:
+    try:
+        handler = getattr(sink, event, None)
+        if handler is not None:
             handler(*args)
-        except Exception:  # noqa: BLE001 - rendering must never break calls
-            log.debug("event sink %s failed", event, exc_info=True)
+    except Exception:  # noqa: BLE001 - rendering must never break calls
+        log.debug("event sink %s failed", event, exc_info=True)
