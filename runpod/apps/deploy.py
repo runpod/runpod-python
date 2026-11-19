@@ -446,8 +446,13 @@ async def reconcile_endpoints(
     endpoints (matched by name) are updated in place; endpoints whose
     resources disappeared are deleted.
     """
+    from .volume import VolumeResolver, attach_endpoint_volumes
+
     for handle in app.resources.values():
         handle.spec.validate()
+    if resolver is None:
+        resolver = VolumeResolver(client)
+        await resolver.preflight([handle.spec for handle in app.resources.values()])
     existing_endpoints = environment.get("endpoints") or []
     existing = {e["name"]: e["id"] for e in existing_endpoints}
     # updates send the bound template's current name, so redeploying an
@@ -464,10 +469,7 @@ async def reconcile_endpoints(
 
     from .gpu import needs_gpu_catalog
     from .registry import resolve_registry_auth
-    from .volume import VolumeResolver, attach_endpoint_volumes
 
-    resolver = resolver or VolumeResolver(client)
-    await resolver.preflight([handle.spec for handle in app.resources.values()])
     endpoints: Dict[str, str] = {}
     for name, handle in sorted(provisionable.items()):
         members = None

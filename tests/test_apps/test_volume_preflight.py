@@ -325,3 +325,29 @@ async def test_preflight_validates_cached_placement_against_current_specs(api):
             ]
         )
     api.create_network_volume.assert_not_awaited()
+
+
+async def test_reconcile_consumes_the_initial_plan_without_revalidating(api):
+    app = App("prepared")
+    volume = NetworkVolume("models", datacenter="EU-RO-1")
+    _queue(app, "queue", volume)
+    resolver = VolumeResolver(api)
+    await resolver.preflight([handle.spec for handle in app.resources.values()])
+    api.list_network_volumes.reset_mock()
+    api.network_volume_datacenters.reset_mock()
+    with patch.object(resolver, "_plan", AsyncMock()) as plan:
+        endpoints = await reconcile_endpoints(
+            api,
+            app,
+            {"id": "env", "name": "prod"},
+            "build",
+            "3.12",
+            resolver=resolver,
+        )
+    plan.assert_not_awaited()
+    api.list_network_volumes.assert_not_awaited()
+    api.network_volume_datacenters.assert_not_awaited()
+    api.create_network_volume.assert_awaited_once_with(
+        name="models", size=50, data_center_id="EU-RO-1"
+    )
+    assert endpoints == {"queue": "ep-new"}
