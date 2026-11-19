@@ -1,0 +1,91 @@
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+
+from runpod.apps.handles import FunctionHandle
+from runpod.apps.spec import ResourceKind, ResourceSpec
+from runpod.apps.stubs import Queue
+from runpod.apps.targets import LiveTarget, QueueClient, SentinelTarget
+
+
+@pytest.mark.parametrize(
+    "policy,timeout,expected",
+    [
+        ({}, 300, 300),
+        ({"executionTimeout": None}, 300, 300),
+        ({"executionTimeout": 0}, 300, 300),
+        ({"executionTimeout": 60000}, 300, 300),
+        ({"executionTimeout": 300000}, 300, 300),
+        ({"executionTimeout": 900000}, 300, 900),
+        ({"executionTimeout": 900500}, 300, 900.5),
+        ({"executionTimeout": 900000}, 1200, 1200),
+    ],
+)
+@pytest.mark.parametrize("observed", [False, True])
+async def test_queue_client_waits_for_larger_timeout(policy, timeout, expected, observed):
+    client = QueueClient("endpoint", lambda: {})
+    payload = {"input": {"x": 1}, "policy": policy}
+    submitted = {"id": "job", "status": "IN_QUEUE"}
+    completed = {"id": "job", "status": "COMPLETED", "output": 42}
+    on_status = Mock() if observed else None
+
+    with (
+        patch.object(client, "_call", AsyncMock(return_value=submitted)) as call,
+        patch.object(client, "wait", AsyncMock(return_value=completed)) as wait,
+        patch("time.monotonic", side_effect=[100, 120]),
+    ):
+        result = await client.invoke(payload, timeout=timeout, on_status=on_status)
+
+    assert result is completed
+    call.assert_awaited_once_with(
+        "POST", "runsync?wait=1000" if observed else "runsync?wait=90000", payload, expected
+    )
+    wait.assert_awaited_once_with(submitted, timeout=expected - 20, on_status=on_status)
+    assert payload == {"input": {"x": 1}, "policy": policy}
+
+
+@pytest.mark.parametrize("kind", ["live", "sentinel"])
+async def test_targets_apply_execution_timeout(kind):
+    target = (
+        LiveTarget("endpoint", "queue")
+        if kind == "live"
+        else SentinelTarget("app", "default", "queue")
+    )
+    completed = {"id": "job", "status": "COMPLETED", "output": 42}
+    payload = {"input": {"x": 1}, "policy": {"executionTimeout": 900000}}
+
+    with (
+        patch.object(target._client, "_call", AsyncMock(return_value=completed)) as call,
+        patch.object(target._client, "wait", AsyncMock(return_value=completed)),
+    ):
+        assert await target.invoke(payload) == 42
+
+    call.assert_awaited_once_with("POST", "runsync?wait=90000", payload, 900)
+
+
+@pytest.mark.parametrize("kind", ["handle", "stub"])
+async def test_remote_with_execution_timeout(kind):
+    target = SentinelTarget("app", "default", "queue")
+    if kind == "handle":
+        app = Mock(_resolve=AsyncMock(return_value=target))
+        handle = FunctionHandle(
+            app, lambda x: x, ResourceSpec(kind=ResourceKind.QUEUE, name="queue")
+        )
+    else:
+        handle = Queue(app="app", name="queue")
+
+    handle = handle.with_options(execution_timeout=900000)
+    completed = {"id": "job", "status": "COMPLETED", "output": 42}
+    with (
+        patch.object(Queue, "_target", return_value=target),
+        patch.object(target._client, "_call", AsyncMock(return_value=completed)) as call,
+        patch.object(target._client, "wait", AsyncMock(return_value=completed)),
+    ):
+        assert await handle.remote.aio(x=1) == 42
+
+    call.assert_awaited_once_with(
+        "POST",
+        "runsync?wait=90000",
+        {"input": {"x": 1}, "policy": {"executionTimeout": 900000}},
+        900,
+    )

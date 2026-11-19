@@ -426,6 +426,9 @@ class QueueClient:
     ) -> Dict[str, Any]:
         import time
 
+        execution_timeout = payload.get("policy", {}).get("executionTimeout")
+        if execution_timeout is not None:
+            timeout = max(timeout, execution_timeout / 1000)
         start = time.monotonic()
         # leave transport headroom for the server to return a pollable job id.
         wait_ms = int(min(90.0, max(1.0, timeout - 1.0)) * 1000)
