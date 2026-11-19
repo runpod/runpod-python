@@ -44,7 +44,7 @@ async def test_interrupt_restores_build_and_updates_then_propagates(interrupt, c
         "ep-beta",
         "ep-alpha",
     ]
-    assert "Changes rolled back." in caplog.text
+    assert "Best-effort rollback completed." in caplog.text
 
 
 @pytest.mark.parametrize("delete_succeeds", [True, False])
@@ -98,7 +98,7 @@ async def test_repeated_cancellation_waits_for_lost_create_cleanup(
     api.delete_endpoint.assert_awaited_once_with("ep-created")
     api.deploy_build.assert_awaited_with("env", "old-build")
     if delete_succeeds:
-        assert "Changes rolled back." in caplog.text
+        assert "Best-effort rollback completed." in caplog.text
     else:
         assert "Rollback incomplete:" in caplog.text
         assert "rp flash env get prod --app demo" in caplog.text

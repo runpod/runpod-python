@@ -12,8 +12,6 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Set
 
-import aiohttp
-
 from .api import AppsApiClient
 from .app import App
 from .build import (
@@ -409,7 +407,7 @@ async def reconcile_endpoints(
     environment_created: bool = False,
     events=None,
 ) -> Dict[str, str]:
-    """snapshot and reconcile endpoints, restoring configurations on failure.
+    """snapshot and reconcile endpoints with best-effort rollback on failure.
 
     obsolete endpoints are removed after the deployment commits.
     """
@@ -493,6 +491,18 @@ async def reconcile_endpoints(
 
     except (Exception, asyncio.CancelledError, KeyboardInterrupt) as exc:
         lines = [f"Couldn't {action}: {str(exc) or type(exc).__name__}"]
+        if resolver.created_volumes:
+            lines.extend(
+                [
+                    "New storage retained:",
+                    *(
+                        f"  {volume['kind']} volume '{volume['name']}' ({volume['id']})"
+                        for volume in resolver.created_volumes
+                    ),
+                    "Volumes may contain shared data and still incur charges. "
+                    "Inspect them in the Runpod console and delete only if unused.",
+                ]
+            )
         rollback_errors = []
         rollback_progress = []
         rollback_action = "start cleanup"
@@ -540,25 +550,16 @@ async def reconcile_endpoints(
                     rollback_errors.append(
                         f"build: {str(restore_exc) or type(restore_exc).__name__}"
                     )
-            if (
-                rollback_allowed
-                and creating
-                and isinstance(
-                    exc,
-                    (
-                        aiohttp.ClientError,
-                        OSError,
-                        asyncio.TimeoutError,
-                        asyncio.CancelledError,
-                        KeyboardInterrupt,
-                    ),
-                )
-            ):
+            if rollback_allowed and creating:
                 rollback_action = f"locate '{name}' after an interrupted create"
                 try:
                     current = await client.get_environment_by_name(
                         app.name, environment["name"]
                     )
+                    if not isinstance(current, dict) or not isinstance(
+                        current.get("endpoints"), list
+                    ):
+                        raise RuntimeError("creation status unknown")
                     matches = [
                         endpoint
                         for endpoint in (current or {}).get("endpoints", [])
@@ -622,7 +623,11 @@ async def reconcile_endpoints(
                     f"--app {shlex.quote(app.name)}`. Remaining workers may still incur charges."
                 )
             elif undo or activation_attempted:
-                lines.append("Changes rolled back.")
+                lines.append(
+                    "Best-effort endpoint and build rollback completed."
+                    if resolver.created_volumes
+                    else "Best-effort rollback completed."
+                )
 
         cleanup = asyncio.create_task(rollback())
         interrupted = isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt))
@@ -796,6 +801,25 @@ async def deploy_app(
             "backend did not acknowledge the registered task definitions"
         )
     log.info("uploaded build %s", build["id"])
+
+    current = await client.get_environment_by_name(app.name, env_name)
+    if (
+        not isinstance(current, dict)
+        or current.get("id") != environment["id"]
+        or current.get("name") != env_name
+        or "activeBuildId" not in current
+        or not isinstance(current.get("endpoints"), list)
+    ):
+        raise EndpointReconciliationError(
+            "Couldn't read the deployment baseline after upload. "
+            "The environment is missing, changed, or incomplete."
+        )
+    environment_created = (
+        environment_created
+        and not current["activeBuildId"]
+        and not current["endpoints"]
+    )
+    environment = current
 
     endpoints = await reconcile_endpoints(
         client,

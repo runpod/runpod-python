@@ -61,13 +61,9 @@ async def test_reports_confirmed_changes_and_failed_request(updating, cause):
     message = str(caught.value)
     assert caught.value.__cause__ is cause
     assert f"Couldn't deploy 'b_bad': {cause}" in message
-    if isinstance(cause, TimeoutError):
-        assert "Rollback incomplete:\n  b_bad: creation status unknown" in message
-        assert "rp flash env get prod --app partial" in message
-    else:
-        assert (
-            message == "Couldn't deploy 'b_bad': quota exceeded\nChanges rolled back."
-        )
+    assert "Rollback incomplete:\n  b_bad: creation status unknown" in message
+    assert "rp flash env get prod --app partial" in message
+    assert "Best-effort rollback completed." not in message
     assert [call.args[0]["name"] for call in api.save_endpoint.await_args_list[:2]] == [
         "a_ok",
         "b_bad",
@@ -95,7 +91,7 @@ async def test_first_update_failure_identifies_existing_endpoint():
             "build-1",
             "3.12",
         )
-    assert str(caught.value) == "Couldn't deploy 'a_ok': rejected\nChanges rolled back."
+    assert str(caught.value) == "Couldn't deploy 'a_ok': rejected\nBest-effort rollback completed."
     api.delete_endpoint.assert_not_awaited()
     assert api.save_endpoint.await_count == 2
     assert api.save_endpoint.await_args.args[0] == snapshot
@@ -112,7 +108,7 @@ async def test_preparation_failure_reports_earlier_changes():
             await reconcile_endpoints(api, make_app(), environment(), "build-1", "3.12")
     assert (
         str(caught.value)
-        == "Couldn't prepare 'b_bad': volume unavailable\nChanges rolled back."
+        == "Couldn't prepare 'b_bad': volume unavailable\nBest-effort rollback completed."
     )
     api.save_endpoint.assert_awaited_once()
     api.delete_endpoint.assert_awaited_once_with("ep-ok")
@@ -150,7 +146,8 @@ async def test_rollback_continues_after_cleanup_failure(cleanup_result):
     message = str(caught.value)
     assert caught.value.__cause__ is cause
     assert "Couldn't deploy 'c_later': quota exceeded" in message
-    assert "Rollback incomplete:\n  b_bad (ep-b):" in message
+    assert "Rollback incomplete:\n  c_later: creation status unknown" in message
+    assert "\n  b_bad (ep-b):" in message
     assert "a_ok" not in message
     assert "may still incur charges" in message
     assert [call.args for call in api.delete_endpoint.await_args_list] == [
@@ -189,7 +186,11 @@ def test_cli_reports_partial_deploy_and_failed_phase(tmp_path, monkeypatch):
         "objectKey": "key",
     }
     api.finalize_artifact_upload.return_value = {"id": "build-1"}
-    api.get_environment_by_name.return_value = {"activeBuildId": "build-1"}
+    api.get_environment_by_name.side_effect = [
+        environment(),
+        {**environment(), "activeBuildId": "build-1"},
+        environment(),
+    ]
     api.save_endpoint.side_effect = [{"id": "ep-ok"}, RuntimeError("quota exceeded")]
     buffer = io.StringIO()
     monkeypatch.setattr(ui, "console", Console(file=buffer, theme=ui.theme, width=120))
@@ -205,8 +206,10 @@ def test_cli_reports_partial_deploy_and_failed_phase(tmp_path, monkeypatch):
         )
     assert result.exit_code == 1, result.output
     assert (
-        result.output
-        == "Error: Couldn't deploy 'b_bad': quota exceeded\nChanges rolled back.\n"
+        result.output == "Error: Couldn't deploy 'b_bad': quota exceeded\n"
+        "Rollback incomplete:\n  b_bad: creation status unknown\n"
+        "Check `rp flash env get prod --app partial`. "
+        "Remaining workers may still incur charges.\n"
     )
     assert "✗ deploying endpoints" in buffer.getvalue()
     assert "✓ deploying endpoints" not in buffer.getvalue()

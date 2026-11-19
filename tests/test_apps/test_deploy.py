@@ -301,6 +301,12 @@ class TestDeployPipeline:
         api.get_app_by_name.return_value = None
         api.create_app.return_value = {"id": "app-1", "flashEnvironments": []}
         api.create_environment.return_value = {"id": "env-1", "name": "default"}
+        api.get_environment_by_name.return_value = {
+            "id": "env-1",
+            "name": "default",
+            "activeBuildId": None,
+            "endpoints": [],
+        }
         api.prepare_artifact_upload.return_value = {
             "uploadUrl": "https://upload",
             "objectKey": "key-1",
@@ -329,6 +335,12 @@ class TestDeployPipeline:
             "id": "app-1",
             "flashEnvironments": [{"id": "env-1", "name": "default"}],
         }
+        api.get_environment_by_name.return_value = {
+            "id": "env-1",
+            "name": "default",
+            "activeBuildId": None,
+            "endpoints": [],
+        }
         api.prepare_artifact_upload.return_value = {
             "uploadUrl": "https://upload",
             "objectKey": "key-1",
@@ -355,6 +367,12 @@ class TestDeployPipeline:
         api.get_app_by_name.return_value = {
             "id": "app-1",
             "flashEnvironments": [{"id": "env-prod", "name": "prod"}],
+        }
+        api.get_environment_by_name.return_value = {
+            "id": "env-prod",
+            "name": "prod",
+            "activeBuildId": None,
+            "endpoints": [],
         }
         api.prepare_artifact_upload.return_value = {
             "uploadUrl": "https://upload",

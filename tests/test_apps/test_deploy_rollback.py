@@ -126,7 +126,7 @@ async def test_first_activation_failure_reports_unrestorable_build_state(current
             activate_build=True,
         )
     if current == {"activeBuildId": None}:
-        assert "Changes rolled back." in str(caught.value)
+        assert "Best-effort rollback completed." in str(caught.value)
     else:
         assert "Rollback incomplete:\n  build:" in str(caught.value)
     api.save_endpoint.assert_not_awaited()
@@ -177,7 +177,7 @@ async def test_restores_full_state_of_successful_and_failed_updates_in_reverse_o
         )
     assert (
         str(caught.value)
-        == "Couldn't deploy 'beta': response lost\nChanges rolled back."
+        == "Couldn't deploy 'beta': response lost\nBest-effort rollback completed."
     )
     calls = api.save_endpoint.await_args_list
     assert calls[2].args[0] == {**beta, "flashEnvironmentId": "env"}
@@ -246,7 +246,7 @@ async def test_activation_failure_restores_endpoints_and_previous_build(
     else:
         assert (
             str(caught.value)
-            == "Couldn't activate the build: activation timed out\nChanges rolled back."
+            == "Couldn't activate the build: activation timed out\nBest-effort rollback completed."
         )
 
 
@@ -295,7 +295,7 @@ async def test_lost_create_response_is_recovered_by_unique_template_name():
     api.delete_endpoint.assert_awaited_once_with("ep-created")
     assert (
         str(caught.value)
-        == "Couldn't deploy 'worker': response lost\nChanges rolled back."
+        == "Couldn't deploy 'worker': response lost\nBest-effort rollback completed."
     )
 
 
@@ -325,12 +325,30 @@ async def test_new_environment_is_removed_after_endpoint_rollback(cleanup_fails)
     app.queue(name="beta", cpu="cpu3c-1-2")(lambda: None)
     environment = {"id": "env", "name": "prod", "endpoints": []}
     api = AsyncMock()
-    api.save_endpoint.side_effect = [{"id": "ep-alpha"}, RuntimeError("quota exceeded")]
     api.get_environment_by_name.return_value = {
         "id": "env",
         "endpoints": [],
         "activeBuildId": "new-build",
     }
+
+    async def save(payload):
+        endpoint_id = f"ep-{payload['name']}"
+        api.get_environment_by_name.return_value["endpoints"].append(
+            {"id": endpoint_id, "name": payload["name"], "template": payload["template"]}
+        )
+        if payload["name"] == "alpha":
+            return {"id": endpoint_id}
+        raise RuntimeError("quota exceeded")
+
+    async def delete(endpoint_id):
+        current = api.get_environment_by_name.return_value
+        current["endpoints"] = [
+            endpoint for endpoint in current["endpoints"] if endpoint["id"] != endpoint_id
+        ]
+        return True
+
+    api.save_endpoint.side_effect = save
+    api.delete_endpoint.side_effect = delete
     if cleanup_fails:
         api.delete_endpoint.side_effect = RuntimeError("delete denied")
     with pytest.raises(EndpointReconciliationError) as caught:
@@ -348,9 +366,13 @@ async def test_new_environment_is_removed_after_endpoint_rollback(cleanup_fails)
         assert "Rollback incomplete:" in str(caught.value)
     else:
         api.delete_environment.assert_awaited_once_with("env")
+        assert [call.args for call in api.delete_endpoint.await_args_list] == [
+            ("ep-beta",),
+            ("ep-alpha",),
+        ]
         calls = [call[0] for call in api.mock_calls]
         assert calls.index("delete_endpoint") < calls.index("delete_environment")
         assert (
             str(caught.value)
-            == "Couldn't deploy 'beta': quota exceeded\nChanges rolled back."
+            == "Couldn't deploy 'beta': quota exceeded\nBest-effort rollback completed."
         )

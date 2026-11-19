@@ -94,11 +94,11 @@ def test_sigint_reports_rollback_progress(interrupt_cleanup):
         assert "Restored endpoint 'gamma' (ep-gamma)." in result.stderr
         assert "rp flash env get prod --app demo" in result.stderr
         assert "Remaining workers may still incur charges." in result.stderr
-        assert "Changes rolled back." not in result.stderr
+        assert "Best-effort rollback completed." not in result.stderr
     else:
         assert "RESTORED beta" in result.stdout
         assert "RESTORED alpha" in result.stdout
-        assert "Changes rolled back." in result.stderr
+        assert "Best-effort rollback completed." in result.stderr
         assert "Rollback interrupted" not in result.stderr
 
 
@@ -132,7 +132,7 @@ async def test_cleanup_cancellation_preserves_completed_deletes_and_prior_errors
         in caplog.text
     )
     assert "rp flash env get prod --app demo" in caplog.text
-    assert "Changes rolled back." not in caplog.text
+    assert "Best-effort rollback completed." not in caplog.text
 
 
 async def test_cleanup_cancellation_during_ownership_read_reports_hint(caplog):
@@ -154,5 +154,5 @@ async def test_cleanup_cancellation_during_ownership_read_reports_hint(caplog):
         in caplog.text
     )
     assert "rp flash env get prod --app demo" in caplog.text
-    assert "Changes rolled back." not in caplog.text
+    assert "Best-effort rollback completed." not in caplog.text
     api.delete_endpoint.assert_not_awaited()

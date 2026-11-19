@@ -450,6 +450,12 @@ async def test_task_only_deployment_requires_definitions_without_launching(
         "id": "app",
         "flashEnvironments": [{"id": "env", "name": "default"}],
     }
+    api.get_environment_by_name.return_value = {
+        "id": "env",
+        "name": "default",
+        "activeBuildId": None,
+        "endpoints": [],
+    }
     api.prepare_artifact_upload.return_value = {
         "uploadUrl": "upload",
         "objectKey": "key",

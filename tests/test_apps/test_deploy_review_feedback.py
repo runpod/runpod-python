@@ -59,7 +59,7 @@ async def test_asyncio_timeout_recovers_created_endpoint():
     assert caught.value.__cause__ is error
     assert (
         str(caught.value)
-        == "Couldn't deploy 'worker': response lost\nChanges rolled back."
+        == "Couldn't deploy 'worker': response lost\nBest-effort rollback completed."
     )
     api.delete_endpoint.assert_awaited_once_with("ep-created")
 
@@ -100,7 +100,7 @@ async def test_unconfirmed_ownership_prevents_rollback_writes(
         )
     message = str(caught.value)
     assert "Rollback incomplete:" in message
-    assert "Changes rolled back." not in message
+    assert "Best-effort rollback completed." not in message
     assert "rp flash env get prod --app demo" in message
     assert "may still incur charges" in message
     if current:
