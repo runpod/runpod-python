@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import click
+from requests import RequestException
 
 from runpod.api.rest import run_rest_request
 from runpod.api.ctl_commands import _path_segment
@@ -51,16 +52,26 @@ def _label(record):
     )
 
 
-def _list_volumes(kind=None):
-    return [
-        {**row, "kind": volume_kind}
-        for volume_kind in ([kind] if kind else ["network", "global"])
-        for row in list_all(f"/v2/{volume_kind}-volumes", f"{volume_kind}Volumes")
-    ]
+def _list_volumes(kind=None, failures=None):
+    rows = []
+    for volume_kind in ([kind] if kind else ["network", "global"]):
+        try:
+            records = list_all(f"/v2/{volume_kind}-volumes", f"{volume_kind}Volumes")
+        except (QueryError, RequestException) as exc:
+            if failures is None:
+                raise
+            failures.append(f"could not list {volume_kind} volumes: {exc}")
+            continue
+        rows.extend({**row, "kind": volume_kind} for row in records)
+    return rows
 
 
 def _choices(kind=None):
-    return [(row["id"], f"{row['kind']}  {_label(row)}") for row in _list_volumes(kind)]
+    failures = []
+    rows = _list_volumes(kind, failures)
+    for failure in failures:
+        click.echo(f"Warning: {failure}", err=True)
+    return [(row["id"], f"{row['kind']}  {_label(row)}") for row in rows]
 
 
 def _complete_ids(ctx, param, incomplete):
@@ -166,8 +177,9 @@ def volume():
 @json_option
 def volume_list(kind, as_json):
     """List network and global volumes together with their type."""
+    failures = []
     with api_errors():
-        rows = _list_volumes(kind)
+        rows = _list_volumes(kind, None if as_json else failures)
     if as_json:
         print_json(rows)
         return
@@ -182,8 +194,16 @@ def volume_list(kind, as_json):
     print_table(
         rows,
         [(label.upper(), value) for label, value in fields],
-        "no volumes. create one with rp volume create",
+        (
+            "volume inventory unavailable"
+            if failures
+            else "no volumes. create one with rp volume create"
+        ),
     )
+    if failures:
+        raise click.ClickException(
+            "incomplete volume inventory. " + ". ".join(failures)
+        )
 
 
 @volume.command(name="get")

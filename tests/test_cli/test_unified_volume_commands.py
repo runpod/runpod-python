@@ -81,6 +81,64 @@ def test_list_failure_does_not_present_partial_inventory():
     assert NETWORK["id"] not in result.output
 
 
+@pytest.mark.parametrize("failed_kind", ["network", "global"])
+@pytest.mark.parametrize("status", [403, 503])
+def test_table_lists_available_storage_and_reports_failed_type(failed_kind, status):
+    available = GLOBAL if failed_kind == "network" else NETWORK
+
+    def listing(path, collection):
+        if path == f"/v2/{failed_kind}-volumes":
+            raise QueryError("unavailable", status_code=status)
+        return [available]
+
+    with patch("runpod.rp_cli.volume.list_all", side_effect=listing):
+        result = CliRunner().invoke(cli, ["volume", "list"])
+    assert result.exit_code == 1
+    assert available["id"] in result.stdout
+    assert f"could not list {failed_kind} volumes" in result.stderr
+    assert "incomplete volume inventory" in result.stderr
+
+
+def test_table_does_not_claim_inventory_is_empty_when_both_backends_fail():
+    with patch(
+        "runpod.rp_cli.volume.list_all",
+        side_effect=QueryError("unavailable", status_code=503),
+    ):
+        result = CliRunner().invoke(cli, ["volume", "list"])
+    assert result.exit_code == 1
+    assert "no volumes" not in result.output
+    assert "could not list network volumes" in result.stderr
+    assert "could not list global volumes" in result.stderr
+
+
+@pytest.mark.parametrize("resource", ["pod", "endpoint"])
+@pytest.mark.parametrize("failed_kind", ["network", "global"])
+def test_mount_completion_preserves_available_storage(resource, failed_kind):
+    available = GLOBAL if failed_kind == "network" else NETWORK
+
+    def listing(path, collection):
+        if path == f"/v2/{failed_kind}-volumes":
+            raise QueryError("unavailable", status_code=403)
+        return [available]
+
+    with patch("runpod.rp_cli.volume.list_all", side_effect=listing):
+        items = ShellComplete(cli, {}, "rp", "_RP_COMPLETE").get_completions(
+            [resource, "create", "--volume"], ""
+        )
+    assert [item.value for item in items] == [available["id"]]
+
+
+@pytest.mark.parametrize("status", [400, 422])
+def test_validation_errors_are_not_treated_as_missing_volumes(status):
+    with patch(
+        "runpod.rp_cli.volume.run_rest_request",
+        side_effect=QueryError("invalid request", status_code=status),
+    ) as rest:
+        result = CliRunner().invoke(cli, ["volume", "delete", "invalid", "--yes"])
+    assert result.exit_code == 1
+    rest.assert_called_once_with("GET", "/v2/network-volumes/invalid")
+
+
 @pytest.mark.parametrize(
     "command,mutation",
     [

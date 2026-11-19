@@ -1,3 +1,4 @@
+import posixpath
 import time
 from operator import itemgetter
 from typing import Optional
@@ -238,6 +239,17 @@ def _container_body(
                 {"volumeId": head, **({"path": path} if path else {})}
             )
     if mounts:
+        paths = set()
+        for kind, entries in mounts.items():
+            for mount in ([entries] if kind == "persistent" else entries):
+                if not mount.get("path"):
+                    continue
+                path = posixpath.normpath(mount["path"])
+                if path in paths:
+                    raise click.UsageError(
+                        f"multiple volumes target {path!r}. use a distinct :PATH for each volume"
+                    )
+                paths.add(path)
         body["mounts"] = mounts
     return body
 

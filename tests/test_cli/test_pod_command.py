@@ -768,6 +768,79 @@ def test_duplicate_pod_volume_is_rejected():
     assert not result.api.made("POST", "/v2/pods")
 
 
+@pytest.mark.parametrize("command", ["create", "update"])
+@pytest.mark.parametrize(
+    "paths", [("", ""), (":/models", ":/models/"), (":/models", ":/data/../models")]
+)
+def test_pod_duplicate_mount_paths_are_rejected(command, paths):
+    api = FakeApi(
+        {
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "EU-RO-1",
+            },
+            ("GET", "/v2/pods/pod123"): {**POD, "mounts": {}},
+        }
+    )
+    args = (
+        ["create", "a", "--gpu", "4090", "--image", "x"]
+        if command == "create"
+        else ["update", "pod123"]
+    )
+    result = _invoke(
+        args + ["--volume", "vol1" + paths[0], "--volume", "vol2" + paths[1]], api=api
+    )
+    assert result.exit_code == 2, result.output
+    assert "multiple volumes target" in result.output
+    assert not any(call[0] in ("POST", "PATCH") for call in api.calls)
+
+
+def test_distinct_pod_network_mount_paths_are_accepted():
+    api = FakeApi(
+        {("GET", "/v2/network-volumes/vol2"): {"id": "vol2", "dataCenter": "EU-RO-1"}}
+    )
+    result = _invoke(
+        [
+            "create",
+            "a",
+            "--gpu",
+            "4090",
+            "--image",
+            "x",
+            "--volume",
+            "vol1:/models",
+            "--volume",
+            "vol2:/data",
+        ],
+        api=api,
+    )
+    assert result.exit_code == 0, result.output
+    assert api.body("POST", "/v2/pods")["mounts"]["network"] == [
+        {"volumeId": "vol1", "path": "/models"},
+        {"volumeId": "vol2", "path": "/data"},
+    ]
+
+
+def test_duplicate_mount_paths_across_storage_types_are_rejected():
+    result = _invoke(
+        [
+            "create",
+            "a",
+            "--gpu",
+            "4090",
+            "--image",
+            "x",
+            "--volume",
+            "vol1",
+            "--volume",
+            "gv1:/workspace",
+        ]
+    )
+    assert result.exit_code == 2
+    assert "multiple volumes target" in result.output
+    assert not result.api.made("POST", "/v2/pods")
+
+
 def test_pod_network_volumes_require_one_data_center():
     api = FakeApi(
         {
