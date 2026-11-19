@@ -73,6 +73,29 @@ def test_rescans_preserve_virtualenv_dependencies(
     assert second.resources["worker"].local() is imported.TOKEN
 
 
+@pytest.mark.parametrize("package", [False, True])
+def test_file_target_rescans_with_virtualenv_marker_at_project_root(tmp_path, package):
+    project = tmp_path / "discovery_root_project"
+    project.mkdir()
+    (project / "pyvenv.cfg").write_text("home = /python\n")
+    if package:
+        (project / "__init__.py").write_text("")
+    target = project / "service.py"
+    target.write_text(
+        "from runpod import App\n"
+        "app = App('service')\n"
+        "@app.queue(cpu='cpu3c-1-2')\n"
+        "def worker(): return 1\n"
+    )
+
+    (first,) = discovery.discover_apps(target, strict=True)
+    (second,) = discovery.discover_apps(target, strict=True)
+
+    assert second is not first
+    assert discovery.get_registered_apps() == [second]
+    assert second.resources["worker"].local() == 1
+
+
 def test_virtualenv_marker_above_project_does_not_exclude_project_modules(tmp_path):
     (tmp_path / "pyvenv.cfg").write_text("home = /python\n")
     project = tmp_path / "project"

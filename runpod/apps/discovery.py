@@ -91,7 +91,7 @@ def _project_modules(root: Path) -> Dict[str, ModuleType]:
                 and not any(
                     (parent / "pyvenv.cfg").is_file()
                     for parent in (resolved, *resolved.parents)
-                    if parent.is_relative_to(root)
+                    if parent != root and parent.is_relative_to(root)
                 )
             ):
                 modules[name] = module
