@@ -38,7 +38,7 @@ global_option = click.option(
     "kind",
     flag_value="global",
     default=None,
-    help="Select global volumes only. On create, choose global storage.",
+    help="Select global volumes only.",
 )
 
 
@@ -215,25 +215,32 @@ def volume_get(volume_id, kind, as_json):
 @click.option("--data-center", help="Exact data center id, like EU-RO-1.")
 @click.option(
     "--type",
+    "kind",
+    type=click.Choice(["network", "global"], case_sensitive=False),
+    default="network",
+    show_default=True,
+    help="Storage type. Global volumes mount in any data center.",
+)
+@click.option(
+    "--tier",
     "volume_type",
     type=click.Choice(["standard", "high_performance"], case_sensitive=False),
     help="Storage tier, immutable after creation. Defaults to the data center's "
     "primary tier.",
 )
-@global_option
 @json_option
 def volume_create(name, size, regions, data_center, volume_type, kind, as_json):
     """Create a network volume in one data center, or a global volume.
 
     A region matching several data centers narrows to those offering
-    the requested --type, then prompts for one.
+    the requested --tier, then prompts for one.
 
     \b
       rp volume create --name models --size 100 --region eu
       rp volume create --name scratch --size 50 --data-center EU-RO-1
-      rp volume create --name shared --global
+      rp volume create --name shared --type global
     """
-    kind = kind or "network"
+    kind = kind.lower()
     body = {"name": name}
     with api_errors():
         if kind == "global":
@@ -243,7 +250,7 @@ def volume_create(name, size, regions, data_center, volume_type, kind, as_json):
                     ("--size", size),
                     ("--region", regions),
                     ("--data-center", data_center),
-                    ("--type", volume_type),
+                    ("--tier", volume_type),
                 )
                 if value
             ]

@@ -10,6 +10,7 @@ from runpod.cli.groups.pod.commands import sync_pods
 from runpod.rp_cli import compute
 from runpod.rp_cli.api import api_errors, list_all
 from runpod.rp_cli.options import container_fields
+from runpod.rp_cli.volume import _choices as volume_choices, _get_volume
 from runpod.rp_cli.output import (
     completer,
     confirm,
@@ -52,12 +53,7 @@ _complete_datacenters = completer(
         for dc in compute.list_datacenters()
     ]
 )
-_complete_network_volumes = completer(
-    lambda: [
-        (volume["id"], f"{volume.get('name')} {volume.get('dataCenter')}")
-        for volume in list_all("/v2/network-volumes", "networkVolumes")
-    ]
-)
+_complete_volumes = completer(volume_choices)
 _complete_registries = completer(
     lambda: [
         (registry["name"], registry["id"])
@@ -204,19 +200,26 @@ def _container_body(
     current = current or {}
     body = container_fields(options, current, unset_env)
     mounts = {}
-    for kind in ("persistent", "network", "global"):
-        value = options[f"{kind}_volume"]
-        if value is None:
-            continue
+    values = (
+        [("persistent", options["persistent_volume"])]
+        if options["persistent_volume"] is not None
+        else []
+    )
+    values.extend((None, value) for value in options["volume"])
+    for kind, value in values:
         head, sep, path = value.partition(":")
-        flag = f"--{kind}-volume"
+        flag = "--persistent-volume" if kind == "persistent" else "--volume"
         if not head or (sep and not path):
             raise click.BadParameter(
                 f"'{value}' should look like VALUE[:PATH]", param_hint=flag
             )
+        if kind is None:
+            kind, _ = _get_volume(head)
         existing = (current.get("mounts") or {}).get(kind)
         if kind != "persistent":
-            existing = existing[0] if existing else None
+            existing = next(
+                (mount for mount in existing or [] if mount["volumeId"] == head), None
+            )
         path = path or (existing or {}).get("path")
         if kind != "global":
             path = path or DEFAULT_MOUNT_PATH
@@ -227,7 +230,13 @@ def _container_body(
                 )
             mounts[kind] = {"size": int(head), "path": path}
         else:
-            mounts[kind] = [{"volumeId": head, **({"path": path} if path else {})}]
+            if any(mount["volumeId"] == head for mount in mounts.get(kind, [])):
+                raise click.BadParameter(
+                    f"volume {head!r} is specified more than once", param_hint=flag
+                )
+            mounts.setdefault(kind, []).append(
+                {"volumeId": head, **({"path": path} if path else {})}
+            )
     if mounts:
         body["mounts"] = mounts
     return body
@@ -267,17 +276,12 @@ _CONTAINER_OPTIONS = [
         help=f"Host-local persistent volume (path defaults to {DEFAULT_MOUNT_PATH}).",
     ),
     click.option(
-        "--network-volume",
+        "--volume",
         metavar="ID[:PATH]",
-        default=None,
-        shell_complete=_complete_network_volumes,
-        help=f"Network volume to mount (path defaults to {DEFAULT_MOUNT_PATH}).",
-    ),
-    click.option(
-        "--global-volume",
-        metavar="ID[:PATH]",
-        default=None,
-        help="Global volume to mount.",
+        multiple=True,
+        shell_complete=_complete_volumes,
+        help="Network or global volume to mount, resolved by ID. Repeatable. "
+        f"Network paths default to {DEFAULT_MOUNT_PATH}.",
     ),
     click.option(
         "--args",
@@ -400,15 +404,20 @@ def _gpu_body(
     return body
 
 
-def _datacenter_ids(regions, data_centers, network_volume) -> list[str]:
+def _datacenter_ids(regions, data_centers, network_mounts) -> list[str]:
     ids = (
         compute.resolve_regions(regions, compute.list_datacenters()) if regions else []
     )
     ids += [dc for dc in data_centers if dc not in ids]
-    if not ids and network_volume:
-        volume_id = network_volume.partition(":")[0]
-        volume = run_rest_request("GET", f"/v2/network-volumes/{volume_id}")
-        ids = [volume["dataCenter"]]
+    if not ids and network_mounts:
+        ids = list(
+            dict.fromkeys(
+                _get_volume(mount["volumeId"], "network")[1]["dataCenter"]
+                for mount in network_mounts
+            )
+        )
+        if len(ids) > 1:
+            raise click.UsageError("a pod's network volumes must share a data center")
     return ids
 
 
@@ -447,7 +456,9 @@ def _create_body(
         name = click.prompt("pod name")
 
     body = {"name": name, **_container_body(container)}
-    datacenter_ids = _datacenter_ids(regions, data_centers, container["network_volume"])
+    datacenter_ids = _datacenter_ids(
+        regions, data_centers, (body.get("mounts") or {}).get("network")
+    )
     if datacenter_ids:
         body["dataCenterIds"] = datacenter_ids
     if cloud:
@@ -654,10 +665,7 @@ def update(pod_id, name, unset_env, locked, as_json, **container):
         needs_current = (
             container["env"]
             or unset_env
-            or any(
-                container[key]
-                for key in ("persistent_volume", "network_volume", "global_volume")
-            )
+            or any(container[key] for key in ("persistent_volume", "volume"))
         )
         current = (
             run_rest_request("GET", f"/v2/pods/{pod_id}") if needs_current else None

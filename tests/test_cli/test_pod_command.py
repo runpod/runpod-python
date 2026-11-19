@@ -144,6 +144,14 @@ class FakeApi:
                 "id": "vol1",
                 "dataCenter": "EU-RO-1",
             },
+            ("GET", "/v2/network-volumes/gv1"): error.QueryError(
+                "not found", status_code=404
+            ),
+            ("GET", "/v2/global-volumes/gv1"): {"id": "gv1", "name": "shared"},
+            ("GET", "/v2/global-volumes"): {
+                "globalVolumes": [{"id": "gv1", "name": "shared"}],
+                "pagination": {"hasNextPage": False, "nextCursor": None},
+            },
             ("POST", "/v2/pods"): {**POD, "status": "PROVISIONING"},
             ("PATCH", "/v2/pods/pod123"): POD,
             ("POST", "/v2/pods/pod123/action"): POD,
@@ -184,6 +192,7 @@ def _invoke(args, api=None, gpus=GPUS, interactive=False, input=None):
     api = api or FakeApi()
     with (
         patch("runpod.rp_cli.pod.run_rest_request", api),
+        patch("runpod.rp_cli.volume.run_rest_request", api),
         patch("runpod.rp_cli.api.run_rest_request", api),
         patch("runpod.rp_cli.compute.list_gpus", return_value=gpus) as list_gpus,
         patch("runpod.rp_cli.compute.list_cpus", return_value=CPUS) as list_cpus,
@@ -469,9 +478,9 @@ class TestCreateContainer:
                 "h100",
                 "--image",
                 "x",
-                "--network-volume",
+                "--volume",
                 "vol1",
-                "--global-volume",
+                "--volume",
                 "gv1:/g",
             ]
         )
@@ -496,7 +505,7 @@ class TestCreateContainer:
                 "EU-RO-1",
                 "--data-center",
                 "US-TX-3",
-                "--network-volume",
+                "--volume",
                 "vol1:/data",
             ]
         )
@@ -525,7 +534,7 @@ class TestCreateValidation:
                 "size is in GB",
             ),
             (
-                ["a", "--gpu", "4090", "--image", "x", "--network-volume", "vol1:"],
+                ["a", "--gpu", "4090", "--image", "x", "--volume", "vol1:"],
                 "VALUE[:PATH]",
             ),
             (
@@ -621,7 +630,8 @@ class TestUpdate:
     )
     def test_null_mounts(self, kind, value, mount):
         api = FakeApi({("GET", "/v2/pods/pod123"): {**POD, "mounts": None}})
-        result = _invoke(["update", "pod123", f"--{kind}-volume", value], api=api)
+        flag = "--persistent-volume" if kind == "persistent" else "--volume"
+        result = _invoke(["update", "pod123", flag, value], api=api)
         assert result.exit_code == 0, result.output
         assert api.body("PATCH", "/v2/pods/pod123") == {"mounts": {kind: mount}}
 
@@ -677,12 +687,114 @@ class TestUpdate:
         }
 
     def test_mount_path_defaults_to_current(self):
-        result = _invoke(["update", "pod123", "--network-volume", "vol1", "--json"])
+        result = _invoke(["update", "pod123", "--volume", "vol1", "--json"])
         assert result.exit_code == 0, result.output
         assert result.api.body("PATCH", "/v2/pods/pod123") == {
             "mounts": {"network": [{"volumeId": "vol1", "path": "/data"}]}
         }
         assert json.loads(result.stdout)["id"] == "pod123"
+
+
+@pytest.mark.parametrize("command", ["create", "update"])
+def test_volume_lookup_failure_prevents_pod_mutation(command):
+    api = FakeApi(
+        {
+            ("GET", "/v2/network-volumes/missing"): error.QueryError(
+                "not found", status_code=404
+            ),
+            ("GET", "/v2/global-volumes/missing"): error.QueryError(
+                "not found", status_code=404
+            ),
+        }
+    )
+    args = (
+        ["create", "a", "--gpu", "4090", "--image", "x"]
+        if command == "create"
+        else ["update", "pod123"]
+    )
+    result = _invoke([*args, "--volume", "missing"], api=api)
+    assert result.exit_code == 1
+    assert "not found" in result.output
+    assert all(method == "GET" for method, *_ in api.calls)
+
+
+def test_global_only_pod_mount_does_not_pin_data_center():
+    _, body = _create(["a", "--gpu", "4090", "--image", "x", "--volume", "gv1"])
+    assert body["mounts"] == {"global": [{"volumeId": "gv1"}]}
+    assert "dataCenterIds" not in body
+
+
+def test_repeated_pod_mount_preserves_each_existing_path():
+    api = FakeApi(
+        {
+            ("GET", "/v2/pods/pod123"): {
+                **POD,
+                "mounts": {
+                    "network": [{"volumeId": "vol1", "path": "/models"}],
+                    "global": [{"volumeId": "gv1", "path": "/shared"}],
+                },
+            },
+        }
+    )
+    result = _invoke(
+        ["update", "pod123", "--volume", "vol1", "--volume", "gv1"], api=api
+    )
+    assert result.exit_code == 0, result.output
+    assert api.body("PATCH", "/v2/pods/pod123") == {
+        "mounts": {
+            "network": [{"volumeId": "vol1", "path": "/models"}],
+            "global": [{"volumeId": "gv1", "path": "/shared"}],
+        }
+    }
+
+
+def test_duplicate_pod_volume_is_rejected():
+    result = _invoke(
+        [
+            "create",
+            "a",
+            "--gpu",
+            "4090",
+            "--image",
+            "x",
+            "--volume",
+            "vol1",
+            "--volume",
+            "vol1",
+        ]
+    )
+    assert result.exit_code == 2
+    assert "specified more than once" in result.output
+    assert not result.api.made("POST", "/v2/pods")
+
+
+def test_pod_network_volumes_require_one_data_center():
+    api = FakeApi(
+        {
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "US-TX-3",
+            },
+        }
+    )
+    result = _invoke(
+        [
+            "create",
+            "a",
+            "--gpu",
+            "4090",
+            "--image",
+            "x",
+            "--volume",
+            "vol1:/a",
+            "--volume",
+            "vol2:/b",
+        ],
+        api=api,
+    )
+    assert result.exit_code == 2
+    assert "must share a data center" in result.output
+    assert not api.made("POST", "/v2/pods")
 
 
 class TestActions:
@@ -902,14 +1014,15 @@ class TestCompletion:
         ):
             pods = pod_module._complete_pods(None, None, "pod1")
             datacenters = pod_module._complete_datacenters(None, None, "EU")
-            volumes = pod_module._complete_network_volumes(None, None, "")
+            volumes = pod_module._complete_volumes(None, None, "")
             registries = pod_module._complete_registries(None, None, "g")
         assert [(item.value, item.help) for item in pods] == [
             ("pod123", "trainer  running")
         ]
         assert [item.value for item in datacenters] == ["EU-RO-1", "EU-CZ-1"]
         assert [(item.value, item.help) for item in volumes] == [
-            ("vol1", "data EU-RO-1")
+            ("vol1", "network  data"),
+            ("gv1", "global  shared"),
         ]
         assert [item.value for item in registries] == ["ghcr"]
 

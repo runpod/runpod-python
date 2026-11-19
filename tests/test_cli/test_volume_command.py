@@ -160,7 +160,7 @@ def test_api_errors_are_clean(rest, command, exception):
 
 def test_create_exact_data_center(rest, datacenters):
     result = invoke(
-        "create --name models --size 100 --data-center EU-RO-1 --type standard"
+        "create --name models --size 100 --data-center EU-RO-1 --tier standard"
     )
     assert result.exit_code == 0, result.output
     datacenters.assert_not_called()
@@ -180,8 +180,8 @@ def test_create_exact_data_center(rest, datacenters):
 @pytest.mark.parametrize(
     "options,candidates",
     [
-        ("--region eu --type high_performance", ["EU-FR-1", "EU-CZ-1"]),
-        ("--type standard", ["EU-RO-1", "EU-CZ-1", "US-TX-3"]),
+        ("--region eu --tier high_performance", ["EU-FR-1", "EU-CZ-1"]),
+        ("--tier standard", ["EU-RO-1", "EU-CZ-1", "US-TX-3"]),
         ("--region eu --region na", ["EU-RO-1", "EU-FR-1", "EU-CZ-1", "US-TX-3"]),
     ],
 )
@@ -212,7 +212,7 @@ def test_create_single_region_match_uses_default_tier(rest, datacenters):
     "options,code,message",
     [
         ("--region eu", 2, "EU-RO-1, EU-FR-1, EU-CZ-1"),
-        ("--region na --type high_performance", 1, "no data center"),
+        ("--region na --tier high_performance", 1, "no data center"),
         ("--region mars", 1, "unknown region"),
         ("--region eu --data-center EU-RO-1", 2, "either --region or --data-center"),
         ("--size 5000", 2, "4096"),
@@ -234,17 +234,55 @@ def test_create_requires_network_size(rest):
     rest.assert_not_called()
 
 
-def test_create_global(rest):
+@pytest.mark.parametrize("kind", ["global", "GLOBAL"])
+def test_create_global(rest, kind):
     rest.return_value = GLOBAL_VOLUME
-    result = invoke("create --name shared --global")
+    result = invoke(f"create --name shared --type {kind}")
     assert result.exit_code == 0, result.output
     rest.assert_called_once_with("POST", "/v2/global-volumes", json={"name": "shared"})
+
+
+def test_create_explicit_network_type_and_tier(rest):
+    result = invoke(
+        "create --name data --type network --tier high_performance "
+        "--size 100 --data-center EU-FR-1"
+    )
+    assert result.exit_code == 0, result.output
+    rest.assert_called_once_with(
+        "POST",
+        "/v2/network-volumes",
+        json={
+            "name": "data",
+            "size": 100,
+            "dataCenter": "EU-FR-1",
+            "type": "HIGH_PERFORMANCE",
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "options",
+    ["--size 50", "--region eu", "--data-center EU-RO-1", "--tier standard"],
+)
+def test_global_creation_rejects_network_options(rest, options):
+    result = invoke(f"create --name shared --type global {options}")
+    assert result.exit_code == 2
+    assert "do not apply to global volumes" in result.output
+    rest.assert_not_called()
+
+
+def test_create_help_distinguishes_storage_type_from_tier():
+    result = invoke("create --help")
+    assert result.exit_code == 0
+    assert "--type [network|global]" in result.output
+    assert "--tier [standard|high_performance]" in result.output
+    assert "--global" not in result.output
 
 
 @pytest.mark.parametrize(
     "command,message",
     [
-        ("create --name s --global --size 10 --region eu", "do not apply"),
+        ("create --name s --type global --size 10 --region eu", "do not apply"),
         ("update vol1 --global --size 20", "global volumes have no size"),
         ("update vol1", "pass --name and/or --size"),
     ],
