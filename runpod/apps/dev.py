@@ -269,6 +269,12 @@ class DevSession:
             for name in secret_names(handle.spec.env)
         ]
         await validate_secrets(referenced, api=self.api)
+        from .volume import VolumeResolver
+
+        self._volume_resolver = VolumeResolver(self.api, events=self.events)
+        await self._volume_resolver.preflight(
+            [handle.spec for app in self.apps for handle in app.resources.values()]
+        )
         for app in self.apps:
             # task targets read the sink off the app at resolve time
             app._dev_events = self.events
@@ -328,6 +334,13 @@ class DevSession:
         requests execute in fresh processes. added resources are
         provisioned, removed ones deleted."""
 
+        from .volume import VolumeResolver
+
+        if self._volume_resolver is None:
+            self._volume_resolver = VolumeResolver(self.api, events=self.events)
+        await self._volume_resolver.preflight(
+            [handle.spec for app in apps for handle in app.resources.values()]
+        )
         self.generation += 1
         self.apps = apps
         for app in apps:

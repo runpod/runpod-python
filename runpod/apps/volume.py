@@ -292,6 +292,7 @@ class VolumeResolver:
         self._api = api
         self.events = events
         self._resolved: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        self._planned: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self._stock = None
         self._volume_datacenters: Optional[Set[str]] = None
 
@@ -310,7 +311,55 @@ class VolumeResolver:
         cached = self._resolved.get(key)
         if cached is not None:
             return cached
+        planned = self._planned.get(key)
+        if planned is None:
+            planned = await self._plan(volume, specs)
+        if "id" in planned:
+            self._resolved[key] = planned
+            return planned
+        client = await self._client()
         if isinstance(volume, GlobalVolume):
+            record = await client.create_global_volume(name=volume.name)
+            log.info("created global volume %s (%s)", volume.name, record["id"])
+        else:
+            dc = planned["dataCenterId"]
+            record = await client.create_network_volume(
+                name=volume.name, size=volume.size, data_center_id=dc
+            )
+            emit(self.events, "volume_created", volume.name, volume.size, dc)
+            log.info(
+                "created volume %s (%s, %dGB, %s)",
+                volume.name,
+                record["id"],
+                volume.size,
+                dc,
+            )
+        resolved = {"id": record["id"], **planned}
+        self._resolved[key] = resolved
+        return resolved
+
+    async def preflight(self, specs: List) -> None:
+        """plan every volume before provisioning any storage."""
+        volumes = {}
+        for spec in specs:
+            spec.validate()
+            for volume in spec.mounts.values():
+                key = (volume.kind, volume.reference)
+                if key not in volumes:
+                    volumes[key] = (volume, [])
+                volumes[key][1].append(spec)
+        planned = {}
+        self._planned = {}
+        for key, (volume, sharing) in volumes.items():
+            planned[key] = await self._plan(volume, sharing)
+        self._planned = planned
+
+    async def _plan(self, volume: Volume, specs: List) -> Dict[str, Any]:
+        key = (volume.kind, volume.reference)
+        cached = self._resolved.get(key)
+        if isinstance(volume, GlobalVolume):
+            if cached is not None:
+                return cached
             client = await self._client()
             record = find_by_id_or_name(
                 await client.list_global_volumes(),
@@ -323,19 +372,19 @@ class VolumeResolver:
                     raise VolumeError(
                         f"global volume '{volume.name}' not found and create=False"
                     )
-                record = await client.create_global_volume(name=volume.name)
-                log.info("created global volume %s (%s)", volume.name, record["id"])
-            resolved = {"id": record["id"]}
-            self._resolved[key] = resolved
-            return resolved
+                return {}
+            return {"id": record["id"]}
         if not isinstance(volume, NetworkVolume):
             raise VolumeError(f"unsupported volume type {type(volume).__name__}")
 
         client = await self._client()
-        existing = await client.list_network_volumes()
-        record = find_by_id_or_name(
-            existing, volume.name, noun="volumes", error=VolumeError
-        )
+        if cached is not None:
+            record = {"id": cached["id"], "dataCenter": cached["dataCenterId"]}
+        else:
+            existing = await client.list_network_volumes()
+            record = find_by_id_or_name(
+                existing, volume.name, noun="volumes", error=VolumeError
+            )
         if record is None and not volume.create:
             raise VolumeError(f"volume '{volume.name}' not found and create=False")
 
@@ -393,21 +442,9 @@ class VolumeResolver:
                 existing_dc=dc if record is not None else None,
             )
 
-        if record is None:
-            record = await client.create_network_volume(
-                name=volume.name, size=volume.size, data_center_id=dc
-            )
-            emit(self.events, "volume_created", volume.name, volume.size, dc)
-            log.info(
-                "created volume %s (%s, %dGB, %s)",
-                volume.name,
-                record["id"],
-                volume.size,
-                dc,
-            )
-        resolved = {"id": record["id"], "dataCenterId": dc}
-        self._resolved[key] = resolved
-        return resolved
+        if record is not None:
+            return {"id": record["id"], "dataCenterId": dc}
+        return {"dataCenterId": dc}
 
     async def resolve_mounts(
         self, mounts: Optional[Mapping[str, Volume]], specs: Optional[List] = None
@@ -474,6 +511,7 @@ async def attach_pod_mounts(
 ) -> None:
     """attach task storage and supply the worker's resolved filesystem bindings."""
     validate_mounts(spec.mounts, spec.kind.value, spec.is_cpu)
+    await resolver.preflight(specs)
     bindings = await resolver.resolve_mounts(spec.mounts, specs)
     payload["volumeMounts"] = [
         {

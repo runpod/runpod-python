@@ -201,11 +201,11 @@ def solve_placement(
     and every resource's candidate set, ranked maximin: the DC where the
     most-constrained resource has the best stock.
     """
-    per_resource = {spec.name: candidates(spec, stock) for spec in specs}
+    per_resource = [(spec.name, candidates(spec, stock)) for spec in specs]
 
     if existing_dc is not None:
         existing_dc = datacenter_id(existing_dc)
-        blocked = [name for name, dcs in per_resource.items() if existing_dc not in dcs]
+        blocked = [name for name, dcs in per_resource if existing_dc not in dcs]
         if blocked:
             raise PlacementError(
                 f"volume '{volume_name}' lives in {existing_dc}, but "
@@ -214,13 +214,13 @@ def solve_placement(
             )
         return existing_dc
 
-    shared = volume_datacenters.intersection(*per_resource.values())
+    shared = volume_datacenters.intersection(*(dcs for _, dcs in per_resource))
     if volume_dc is not None:
         shared &= {volume_dc}
     if not shared:
         lines = [
             f"  {name:<12} schedulable in: {', '.join(sorted(dcs)) or '(nowhere)'}"
-            for name, dcs in per_resource.items()
+            for name, dcs in per_resource
         ]
         raise PlacementError(
             f"cannot place volume '{volume_name}': no datacenter can host "

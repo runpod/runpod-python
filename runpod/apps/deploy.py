@@ -467,6 +467,7 @@ async def reconcile_endpoints(
     from .volume import VolumeResolver, attach_endpoint_volumes
 
     resolver = resolver or VolumeResolver(client)
+    await resolver.preflight([handle.spec for handle in app.resources.values()])
     endpoints: Dict[str, str] = {}
     for name, handle in sorted(provisionable.items()):
         members = None
@@ -579,6 +580,10 @@ async def deploy_app(
     ]
     await validate_secrets(referenced, api=client)
 
+    from .volume import VolumeResolver
+
+    resolver = VolumeResolver(client, events=events)
+    await resolver.preflight([handle.spec for handle in app.resources.values()])
     _phase(events, "vendor", f"python {python_version}")
     build: BuildResult = build_environment(
         app,
@@ -589,9 +594,6 @@ async def deploy_app(
     )
     if build.excluded:
         manifest["excludedPackages"] = build.excluded
-    from .volume import VolumeResolver
-
-    resolver = VolumeResolver(client, events=events)
     await _prepare_task_resources(app, manifest, client, events, resolver=resolver)
     _phase(events, "package")
     tar_path = package_project(project_root, manifest, env_dir=build.env_dir)
