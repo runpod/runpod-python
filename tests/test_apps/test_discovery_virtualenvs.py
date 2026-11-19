@@ -22,17 +22,27 @@ def clean_discovery_state(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "env_name", ["env", ".venv", "venv", "custom_env", "tools/python"]
+    ("env_name", "marked"),
+    [
+        ("env", True),
+        (".venv", True),
+        ("venv", True),
+        ("custom_env", True),
+        ("tools/python", True),
+        (".conda", False),
+        ("tools/.conda", False),
+    ],
 )
 @pytest.mark.parametrize("preloaded", [False, True])
 def test_rescans_preserve_virtualenv_dependencies(
-    tmp_path, monkeypatch, env_name, preloaded
+    tmp_path, monkeypatch, env_name, marked, preloaded
 ):
     env = tmp_path / env_name
     site_packages = env / "lib/python3/site-packages"
     package = site_packages / "discovery_env_dependency"
     package.mkdir(parents=True)
-    (env / "pyvenv.cfg").write_text("home = /python\n")
+    if marked:
+        (env / "pyvenv.cfg").write_text("home = /python\n")
     (package / "dependency.py").write_text("TOKEN = object()\n")
     (site_packages / "unimported.py").write_text(
         "raise AssertionError('must not scan')\n"
