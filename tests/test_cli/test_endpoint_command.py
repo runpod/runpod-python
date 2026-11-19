@@ -1320,6 +1320,31 @@ def test_purge(api, client):
     assert json.loads(ok("purge", "ep1", "--yes", "--json"))["removed"] == 3
 
 
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+@pytest.mark.parametrize("action", ["get", "cancel"])
+def test_data_plane_redirect_is_a_sanitized_cli_error(monkeypatch, status, action):
+    monkeypatch.setattr("runpod.api_key", "synthetic-key")
+    monkeypatch.setattr("runpod.cli.update.start_background_check", lambda: None)
+    response = requests.Response()
+    response.status_code = status
+    response._content = b"<html>synthetic-secret</html>"
+    response._content_consumed = True
+    response.headers["Location"] = "https://redirect.invalid/?token=synthetic-secret"
+    response.close = MagicMock(wraps=response.close)
+    send = MagicMock(return_value=response)
+    monkeypatch.setattr(requests.Session, "request", send)
+
+    result = invoke("job", action, "ep1", "job1")
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert result.output == "Error: unexpected redirect\n"
+    assert "synthetic-secret" not in result.output
+    send.assert_called_once()
+    assert send.call_args.kwargs["allow_redirects"] is False
+    response.close.assert_called_once()
+
+
 def test_data_plane_errors(api, client, monkeypatch):
     response = requests.Response()
     response.status_code = 404

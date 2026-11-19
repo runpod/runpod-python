@@ -16,6 +16,7 @@ from runpod.api.rest import run_rest_request
 from runpod.apps.utils.network import api_key
 from runpod.endpoint import runner
 from runpod.endpoint.helpers import is_completed
+from runpod.error import QueryError
 from runpod.cli import compute, console as ui, endpoint_config as config
 from runpod.cli.api import api_errors, list_all
 from runpod.cli.output import (
@@ -505,7 +506,7 @@ def _data_plane_errors() -> Iterator[None]:
             raise click.ClickException(str(exc)) from exc
         detail = response.text.strip() or response.reason or ""
         raise click.ClickException(f"{response.status_code} {detail}".strip()) from exc
-    except (requests.RequestException, RuntimeError) as exc:
+    except (requests.RequestException, RuntimeError, QueryError) as exc:
         raise click.ClickException(str(exc)) from exc
 
 

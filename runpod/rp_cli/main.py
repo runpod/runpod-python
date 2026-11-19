@@ -4,4 +4,7 @@ import sys
 
 from runpod.cli import main
 
-sys.modules[__name__] = main
+if __name__ == "__main__":
+    main.run()
+else:
+    sys.modules[__name__] = main
