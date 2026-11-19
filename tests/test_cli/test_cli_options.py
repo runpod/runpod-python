@@ -3,8 +3,8 @@
 import click
 import pytest
 
-from runpod.rp_cli.compute import ResolutionError
-from runpod.rp_cli.options import container_fields, parse_env
+from runpod.cli.compute import ResolutionError
+from runpod.cli.options import container_fields, parse_env
 
 
 def test_env_values_preserve_equals_and_allow_empty_values():
@@ -64,7 +64,7 @@ def test_container_fields_resolve_registry_id_or_name(monkeypatch, registry):
         assert (path, collection) == ("/v2/registries", "registries")
         return [{"id": "reg1", "name": "private"}]
 
-    monkeypatch.setattr("runpod.rp_cli.options.list_all", list_registries)
+    monkeypatch.setattr("runpod.cli.options.list_all", list_registries)
     assert container_fields({"registry": registry}) == {"registry": "reg1"}
 
 
@@ -72,12 +72,12 @@ def test_container_fields_clear_registry_without_lookup(monkeypatch):
     def unexpected_lookup(*args):
         pytest.fail("clearing a registry must not fetch credentials")
 
-    monkeypatch.setattr("runpod.rp_cli.options.list_all", unexpected_lookup)
+    monkeypatch.setattr("runpod.cli.options.list_all", unexpected_lookup)
     assert container_fields({"registry": ""}) == {"registry": None}
 
 
 def test_container_fields_reject_unknown_registry(monkeypatch):
-    monkeypatch.setattr("runpod.rp_cli.options.list_all", lambda *args: [])
+    monkeypatch.setattr("runpod.cli.options.list_all", lambda *args: [])
     with pytest.raises(ResolutionError, match="unknown registry credential"):
         container_fields({"registry": "missing"})
 

@@ -3,8 +3,8 @@
 import os
 from typing import Any, Dict, Optional
 
-import aiohttp
-
+from ...api.http import HTTPClient
+from ...api.routes import Route, endpoint_base_url
 from ...user_agent import APPS_USER_AGENT
 from .http import raise_for_status
 
@@ -55,16 +55,14 @@ def api_key() -> str:
 
 
 def endpoint_url_base() -> str:
-    import runpod
-
-    return runpod.endpoint_url_base.rstrip("/")
+    return endpoint_base_url()
 
 
 async def get_json(url: str, headers: Dict[str, str], timeout: float) -> Dict[str, Any]:
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.get(
-            url, headers={**headers, "User-Agent": APPS_USER_AGENT}
-        ) as response:
-            await raise_for_status(response)
-            return await response.json()
+    async with HTTPClient(base_url=url).stream(
+        Route("GET", ""),
+        headers={**headers, "User-Agent": APPS_USER_AGENT},
+        timeout=timeout,
+    ) as response:
+        await raise_for_status(response)
+        return await response.json()

@@ -66,8 +66,8 @@ if __name__ == "__main__":
         },
         entry_points={
             "console_scripts": [
-                "runpod = runpod.rp_cli.main:run",
-                "rp = runpod.rp_cli.main:run",
+                "runpod = runpod.cli.main:run",
+                "rp = runpod.cli.main:run",
             ]
         },
         keywords=[

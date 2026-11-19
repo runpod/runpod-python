@@ -5,7 +5,7 @@ Unit tests for the config command.
 import unittest
 from unittest.mock import mock_open, patch
 
-from runpod.cli.groups.config import functions
+from runpod.auth import credentials as functions
 
 
 class TestConfig(unittest.TestCase):
@@ -14,14 +14,14 @@ class TestConfig(unittest.TestCase):
     def setUp(self) -> None:
         self.sample_credentials = "[default]\n" 'api_key = "RUNPOD_API_KEY"\n'
 
-    @patch("runpod.cli.groups.config.functions.os.replace")
-    @patch("runpod.cli.groups.config.functions.os.unlink")
-    @patch("runpod.cli.groups.config.functions.os.fdopen", new_callable=mock_open)
-    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
-    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
-    @patch("runpod.cli.groups.config.functions.tomlkit.document")
-    @patch("runpod.cli.groups.config.functions.Path.touch")
-    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("runpod.auth.credentials.os.replace")
+    @patch("runpod.auth.credentials.os.unlink")
+    @patch("runpod.auth.credentials.os.fdopen", new_callable=mock_open)
+    @patch("runpod.auth.credentials.tempfile.mkstemp")
+    @patch("runpod.auth.credentials.tomlkit.dump")
+    @patch("runpod.auth.credentials.tomlkit.document")
+    @patch("runpod.auth.credentials.Path.touch")
+    @patch("runpod.auth.credentials.os.makedirs")
     @patch("builtins.open", new_callable=mock_open, read_data="")
     def test_set_credentials(
         self, mock_file, _mock_makedirs, _mock_touch, mock_document,
@@ -50,13 +50,13 @@ class TestConfig(unittest.TestCase):
             "Profile already exists. Use set_credentials(overwrite=True) to update.",
         )
 
-    @patch("runpod.cli.groups.config.functions.os.replace")
-    @patch("runpod.cli.groups.config.functions.os.unlink")
-    @patch("runpod.cli.groups.config.functions.os.fdopen", new_callable=mock_open)
-    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
-    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
-    @patch("runpod.cli.groups.config.functions.Path.touch")
-    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("runpod.auth.credentials.os.replace")
+    @patch("runpod.auth.credentials.os.unlink")
+    @patch("runpod.auth.credentials.os.fdopen", new_callable=mock_open)
+    @patch("runpod.auth.credentials.tempfile.mkstemp")
+    @patch("runpod.auth.credentials.tomlkit.dump")
+    @patch("runpod.auth.credentials.Path.touch")
+    @patch("runpod.auth.credentials.os.makedirs")
     @patch(
         "builtins.open",
         new_callable=mock_open,
@@ -79,8 +79,8 @@ class TestConfig(unittest.TestCase):
         assert dumped_config["profile2"]["api_key"] == "NEW_KEY"
 
     @patch("builtins.open", new_callable=mock_open())
-    @patch("runpod.cli.groups.config.functions.toml.load")
-    @patch("runpod.cli.groups.config.functions.os.path.exists")
+    @patch("runpod.auth.credentials.toml.load")
+    @patch("runpod.auth.credentials.os.path.exists")
     def test_check_credentials(self, mock_exists, mock_toml_load, mock_file):
         """mock_open_call
         Tests the check_credentials function.
@@ -109,7 +109,7 @@ class TestConfig(unittest.TestCase):
         assert passed is True
 
     @patch("os.path.exists", return_value=True)
-    @patch("runpod.cli.groups.config.functions.toml.load")
+    @patch("runpod.auth.credentials.toml.load")
     @patch(
         "builtins.open", new_callable=mock_open, read_data='[default]\nkey = "value"'
     )
@@ -126,7 +126,7 @@ class TestConfig(unittest.TestCase):
         assert mock_exists.called
 
     @patch("os.path.exists", return_value=True)
-    @patch("runpod.cli.groups.config.functions.toml.load")
+    @patch("runpod.auth.credentials.toml.load")
     @patch(
         "builtins.open", new_callable=mock_open, read_data='[default]\nkey = "value"'
     )
@@ -142,9 +142,9 @@ class TestConfig(unittest.TestCase):
         assert mock_open_call.called
         assert mock_exists.called
 
-    @patch("runpod.cli.groups.config.functions.os.path.exists", return_value=True)
+    @patch("runpod.auth.credentials.os.path.exists", return_value=True)
     @patch(
-        "runpod.cli.groups.config.functions.toml.load",
+        "runpod.auth.credentials.toml.load",
         side_effect=ValueError("Invalid value"),
     )
     @patch("builtins.open", new_callable=mock_open)
@@ -155,9 +155,9 @@ class TestConfig(unittest.TestCase):
         result = functions.get_credentials("default")
         assert result is None
 
-    @patch("runpod.cli.groups.config.functions.os.path.exists", return_value=True)
+    @patch("runpod.auth.credentials.os.path.exists", return_value=True)
     @patch(
-        "runpod.cli.groups.config.functions.toml.load",
+        "runpod.auth.credentials.toml.load",
         side_effect=TypeError("bad type"),
     )
     @patch("builtins.open", new_callable=mock_open)
@@ -168,13 +168,13 @@ class TestConfig(unittest.TestCase):
         result = functions.get_credentials("default")
         assert result is None
 
-    @patch("runpod.cli.groups.config.functions.os.replace")
-    @patch("runpod.cli.groups.config.functions.os.unlink")
-    @patch("runpod.cli.groups.config.functions.os.fdopen", new_callable=mock_open)
-    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
-    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
-    @patch("runpod.cli.groups.config.functions.Path.touch")
-    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("runpod.auth.credentials.os.replace")
+    @patch("runpod.auth.credentials.os.unlink")
+    @patch("runpod.auth.credentials.os.fdopen", new_callable=mock_open)
+    @patch("runpod.auth.credentials.tempfile.mkstemp")
+    @patch("runpod.auth.credentials.tomlkit.dump")
+    @patch("runpod.auth.credentials.Path.touch")
+    @patch("runpod.auth.credentials.os.makedirs")
     @patch(
         "builtins.open",
         new_callable=mock_open,
@@ -191,13 +191,13 @@ class TestConfig(unittest.TestCase):
         dumped_config = mock_dump.call_args[0][0]
         assert dumped_config["default"]["api_key"] == "NEW_KEY"
 
-    @patch("runpod.cli.groups.config.functions.os.replace")
-    @patch("runpod.cli.groups.config.functions.os.unlink")
-    @patch("runpod.cli.groups.config.functions.os.fdopen", new_callable=mock_open)
-    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
-    @patch("runpod.cli.groups.config.functions.tomlkit.dump", side_effect=OSError("disk full"))
-    @patch("runpod.cli.groups.config.functions.Path.touch")
-    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("runpod.auth.credentials.os.replace")
+    @patch("runpod.auth.credentials.os.unlink")
+    @patch("runpod.auth.credentials.os.fdopen", new_callable=mock_open)
+    @patch("runpod.auth.credentials.tempfile.mkstemp")
+    @patch("runpod.auth.credentials.tomlkit.dump", side_effect=OSError("disk full"))
+    @patch("runpod.auth.credentials.Path.touch")
+    @patch("runpod.auth.credentials.os.makedirs")
     @patch("builtins.open", new_callable=mock_open, read_data="")
     def test_set_credentials_cleans_up_temp_on_dump_failure(
         self, _mock_file, _mock_makedirs, _mock_touch, _mock_dump,
@@ -211,12 +211,12 @@ class TestConfig(unittest.TestCase):
         mock_unlink.assert_called_once_with("/tmp/cred.toml")
         mock_replace.assert_not_called()
 
-    @patch("runpod.cli.groups.config.functions.os.replace")
-    @patch("runpod.cli.groups.config.functions.os.unlink")
-    @patch("runpod.cli.groups.config.functions.tempfile.mkstemp")
-    @patch("runpod.cli.groups.config.functions.tomlkit.dump")
-    @patch("runpod.cli.groups.config.functions.Path.touch")
-    @patch("runpod.cli.groups.config.functions.os.makedirs")
+    @patch("runpod.auth.credentials.os.replace")
+    @patch("runpod.auth.credentials.os.unlink")
+    @patch("runpod.auth.credentials.tempfile.mkstemp")
+    @patch("runpod.auth.credentials.tomlkit.dump")
+    @patch("runpod.auth.credentials.Path.touch")
+    @patch("runpod.auth.credentials.os.makedirs")
     @patch("builtins.open", new_callable=mock_open, read_data="not valid toml {{{")
     def test_set_credentials_corrupted_toml_raises(
         self, _mock_file, _mock_makedirs, _mock_touch, _mock_dump,

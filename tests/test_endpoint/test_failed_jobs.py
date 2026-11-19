@@ -1,6 +1,6 @@
 """a job that ends in a non-COMPLETED final state raises JobError."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -79,8 +79,8 @@ def test_job_error_without_error_field_still_names_the_status():
 async def test_async_job_output_raises_on_failure():
     response = AsyncMock()
     response.json.return_value = {"status": "FAILED", "error": "bad input"}
-    session = AsyncMock()
-    session.get.return_value = response
+    session = MagicMock()
+    session.request.return_value.__aenter__.return_value = response
     job = AsyncJob("ENDPOINT_ID", "job-1", session, headers={})
 
     with pytest.raises(JobError, match="bad input") as caught:

@@ -7,8 +7,8 @@ import pytest
 from click.testing import CliRunner
 
 from runpod import error
-from runpod.rp_cli import pod as pod_module
-from runpod.rp_cli.main import cli
+from runpod.cli import pod as pod_module
+from runpod.cli.main import cli
 
 GPUS = [
     {
@@ -170,12 +170,12 @@ class FakeApi:
 
 @pytest.fixture(autouse=True)
 def cli_environment(monkeypatch):
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     monkeypatch.setattr(ui.console, "_width", 200)
     monkeypatch.setattr(pod_module.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(
-        "requests.request",
+        "requests.Session.request",
         MagicMock(side_effect=AssertionError("unexpected HTTP request")),
     )
 
@@ -183,13 +183,13 @@ def cli_environment(monkeypatch):
 def _invoke(args, api=None, gpus=GPUS, interactive=False, input=None):
     api = api or FakeApi()
     with (
-        patch("runpod.rp_cli.pod.run_rest_request", api),
-        patch("runpod.rp_cli.api.run_rest_request", api),
-        patch("runpod.rp_cli.compute.list_gpus", return_value=gpus) as list_gpus,
-        patch("runpod.rp_cli.compute.list_cpus", return_value=CPUS) as list_cpus,
-        patch("runpod.rp_cli.compute.list_datacenters", return_value=DATACENTERS),
-        patch("runpod.rp_cli.pod.interactive", return_value=interactive),
-        patch("runpod.rp_cli.output.interactive", return_value=interactive),
+        patch("runpod.cli.pod.run_rest_request", api),
+        patch("runpod.cli.api.run_rest_request", api),
+        patch("runpod.cli.compute.list_gpus", return_value=gpus) as list_gpus,
+        patch("runpod.cli.compute.list_cpus", return_value=CPUS) as list_cpus,
+        patch("runpod.cli.compute.list_datacenters", return_value=DATACENTERS),
+        patch("runpod.cli.pod.interactive", return_value=interactive),
+        patch("runpod.cli.output.interactive", return_value=interactive),
     ):
         result = CliRunner().invoke(cli, ["pod", *args], input=input)
     result.api, result.list_gpus, result.list_cpus = api, list_gpus, list_cpus
@@ -878,14 +878,14 @@ class TestConnect:
     ],
 )
 def test_logs_forward_options(args, expected):
-    with patch("runpod.rp_cli.logs.show_logs") as show_logs:
+    with patch("runpod.cli.logs.show_logs") as show_logs:
         result = _invoke(["logs", "pod123", *args])
     assert result.exit_code == 0, result.output
     show_logs.assert_called_once_with("pod123", **expected)
 
 
 def test_logs_reject_tail_above_api_limit():
-    with patch("runpod.rp_cli.logs.show_logs") as show_logs:
+    with patch("runpod.cli.logs.show_logs") as show_logs:
         result = _invoke(["logs", "pod123", "--tail", "5001"])
     assert result.exit_code == 2
     assert "5000" in result.output
@@ -896,9 +896,9 @@ class TestCompletion:
     def test_completers(self):
         api = FakeApi()
         with (
-            patch("runpod.rp_cli.pod.run_rest_request", api),
-            patch("runpod.rp_cli.api.run_rest_request", api),
-            patch("runpod.rp_cli.compute.list_datacenters", return_value=DATACENTERS),
+            patch("runpod.cli.pod.run_rest_request", api),
+            patch("runpod.cli.api.run_rest_request", api),
+            patch("runpod.cli.compute.list_datacenters", return_value=DATACENTERS),
         ):
             pods = pod_module._complete_pods(None, None, "pod1")
             datacenters = pod_module._complete_datacenters(None, None, "EU")

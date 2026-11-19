@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from runpod.api.routes import load_balancer_base_url
 from runpod.apps.errors import RemoteExecutionError
 from runpod.apps.spec import ResourceKind, ResourceSpec
 from runpod.apps.targets import (
@@ -16,7 +17,6 @@ from runpod.apps.targets import (
     SentinelTarget,
     _api_key,
     _headers,
-    _lb_domain,
     _wait_terminal,
     args_to_input,
     unwrap_job_output,
@@ -49,7 +49,7 @@ class TestUrlHelpers:
         import runpod
 
         monkeypatch.setattr(runpod, "endpoint_url_base", "https://api.runpod.ai/v2")
-        assert _lb_domain() == "api.runpod.ai"
+        assert load_balancer_base_url("endpoint") == "https://endpoint.api.runpod.ai"
 
     def test_headers(self, monkeypatch):
         monkeypatch.setenv("RUNPOD_API_KEY", "sk-test")

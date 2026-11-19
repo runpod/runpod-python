@@ -894,7 +894,7 @@ def _resolve_volume(reference: str, *, user_agent: str = USER_AGENT) -> Tuple[st
 def saved_s3_keys() -> Tuple[Optional[str], Optional[str]]:
     """the s3 keys saved in ~/.runpod/config.toml for the current profile."""
     from runpod import profile  # pylint: disable=import-outside-toplevel
-    from runpod.cli.groups.config.functions import (  # pylint: disable=import-outside-toplevel
+    from runpod.auth.credentials import (  # pylint: disable=import-outside-toplevel
         get_credentials,
     )
 

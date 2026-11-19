@@ -824,7 +824,7 @@ def test_no_module_level_transfer_exports():
 
 @pytest.mark.usefixtures("cli_preflight")
 def test_cli_upload_prints_summary(tmp_path):
-    from runpod.rp_cli.main import cli
+    from runpod.cli.main import cli
 
     src = tmp_path / "f.txt"
     src.write_text("x")
@@ -851,7 +851,7 @@ def test_cli_upload_prints_summary(tmp_path):
 
 @pytest.mark.usefixtures("cli_preflight")
 def test_cli_download_failure_says_resume():
-    from runpod.rp_cli.main import cli
+    from runpod.cli.main import cli
 
     with patch.object(
         runpod.NetworkVolume, "download", side_effect=ConnectionResetError("boom")
@@ -864,7 +864,7 @@ def test_cli_download_failure_says_resume():
 
 @pytest.mark.usefixtures("cli_preflight")
 def test_cli_ctrl_c_exits_130_with_resume_hint():
-    from runpod.rp_cli.main import cli
+    from runpod.cli.main import cli
 
     with patch.object(runpod.NetworkVolume, "upload", side_effect=KeyboardInterrupt):
         result = CliRunner().invoke(cli, ["volume", "upload", "vol", "."])
@@ -874,7 +874,7 @@ def test_cli_ctrl_c_exits_130_with_resume_hint():
 
 @pytest.mark.usefixtures("cli_preflight")
 def test_cli_final_error_has_no_resume_hint():
-    from runpod.rp_cli.main import cli
+    from runpod.cli.main import cli
 
     err = nvt.NetworkVolumeTransferError("s3 api keys required")
     with patch.object(runpod.NetworkVolume, "download", side_effect=err):
@@ -886,7 +886,7 @@ def test_cli_final_error_has_no_resume_hint():
 
 @pytest.mark.usefixtures("cli_preflight")
 def test_cli_missing_path_has_no_resume_hint():
-    from runpod.rp_cli.main import cli
+    from runpod.cli.main import cli
 
     with patch.object(
         runpod.NetworkVolume, "download", side_effect=FileNotFoundError("no such file")
@@ -1338,14 +1338,14 @@ def test_download_refuses_symlinked_work_files(tmp_path, suffix):
 
 
 def _cli():
-    from runpod.rp_cli.main import cli
+    from runpod.cli.main import cli
 
     return cli
 
 
 @pytest.fixture
 def interactive(monkeypatch):
-    monkeypatch.setattr("runpod.rp_cli.volume._interactive", lambda: True)
+    monkeypatch.setattr("runpod.cli.volume._interactive", lambda: True)
 
 
 @pytest.fixture
@@ -1380,11 +1380,11 @@ def test_cli_offers_login_and_continues(monkeypatch, tmp_path, interactive):
     logins = []
     monkeypatch.setattr(runpod, "api_key", None)
     monkeypatch.setattr(
-        "runpod.rp_cli.main.login",
+        "runpod.cli.main.login",
         _click.Command("login", callback=lambda **kw: logins.append(kw)),
     )
     monkeypatch.setattr(
-        "runpod.cli.groups.config.functions.get_credentials",
+        "runpod.auth.credentials.get_credentials",
         lambda profile="default": {"api_key": "rpa_new"},
     )
     calls = []
@@ -1455,7 +1455,7 @@ def test_cli_prompts_for_keys_and_offers_to_save(
     monkeypatch.delenv(nvt.ACCESS_KEY_ENV)
     saved = []
     monkeypatch.setattr(
-        "runpod.cli.groups.config.functions.set_s3_keys",
+        "runpod.auth.credentials.set_s3_keys",
         lambda access, secret, profile="default": saved.append((access, secret)),
     )
     calls = []
@@ -1482,7 +1482,7 @@ def test_cli_checks_volume_before_asking_for_keys(monkeypatch, tmp_path, interac
 
     monkeypatch.setattr(nvt, "_resolve_volume", missing_volume)
     monkeypatch.setattr(
-        "runpod.rp_cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys")
+        "runpod.cli.volume._prompt_s3_keys", lambda: pytest.fail("prompted for keys")
     )
     result = CliRunner().invoke(_cli(), ["volume", "upload", "missing", str(tmp_path)])
     assert result.exit_code == 1
@@ -1503,7 +1503,7 @@ def test_cli_offers_to_replace_rejected_saved_keys(monkeypatch, interactive, tmp
     monkeypatch.delenv(nvt.SECRET_KEY_ENV, raising=False)
     monkeypatch.setattr(nvt, "saved_s3_keys", lambda: ("saved", "old"))
     monkeypatch.setattr(
-        "runpod.rp_cli.volume._prompt_s3_keys", lambda: ("new", "secret")
+        "runpod.cli.volume._prompt_s3_keys", lambda: ("new", "secret")
     )
     with patch.object(
         runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer
@@ -1547,8 +1547,8 @@ def test_cli_prompts_for_new_keys_with_the_progress_bar_closed(
     monkeypatch.delenv(nvt.ACCESS_KEY_ENV, raising=False)
     monkeypatch.delenv(nvt.SECRET_KEY_ENV, raising=False)
     monkeypatch.setattr(nvt, "saved_s3_keys", lambda: ("saved", "old"))
-    monkeypatch.setattr("runpod.rp_cli.volume._progress_bar", fake_bar)
-    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", prompt)
+    monkeypatch.setattr("runpod.cli.volume._progress_bar", fake_bar)
+    monkeypatch.setattr("runpod.cli.volume._prompt_s3_keys", prompt)
     with patch.object(
         runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer
     ):
@@ -1571,7 +1571,7 @@ def test_cli_reports_a_failed_key_save_cleanly(monkeypatch, interactive, tmp_pat
     monkeypatch.delenv(nvt.ACCESS_KEY_ENV, raising=False)
     monkeypatch.delenv(nvt.SECRET_KEY_ENV, raising=False)
     monkeypatch.setattr(nvt, "saved_s3_keys", lambda: ("saved", "old"))
-    monkeypatch.setattr("runpod.rp_cli.volume._prompt_s3_keys", unsaved)
+    monkeypatch.setattr("runpod.cli.volume._prompt_s3_keys", unsaved)
     with patch.object(
         runpod.NetworkVolume, "upload", autospec=True, side_effect=transfer
     ):
@@ -1664,7 +1664,7 @@ def test_cli_looks_up_the_volume_once(monkeypatch, tmp_path):
 def test_set_s3_keys_keeps_the_api_key_and_login_keeps_the_s3_keys(
     monkeypatch, tmp_path
 ):
-    from runpod.cli.groups.config import functions
+    from runpod.auth import credentials as functions
 
     monkeypatch.setattr(functions, "CREDENTIAL_FILE", str(tmp_path / "config.toml"))
     functions.set_credentials("rpa_one", overwrite=True)

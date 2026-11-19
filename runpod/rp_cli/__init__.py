@@ -1,1 +1,1 @@
-"""the `rp` command line interface."""
+"""command-line entry points and helpers."""

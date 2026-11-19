@@ -1,9 +1,4 @@
-"""
-runpod | cli | config.py
-
-A collection of functions to set and validate configurations.
-Configurations are TOML files located under ~/.runpod/
-"""
+"""credential profiles stored in ~/.runpod/config.toml."""
 
 import os
 import tempfile

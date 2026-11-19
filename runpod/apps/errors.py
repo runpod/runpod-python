@@ -3,8 +3,7 @@
 from yarl import URL
 
 
-class AppError(Exception):
-    """base error for the apps sdk."""
+from runpod.error import AppError as AppError
 
 
 class AppHTTPError(AppError):

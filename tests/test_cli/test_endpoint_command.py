@@ -9,9 +9,9 @@ from click.testing import CliRunner
 
 from runpod import error
 from runpod.endpoint import runner
-from runpod.rp_cli import api as cli_api, compute, endpoint_config as config, output
-from runpod.rp_cli import endpoint as ep
-from runpod.rp_cli.main import cli
+from runpod.cli import api as cli_api, compute, endpoint_config as config, output
+from runpod.cli import endpoint as ep
+from runpod.cli.main import cli
 
 PAGE = {"hasNextPage": False, "nextCursor": None}
 
@@ -192,7 +192,7 @@ def cli_environment(monkeypatch):
         pytest.fail("endpoint tests must not make real network requests")
 
     monkeypatch.setattr(requests.sessions.Session, "request", no_network)
-    from runpod.rp_cli import console as ui
+    from runpod.cli import console as ui
 
     monkeypatch.setattr(ui.console, "_width", 200)
 
@@ -952,7 +952,7 @@ def test_releases(api):
 
 
 def test_logs_routes_options_to_shared_streamer(api, monkeypatch):
-    from runpod.rp_cli import logs
+    from runpod.cli import logs
 
     show = MagicMock()
     monkeypatch.setattr(logs, "show_logs", show)
@@ -1318,6 +1318,31 @@ def test_purge(api, client):
     assert "purged 3 queued jobs" in ok("purge", "ep1", "--yes")
     client.post.assert_called_with("ep1/purge-queue", None)
     assert json.loads(ok("purge", "ep1", "--yes", "--json"))["removed"] == 3
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+@pytest.mark.parametrize("action", ["get", "cancel"])
+def test_data_plane_redirect_is_a_sanitized_cli_error(monkeypatch, status, action):
+    monkeypatch.setattr("runpod.api_key", "synthetic-key")
+    monkeypatch.setattr("runpod.cli.update.start_background_check", lambda: None)
+    response = requests.Response()
+    response.status_code = status
+    response._content = b"<html>synthetic-secret</html>"
+    response._content_consumed = True
+    response.headers["Location"] = "https://redirect.invalid/?token=synthetic-secret"
+    response.close = MagicMock(wraps=response.close)
+    send = MagicMock(return_value=response)
+    monkeypatch.setattr(requests.Session, "request", send)
+
+    result = invoke("job", action, "ep1", "job1")
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert result.output == "Error: unexpected redirect\n"
+    assert "synthetic-secret" not in result.output
+    send.assert_called_once()
+    assert send.call_args.kwargs["allow_redirects"] is False
+    response.close.assert_called_once()
 
 
 def test_data_plane_errors(api, client, monkeypatch):

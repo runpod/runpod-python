@@ -6,7 +6,7 @@ import click
 import pytest
 
 from runpod import error
-from runpod.rp_cli import output
+from runpod.cli import output
 
 
 class TestOutputHelpers:
@@ -17,7 +17,7 @@ class TestOutputHelpers:
         assert output.cell(3) == "3"
 
     def test_print_table_keeps_ids_and_values_whole(self, monkeypatch, capsys):
-        from runpod.rp_cli import console as ui
+        from runpod.cli import console as ui
 
         monkeypatch.setattr(ui.console, "_width", 40)
         rows = [{"id": "cmvfsn771000007jp15tn8esm", "type": "high_performance"}]

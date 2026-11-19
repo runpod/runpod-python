@@ -2,19 +2,19 @@
 
 import asyncio
 import json as json_module
-import os
 import time
 from concurrent.futures import Future
-from contextlib import nullcontext
 from typing import Any, Mapping, Optional
 
 import aiohttp
-import requests
 
 from runpod import error
+from runpod.auth import resolve_api_key as _resolve_api_key
 from runpod.user_agent import USER_AGENT
 
 from ._rate_limit import _RetryBudget, _validate_retry_options, rate_limits
+from .http import HTTPClient, SyncHTTPClient
+from .routes import Route
 
 HTTP_STATUS_NO_CONTENT = 204
 HTTP_STATUS_BAD_REQUEST = 400
@@ -22,20 +22,8 @@ HTTP_STATUS_UNAUTHORIZED = 401
 HTTP_STATUS_NOT_FOUND = 404
 
 
-def _resolve_api_key(api_key: Optional[str]) -> str:
-    from runpod import (  # pylint: disable=import-outside-toplevel,cyclic-import
-        api_key as global_api_key,
-    )
-
-    effective_api_key = api_key or global_api_key
-    if not effective_api_key:
-        raise error.AuthenticationError("No API key provided")
-    return effective_api_key
-
-
 def _build_url(path: str) -> str:
-    api_url_base = os.environ.get("RUNPOD_API_BASE_URL", "https://api.runpod.io")
-    return f"{api_url_base.rstrip('/')}/{path.lstrip('/')}"
+    return Route("GET", path).url()
 
 
 def _build_headers(api_key: str) -> dict[str, str]:
@@ -54,6 +42,8 @@ def _raise_for_error(
     text: str = "",
     retry_after: Optional[float] = None,
 ) -> None:
+    if 300 <= status_code < 400:
+        raise error.QueryError("unexpected redirect", status_code=status_code)
     if status_code == HTTP_STATUS_UNAUTHORIZED:
         raise error.AuthenticationError(
             "Unauthorized request, please check your API key."
@@ -88,106 +78,116 @@ def _raise_for_error(
     )
 
 
-def run_rest_request(
-    method: str,
-    path: str,
-    *,
-    api_key: Optional[str] = None,
-    params: Optional[Mapping[str, Any]] = None,
-    json: Optional[Mapping[str, Any]] = None,
-    timeout: float = 30,
-    max_retries: int = 3,
-    max_rate_limit_wait: float = 60,
-    user_agent: str = USER_AGENT,
-) -> Optional[dict[str, Any]]:
-    """Send a REST request with bounded 429 retries and shared quota waits.
+class RESTClient(SyncHTTPClient):
+    """reusable synchronous REST requests with shared quota handling."""
 
-    ``timeout`` applies to each HTTP attempt. ``max_rate_limit_wait`` bounds
-    cumulative quota sleeps in seconds; ``max_retries`` counts 429 retries.
-    Network failures and other HTTP errors are not retried.
-    """
-    _validate_retry_options(max_retries, max_rate_limit_wait)
-    key = _resolve_api_key(api_key)
-    url = _build_url(path)
-    headers = _build_headers(key)
-    headers["User-Agent"] = user_agent
-    budget = _RetryBudget(max_retries, max_rate_limit_wait, f"{method.upper()} {path}")
-    with rate_limits.bucket(url, key) as bucket:
-        for attempt in range(max_retries + 1):
-            while wait := bucket.acquire(budget):
-                if isinstance(wait, Future):
-                    wait.result()
-                else:
-                    time.sleep(wait)
-            try:
-                started_at = time.monotonic()
-                response = requests.request(
-                    method,
-                    url,
-                    headers=headers,
-                    params=params,
-                    json=json,
-                    timeout=timeout,
-                )
+    def __init__(self, api_key=None, *, base_url=None, session=None):
+        super().__init__(base_url, session=session)
+        self.api_key = api_key
+
+    def request(
+        self,
+        route: Route,
+        *,
+        api_key: Optional[str] = None,
+        params: Optional[Mapping[str, Any]] = None,
+        json: Optional[Mapping[str, Any]] = None,
+        timeout: float = 30,
+        max_retries: int = 3,
+        max_rate_limit_wait: float = 60,
+        user_agent: str = USER_AGENT,
+    ) -> Optional[dict[str, Any]]:
+        """Send a REST request with bounded 429 retries and shared quota waits.
+
+        ``timeout`` applies to each HTTP attempt. ``max_rate_limit_wait`` bounds
+        cumulative quota sleeps in seconds; ``max_retries`` counts 429 retries.
+        Network failures and other HTTP errors are not retried.
+        """
+        method, path = route.method, route.resolved_path
+        _validate_retry_options(max_retries, max_rate_limit_wait)
+        key = _resolve_api_key(api_key or self.api_key)
+        url = route.url(self.base_url)
+        headers = _build_headers(key)
+        headers["User-Agent"] = user_agent
+        budget = _RetryBudget(
+            max_retries, max_rate_limit_wait, f"{method.upper()} {path}"
+        )
+        with rate_limits.bucket(url, key) as bucket:
+            for attempt in range(max_retries + 1):
+                while wait := bucket.acquire(budget):
+                    if isinstance(wait, Future):
+                        wait.result()
+                    else:
+                        time.sleep(wait)
                 try:
-                    retry_after = bucket.update(
-                        response.status_code,
-                        response.headers,
-                        attempt,
-                        started_at=started_at,
-                    )
-                    if budget.can_retry(attempt, retry_after):
-                        continue
-                    if response.status_code >= HTTP_STATUS_BAD_REQUEST:
-                        _raise_for_error(
+                    started_at = time.monotonic()
+                    with self.stream(
+                        route,
+                        headers=headers,
+                        params=params,
+                        json=json,
+                        timeout=timeout,
+                    ) as response:
+                        retry_after = bucket.update(
                             response.status_code,
-                            method,
-                            path,
-                            response.text,
-                            retry_after,
+                            response.headers,
+                            attempt,
+                            started_at=started_at,
                         )
-                    if (
-                        response.status_code == HTTP_STATUS_NO_CONTENT
-                        or not response.content
-                    ):
-                        return None
-                    return response.json()
+                        if budget.can_retry(attempt, retry_after):
+                            continue
+                        if response.status_code >= 300:
+                            _raise_for_error(
+                                response.status_code,
+                                method,
+                                path,
+                                response.text,
+                                retry_after,
+                            )
+                        if (
+                            response.status_code == HTTP_STATUS_NO_CONTENT
+                            or not response.content
+                        ):
+                            return None
+                        return response.json()
                 finally:
-                    response.close()
-            finally:
-                bucket.release()
+                    bucket.release()
 
 
-async def run_rest_request_async(
-    method: str,
-    path: str,
-    *,
-    api_key: Optional[str] = None,
-    params: Optional[Mapping[str, Any]] = None,
-    json: Optional[Mapping[str, Any]] = None,
-    timeout: float = 30,
-    max_retries: int = 3,
-    max_rate_limit_wait: float = 60,
-    session: Optional[aiohttp.ClientSession] = None,
-    user_agent: str = USER_AGENT,
-) -> Optional[dict[str, Any]]:
-    """Send a REST request with cancellable quota waits and bounded 429 retries.
+class AsyncRESTClient(HTTPClient):
+    """reusable async REST requests with cancellable quota handling."""
 
-    ``timeout`` applies to each HTTP attempt. ``max_rate_limit_wait`` bounds
-    cumulative quota sleeps in seconds; ``max_retries`` counts 429 retries.
-    Network failures and other HTTP errors are not retried.
-    """
-    _validate_retry_options(max_retries, max_rate_limit_wait)
-    key = _resolve_api_key(api_key)
-    url = _build_url(path)
-    headers = _build_headers(key)
-    headers["User-Agent"] = user_agent
-    budget = _RetryBudget(max_retries, max_rate_limit_wait, f"{method.upper()} {path}")
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
-    context = nullcontext(session) if session is not None else aiohttp.ClientSession()
-    async with context as session:
-        # aiohttp otherwise replays put/delete requests after an ambiguous disconnect.
-        session._retry_connection = False  # pylint: disable=protected-access
+    def __init__(self, api_key=None, *, base_url=None, session=None):
+        super().__init__(base_url, session=session)
+        self.api_key = api_key
+
+    async def request(
+        self,
+        route: Route,
+        *,
+        api_key: Optional[str] = None,
+        params: Optional[Mapping[str, Any]] = None,
+        json: Optional[Mapping[str, Any]] = None,
+        timeout: float = 30,
+        max_retries: int = 3,
+        max_rate_limit_wait: float = 60,
+        user_agent: str = USER_AGENT,
+    ) -> Optional[dict[str, Any]]:
+        """Send a REST request with cancellable quota waits and bounded 429 retries.
+
+        ``timeout`` applies to each HTTP attempt. ``max_rate_limit_wait`` bounds
+        cumulative quota sleeps in seconds; ``max_retries`` counts 429 retries.
+        Network failures and other HTTP errors are not retried.
+        """
+        method, path = route.method, route.resolved_path
+        _validate_retry_options(max_retries, max_rate_limit_wait)
+        key = _resolve_api_key(api_key or self.api_key)
+        url = route.url(self.base_url)
+        headers = _build_headers(key)
+        headers["User-Agent"] = user_agent
+        budget = _RetryBudget(
+            max_retries, max_rate_limit_wait, f"{method.upper()} {path}"
+        )
         with rate_limits.bucket(url, key) as bucket:
             for attempt in range(max_retries + 1):
                 while wait := bucket.acquire(budget):
@@ -197,13 +197,12 @@ async def run_rest_request_async(
                         await asyncio.sleep(wait)
                 try:
                     started_at = time.monotonic()
-                    async with session.request(
-                        method,
-                        url,
+                    async with self.stream(
+                        route,
                         headers=headers,
                         params=params,
                         json=json,
-                        timeout=client_timeout,
+                        timeout=timeout,
                     ) as response:
                         retry_after = bucket.update(
                             response.status,
@@ -213,7 +212,7 @@ async def run_rest_request_async(
                         )
                         if budget.can_retry(attempt, retry_after):
                             continue
-                        if response.status >= HTTP_STATUS_BAD_REQUEST:
+                        if response.status >= 300:
                             text = (
                                 ""
                                 if response.status == HTTP_STATUS_UNAUTHORIZED
@@ -232,6 +231,57 @@ async def run_rest_request_async(
                     bucket.release()
 
 
+def run_rest_request(
+    method: str,
+    path: str,
+    *,
+    api_key: Optional[str] = None,
+    params: Optional[Mapping[str, Any]] = None,
+    json: Optional[Mapping[str, Any]] = None,
+    timeout: float = 30,
+    max_retries: int = 3,
+    max_rate_limit_wait: float = 60,
+    user_agent: str = USER_AGENT,
+) -> Optional[dict[str, Any]]:
+    """send one REST request and close its connection pool."""
+    with RESTClient(api_key) as client:
+        return client.request(
+            Route(method, path),
+            params=params,
+            json=json,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_rate_limit_wait=max_rate_limit_wait,
+            user_agent=user_agent,
+        )
+
+
+async def run_rest_request_async(
+    method: str,
+    path: str,
+    *,
+    api_key: Optional[str] = None,
+    params: Optional[Mapping[str, Any]] = None,
+    json: Optional[Mapping[str, Any]] = None,
+    timeout: float = 30,
+    max_retries: int = 3,
+    max_rate_limit_wait: float = 60,
+    user_agent: str = USER_AGENT,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> Optional[dict[str, Any]]:
+    """send one REST request using an owned or borrowed connection pool."""
+    async with AsyncRESTClient(api_key, session=session) as client:
+        return await client.request(
+            Route(method, path),
+            params=params,
+            json=json,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_rate_limit_wait=max_rate_limit_wait,
+            user_agent=user_agent,
+        )
+
+
 async def run_rest_paginated_request_async(
     path: str,
     collection: str,
@@ -244,7 +294,7 @@ async def run_rest_paginated_request_async(
     params = {}
     seen_cursors = set()
     query = f"GET {path}"
-    async with aiohttp.ClientSession() as session:
+    async with HTTPClient() as client:
         while True:
             for attempt in range(4):
                 try:
@@ -253,7 +303,7 @@ async def run_rest_paginated_request_async(
                         path,
                         api_key=api_key,
                         params=params,
-                        session=session,
+                        session=client.session,
                         user_agent=user_agent,
                     )
                     break

@@ -3,7 +3,7 @@
 from click.testing import CliRunner
 
 from runpod.apps.init import create_project, detect_conflicts
-from runpod.rp_cli.main import cli
+from runpod.cli.main import cli
 
 
 class TestCreateProject:

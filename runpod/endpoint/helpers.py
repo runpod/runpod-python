@@ -1,8 +1,8 @@
-""" Helper functions for the Runpod Endpoint API. """
+"""Helper functions for the Runpod Endpoint API."""
 
 from typing import Optional
 
-from runpod.error import JobError
+from runpod.error import JobError, QueryError
 
 FINAL_STATES = ["COMPLETED", "FAILED", "TIMED_OUT"]
 
@@ -14,6 +14,11 @@ API_KEY_NOT_SET_MSG = (
     "An API key can be generated at "
     "https://console.runpod.io/user/settings"
 )
+
+
+def raise_for_redirect(status: int) -> None:
+    if status in range(300, 400):
+        raise QueryError("unexpected redirect", status_code=status)
 
 
 def is_completed(status: str) -> bool:

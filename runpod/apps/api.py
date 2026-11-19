@@ -1,7 +1,7 @@
 """control-plane calls for app provisioning.
 
 rest handles equivalent resource operations; graphql handles flash lifecycle,
-auth, secrets, task provisioning, and endpoint capabilities
+secrets, task provisioning, and endpoint capabilities
 absent from rest. management verbs for the wider sdk stay in runpod.api.ctl_commands.
 """
 
@@ -11,11 +11,12 @@ import aiohttp
 
 from ..api.ctl_commands import _cpu_config, _path_segment, _split_values
 from ..api.graphql import run_graphql_query_async
+from ..api.http import HTTPClient
 from ..api.mutations import apps as app_mutations
 from ..api.queries import apps as app_queries
-from ..api.queries import user as user_queries
 from ..api.rest import run_rest_paginated_request_async, run_rest_request_async
-from ..error import AuthenticationError, QueryError
+from ..api.routes import Route
+from ..error import QueryError
 from ..user_agent import APPS_USER_AGENT
 from .errors import AppHTTPError
 from .utils.http import raise_for_status
@@ -613,32 +614,6 @@ class AppsApiClient:
         data = await self._execute(mutation, {"flashEnvironmentId": environment_id})
         return bool(data.get("deleteFlashEnvironment"))
 
-    async def create_auth_request(self) -> Dict[str, Any]:
-        """open a browser-approval auth request; no credentials needed."""
-        mutation = app_mutations.MUTATION_CREATE_FLASH_AUTH_REQUEST
-        data = await self._execute(mutation, anonymous=True)
-        return data.get("createFlashAuthRequest") or {}
-
-    async def get_auth_request_status(self, request_id: str) -> Dict[str, Any]:
-        query = app_queries.QUERY_FLASH_AUTH_REQUEST_STATUS
-        data = await self._execute(
-            query, {"flashAuthRequestId": request_id}, anonymous=True
-        )
-        return data.get("flashAuthRequestStatus") or {}
-
-    async def verify_api_key(self, api_key: str) -> bool:
-        """true when api_key authenticates; transport failures still raise."""
-        try:
-            response = await run_graphql_query_async(
-                user_queries.QUERY_USER,
-                api_key=api_key,
-                headers={"User-Agent": APPS_USER_AGENT},
-            )
-        except (AuthenticationError, QueryError):
-            return False
-        myself = (response.get("data") or {}).get("myself") or {}
-        return bool(myself.get("id"))
-
     async def prepare_artifact_upload(
         self, app_id: str, tarball_size: int
     ) -> Dict[str, Any]:
@@ -711,24 +686,25 @@ class AppsApiClient:
                     yield chunk
 
         attempts = 4
-        for attempt in range(attempts):
-            try:
-                await self._put_tarball(upload_url, _reader(), total, timeout)
-                return
-            except (AppHTTPError, aiohttp.ClientError, OSError):
-                if attempt == attempts - 1:
-                    raise
-                await asyncio.sleep(2**attempt)
+        async with HTTPClient(base_url=upload_url) as client:
+            for attempt in range(attempts):
+                try:
+                    await self._put_tarball(client, _reader(), total, timeout)
+                    return
+                except (AppHTTPError, aiohttp.ClientError, OSError):
+                    if attempt == attempts - 1:
+                        raise
+                    await asyncio.sleep(2**attempt)
 
-    async def _put_tarball(self, upload_url, reader, total, timeout) -> None:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.put(
-                upload_url,
-                data=reader,
-                headers={
-                    "User-Agent": APPS_USER_AGENT,
-                    "Content-Type": "application/gzip",
-                    "Content-Length": str(total),
-                },
-            ) as resp:
-                await raise_for_status(resp)
+    async def _put_tarball(self, client, reader, total, timeout) -> None:
+        async with client.stream(
+            Route("PUT", ""),
+            timeout=timeout,
+            data=reader,
+            headers={
+                "User-Agent": APPS_USER_AGENT,
+                "Content-Type": "application/gzip",
+                "Content-Length": str(total),
+            },
+        ) as resp:
+            await raise_for_status(resp)

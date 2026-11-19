@@ -510,16 +510,16 @@ class TestTaskTimeoutTransport:
         )
         session = MagicMock()
         session.__aenter__.return_value = session
-        session.post.return_value.__aenter__.return_value = response
-        with patch("runpod.apps.tasks.aiohttp.ClientSession", return_value=session):
+        session.stream.return_value.__aenter__.return_value = response
+        with patch("runpod.apps.tasks.HTTPClient", return_value=session):
             argument = {"timeout": 60} if method == "submit" else 60
             if acknowledged:
                 await getattr(execution, method)(argument)
             else:
                 with pytest.raises(RuntimeError, match="did not acknowledge"):
                     await getattr(execution, method)(argument)
-        assert session.post.call_args.kwargs["json"] == {"timeout": 60}
-        assert session.post.call_args.kwargs["headers"] == execution._headers
+        assert session.stream.call_args.kwargs["json"] == {"timeout": 60}
+        assert session.stream.call_args.kwargs["headers"] == execution._headers
 
     @pytest.mark.parametrize("timeout", [-1, True, "60", float("nan"), float("inf")])
     async def test_invalid_timeouts_fail_before_http(self, timeout):
@@ -528,7 +528,7 @@ class TestTaskTimeoutTransport:
         execution = TaskExecution(
             ResourceSpec(kind=ResourceKind.TASK, name="t"), api=MagicMock()
         )
-        with patch("runpod.apps.tasks.aiohttp.ClientSession") as session:
+        with patch("runpod.apps.tasks.HTTPClient") as session:
             with pytest.raises(ValueError, match="finite non-negative"):
                 await execution.set_timeout(timeout)
         session.assert_not_called()

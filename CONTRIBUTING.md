@@ -68,6 +68,22 @@ This project adheres to the [PEP 8](https://www.python.org/dev/peps/pep-0008/) c
 
 Before submitting a pull request, please make sure your changes pass all tests. New features should include additional unit tests validating the changes.
 
+### HTTP Requests
+
+Use `Route` templates for paths and the shared clients in `runpod.api` for HTTP requests. Route parameters are escaped, and service bases are configured in `runpod.api.routes`. Keep a client context open across related requests to reuse its connection pool.
+
+```python
+from runpod.api.rest import AsyncRESTClient
+from runpod.api.routes import Route
+
+async with AsyncRESTClient() as client:
+    pod = await client.request(Route("GET", "/v2/pods/{pod_id}", pod_id=pod_id))
+```
+
+`RESTClient` provides the synchronous equivalent. Both clients apply account authentication and bounded rate-limit waits. `HTTPClient` and `SyncHTTPClient` in `runpod.api.http` handle raw transport for GraphQL, streams, worker requests, and uploads. These raw clients require explicit authentication headers. Their `stream()` contexts expose responses for protocol-specific handling and release them on exit. A supplied session remains owned by its caller.
+
+Account login and credential storage belong in `runpod.auth`. CLI commands belong in `runpod.cli`.
+
 ## Getting Help
 
 If you have any questions or need help with contributing, feel free to reach out on the [issue tracker](https://github.com/runpod/runpod-python/issues) or open a new issue. We're here to help!

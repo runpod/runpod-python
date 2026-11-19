@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from runpod import error
-from runpod.rp_cli import api
+from runpod.cli import api
 
 
 class TestApi:

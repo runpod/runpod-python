@@ -6,17 +6,14 @@ streams and finite snapshots use the host api, which supports both.
 
 import asyncio
 import json
-import os
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import aiohttp
 
-from ..api.ctl_commands import _path_segment
-from ..api.rest import _build_url
+from ..api.http import HTTPClient
+from ..api.routes import Route, host_api_base_url
 from ..user_agent import APPS_USER_AGENT
 from .utils.http import raise_for_status
-
-HAPI_BASE = os.environ.get("RUNPOD_HAPI_URL", "https://hapi.runpod.net")
 
 STREAM_TIMEOUT_SECONDS = 3600.0
 
@@ -34,14 +31,14 @@ async def pod_logs(
     timeout: float = 30.0,
 ) -> Dict[str, List[str]]:
     """snapshot of a pod's logs: {"container": [...], "system": [...]}."""
-    url = f"{HAPI_BASE}/v1/pod/{pod_id}/logs"
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.get(
-            url, params={"type": log_type}, headers=_headers()
-        ) as resp:
-            await raise_for_status(resp)
-            data = await resp.json()
+    async with HTTPClient(base_url=host_api_base_url()).stream(
+        Route("GET", "/v1/pod/{pod_id}/logs", pod_id=pod_id),
+        params={"type": log_type},
+        headers=_headers(),
+        timeout=timeout,
+    ) as resp:
+        await raise_for_status(resp)
+        data = await resp.json()
     return {k: v or [] for k, v in data.items()}
 
 
@@ -66,18 +63,21 @@ async def stream_pod_logs(
     measured only after the response headers have been received.
     """
     params: Dict[str, Any] = {"tail": str(tail)}
+    base_url = None
     if log_type == "all":
-        url = f"{HAPI_BASE}/v1/pod/{_path_segment(pod_id)}/logs"
+        base_url = host_api_base_url()
+        route = Route("GET", "/v1/pod/{pod_id}/logs", pod_id=pod_id)
         params.update(stream="true", type=log_type)
     else:
         if endpoint_id is None:
-            path = f"/v2/pods/{_path_segment(pod_id)}/logs"
+            route = Route("GET", "/v2/pods/{pod_id}/logs", pod_id=pod_id)
         else:
-            path = (
-                f"/v2/serverless/{_path_segment(endpoint_id)}"
-                f"/workers/{_path_segment(pod_id)}/logs"
+            route = Route(
+                "GET",
+                "/v2/serverless/{endpoint_id}/workers/{pod_id}/logs",
+                endpoint_id=endpoint_id,
+                pod_id=pod_id,
             )
-        url = _build_url(path)
         if log_type:
             params["source"] = log_type
     if since:
@@ -87,8 +87,10 @@ async def stream_pod_logs(
         headers["Last-Event-ID"] = last_event_id
 
     client_timeout = aiohttp.ClientTimeout(total=STREAM_TIMEOUT_SECONDS, sock_read=60)
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.get(url, params=params, headers=headers) as resp:
+    async with HTTPClient(base_url=base_url) as client:
+        async with client.stream(
+            route, params=params, headers=headers, timeout=client_timeout
+        ) as resp:
             await raise_for_status(resp)
             event_id = None
             data = []

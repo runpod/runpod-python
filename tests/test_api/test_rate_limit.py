@@ -508,7 +508,7 @@ def test_sync_response_is_closed_before_sleep(monkeypatch, clock):
     second._content_consumed = True
     second.close = Mock()
     monkeypatch.setattr(rest, "rate_limits", _rate_limit._RateLimits())
-    monkeypatch.setattr(rest.requests, "request", Mock(side_effect=[first, second]))
+    monkeypatch.setattr(requests.Session, "request", Mock(side_effect=[first, second]))
 
     def sleep(seconds):
         first.close.assert_called_once()
