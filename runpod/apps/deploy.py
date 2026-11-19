@@ -500,7 +500,7 @@ async def reconcile_endpoints(
                         for volume in resolver.created_volumes
                     ),
                     "Volumes may contain shared data and still incur charges. "
-                    "Inspect them in the Runpod console and delete only if unused.",
+                    + "Inspect them in the Runpod console and delete only if unused.",
                 ]
             )
         rollback_errors = []
