@@ -453,6 +453,43 @@ class TestGpuStringResolution:
 
         assert resolve_gpu_string("A4000") == ["NVIDIA RTX A4000"]
 
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (
+                "4000",
+                ["NVIDIA RTX A4000", "NVIDIA RTX 4000 Ada Generation"],
+            ),
+            ("5000", ["NVIDIA RTX A5000"]),
+            (
+                "6000",
+                [
+                    "NVIDIA RTX 6000 Ada Generation",
+                    "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+                    "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+                    "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+                    "NVIDIA RTX A6000",
+                ],
+            ),
+            (
+                "200",
+                ["NVIDIA RTX 2000 Ada Generation", "NVIDIA H200", "NVIDIA B200"],
+            ),
+        ],
+    )
+    def test_numeric_fragment_preserves_all_device_matches(self, value, expected):
+        from runpod.apps.gpu import resolve_gpu_string
+
+        assert resolve_gpu_string(value) == expected
+
+        app = App("a")
+
+        @app.queue(gpu=value)
+        def work():
+            pass
+
+        assert work.spec.to_manifest()["gpus"] == expected
+
     def test_a40_queue_selects_only_a40(self):
         from runpod.apps.gpu import gpu_ids_value
 

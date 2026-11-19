@@ -178,10 +178,11 @@ def resolve_gpu_string(value: str) -> List[str]:
       - pool ids ("ADA_24", case-insensitive)
       - exact device names ("NVIDIA B200")
       - enum-style names ("NVIDIA_B200")
-      - whole device-name tokens ("A40", "4090", "h100"), including
+      - nonnumeric whole device-name tokens ("A40", "h100"), including
         tokens separated by punctuation ("A100" in "A100-SXM4-80GB")
       - shorthand device fragments: every device whose name contains
-        the fragment matches when no whole token matches
+        the fragment matches for numeric strings ("4000", "6000") or
+        when no whole token matches
 
     unknown strings raise with the full list of valid options.
     """
@@ -199,13 +200,14 @@ def resolve_gpu_string(value: str) -> List[str]:
             return [gpu_type.value]
 
     fragment = upper.replace("_", " ")
-    matches = [
-        gpu_type.value
-        for gpu_type in GpuType.all()
-        if fragment in re.findall(r"\w+", gpu_type.value.upper())
-    ]
-    if matches:
-        return matches
+    if not fragment.isdecimal():
+        matches = [
+            gpu_type.value
+            for gpu_type in GpuType.all()
+            if fragment in re.findall(r"\w+", gpu_type.value.upper())
+        ]
+        if matches:
+            return matches
 
     matches = [
         gpu_type.value
