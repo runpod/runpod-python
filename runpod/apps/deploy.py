@@ -493,11 +493,15 @@ async def reconcile_endpoints(
 
     except (Exception, asyncio.CancelledError, KeyboardInterrupt) as exc:
         lines = [f"Couldn't {action}: {str(exc) or type(exc).__name__}"]
+        rollback_errors = []
+        rollback_progress = []
+        rollback_action = "start cleanup"
 
         async def rollback():
-            rollback_errors = []
+            nonlocal rollback_action
             rollback_allowed = True
             if activation_attempted:
+                rollback_action = "check deployment ownership"
                 try:
                     current = await client.get_environment_by_name(
                         app.name, environment["name"]
@@ -515,10 +519,12 @@ async def reconcile_endpoints(
                     )
                     rollback_allowed = False
             if rollback_allowed and activation_attempted and not environment_created:
+                rollback_action = "restore the previous build"
                 try:
                     previous_build = environment.get("activeBuildId")
                     if previous_build:
                         await client.deploy_build(environment["id"], previous_build)
+                        rollback_progress.append(f"Restored build {previous_build}.")
                     else:
                         current = await client.get_environment_by_name(
                             app.name, environment["name"]
@@ -548,6 +554,7 @@ async def reconcile_endpoints(
                     ),
                 )
             ):
+                rollback_action = f"locate '{name}' after an interrupted create"
                 try:
                     current = await client.get_environment_by_name(
                         app.name, environment["name"]
@@ -566,16 +573,25 @@ async def reconcile_endpoints(
             for resource, endpoint_id, snapshot in (
                 reversed(undo) if rollback_allowed else []
             ):
+                rollback_action = (
+                    f"{'restore' if snapshot is not None else 'delete'} "
+                    f"'{resource}' ({endpoint_id})"
+                )
                 try:
                     if snapshot is not None:
                         await client.save_endpoint(snapshot)
                     elif not await client.delete_endpoint(endpoint_id):
                         raise RuntimeError("endpoint deletion was not confirmed")
+                    rollback_progress.append(
+                        f"{'Restored' if snapshot is not None else 'Deleted'} "
+                        f"endpoint '{resource}' ({endpoint_id})."
+                    )
                 except Exception as cleanup_exc:
                     rollback_errors.append(
                         f"{resource} ({endpoint_id}): {str(cleanup_exc) or type(cleanup_exc).__name__}"
                     )
             if environment_created and not rollback_errors:
+                rollback_action = f"remove environment {environment['id']}"
                 try:
                     current = await client.get_environment_by_name(
                         app.name, environment["name"]
@@ -610,12 +626,23 @@ async def reconcile_endpoints(
 
         cleanup = asyncio.create_task(rollback())
         interrupted = isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt))
-        while not cleanup.done():
-            try:
-                await asyncio.shield(cleanup)
-            except asyncio.CancelledError:
-                interrupted = True
-        cleanup.result()
+        try:
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    interrupted = True
+            cleanup.result()
+        except BaseException:
+            lines.extend(rollback_progress)
+            lines.append(f"Rollback interrupted while attempting to {rollback_action}.")
+            lines.extend(f"  {error}" for error in rollback_errors)
+            lines.append(
+                f"Check `rp flash env get {shlex.quote(environment['name'])} "
+                f"--app {shlex.quote(app.name)}`. Remaining workers may still incur charges."
+            )
+            log.warning("\n".join(lines))
+            raise
         if interrupted:
             log.warning("\n".join(lines))
             if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
