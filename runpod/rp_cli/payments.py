@@ -104,6 +104,12 @@ def _request_failure(exc: Exception, creating: bool) -> click.ClickException:
         message = "Payment authentication failed; check your API key."
     elif isinstance(exc, error.QueryError) and type(exc.status_code) is int:
         message = f"Payment request failed (HTTP {exc.status_code})."
+        if creating and exc.status_code == 409:
+            return click.ClickException(
+                message
+                + " Contact support for payment reconciliation before retrying."
+                " Do not create another payment with a new retry key."
+            )
     if creating:
         message += (
             " If no payment id is known, retry create with the same payload and"

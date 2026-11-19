@@ -390,6 +390,63 @@ def test_upstream_problem_details_are_not_reflected(monkeypatch, caplog):
     send.assert_called_once()
 
 
+@pytest.mark.parametrize("command", ["create", "get"])
+@pytest.mark.parametrize("as_json", [False, True])
+def test_sanitized_conflict_requires_reconciliation_only_for_create(
+    monkeypatch, caplog, command, as_json
+):
+    monkeypatch.setattr("runpod.api_key", "key")
+    monkeypatch.setenv("RUNPOD_API_BASE_URL", "https://payments.invalid")
+    response = requests.Response()
+    response.status_code = 409
+    response.headers["Content-Type"] = "application/problem+json"
+    response._content = b'{"status":409,"detail":"failed to create payment"}'
+    arguments = (
+        [*CREATE, "--rail", "CARD", "--spt-stdin"]
+        if command == "create"
+        else ["payments", "get", "payment-1"]
+    )
+    with patch("runpod.api.rest.requests.request", return_value=response) as send:
+        result = CliRunner().invoke(
+            cli,
+            [*arguments, *(["--json"] if as_json else [])],
+            input="spt_secret\n",
+        )
+    assert result.exit_code == 1
+    assert "HTTP 409" in result.output
+    assert "retry create" not in result.output
+    assert "--idempotency-key" not in result.output
+    if command == "create":
+        assert (
+            "Contact support for payment reconciliation before retrying." in result.output
+        )
+        assert "Do not create another payment with a new retry key." in result.output
+    else:
+        assert "Retry payments get with the same id." in result.output
+        assert "Contact support" not in result.output
+    assert "spt_secret" not in result.output + caplog.text
+    assert "spt_secret" not in "".join(traceback.format_exception(result.exception))
+    send.assert_called_once()
+
+
+@pytest.mark.parametrize("status", [500, 503])
+def test_transient_create_failure_preserves_same_key_guidance(monkeypatch, status):
+    monkeypatch.setattr("runpod.api_key", "key")
+    monkeypatch.setenv("RUNPOD_API_BASE_URL", "https://payments.invalid")
+    response = requests.Response()
+    response.status_code = status
+    response._content = b'{"detail":"failed to create payment"}'
+    with patch("runpod.api.rest.requests.request", return_value=response) as send:
+        result = CliRunner().invoke(cli, CREATE)
+    assert result.exit_code == 1
+    assert f"HTTP {status}" in result.output
+    assert "retry create with the same payload" in result.output
+    assert "--idempotency-key set to the original retry key" in result.output
+    assert "use payments get with that id" in result.output
+    assert "Contact support" not in result.output
+    send.assert_called_once()
+
+
 def test_replay_keeps_the_same_key_and_payload():
     with patch.object(payments, "_create_payment", return_value=PAYMENT) as create:
         for _ in range(2):
