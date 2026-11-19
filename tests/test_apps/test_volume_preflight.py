@@ -105,7 +105,7 @@ async def test_preflight_plans_shared_storage_without_creating(api):
             "id": "nv-new",
             "dataCenterId": "EU-RO-1",
         }
-    api.list_network_volumes.assert_awaited_once()
+    assert api.list_network_volumes.await_count == 2
     api.create_network_volume.assert_awaited_once_with(
         name="shared", size=50, data_center_id="EU-RO-1"
     )
@@ -118,8 +118,105 @@ async def test_global_creation_is_deferred_until_resolution(api):
     api.create_global_volume.assert_not_awaited()
     assert await resolver.resolve(volume) == {"id": "gv-new"}
     api.create_global_volume.assert_awaited_once_with(name="global")
-    api.list_global_volumes.assert_awaited_once()
+    assert api.list_global_volumes.await_count == 2
     api.network_volume_datacenters.assert_not_awaited()
+
+
+@pytest.mark.parametrize("datacenter", ["EU-RO-1", "US-MO-2"])
+@pytest.mark.parametrize("include_specs", [True, False])
+async def test_resolution_reuses_network_volume_created_after_preflight(
+    api, datacenter, include_specs
+):
+    resolver = VolumeResolver(api)
+    volume = NetworkVolume("shared", datacenter="EU-RO-1")
+    specs = [_spec("a", volume), _spec("b", NetworkVolume("shared"))]
+    await resolver.preflight(specs)
+    api.create_network_volume.assert_not_awaited()
+    api.list_network_volumes.return_value = [
+        {"id": "nv-existing", "name": "shared", "dataCenter": datacenter}
+    ]
+
+    for spec in specs:
+        assert await resolver.resolve_mounts(
+            spec.mounts, [spec] if include_specs else None
+        ) == [
+            {
+                "kind": "network",
+                "reference": "shared",
+                "path": "/models",
+                "id": "nv-existing",
+                "dataCenterId": datacenter,
+            }
+        ]
+    assert api.list_network_volumes.await_count == 2
+    api.create_network_volume.assert_not_awaited()
+
+
+@pytest.mark.parametrize("include_specs", [True, False])
+async def test_refreshed_volume_validates_every_preflight_sharing_spec(
+    api, include_specs
+):
+    resolver = VolumeResolver(api)
+    volume = NetworkVolume("shared", datacenter="EU-RO-1")
+    first = _spec("worker", volume)
+    second = _spec("worker", NetworkVolume("shared"), datacenter="EU-RO-1")
+    await resolver.preflight([first, second])
+    api.list_network_volumes.return_value = [
+        {"id": "nv-existing", "name": "shared", "dataCenter": "US-MO-2"}
+    ]
+
+    with pytest.raises(PlacementError, match="worker cannot schedule"):
+        await resolver.resolve_mounts(
+            first.mounts, [first] if include_specs else None
+        )
+    api.create_network_volume.assert_not_awaited()
+    assert resolver._resolved == {}
+
+
+async def test_refreshed_volume_validates_additional_resolution_specs(api):
+    resolver = VolumeResolver(api)
+    volume = NetworkVolume("shared", datacenter="EU-RO-1")
+    await resolver.preflight([_spec("a", volume)])
+    api.list_network_volumes.return_value = [
+        {"id": "nv-existing", "name": "shared", "dataCenter": "EU-RO-1"}
+    ]
+
+    with pytest.raises(PlacementError, match="b cannot schedule"):
+        await resolver.resolve(volume, [_spec("b", volume, datacenter="US-MO-2")])
+    api.create_network_volume.assert_not_awaited()
+
+
+async def test_resolution_reuses_global_volume_created_after_preflight(api):
+    resolver = VolumeResolver(api)
+    volume = GlobalVolume("shared")
+    await resolver.preflight([_spec("a", volume)])
+    api.create_global_volume.assert_not_awaited()
+    api.list_global_volumes.return_value = [{"id": "gv-existing", "name": "shared"}]
+
+    assert await resolver.resolve(volume) == {"id": "gv-existing"}
+    assert await resolver.resolve(GlobalVolume("shared")) == {"id": "gv-existing"}
+    assert api.list_global_volumes.await_count == 2
+    api.create_global_volume.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kind", ["network", "global"])
+async def test_refreshed_ambiguous_volume_prevents_creation(api, kind):
+    resolver = VolumeResolver(api)
+    volume = (
+        NetworkVolume("shared", datacenter="EU-RO-1")
+        if kind == "network"
+        else GlobalVolume("shared")
+    )
+    await resolver.preflight([_spec("a", volume)])
+    getattr(api, f"list_{kind}_volumes").return_value = [
+        {"id": "first", "name": "shared", "dataCenter": "EU-RO-1"},
+        {"id": "second", "name": "shared", "dataCenter": "EU-RO-1"},
+    ]
+
+    with pytest.raises(VolumeError, match="multiple"):
+        await resolver.resolve(volume)
+    api.create_network_volume.assert_not_awaited()
+    api.create_global_volume.assert_not_awaited()
 
 
 @pytest.mark.parametrize("pin_volume", [True, False])
@@ -335,7 +432,7 @@ async def test_reconcile_consumes_the_initial_plan_without_revalidating(api):
     await resolver.preflight([handle.spec for handle in app.resources.values()])
     api.list_network_volumes.reset_mock()
     api.network_volume_datacenters.reset_mock()
-    with patch.object(resolver, "_plan", AsyncMock()) as plan:
+    with patch.object(resolver, "preflight", wraps=resolver.preflight) as preflight:
         endpoints = await reconcile_endpoints(
             api,
             app,
@@ -344,8 +441,8 @@ async def test_reconcile_consumes_the_initial_plan_without_revalidating(api):
             "3.12",
             resolver=resolver,
         )
-    plan.assert_not_awaited()
-    api.list_network_volumes.assert_not_awaited()
+    preflight.assert_not_awaited()
+    api.list_network_volumes.assert_awaited_once()
     api.network_volume_datacenters.assert_not_awaited()
     api.create_network_volume.assert_awaited_once_with(
         name="models", size=50, data_center_id="EU-RO-1"

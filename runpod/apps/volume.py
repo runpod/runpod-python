@@ -292,7 +292,7 @@ class VolumeResolver:
         self._api = api
         self.events = events
         self._resolved: Dict[Tuple[str, str], Dict[str, Any]] = {}
-        self._planned: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        self._planned: Dict[Tuple[str, str], Tuple[Dict[str, Any], List]] = {}
         self._stock = None
         self._volume_datacenters: Optional[Set[str]] = None
 
@@ -311,9 +311,11 @@ class VolumeResolver:
         cached = self._resolved.get(key)
         if cached is not None:
             return cached
-        planned = self._planned.get(key)
-        if planned is None:
-            planned = await self._plan(volume, specs)
+        planned, sharing = self._planned.get(key, (None, []))
+        if planned is None or "id" not in planned:
+            planned = await self._plan(
+                volume, sharing + [spec for spec in specs if spec not in sharing]
+            )
         if "id" in planned:
             self._resolved[key] = planned
             return planned
@@ -351,7 +353,7 @@ class VolumeResolver:
         planned = {}
         self._planned = {}
         for key, (volume, sharing) in volumes.items():
-            planned[key] = await self._plan(volume, sharing)
+            planned[key] = (await self._plan(volume, sharing), sharing)
         self._planned = planned
 
     async def _plan(self, volume: Volume, specs: List) -> Dict[str, Any]:
