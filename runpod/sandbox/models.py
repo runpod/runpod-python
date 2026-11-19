@@ -1,5 +1,6 @@
 """Typed snapshots and results returned by the sandbox domain."""
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Mapping, Optional
@@ -11,6 +12,11 @@ LogSource = Literal["container", "system"]
 
 
 def _timestamp(value: str) -> datetime:
+    value = re.sub(
+        r"(T\d{2}:\d{2}:\d{2}\.)(\d+)",
+        lambda match: match[1] + match[2][:6].ljust(6, "0"),
+        value,
+    )
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 

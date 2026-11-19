@@ -6,6 +6,7 @@ from concurrent.futures import Future
 from datetime import datetime
 from typing import (
     Any,
+    Callable,
     Coroutine,
     Iterator,
     Literal,
@@ -40,7 +41,7 @@ class _LoopRunner:
         self._stopped = threading.Event()
         self._stopped.set()
         self._loop_finished = threading.Event()
-        self._tasks: dict[asyncio.Task, bool] = {}
+        self._tasks: set[asyncio.Task] = set()
 
     @property
     def started(self) -> bool:
@@ -74,9 +75,7 @@ class _LoopRunner:
             assert self._loop is not None
             return self._loop
 
-    def run(
-        self, coroutine: Coroutine[Any, Any, _T], *, cleanup: bool = False
-    ) -> _T:
+    def run(self, coroutine: Coroutine[Any, Any, _T]) -> _T:
         if threading.current_thread() is self._thread:
             coroutine.close()
             raise RuntimeError("Cannot call the sync sandbox API from its own loop")
@@ -98,7 +97,7 @@ class _LoopRunner:
                 return None, error
 
         def complete(done: asyncio.Task) -> None:
-            self._tasks.pop(done, None)
+            self._tasks.discard(done)
             try:
                 result, error = done.result()
                 if error is not None:
@@ -116,7 +115,7 @@ class _LoopRunner:
         def submit() -> None:
             nonlocal task
             task = loop.create_task(invoke())
-            self._tasks[task] = cleanup
+            self._tasks.add(task)
             task.add_done_callback(complete)
 
         def cancel() -> None:
@@ -124,21 +123,11 @@ class _LoopRunner:
                 task.cancel()
 
         try:
-            while True:
-                with self._lock:
-                    if not self._stopping:
-                        loop = self._start()
-                        loop.call_soon_threadsafe(submit)
-                        break
-                    if not cleanup:
-                        raise RuntimeError("Sandbox loop is shutting down")
-                    stopped = self._stopped
-                while not stopped.is_set():
-                    try:
-                        stopped.wait()
-                    except KeyboardInterrupt:
-                        # owner cleanup must survive repeated interruptions.
-                        continue
+            with self._lock:
+                if self._stopping:
+                    raise RuntimeError("Sandbox loop is shutting down")
+                loop = self._start()
+                loop.call_soon_threadsafe(submit)
         except BaseException:
             coroutine.close()
             raise
@@ -146,7 +135,7 @@ class _LoopRunner:
             return future.result()
         except BaseException as original:
             with self._lock:
-                if not cleanup and not finished.is_set() and not self._stopping:
+                if not finished.is_set() and not self._stopping:
                     loop.call_soon_threadsafe(cancel)
             while not finished.is_set():
                 try:
@@ -159,59 +148,73 @@ class _LoopRunner:
                 raise original from error
             raise
 
-    def stop(self) -> None:
+    def stop(
+        self, cleanup: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
+    ) -> None:
         if threading.current_thread() is self._thread:
             raise RuntimeError("Cannot stop the sync sandbox API from its own loop")
-        with self._lock:
-            if self._stopping:
-                stopped = self._stopped
-                shutdown = None
-            else:
-                loop, thread = self._loop, self._thread
-                if loop is None or thread is None:
-                    return
-                self._stopping = True
-                stopped = self._stopped = threading.Event()
-
-                async def drain() -> None:
-                    # cancel invocations, not the protected cleanup tasks they own.
-                    tasks = tuple(self._tasks)
-                    for task in tasks:
-                        if not self._tasks[task]:
-                            task.cancel()
-                    if tasks:
-                        await asyncio.gather(*tasks, return_exceptions=True)
-
-                shutdown = asyncio.run_coroutine_threadsafe(drain(), loop)
         interrupted = None
-        if shutdown is None:
+        while True:
+            with self._lock:
+                if self._stopping:
+                    stopped = self._stopped
+                else:
+                    if self._loop is None and cleanup is None:
+                        if interrupted is not None:
+                            raise interrupted
+                        return
+                    loop = self._start()
+                    self._stopping = True
+                    stopped = self._stopped = threading.Event()
+
+                    async def drain() -> Optional[BaseException]:
+                        try:
+                            # cancel invocations, not the protected cleanup tasks they own.
+                            tasks = tuple(self._tasks)
+                            for task in tasks:
+                                task.cancel()
+                            if tasks:
+                                await asyncio.gather(*tasks, return_exceptions=True)
+                            if cleanup is not None:
+                                await cleanup()
+                        except BaseException as error:
+                            return error
+                        return None
+
+                    shutdown = asyncio.run_coroutine_threadsafe(drain(), loop)
+                    break
             while not stopped.is_set():
                 try:
                     stopped.wait()
                 except KeyboardInterrupt as error:
                     interrupted = error
-        else:
-            try:
-                while True:
-                    try:
-                        shutdown.result()
-                        break
-                    except KeyboardInterrupt as error:
-                        interrupted = error
-            finally:
-                loop.call_soon_threadsafe(loop.stop)
-                while not self._loop_finished.is_set():
-                    try:
-                        self._loop_finished.wait()
-                    except KeyboardInterrupt as error:
-                        interrupted = error
-                with self._lock:
-                    self._loop = None
-                    self._thread = None
-                    self._stopping = False
-                    stopped.set()
+            if cleanup is None:
+                if interrupted is not None:
+                    raise interrupted
+                return
+        try:
+            while True:
+                try:
+                    cleanup_error = shutdown.result()
+                    break
+                except KeyboardInterrupt as error:
+                    interrupted = error
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            while not self._loop_finished.is_set():
+                try:
+                    self._loop_finished.wait()
+                except KeyboardInterrupt as error:
+                    interrupted = error
+            with self._lock:
+                self._loop = None
+                self._thread = None
+                self._stopping = False
+                stopped.set()
         if interrupted is not None:
-            raise interrupted
+            raise interrupted from cleanup_error
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 class SandboxLogs(Iterator[LogEvent]):
@@ -513,18 +516,12 @@ class Sandbox:
 
     def terminate(self) -> None:
         """Release remote compute and local connections; safe to repeat."""
-        try:
-            self._runner.run(self._sandbox.terminate())
-        finally:
-            self._runner.stop()
+        self._runner.stop(self._sandbox.terminate)
 
     def close(self) -> None:
         """Release local connections and the loop, without terminating compute."""
         if self._runner.started:
-            try:
-                self._runner.run(self._sandbox.close())
-            finally:
-                self._runner.stop()
+            self._runner.stop(self._sandbox.close)
 
     def _abort_entry(self, original: BaseException, completed: bool) -> None:
         async def release() -> None:
@@ -538,10 +535,7 @@ class Sandbox:
                     )
 
         try:
-            try:
-                self._runner.run(release(), cleanup=True)
-            finally:
-                self._runner.stop()
+            self._runner.stop(release)
         except BaseException as error:
             if error is not original:
                 raise original from error
@@ -573,11 +567,10 @@ class Sandbox:
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
         try:
-            self._runner.run(self._sandbox.__aexit__(exc_type, exc, traceback))
+            self._runner.stop(
+                lambda: self._sandbox.__aexit__(exc_type, exc, traceback)
+            )
             return False
         finally:
-            try:
-                self._runner.stop()
-            finally:
-                with self._context_lock:
-                    self._entered = False
+            with self._context_lock:
+                self._entered = False
