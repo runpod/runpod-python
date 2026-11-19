@@ -15,6 +15,8 @@ from .routes import Route, api_base_url
 async def _without_disconnect_replay(request, handler):
     try:
         return await handler(request)
+    except aiohttp.ClientConnectorError:
+        raise
     except (aiohttp.ClientOSError, aiohttp.ServerDisconnectedError) as exc:
         raise aiohttp.ClientConnectionError(str(exc)) from exc
 

@@ -7,7 +7,12 @@ from typing import Any, Dict, Optional
 
 from runpod.api.http import HTTPClient
 from runpod.api.routes import Route, endpoint_base_url
-from runpod.endpoint.helpers import FINAL_STATES, is_completed, raise_for_job_state
+from runpod.endpoint.helpers import (
+    FINAL_STATES,
+    is_completed,
+    raise_for_job_state,
+    raise_for_redirect,
+)
 from runpod.http_client import ClientSession
 
 
@@ -51,6 +56,7 @@ class Job:
         async with client.stream(
             route, headers=self.headers, timeout=self.session.timeout
         ) as response:
+            raise_for_redirect(response.status)
             job_state = await response.json()
 
         if is_completed(job_state["status"]):
@@ -132,6 +138,7 @@ class Job:
         async with client.stream(
             route, headers=self.headers, timeout=self.session.timeout
         ) as resp:
+            raise_for_redirect(resp.status)
             return await resp.json()
 
 
@@ -187,6 +194,7 @@ class Endpoint:
             json={"input": endpoint_input},
             timeout=self.session.timeout,
         ) as resp:
+            raise_for_redirect(resp.status)
             json_resp = await resp.json()
 
         # Create job with endpoint's headers
@@ -207,6 +215,7 @@ class Endpoint:
             headers=self.headers,
             timeout=self.session.timeout,
         ) as resp:
+            raise_for_redirect(resp.status)
             return await resp.json()
 
     async def purge_queue(self) -> dict:
@@ -222,4 +231,5 @@ class Endpoint:
             headers=self.headers,
             timeout=self.session.timeout,
         ) as resp:
+            raise_for_redirect(resp.status)
             return await resp.json()

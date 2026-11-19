@@ -16,6 +16,7 @@ from runpod.endpoint.helpers import (
     UNAUTHORIZED_MSG,
     is_completed,
     raise_for_job_state,
+    raise_for_redirect,
 )
 
 
@@ -90,6 +91,7 @@ class RunPodClient:
         with client.stream(
             Route(method, endpoint), headers=self.headers, json=data, timeout=timeout
         ) as response:
+            raise_for_redirect(response.status_code)
             if response.status_code == 401:
                 raise RuntimeError(UNAUTHORIZED_MSG)
 
