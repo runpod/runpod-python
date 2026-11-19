@@ -9,7 +9,7 @@ from runpod.apps.spec import ResourceKind, ResourceSpec
 
 @pytest.mark.parametrize("kind", list(ResourceKind))
 @pytest.mark.parametrize("cpu", ["cpu5c-2-4", "cpu5g-2-8", ["cpu5c-2-4", "cpu5g-2-8"]])
-@pytest.mark.parametrize("datacenter", ["US-CA-2", ["US-CA-2", "EU-CZ-1"], "XX-TEST-1"])
+@pytest.mark.parametrize("datacenter", ["US-CA-2", ["US-CA-2", "EU-CZ-1"]])
 def test_cpu5_rejects_pins_without_a_supported_datacenter(kind, cpu, datacenter):
     with pytest.raises(InvalidResourceError, match="resource 'worker'.*cpu5.*EU-RO-1"):
         ResourceSpec(kind=kind, name="worker", cpu=cpu, datacenter=datacenter)
@@ -27,6 +27,24 @@ def test_cpu5_accepts_unpinned_or_schedulable_configuration(kind, datacenter):
     assert spec.to_manifest()["instanceIds"] == ["cpu5c-2-4"]
     if datacenter:
         assert "EU-RO-1" in spec.datacenter
+
+
+@pytest.mark.parametrize("kind", list(ResourceKind))
+@pytest.mark.parametrize("cpu", ["cpu5c-2-4", "cpu5g-2-8", ["cpu5c-2-4", "cpu5g-2-8"]])
+@pytest.mark.parametrize(
+    "datacenter,locations",
+    [
+        ("XX-TEST-1", "XX-TEST-1"),
+        (" US-TX-3 ", "US-TX-3"),
+        (["US-CA-2", "US-TX-3"], "US-CA-2,US-TX-3"),
+        (["US-TX-3", "EU-CZ-1"], "US-TX-3,EU-CZ-1"),
+    ],
+)
+def test_cpu5_passes_unlisted_datacenter_pins_to_manifest(
+    kind, cpu, datacenter, locations
+):
+    spec = ResourceSpec(kind=kind, name="worker", cpu=cpu, datacenter=datacenter)
+    assert spec.to_manifest()["locations"] == locations
 
 
 @pytest.mark.parametrize("kind", list(ResourceKind))

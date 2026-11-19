@@ -138,11 +138,6 @@ class TestEndpointInput:
     def test_unlisted_datacenter_reaches_locations(self, hardware):
         app = App("dc-app")
 
-        if hardware.get("cpu") == "cpu5c-2-4":
-            with pytest.raises(InvalidResourceError, match="cpu5.*EU-RO-1.*XX-TEST-1"):
-                app.queue(name="q", datacenter="XX-TEST-1", **hardware)(lambda: None)
-            return
-
         @app.queue(name="q", datacenter="XX-TEST-1", **hardware)
         def q():
             pass

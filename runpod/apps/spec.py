@@ -243,6 +243,7 @@ class ResourceSpec:
             self.cpu
             and all(instance.startswith("cpu5") for instance in self.cpu)
             and self.datacenter
+            and all(DataCenter.is_known(dc) for dc in self.datacenter)
             and not any(dc in CPU5_DATACENTERS for dc in self.datacenter)
         ):
             supported = ", ".join(dc.value for dc in CPU5_DATACENTERS)
