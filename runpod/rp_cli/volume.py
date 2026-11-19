@@ -6,6 +6,8 @@ from pathlib import Path
 import click
 
 from runpod.api.rest import run_rest_request
+from runpod.api.ctl_commands import _path_segment
+from runpod.error import QueryError
 from runpod.rp_cli import compute, console as ui
 from runpod.rp_cli.api import api_errors, list_all
 from runpod.rp_cli.output import (
@@ -35,8 +37,8 @@ global_option = click.option(
     "--global",
     "kind",
     flag_value="global",
-    default="network",
-    help="Manage global volumes, which mount in any data center.",
+    default=None,
+    help="Select global volumes only. On create, choose global storage.",
 )
 
 
@@ -49,17 +51,33 @@ def _label(record):
     )
 
 
-def _choices(kind):
+def _list_volumes(kind=None):
     return [
-        (row["id"], _label(row))
-        for row in list_all(f"/v2/{kind}-volumes", f"{kind}Volumes")
+        {**row, "kind": volume_kind}
+        for volume_kind in ([kind] if kind else ["network", "global"])
+        for row in list_all(f"/v2/{volume_kind}-volumes", f"{volume_kind}Volumes")
     ]
 
 
+def _choices(kind=None):
+    return [(row["id"], f"{row['kind']}  {_label(row)}") for row in _list_volumes(kind)]
+
+
 def _complete_ids(ctx, param, incomplete):
-    return completer(lambda: _choices(ctx.params.get("kind", "network")))(
-        ctx, param, incomplete
-    )
+    kind = "network" if ctx.command.name == "expand" else ctx.params.get("kind")
+    return completer(lambda: _choices(kind))(ctx, param, incomplete)
+
+
+def _get_volume(volume_id, kind=None):
+    path_id = _path_segment(volume_id)
+    if kind:
+        return kind, run_rest_request("GET", f"/v2/{kind}-volumes/{path_id}")
+    try:
+        return "network", run_rest_request("GET", f"/v2/network-volumes/{path_id}")
+    except QueryError as exc:
+        if exc.status_code != 404:
+            raise
+    return "global", run_rest_request("GET", f"/v2/global-volumes/{path_id}")
 
 
 def _show(record, kind, as_json, action=None):
@@ -112,7 +130,10 @@ def _growth(volume_id, size, expand=False):
             f"'{size}' is not a size. use N for a total or +N to add N GB",
             param_hint="--size",
         )
-    current = run_rest_request("GET", f"/v2/network-volumes/{volume_id}")["size"]
+    kind, record = _get_volume(volume_id)
+    if kind == "global":
+        raise click.UsageError("global volumes have no size to change")
+    current = record["size"]
     target = current + int(text) if text.startswith("+") else int(text)
     if target < current or (expand and target == current):
         raise click.UsageError(
@@ -144,19 +165,24 @@ def volume():
 @global_option
 @json_option
 def volume_list(kind, as_json):
-    """List volumes with their size, data center, and type."""
+    """List network and global volumes together with their type."""
     with api_errors():
-        rows = list_all(f"/v2/{kind}-volumes", f"{kind}Volumes")
+        rows = _list_volumes(kind)
     if as_json:
         print_json(rows)
         return
-    fields = NETWORK_FIELDS
-    if kind == "global":
-        fields = GLOBAL_FIELDS[:2] + [("created", lambda row: row["createdAt"][:10])]
+    fields = [
+        ("id", lambda row: row["id"]),
+        ("name", lambda row: row["name"]),
+        ("type", lambda row: row["kind"]),
+        ("size", lambda row: f"{row['size']} GB" if "size" in row else None),
+        ("data center", lambda row: row.get("dataCenter")),
+        ("tier", lambda row: (row.get("type") or "").lower()),
+    ]
     print_table(
         rows,
         [(label.upper(), value) for label, value in fields],
-        f"no {kind} volumes. create one with rp volume create",
+        "no volumes. create one with rp volume create",
     )
 
 
@@ -168,8 +194,8 @@ def volume_get(volume_id, kind, as_json):
     """Show one volume (pick one when VOLUME_ID is omitted)."""
     with api_errors():
         if volume_id is None:
-            volume_id = pick(f"{kind} volume", _choices(kind), "pass VOLUME_ID")
-        record = run_rest_request("GET", f"/v2/{kind}-volumes/{volume_id}")
+            volume_id = pick("volume", _choices(kind), "pass VOLUME_ID")
+        kind, record = _get_volume(volume_id, kind)
     _show(record, kind, as_json)
 
 
@@ -207,6 +233,7 @@ def volume_create(name, size, regions, data_center, volume_type, kind, as_json):
       rp volume create --name scratch --size 50 --data-center EU-RO-1
       rp volume create --name shared --global
     """
+    kind = kind or "network"
     body = {"name": name}
     with api_errors():
         if kind == "global":
@@ -264,7 +291,12 @@ def volume_update(volume_id, name, size, kind, as_json):
     with api_errors():
         if size is not None:
             _growth(volume_id, size)
-        record = run_rest_request("PATCH", f"/v2/{kind}-volumes/{volume_id}", json=body)
+            kind = "network"
+        elif kind is None:
+            kind, _ = _get_volume(volume_id)
+        record = run_rest_request(
+            "PATCH", f"/v2/{kind}-volumes/{_path_segment(volume_id)}", json=body
+        )
     _show(record, kind, as_json, "updated")
 
 
@@ -282,7 +314,9 @@ def volume_expand(volume_id, size, as_json):
     with api_errors():
         current, target = _growth(volume_id, size, expand=True)
         record = run_rest_request(
-            "PATCH", f"/v2/network-volumes/{volume_id}", json={"size": target}
+            "PATCH",
+            f"/v2/network-volumes/{_path_segment(volume_id)}",
+            json={"size": target},
         )
     if as_json:
         print_json(record)
@@ -298,10 +332,11 @@ def volume_expand(volume_id, size, as_json):
 @global_option
 def volume_delete(volume_id, yes, kind):
     """Delete a volume and everything stored on it."""
-    path = f"/v2/{kind}-volumes/{volume_id}"
     with api_errors():
+        if kind is None or not yes:
+            kind, record = _get_volume(volume_id, kind)
+        path = f"/v2/{kind}-volumes/{_path_segment(volume_id)}"
         if not yes:
-            record = run_rest_request("GET", path)
             confirm(
                 f"delete {kind} volume {volume_id} ({_label(record)}) and all its data?",
                 yes,

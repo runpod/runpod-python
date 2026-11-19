@@ -46,7 +46,12 @@ def rest():
 
 @pytest.fixture
 def listing():
-    with patch("runpod.rp_cli.volume.list_all", return_value=[VOLUME]) as mock:
+    with patch(
+        "runpod.rp_cli.volume.list_all",
+        side_effect=lambda path, collection: (
+            [GLOBAL_VOLUME] if collection == "globalVolumes" else [VOLUME]
+        ),
+    ) as mock:
         yield mock
 
 
@@ -68,24 +73,42 @@ def resource(request, rest):
 
 def test_list_table_and_json(resource, listing):
     kind, record, flag = resource
-    listing.return_value = [record]
     result = invoke(f"list {flag}")
     assert result.exit_code == 0, result.output
     assert record["id"] in result.output
     if kind == "global":
-        assert "2026-09-24" in result.output
+        assert "global" in result.output
+        assert VOLUME["id"] not in result.output
         assert record["createdByUserId"] not in result.output
     else:
-        for text in ("ID", "DATA CENTER", "TYPE", "100 GB", "EU-RO-1", "standard"):
+        for text in (
+            "ID",
+            "DATA CENTER",
+            "TYPE",
+            "TIER",
+            "100 GB",
+            "EU-RO-1",
+            "standard",
+            "network",
+            "global",
+            GLOBAL_VOLUME["id"],
+        ):
             assert text in result.output
     result = invoke(f"list {flag} --json")
-    assert json.loads(result.output) == [record]
-    listing.assert_called_with(f"/v2/{kind}-volumes", f"{kind}Volumes")
+    expected = [{**GLOBAL_VOLUME, "kind": "global"}]
+    if kind == "network":
+        expected.insert(0, {**VOLUME, "kind": "network"})
+    assert json.loads(result.output) == expected
+    calls = [call("/v2/global-volumes", "globalVolumes")]
+    if kind == "network":
+        calls.insert(0, call("/v2/network-volumes", "networkVolumes"))
+    assert listing.call_args_list == calls * 2
 
 
 def test_list_empty(listing):
+    listing.side_effect = None
     listing.return_value = []
-    assert "no network volumes" in invoke("list").output
+    assert "no volumes" in invoke("list").output
 
 
 def test_get_fields_and_json(resource, rest):
@@ -103,7 +126,10 @@ def test_get_picker(rest, listing):
     with patch("runpod.rp_cli.volume.pick", return_value="vol1") as pick:
         result = invoke("get")
     assert result.exit_code == 0, result.output
-    assert pick.call_args.args[1] == [("vol1", "models  100 GB  EU-RO-1  standard")]
+    assert pick.call_args.args[1] == [
+        ("vol1", "network  models  100 GB  EU-RO-1  standard"),
+        (GLOBAL_VOLUME["id"], f"global  {GLOBAL_VOLUME['name']}"),
+    ]
     rest.assert_called_once_with("GET", "/v2/network-volumes/vol1")
 
 
@@ -234,9 +260,11 @@ def test_rename_without_fetching(resource, rest):
     kind, record, flag = resource
     result = invoke(f"update {record['id']} {flag} --name renamed")
     assert result.exit_code == 0, result.output
-    rest.assert_called_once_with(
-        "PATCH", f"/v2/{kind}-volumes/{record['id']}", json={"name": "renamed"}
+    expected = [] if flag else [call("GET", f"/v2/network-volumes/{record['id']}")]
+    expected.append(
+        call("PATCH", f"/v2/{kind}-volumes/{record['id']}", json={"name": "renamed"})
     )
+    assert rest.call_args_list == expected
 
 
 @pytest.mark.parametrize(
@@ -298,7 +326,9 @@ def test_delete_yes(resource, rest):
     kind, record, flag = resource
     result = invoke(f"delete {record['id']} {flag} --yes")
     assert result.exit_code == 0, result.output
-    rest.assert_called_once_with("DELETE", f"/v2/{kind}-volumes/{record['id']}")
+    expected = [] if flag else [call("GET", f"/v2/network-volumes/{record['id']}")]
+    expected.append(call("DELETE", f"/v2/{kind}-volumes/{record['id']}"))
+    assert rest.call_args_list == expected
 
 
 @pytest.mark.parametrize("answer,code", [("y", 0), ("n", 1)])
@@ -322,13 +352,16 @@ def test_delete_requires_yes_without_terminal(rest):
 
 def test_completion_by_kind(resource, listing):
     kind, record, flag = resource
-    listing.return_value = [record, dict(record, id="other")]
     args = ["volume", "get"] + ([flag] if flag else [])
     items = ShellComplete(cli, {}, "rp", "_RP_COMPLETE").get_completions(
         args, record["id"][:1]
     )
     assert [item.value for item in items] == [record["id"]]
-    listing.assert_called_once_with(f"/v2/{kind}-volumes", f"{kind}Volumes")
+    assert kind in items[0].help
+    expected = [call("/v2/global-volumes", "globalVolumes")]
+    if not flag:
+        expected.insert(0, call("/v2/network-volumes", "networkVolumes"))
+    assert listing.call_args_list == expected
 
 
 def test_completion_suppresses_errors(listing):

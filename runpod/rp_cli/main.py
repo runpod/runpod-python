@@ -845,9 +845,8 @@ def app_delete(app_name, yes):
 
     ui.warn(
         "app deletion retains network and global volumes, which continue billing. "
-        "Review them with `rp volume list` and `rp volume list --global`. "
-        "Delete unneeded volumes and their data with `rp volume delete VOLUME_ID` "
-        "(add --global for global volumes)."
+        "Review them with `rp volume list`. "
+        "Delete unneeded volumes and their data with `rp volume delete VOLUME_ID`."
     )
     if not yes:
         click.confirm(f"delete app '{app_name}' and all its environments?", abort=True)

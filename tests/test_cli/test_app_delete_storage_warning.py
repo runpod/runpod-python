@@ -24,9 +24,8 @@ def test_app_delete_warns_before_confirmation(args, answer, deleted):
     assert "retains network and global volumes" in output
     assert "continue billing" in output
     assert "rp volume list" in output
-    assert "rp volume list --global" in output
     assert "rp volume delete VOLUME_ID" in output
-    assert "add --global for global volumes" in output
+    assert "--global" not in output
     if args:
         assert "and all its environments?" not in output
     else:
