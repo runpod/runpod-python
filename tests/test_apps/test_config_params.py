@@ -227,13 +227,13 @@ class TestManifestSerialization:
     def test_defaults_omitted(self):
         spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q")
         data = spec.to_manifest()
+        assert data["minCudaVersion"] == "12.8"
         for key in (
             "maxConcurrency",
             "executionTimeoutMs",
             "flashboot",
             "scalerType",
             "scalerValue",
-            "minCudaVersion",
             "accelerateDownloads",
             "containerDiskGb",
         ):

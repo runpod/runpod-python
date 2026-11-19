@@ -189,8 +189,7 @@ def _endpoint_input(
 
         payload["gpuIds"] = gpu_ids_value(spec.gpu, pool_members=pool_members)
         payload["gpuCount"] = spec.gpu_count
-        if spec.min_cuda_version:
-            payload["minCudaVersion"] = spec.min_cuda_version
+        payload["minCudaVersion"] = spec.effective_min_cuda_version
     return payload
 
 

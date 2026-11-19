@@ -190,10 +190,10 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     else:
         pod["gpuTypeIdList"] = _device_names(spec.gpu)
         pod["gpuCount"] = spec.gpu_count
-        if spec.min_cuda_version:
+        if min_cuda_version := spec.effective_min_cuda_version:
             # pods have no min-version filter; allow every version at
             # or above the requested floor
-            pod["allowedCudaVersions"] = cuda_versions_at_least(spec.min_cuda_version)
+            pod["allowedCudaVersions"] = cuda_versions_at_least(min_cuda_version)
     return pod
 
 
