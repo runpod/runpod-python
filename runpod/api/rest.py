@@ -42,6 +42,8 @@ def _raise_for_error(
     text: str = "",
     retry_after: Optional[float] = None,
 ) -> None:
+    if 300 <= status_code < 400:
+        raise error.QueryError("unexpected redirect", status_code=status_code)
     if status_code == HTTP_STATUS_UNAUTHORIZED:
         raise error.AuthenticationError(
             "Unauthorized request, please check your API key."
@@ -134,7 +136,7 @@ class RESTClient(SyncHTTPClient):
                         )
                         if budget.can_retry(attempt, retry_after):
                             continue
-                        if response.status_code >= HTTP_STATUS_BAD_REQUEST:
+                        if response.status_code >= 300:
                             _raise_for_error(
                                 response.status_code,
                                 method,
@@ -210,7 +212,7 @@ class AsyncRESTClient(HTTPClient):
                         )
                         if budget.can_retry(attempt, retry_after):
                             continue
-                        if response.status >= HTTP_STATUS_BAD_REQUEST:
+                        if response.status >= 300:
                             text = (
                                 ""
                                 if response.status == HTTP_STATUS_UNAUTHORIZED

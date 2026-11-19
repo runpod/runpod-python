@@ -26,5 +26,5 @@ def list_all(path: str, collection: str, params: dict | None = None) -> list[dic
 def api_errors():
     try:
         yield
-    except (error.RunPodError, ResolutionError, RequestException) as exc:
+    except (error.RunPodError, ResolutionError, RequestException, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc

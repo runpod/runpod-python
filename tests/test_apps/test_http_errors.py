@@ -75,9 +75,13 @@ async def error_server(monkeypatch):
         ("json", "GET", "/data", 1),
     ],
 )
+@pytest.mark.parametrize("status", [302, 307, 308, 500])
 async def test_transports_report_body_without_credentials(
-    error_server, monkeypatch, tmp_path, operation, method, path, attempts
+    error_server, monkeypatch, tmp_path, operation, method, path, attempts, status
 ):
+    error_server["status"] = status
+    if operation == "queue_status" and status < 400:
+        attempts = 1
     monkeypatch.setattr("runpod.endpoint_url_base", "https://api.runpod.ai/v2")
     monkeypatch.setenv("RUNPOD_HAPI_URL", "https://logs.example")
     client = QueueClient(
@@ -117,7 +121,7 @@ async def test_transports_report_body_without_credentials(
 
     error = raised.value
     assert isinstance(error, AppError)
-    assert error.status == 500
+    assert error.status == status
     assert error.method == method
     assert error.url.endswith(path)
     assert "GPU capacity exhausted." in error.body_excerpt
@@ -183,8 +187,14 @@ async def test_body_excerpt_is_bounded_and_tolerates_non_json(body, excerpt):
 @pytest.mark.parametrize("status", [200, 204, 302])
 async def test_success_does_not_consume_body(status):
     response = response_for(b"success", status=status)
-    await raise_for_status(response)
-    response.content.readexactly.assert_not_awaited()
+    if status < 300:
+        await raise_for_status(response)
+        response.content.readexactly.assert_not_awaited()
+    else:
+        with pytest.raises(AppHTTPError) as raised:
+            await raise_for_status(response)
+        assert raised.value.status == status
+        response.content.readexactly.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

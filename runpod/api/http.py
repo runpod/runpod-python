@@ -12,6 +12,13 @@ from runpod.user_agent import USER_AGENT
 from .routes import Route, api_base_url
 
 
+async def _without_disconnect_replay(request, handler):
+    try:
+        return await handler(request)
+    except (aiohttp.ClientOSError, aiohttp.ServerDisconnectedError) as exc:
+        raise aiohttp.ClientConnectionError(str(exc)) from exc
+
+
 class HTTPClient:
     """an async transport with an explicitly scoped connection pool."""
 
@@ -33,7 +40,6 @@ class HTTPClient:
             self.session = aiohttp.ClientSession(cookie_jar=aiohttp.DummyCookieJar())
         elif self.session.closed:
             raise RuntimeError("the supplied HTTP session is closed")
-        self.session._retry_connection = False
         return self
 
     async def __aexit__(self, *args):
@@ -53,7 +59,11 @@ class HTTPClient:
                 ) as response:
                     yield response
             return
-        self.session._retry_connection = False
+        if route.method in {"PUT", "DELETE"}:
+            middlewares = kwargs.get("middlewares")
+            if middlewares is None:
+                middlewares = self.session._middlewares
+            kwargs["middlewares"] = (*middlewares, _without_disconnect_replay)
         if not isinstance(timeout, aiohttp.ClientTimeout):
             timeout = aiohttp.ClientTimeout(total=timeout)
         kwargs.setdefault("allow_redirects", False)

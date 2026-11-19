@@ -10,9 +10,9 @@ blank values fall back to the public Runpod hosts.
     RUNPOD_API_BASE_URL       control-plane base URL (default https://api.runpod.io)
     RUNPOD_HAPI_URL           host API base URL (default https://hapi.runpod.net)
 
-The endpoint domain is the host of ``RUNPOD_ENDPOINT_BASE_URL``. When that is
-unset or blank, a non-blank ``runpod.endpoint_url_base`` set programmatically
-is used instead.
+The endpoint domain is the host of the serverless base URL. A non-blank
+``runpod.endpoint_url_base`` assigned a value different from its import-time
+value takes precedence over ``RUNPOD_ENDPOINT_BASE_URL``.
 
 Example:
     >>> proxy_url("abc123", 8080)
@@ -54,6 +54,8 @@ def endpoint_base_url() -> str:
     import runpod
 
     module_base = (runpod.endpoint_url_base or "").strip()
+    if module_base and runpod.endpoint_url_base != runpod._initial_endpoint_url_base:
+        return module_base.rstrip("/")
     return _env(
         "RUNPOD_ENDPOINT_BASE_URL", module_base or DEFAULT_ENDPOINT_BASE_URL
     ).rstrip("/")

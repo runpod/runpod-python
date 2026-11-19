@@ -17,7 +17,7 @@ BODY_EXCERPT_LIMIT = 1024
 async def raise_for_status(
     response: aiohttp.ClientResponse, *, job_id: str | None = None
 ) -> None:
-    if response.status < 400:
+    if response.status < 300:
         return
 
     secrets = set()

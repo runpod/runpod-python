@@ -7,6 +7,10 @@ This file contains the error classes for the runpod package.
 from typing import Optional
 
 
+class AppError(Exception):
+    """base error for the apps sdk."""
+
+
 class RunPodError(Exception):
     """
     Base class for all runpod errors

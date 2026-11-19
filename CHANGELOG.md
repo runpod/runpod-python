@@ -16,6 +16,9 @@
 
 ### Bug Fixes
 
+* SDK and CLI requests reject unfollowed redirects. Apps errors sanitize credentials in redirect diagnostics, including artifact upload failures.
+* Account login is available through `runpod.auth.login` and `runpod.apps.auth`. `LoginError` is catchable as either `AuthenticationError` or `AppError`. CLI helpers are available under both `runpod.cli` and `runpod.rp_cli`.
+* Assigning a custom `runpod.endpoint_url_base` takes precedence over the endpoint environment variable.
 * [BREAKING] `rp login` asks you to paste the API key shown in the console after approval. It no longer collects the key by polling the auth request, and it fails fast without an interactive terminal.
 * Task calls support indefinite execution with bounded interruption cleanup. Failed deletion retains the pod ID for recovery.
 * Network volume creation intersects catalog storage support with every sharing resource's hardware stock and datacenter constraints. Unsupported explicit pins fail before creation; existing volumes retain their authoritative IDs and datacenters.

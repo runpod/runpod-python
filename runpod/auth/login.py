@@ -19,7 +19,7 @@ from runpod.api.http import HTTPClient
 from runpod.api.routes import Route
 from runpod.user_agent import APPS_USER_AGENT
 
-from ..error import AuthenticationError, QueryError
+from ..error import AppError, AuthenticationError, QueryError
 from .api import AuthApiClient
 
 MAX_KEY_ATTEMPTS = 3
@@ -30,7 +30,7 @@ _CLOSED_REASONS = {
 }
 
 
-class LoginError(AuthenticationError):
+class LoginError(AuthenticationError, AppError):
     pass
 
 

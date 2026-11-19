@@ -126,6 +126,7 @@ api_key = _load_api_key()  # pylint: disable=invalid-name
 endpoint_url_base = os.environ.get(
     "RUNPOD_ENDPOINT_BASE_URL", "https://api.runpod.ai/v2"
 )  # pylint: disable=invalid-name
+_initial_endpoint_url_base = endpoint_url_base
 
 
 # --------------------------- Force Logging Levels --------------------------- #

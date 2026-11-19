@@ -49,6 +49,8 @@ class Route:
 
     @property
     def resolved_path(self) -> str:
+        if not self.parameters:
+            return self.path
         parameters = {}
         for name, value in self.parameters.items():
             encoded = quote(str(value), safe="")

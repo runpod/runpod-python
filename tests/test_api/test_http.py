@@ -99,6 +99,8 @@ def test_route_encodes_literal_spaces_without_requoting_parameters():
 
 
 def test_service_bases_respect_configuration(monkeypatch):
+    monkeypatch.delenv("RUNPOD_ENDPOINT_BASE_URL", raising=False)
+    monkeypatch.delenv("RUNPOD_PROXY_DOMAIN", raising=False)
     monkeypatch.setenv("RUNPOD_API_BASE_URL", "http://control.example/prefix/")
     monkeypatch.setenv("RUNPOD_HAPI_URL", "http://logs.example/prefix/")
     monkeypatch.setattr(runpod, "endpoint_url_base", "http://worker.example:8080/v2/")
@@ -240,3 +242,54 @@ def test_sync_rest_client_reuses_pool_and_closes_responses(http_server):
         assert client.session is session
     assert client.session is None
     assert state["requests"][0][4] == state["requests"][1][4]
+
+
+async def test_mutation_preserves_borrowed_session_middleware(http_server):
+    base, state = http_server
+    calls = []
+
+    async def middleware(request, handler):
+        calls.append(request.method)
+        request.headers["X-Caller"] = "preserved"
+        return await handler(request)
+
+    async with aiohttp.ClientSession(middlewares=(middleware,)) as session:
+        async with HTTPClient(base, session=session) as client:
+            await client.request(Route("PUT", "/first"))
+        async with session.get(f"{base}second") as response:
+            await response.read()
+        assert session._retry_connection is True
+    assert calls == ["PUT", "GET"]
+    assert all(request[2]["X-Caller"] == "preserved" for request in state["requests"])
+
+
+@pytest.mark.parametrize("status", [302, 307, 308])
+def test_graphql_rejects_redirect_before_decoding(http_server, monkeypatch, status):
+    from runpod.api.graphql import run_graphql_query
+    from runpod.error import QueryError
+
+    base, state = http_server
+    state.update(status=status, body=b"")
+    monkeypatch.setenv("RUNPOD_API_BASE_URL", base)
+    with pytest.raises(QueryError, match="unexpected redirect") as caught:
+        run_graphql_query("query { myself { id } }", api_key="synthetic-key")
+    assert caught.value.status_code == status
+    assert len(state["requests"]) == 1
+
+
+@pytest.mark.parametrize("status", [302, 307, 308])
+async def test_async_graphql_rejects_redirect_before_decoding(
+    http_server, monkeypatch, status
+):
+    from runpod.api.graphql import run_graphql_query_async
+    from runpod.error import QueryError
+
+    base, state = http_server
+    state.update(status=status, body=b"")
+    monkeypatch.setenv("RUNPOD_API_BASE_URL", base)
+    with pytest.raises(QueryError, match="unexpected redirect") as caught:
+        await run_graphql_query_async(
+            "query { myself { id } }", api_key="synthetic-key"
+        )
+    assert caught.value.status_code == status
+    assert len(state["requests"]) == 1

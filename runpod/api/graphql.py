@@ -59,6 +59,10 @@ def run_graphql_query(
         data=json.dumps(_build_payload(query, variables)),
         timeout=30,
     ) as response:
+        if 300 <= response.status_code < 400:
+            raise error.QueryError(
+                "unexpected redirect", status_code=response.status_code
+            )
         if response.status_code == HTTP_STATUS_UNAUTHORIZED:
             raise error.AuthenticationError(
                 "Unauthorized request, please check your API key."
@@ -95,6 +99,8 @@ async def run_graphql_query_async(
         json=_build_payload(query, variables),
         timeout=timeout,
     ) as response:
+        if 300 <= response.status < 400:
+            raise error.QueryError("unexpected redirect", status_code=response.status)
         if response.status == HTTP_STATUS_UNAUTHORIZED:
             raise error.AuthenticationError(
                 "Unauthorized request, please check your API key."
