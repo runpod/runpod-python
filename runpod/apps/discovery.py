@@ -82,8 +82,17 @@ def _project_modules(root: Path) -> Dict[str, ModuleType]:
         paths = [source] if source else getattr(module, "__path__", ())
         for path in paths:
             resolved = Path(path).resolve()
-            if resolved.is_relative_to(root) and not any(
-                part in DISCOVERY_SKIP_DIRS for part in resolved.relative_to(root).parts
+            if (
+                resolved.is_relative_to(root)
+                and not any(
+                    part in DISCOVERY_SKIP_DIRS
+                    for part in resolved.relative_to(root).parts
+                )
+                and not any(
+                    (parent / "pyvenv.cfg").is_file()
+                    for parent in (resolved, *resolved.parents)
+                    if parent.is_relative_to(root)
+                )
             ):
                 modules[name] = module
                 break
