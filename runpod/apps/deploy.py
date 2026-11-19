@@ -491,104 +491,136 @@ async def reconcile_endpoints(
             creating = False
             log.info("saved endpoint %s (%s)", name, result["id"])
 
-    except Exception as exc:
+    except (Exception, asyncio.CancelledError, KeyboardInterrupt) as exc:
         lines = [f"Couldn't {action}: {str(exc) or type(exc).__name__}"]
-        rollback_errors = []
-        rollback_allowed = True
-        if activation_attempted:
-            try:
-                current = await client.get_environment_by_name(
-                    app.name, environment["name"]
-                )
-                if not isinstance(current, dict) or "activeBuildId" not in current:
-                    raise RuntimeError("activation status unknown")
-                if current["activeBuildId"] != build_id and (
-                    undo or current["activeBuildId"] != environment.get("activeBuildId")
-                ):
-                    raise RuntimeError("environment changed during deployment")
-            except Exception as ownership_exc:
-                rollback_errors.append(
-                    f"build: {str(ownership_exc) or type(ownership_exc).__name__}"
-                )
-                rollback_allowed = False
-        if rollback_allowed and activation_attempted and not environment_created:
-            try:
-                previous_build = environment.get("activeBuildId")
-                if previous_build:
-                    await client.deploy_build(environment["id"], previous_build)
-                else:
+
+        async def rollback():
+            rollback_errors = []
+            rollback_allowed = True
+            if activation_attempted:
+                try:
                     current = await client.get_environment_by_name(
                         app.name, environment["name"]
                     )
                     if not isinstance(current, dict) or "activeBuildId" not in current:
                         raise RuntimeError("activation status unknown")
-                    if current["activeBuildId"]:
-                        raise RuntimeError("no previous build to restore")
-            except Exception as restore_exc:
-                rollback_errors.append(
-                    f"build: {str(restore_exc) or type(restore_exc).__name__}"
+                    if current["activeBuildId"] != build_id and (
+                        undo
+                        or current["activeBuildId"] != environment.get("activeBuildId")
+                    ):
+                        raise RuntimeError("environment changed during deployment")
+                except Exception as ownership_exc:
+                    rollback_errors.append(
+                        f"build: {str(ownership_exc) or type(ownership_exc).__name__}"
+                    )
+                    rollback_allowed = False
+            if rollback_allowed and activation_attempted and not environment_created:
+                try:
+                    previous_build = environment.get("activeBuildId")
+                    if previous_build:
+                        await client.deploy_build(environment["id"], previous_build)
+                    else:
+                        current = await client.get_environment_by_name(
+                            app.name, environment["name"]
+                        )
+                        if (
+                            not isinstance(current, dict)
+                            or "activeBuildId" not in current
+                        ):
+                            raise RuntimeError("activation status unknown")
+                        if current["activeBuildId"]:
+                            raise RuntimeError("no previous build to restore")
+                except Exception as restore_exc:
+                    rollback_errors.append(
+                        f"build: {str(restore_exc) or type(restore_exc).__name__}"
+                    )
+            if (
+                rollback_allowed
+                and creating
+                and isinstance(
+                    exc,
+                    (
+                        aiohttp.ClientError,
+                        OSError,
+                        asyncio.TimeoutError,
+                        asyncio.CancelledError,
+                        KeyboardInterrupt,
+                    ),
                 )
-        if (
-            rollback_allowed
-            and creating
-            and isinstance(exc, (aiohttp.ClientError, OSError, asyncio.TimeoutError))
-        ):
+            ):
+                try:
+                    current = await client.get_environment_by_name(
+                        app.name, environment["name"]
+                    )
+                    matches = [
+                        endpoint
+                        for endpoint in (current or {}).get("endpoints", [])
+                        if (endpoint.get("template") or {}).get("name") == template_name
+                        and endpoint["id"] not in existing.values()
+                    ]
+                    if len(matches) != 1:
+                        raise RuntimeError("creation status unknown")
+                    undo.append((name, matches[0]["id"], None))
+                except Exception:
+                    rollback_errors.append(f"{name}: creation status unknown")
+            for resource, endpoint_id, snapshot in (
+                reversed(undo) if rollback_allowed else []
+            ):
+                try:
+                    if snapshot is not None:
+                        await client.save_endpoint(snapshot)
+                    elif not await client.delete_endpoint(endpoint_id):
+                        raise RuntimeError("endpoint deletion was not confirmed")
+                except Exception as cleanup_exc:
+                    rollback_errors.append(
+                        f"{resource} ({endpoint_id}): {str(cleanup_exc) or type(cleanup_exc).__name__}"
+                    )
+            if environment_created and not rollback_errors:
+                try:
+                    current = await client.get_environment_by_name(
+                        app.name, environment["name"]
+                    )
+                    if (
+                        not isinstance(current, dict)
+                        or "endpoints" not in current
+                        or current["endpoints"]
+                    ):
+                        raise RuntimeError("couldn't confirm the environment is empty")
+                    if current.get("activeBuildId") not in (None, build_id):
+                        raise RuntimeError("environment changed during deployment")
+                    if not await client.delete_environment(environment["id"]):
+                        raise RuntimeError("environment deletion was not confirmed")
+                except Exception as cleanup_exc:
+                    rollback_errors.append(
+                        f"environment {environment['id']}: {str(cleanup_exc) or type(cleanup_exc).__name__}"
+                    )
+            if rollback_errors:
+                lines.extend(
+                    [
+                        "Rollback incomplete:",
+                        *(f"  {error}" for error in rollback_errors),
+                    ]
+                )
+                lines.append(
+                    f"Check `rp flash env get {shlex.quote(environment['name'])} "
+                    f"--app {shlex.quote(app.name)}`. Remaining workers may still incur charges."
+                )
+            elif undo or activation_attempted:
+                lines.append("Changes rolled back.")
+
+        cleanup = asyncio.create_task(rollback())
+        interrupted = isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt))
+        while not cleanup.done():
             try:
-                current = await client.get_environment_by_name(
-                    app.name, environment["name"]
-                )
-                matches = [
-                    endpoint
-                    for endpoint in (current or {}).get("endpoints", [])
-                    if (endpoint.get("template") or {}).get("name") == template_name
-                    and endpoint["id"] not in existing.values()
-                ]
-                if len(matches) != 1:
-                    raise RuntimeError("creation status unknown")
-                undo.append((name, matches[0]["id"], None))
-            except Exception:
-                rollback_errors.append(f"{name}: creation status unknown")
-        for resource, endpoint_id, snapshot in (
-            reversed(undo) if rollback_allowed else []
-        ):
-            try:
-                if snapshot is not None:
-                    await client.save_endpoint(snapshot)
-                elif not await client.delete_endpoint(endpoint_id):
-                    raise RuntimeError("endpoint deletion was not confirmed")
-            except Exception as cleanup_exc:
-                rollback_errors.append(
-                    f"{resource} ({endpoint_id}): {str(cleanup_exc) or type(cleanup_exc).__name__}"
-                )
-        if environment_created and not rollback_errors:
-            try:
-                current = await client.get_environment_by_name(
-                    app.name, environment["name"]
-                )
-                if (
-                    not isinstance(current, dict)
-                    or "endpoints" not in current
-                    or current["endpoints"]
-                ):
-                    raise RuntimeError("couldn't confirm the environment is empty")
-                if current.get("activeBuildId") not in (None, build_id):
-                    raise RuntimeError("environment changed during deployment")
-                if not await client.delete_environment(environment["id"]):
-                    raise RuntimeError("environment deletion was not confirmed")
-            except Exception as cleanup_exc:
-                rollback_errors.append(
-                    f"environment {environment['id']}: {str(cleanup_exc) or type(cleanup_exc).__name__}"
-                )
-        if rollback_errors:
-            lines.extend(
-                ["Rollback incomplete:", *(f"  {error}" for error in rollback_errors)]
-            )
-            lines.append(
-                f"Check `rp flash env get {shlex.quote(environment['name'])} "
-                f"--app {shlex.quote(app.name)}`. Remaining workers may still incur charges."
-            )
-        elif undo or activation_attempted:
-            lines.append("Changes rolled back.")
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                interrupted = True
+        cleanup.result()
+        if interrupted:
+            log.warning("\n".join(lines))
+            if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
+                raise
+            raise asyncio.CancelledError() from exc
         raise EndpointReconciliationError("\n".join(lines)) from exc
 
     obsolete = existing.keys() - provisionable.keys()
@@ -739,9 +771,15 @@ async def deploy_app(
     log.info("uploaded build %s", build["id"])
 
     endpoints = await reconcile_endpoints(
-        client, app, environment, build["id"], python_version,
-        resolver=resolver, activate_build=True,
-        environment_created=environment_created, events=events,
+        client,
+        app,
+        environment,
+        build["id"],
+        python_version,
+        resolver=resolver,
+        activate_build=True,
+        environment_created=environment_created,
+        events=events,
     )
     endpoint_ready = getattr(events, "endpoint_ready", None)
     if endpoint_ready is not None:
