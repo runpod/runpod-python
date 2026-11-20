@@ -134,3 +134,41 @@ async def test_volume_placement_can_opt_into_additional_locations(source):
         api.create_network_volume.assert_awaited_once_with(
             name="models", size=50, data_center_id="AP-JP-1"
         )
+
+
+@pytest.mark.parametrize("kind", list(ResourceKind))
+@pytest.mark.parametrize("cpu", ["cpu5c-2-4", "cpu5g-2-8"])
+async def test_cpu5_pin_outside_default_pool_reaches_payload_and_volume_placement(
+    kind, cpu
+):
+    api = AsyncMock()
+    api.list_network_volumes.return_value = [
+        {"id": "existing", "name": "models", "dataCenter": "EUR-IS-1"}
+    ]
+    api.cpu_stock_status.return_value = "High"
+    volume = NetworkVolume("models", create=False)
+    spec = ResourceSpec(
+        kind=kind,
+        name="worker",
+        cpu=cpu,
+        datacenter="EUR-IS-1",
+        mounts={"/runpod-volume": volume},
+    )
+    if kind is ResourceKind.TASK:
+        assert _pod_input(spec, "synthetic-token", "worker")["dataCenterIds"] == [
+            "EUR-IS-1"
+        ]
+    else:
+        payload = _deployed_endpoint_input(
+            App("cpu5-pin"), spec, "env", "build", "3.12"
+        )
+        assert payload["locations"] == "EUR-IS-1"
+    resolver = VolumeResolver(api)
+    await resolver.preflight([spec])
+    assert await resolver.resolve(volume, [spec]) == {
+        "id": "existing",
+        "dataCenterId": "EUR-IS-1",
+    }
+    api.cpu_stock_status.assert_awaited_once_with(
+        cpu, "EUR-IS-1", pods=kind is ResourceKind.TASK
+    )

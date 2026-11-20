@@ -91,7 +91,7 @@ DEFAULT_DATACENTERS: List[DataCenter] = [
 
 
 # datacenters with high cpu serverless stock. storage support is checked
-# separately; cpu5c/cpu5g are only stocked in EU-RO-1.
+# separately.
 CPU3_DATACENTERS: List[DataCenter] = [
     DataCenter.EU_CZ_1,
     DataCenter.EU_RO_1,

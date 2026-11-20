@@ -2,7 +2,7 @@ import pytest
 
 from runpod.apps import App
 from runpod.apps.app import _clear_registry
-from runpod.apps.datacenter import CPU5_DATACENTERS, DataCenter
+from runpod.apps.datacenter import CPU5_DATACENTERS, DEFAULT_DATACENTERS, DataCenter
 from runpod.apps.errors import InvalidResourceError
 from runpod.apps.spec import ResourceKind, ResourceSpec
 
@@ -14,9 +14,9 @@ from runpod.apps.spec import ResourceKind, ResourceSpec
     [
         "US-CA-2",
         ["US-CA-2", "EU-CZ-1"],
-        " US-TX-3 ",
-        ["US-CA-2", "US-TX-3"],
-        ["US-TX-3", "EU-CZ-1"],
+        " US-KS-2 ",
+        ["US-CA-2", "US-KS-2"],
+        ["US-KS-2", "EU-CZ-1"],
     ],
 )
 def test_cpu5_rejects_pins_without_a_supported_datacenter(kind, cpu, datacenter):
@@ -54,6 +54,21 @@ def test_cpu5_passes_unlisted_datacenter_pins_to_manifest(
 ):
     spec = ResourceSpec(kind=kind, name="worker", cpu=cpu, datacenter=datacenter)
     assert spec.to_manifest()["locations"] == locations
+
+
+@pytest.mark.parametrize("kind", list(ResourceKind))
+@pytest.mark.parametrize("cpu", ["cpu5c-2-4", "cpu5g-2-8", ["cpu5c-2-4", "cpu5g-2-8"]])
+@pytest.mark.parametrize(
+    "dc", [dc for dc in DataCenter if dc not in DEFAULT_DATACENTERS]
+)
+def test_cpu5_passes_pins_outside_default_pool_to_manifest(kind, cpu, dc):
+    for pin, expected in (
+        (dc, dc.value),
+        (f" {dc.value.lower().replace('-', '_')} ", dc.value),
+        ([DataCenter.US_CA_2, dc], f"US-CA-2,{dc.value}"),
+    ):
+        spec = ResourceSpec(kind=kind, name="worker", cpu=cpu, datacenter=pin)
+        assert spec.to_manifest()["locations"] == expected
 
 
 @pytest.mark.parametrize("kind", list(ResourceKind))
