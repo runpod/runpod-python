@@ -12,7 +12,7 @@ from typing import Dict, List
 from .app import App, _restore_registry, get_registered_apps
 from .discovery_state import DISCOVERY_ENV
 from .errors import InvalidResourceError
-from .source import DISCOVERY_SKIP_DIRS, iter_source_files
+from .source import is_discovery_skipped_dir, iter_source_files
 
 log = logging.getLogger(__name__)
 
@@ -82,8 +82,11 @@ def _project_modules(root: Path) -> Dict[str, ModuleType]:
         paths = [source] if source else getattr(module, "__path__", ())
         for path in paths:
             resolved = Path(path).resolve()
+            directories = resolved.parents if source else (resolved, *resolved.parents)
             if resolved.is_relative_to(root) and not any(
-                part in DISCOVERY_SKIP_DIRS for part in resolved.relative_to(root).parts
+                is_discovery_skipped_dir(directory)
+                for directory in directories
+                if directory != root and directory.is_relative_to(root)
             ):
                 modules[name] = module
                 break
