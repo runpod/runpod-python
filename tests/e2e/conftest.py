@@ -8,8 +8,6 @@ from pathlib import Path
 import pytest
 import runpod
 
-from tests.e2e.e2e_provisioner import load_test_cases, provision_endpoints
-
 log = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 300  # seconds per job request
 
@@ -41,6 +39,8 @@ def require_api_key():
 @pytest.fixture(scope="session")
 def test_cases():
     """Load test cases from tests.json."""
+    from tests.e2e.e2e_provisioner import load_test_cases
+
     cases = load_test_cases()
     log.info("Loaded %d test cases: %s", len(cases), [c.get("id") for c in cases])
     return cases
@@ -52,6 +52,8 @@ def endpoints(require_api_key, test_cases):
 
     Endpoints deploy lazily on first .run()/.runsync() call.
     """
+    from tests.e2e.e2e_provisioner import provision_endpoints
+
     eps = provision_endpoints(test_cases)
     for key, ep in eps.items():
         log.info("Endpoint ready: name=%s image=%s template.dockerArgs=%s", ep.name, ep.image, ep.template.dockerArgs if ep.template else "N/A")
