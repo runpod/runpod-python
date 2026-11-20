@@ -215,6 +215,12 @@ def api(monkeypatch):
         ("GET", "/v2/serverless/lb1"): LB_ENDPOINT,
         ("GET", "/v2/serverless/ep1/workers"): WORKERS,
         ("GET", "/v2/serverless/ep1/releases"): RELEASES,
+        ("GET", "/v2/network-volumes/vol1"): {"id": "vol1", "dataCenter": "EU-RO-1"},
+        ("GET", "/v2/network-volumes/vol9"): {"id": "vol9", "dataCenter": "EU-RO-1"},
+        ("GET", "/v2/network-volumes/gv1"): error.QueryError(
+            "not found", status_code=404
+        ),
+        ("GET", "/v2/global-volumes/gv1"): {"id": "gv1"},
         ("GET", "/v2/registries"): {
             "registries": [{"id": "reg1", "name": "ghcr"}],
             "pagination": PAGE,
@@ -233,6 +239,7 @@ def api(monkeypatch):
     monkeypatch.setattr(ep, "run_rest_request", fake)
     monkeypatch.setattr(compute, "run_rest_request", fake)
     monkeypatch.setattr(cli_api, "run_rest_request", fake)
+    monkeypatch.setattr("runpod.rp_cli.volume.run_rest_request", fake)
     monkeypatch.setattr(ep.time, "sleep", lambda seconds: None)
     return fake
 
@@ -326,7 +333,7 @@ def test_create_queue_endpoint_from_ticket(api):
         "--idle-timeout-seconds", "10",
         "--request-timeout-seconds", "300",
         "--data-center", "EU-RO-1",
-        "--network-volume", "vol1",
+        "--volume", "vol1",
         "--env", "MODEL_ID=meta-llama/Llama-3.1-8B",
         "--flashboot", "standard",
     )  # fmt: skip
@@ -403,7 +410,7 @@ def test_create_maps_container_and_placement_flags(api):
         "--gpu", "h100:2",
         "--cuda", ">=12.4",
         "--region", "eu",
-        "--global-volume", "gv1",
+        "--volume", "gv1",
         "--port", "8000/http",
         "--disk", "20",
         "--args", "python main.py",
@@ -478,6 +485,74 @@ def test_update_merges_env_and_workers(api):
     }
 
 
+def test_mixed_endpoint_volume_mounts_resolve_by_id(api):
+    ok(
+        "create",
+        "--name",
+        "mixed",
+        "--type",
+        "queue",
+        "--image",
+        "x",
+        "--volume",
+        "vol1",
+        "--volume",
+        "gv1",
+        "--json",
+    )
+    (body,) = api.bodies("POST")
+    assert body["mounts"] == {
+        "network": [{"volumeId": "vol1"}],
+        "global": [{"volumeId": "gv1"}],
+    }
+
+
+def test_global_endpoint_mount_update_preserves_network_mounts(api):
+    ok("update", "ep2", "--volume", "gv1")
+    (body,) = api.bodies("PATCH")
+    assert body["mounts"]["network"] == CPU_ENDPOINT["mounts"]["network"]
+    assert body["mounts"]["global"] == [{"volumeId": "gv1"}]
+
+
+@pytest.mark.parametrize("command", ["create", "update"])
+def test_unknown_endpoint_volume_prevents_mutation(api, command):
+    for kind in ("network", "global"):
+        api.routes[("GET", f"/v2/{kind}-volumes/missing")] = error.QueryError(
+            "not found", status_code=404
+        )
+    args = (
+        ("create", "--name", "a", "--type", "queue", "--image", "x")
+        if command == "create"
+        else ("update", "ep1")
+    )
+    assert "not found" in fails(*args, "--volume", "missing")
+    assert not api.bodies("POST")
+    assert not api.bodies("PATCH")
+
+
+def test_duplicate_endpoint_volume_is_rejected(api):
+    assert "specified more than once" in fails(
+        "update", "ep1", "--volume", "vol1", "--volume", "vol1"
+    )
+    assert not api.bodies("PATCH")
+
+
+def test_endpoint_volume_completion_includes_both_types(monkeypatch):
+    def volumes(path, collection):
+        return (
+            [{"id": "nv1", "name": "models"}]
+            if collection == "networkVolumes"
+            else [{"id": "gv1", "name": "shared"}]
+        )
+
+    monkeypatch.setattr("runpod.rp_cli.volume.list_all", volumes)
+    items = ep.complete_volume(None, None, "")
+    assert [(item.value, item.help) for item in items] == [
+        ("nv1", "network  models"),
+        ("gv1", "global  shared"),
+    ]
+
+
 def test_update_gpu_replaces_pools_and_exclusions_together(api):
     ok("update", "ep1", "--gpu", "4090", "--cuda", "any")
     ok("update", "ep1", "--cuda", ">=12.8")
@@ -494,7 +569,7 @@ def test_update_gpu_replaces_pools_and_exclusions_together(api):
 
 
 def test_update_cpu_vcpus_and_mounts(api):
-    ok("update", "ep2", "--vcpu-count", "8", "--network-volume", "vol9")
+    ok("update", "ep2", "--vcpu-count", "8", "--volume", "vol9")
     (patch,) = api.bodies("PATCH")
     assert patch["cpu"] == [{"id": "cpu3c", "vcpuCount": 8}]
     assert patch["mounts"] == {
@@ -599,7 +674,7 @@ def test_invalid_container_quoting_is_usage_error(api, option):
         ("workers", ["scale", "ep1", "--max-workers", "2"], {"workers": {"max": 2}}),
         (
             "mounts",
-            ["update", "ep1", "--network-volume", "vol1"],
+            ["update", "ep1", "--volume", "vol1"],
             {"mounts": {"network": [{"volumeId": "vol1"}]}},
         ),
     ],

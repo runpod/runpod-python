@@ -505,6 +505,16 @@ class AppsApiClient:
             )
         return data
 
+    async def delete_global_volume(self, volume_id: str) -> bool:
+        """permanently delete a global volume and its data by id."""
+        await run_rest_request_async(
+            "DELETE",
+            f"/v2/global-volumes/{_path_segment(volume_id)}",
+            user_agent=APPS_USER_AGENT,
+            api_key=self._api_key,
+        )
+        return True
+
     async def list_network_volumes(self) -> List[Dict[str, Any]]:
         """list every rest page, retrying transient read failures with backoff."""
         return await run_rest_paginated_request_async(
@@ -524,6 +534,16 @@ class AppsApiClient:
             api_key=self._api_key,
             json={"name": name, "size": size, "dataCenter": data_center_id},
         )
+
+    async def delete_network_volume(self, volume_id: str) -> bool:
+        """permanently delete a network volume and its data by id."""
+        await run_rest_request_async(
+            "DELETE",
+            f"/v2/network-volumes/{_path_segment(volume_id)}",
+            user_agent=APPS_USER_AGENT,
+            api_key=self._api_key,
+        )
+        return True
 
     async def list_registry_auths(self) -> List[Dict[str, Any]]:
         data = await run_rest_request_async(
