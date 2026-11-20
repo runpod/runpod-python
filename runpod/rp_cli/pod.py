@@ -195,7 +195,7 @@ def _wait_running(pod_id: str, since: float, previous: Optional[dict] = None) ->
 
 
 def _container_body(
-    options: dict, current: Optional[dict] = None, unset_env=()
+    options: dict, current: Optional[dict] = None, unset_env=(), network_centers=None
 ) -> dict:
     """build container settings, preserving existing environment and mount paths."""
     current = current or {}
@@ -215,7 +215,9 @@ def _container_body(
                 f"'{value}' should look like VALUE[:PATH]", param_hint=flag
             )
         if kind is None:
-            kind, _ = _get_volume(head)
+            kind, record = _get_volume(head)
+            if kind == "network" and network_centers is not None:
+                network_centers.add(record["dataCenter"])
         existing = (current.get("mounts") or {}).get(kind)
         if kind != "persistent":
             existing = next(
@@ -239,8 +241,21 @@ def _container_body(
                 {"volumeId": head, **({"path": path} if path else {})}
             )
     if mounts:
-        paths = set()
+        effective_mounts = dict(current.get("mounts") or {})
         for kind, entries in mounts.items():
+            if kind == "persistent":
+                effective_mounts[kind] = entries
+                continue
+            replaced_ids = {mount["volumeId"] for mount in entries}
+            effective_mounts[kind] = [
+                mount
+                for mount in effective_mounts.get(kind) or []
+                if mount["volumeId"] not in replaced_ids
+            ] + entries
+        paths = set()
+        for kind, entries in effective_mounts.items():
+            if not entries:
+                continue
             for mount in ([entries] if kind == "persistent" else entries):
                 if not mount.get("path"):
                     continue
@@ -416,20 +431,20 @@ def _gpu_body(
     return body
 
 
-def _datacenter_ids(regions, data_centers, network_mounts) -> list[str]:
+def _datacenter_ids(regions, data_centers, network_centers) -> list[str]:
     ids = (
         compute.resolve_regions(regions, compute.list_datacenters()) if regions else []
     )
     ids += [dc for dc in data_centers if dc not in ids]
-    if not ids and network_mounts:
-        ids = list(
-            dict.fromkeys(
-                _get_volume(mount["volumeId"], "network")[1]["dataCenter"]
-                for mount in network_mounts
+    if len(network_centers) > 1:
+        raise click.UsageError("a pod's network volumes must share a data center")
+    if network_centers:
+        center = next(iter(network_centers))
+        if ids and center not in ids:
+            raise click.UsageError(
+                f"network volumes are in {center}, outside the requested placement"
             )
-        )
-        if len(ids) > 1:
-            raise click.UsageError("a pod's network volumes must share a data center")
+        ids = ids or [center]
     return ids
 
 
@@ -467,10 +482,12 @@ def _create_body(
             raise click.UsageError("pass a NAME")
         name = click.prompt("pod name")
 
-    body = {"name": name, **_container_body(container)}
-    datacenter_ids = _datacenter_ids(
-        regions, data_centers, (body.get("mounts") or {}).get("network")
-    )
+    network_centers = set()
+    body = {
+        "name": name,
+        **_container_body(container, network_centers=network_centers),
+    }
+    datacenter_ids = _datacenter_ids(regions, data_centers, network_centers)
     if datacenter_ids:
         body["dataCenterIds"] = datacenter_ids
     if cloud:

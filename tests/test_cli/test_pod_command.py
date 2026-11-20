@@ -870,6 +870,177 @@ def test_pod_network_volumes_require_one_data_center():
     assert not api.made("POST", "/v2/pods")
 
 
+@pytest.mark.parametrize(
+    "placement",
+    [
+        ["--region", "eu", "--region", "na"],
+        ["--data-center", "EU-RO-1", "--data-center", "US-TX-3"],
+    ],
+)
+def test_explicit_placement_rejects_volumes_in_different_centers(placement):
+    api = FakeApi(
+        {("GET", "/v2/network-volumes/vol2"): {"id": "vol2", "dataCenter": "US-TX-3"}}
+    )
+    result = _invoke(
+        [
+            "create",
+            "a",
+            "--gpu",
+            "4090",
+            "--image",
+            "x",
+            "--volume",
+            "vol1:/models",
+            "--volume",
+            "vol2:/data",
+            *placement,
+        ],
+        api=api,
+    )
+    assert result.exit_code == 2, result.output
+    assert "must share a data center" in result.output
+    assert not api.made("POST", "/v2/pods")
+
+
+@pytest.mark.parametrize(
+    "placement", [["--region", "na"], ["--data-center", "US-TX-3"]]
+)
+def test_network_volume_must_fit_explicit_placement(placement):
+    result = _invoke(
+        ["create", "a", "--gpu", "4090", "--image", "x", "--volume", "vol1", *placement]
+    )
+    assert result.exit_code == 2, result.output
+    assert "EU-RO-1, outside the requested placement" in result.output
+    assert not result.api.made("POST", "/v2/pods")
+
+
+@pytest.mark.parametrize(
+    "placement,expected",
+    [
+        ([], ["EU-RO-1"]),
+        (["--region", "eu"], ["EU-RO-1", "EU-CZ-1"]),
+        (
+            ["--data-center", "US-TX-3", "--data-center", "EU-RO-1"],
+            ["US-TX-3", "EU-RO-1"],
+        ),
+    ],
+)
+def test_network_placement_uses_resolved_centers_without_refetching(
+    placement, expected
+):
+    api = FakeApi(
+        {("GET", "/v2/network-volumes/vol2"): {"id": "vol2", "dataCenter": "EU-RO-1"}}
+    )
+    result, body = _create(
+        [
+            "a",
+            "--gpu",
+            "h100",
+            "--image",
+            "x",
+            "--volume",
+            "vol1:/models",
+            "--volume",
+            "vol2:/data",
+            *placement,
+        ],
+        api=api,
+    )
+    assert body["dataCenterIds"] == expected
+    assert [call[1] for call in api.calls if "volumes/" in call[1]] == [
+        "/v2/network-volumes/vol1",
+        "/v2/network-volumes/vol2",
+    ]
+
+
+@pytest.mark.parametrize(
+    "existing,volume",
+    [
+        ({"network": [{"volumeId": "vol1", "path": "/shared"}]}, "vol2:/shared/"),
+        ({"global": [{"volumeId": "gv1", "path": "/shared"}]}, "vol2:/shared"),
+        ({"network": [{"volumeId": "vol1", "path": "/shared"}]}, "gv1:/shared"),
+        ({"persistent": {"size": 50, "path": "/shared"}}, "vol2:/shared"),
+    ],
+)
+def test_update_rejects_paths_colliding_with_retained_mounts(existing, volume):
+    api = FakeApi(
+        {
+            ("GET", "/v2/pods/pod123"): {**POD, "mounts": existing},
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "EU-RO-1",
+            },
+        }
+    )
+    result = _invoke(["update", "pod123", "--volume", volume], api=api)
+    assert result.exit_code == 2, result.output
+    assert "multiple volumes target '/shared'" in result.output
+    assert not api.made("PATCH", "/v2/pods/pod123")
+
+
+def test_update_validates_retained_mounts_without_sending_them():
+    current = {
+        **POD,
+        "mounts": {
+            "network": [{"volumeId": "vol1", "path": "/data"}],
+            "global": [{"volumeId": "gv1", "path": "/shared"}],
+        },
+    }
+    api = FakeApi(
+        {
+            ("GET", "/v2/pods/pod123"): current,
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "EU-RO-1",
+            },
+        }
+    )
+    result = _invoke(["update", "pod123", "--volume", "vol2:/models"], api=api)
+    assert result.exit_code == 0, result.output
+    assert api.body("PATCH", "/v2/pods/pod123") == {
+        "mounts": {"network": [{"volumeId": "vol2", "path": "/models"}]},
+    }
+    assert current["mounts"] == {
+        "network": [{"volumeId": "vol1", "path": "/data"}],
+        "global": [{"volumeId": "gv1", "path": "/shared"}],
+    }
+
+
+def test_update_can_swap_paths_of_two_existing_volumes():
+    api = FakeApi(
+        {
+            ("GET", "/v2/pods/pod123"): {
+                **POD,
+                "mounts": {
+                    "network": [
+                        {"volumeId": "vol1", "path": "/models"},
+                        {"volumeId": "vol2", "path": "/data"},
+                    ],
+                    "persistent": None,
+                    "global": None,
+                },
+            },
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "EU-RO-1",
+            },
+        }
+    )
+    result = _invoke(
+        ["update", "pod123", "--volume", "vol1:/data", "--volume", "vol2:/models"],
+        api=api,
+    )
+    assert result.exit_code == 0, result.output
+    assert api.body("PATCH", "/v2/pods/pod123") == {
+        "mounts": {
+            "network": [
+                {"volumeId": "vol1", "path": "/data"},
+                {"volumeId": "vol2", "path": "/models"},
+            ]
+        }
+    }
+
+
 class TestActions:
     @pytest.mark.parametrize("action", ["stop", "restart"])
     def test_action(self, action):
