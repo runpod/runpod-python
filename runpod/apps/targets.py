@@ -8,6 +8,7 @@ runpod api); no local state is kept.
 import asyncio
 import inspect
 import json
+import math
 from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
@@ -29,6 +30,7 @@ from .utils.network import endpoint_url_base as _endpoint_url_base
 SENTINEL_ID = "flash"
 
 DEFAULT_TIMEOUT_SECONDS = 300.0
+QUEUE_EXECUTION_HEADROOM_SECONDS = 60.0
 
 # terminal job statuses on the queue data plane
 FINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"})
@@ -426,6 +428,24 @@ class QueueClient:
     ) -> Dict[str, Any]:
         import time
 
+        policy = payload.get("policy")
+        execution_timeout = (
+            policy.get("executionTimeout") if isinstance(policy, dict) else None
+        )
+        try:
+            if (
+                isinstance(execution_timeout, (int, float))
+                and not isinstance(execution_timeout, bool)
+                and math.isfinite(execution_timeout)
+                and execution_timeout > 0
+            ):
+                timeout = max(
+                    timeout, execution_timeout / 1000 + QUEUE_EXECUTION_HEADROOM_SECONDS
+                )
+        except OverflowError:
+            raise ValueError(
+                "execution_timeout is too large for the client timeout"
+            ) from None
         start = time.monotonic()
         # leave transport headroom for the server to return a pollable job id.
         wait_ms = int(min(90.0, max(1.0, timeout - 1.0)) * 1000)
