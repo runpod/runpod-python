@@ -345,7 +345,7 @@ def _deployed_endpoint_input(
     the environment. binding via flashEnvironmentId is also what makes
     hosts deliver the build artifact to this endpoint's workers.
     """
-    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
+    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DEFAULT_DATACENTERS
     from .images import image_for_spec
 
     from .secret import render_env
@@ -426,7 +426,7 @@ def _deployed_endpoint_input(
             # artifact delivery rides the flash volume (network
             # storage); machines outside storage-cluster regions fail
             # with "requires network storage" and recycle forever
-            payload["locations"] = ",".join(dc.value for dc in DataCenter)
+            payload["locations"] = ",".join(dc.value for dc in DEFAULT_DATACENTERS)
     return payload
 
 
@@ -445,8 +445,13 @@ async def reconcile_endpoints(
     endpoints (matched by name) are updated in place; endpoints whose
     resources disappeared are deleted.
     """
+    from .volume import VolumeResolver, attach_endpoint_volumes
+
     for handle in app.resources.values():
         handle.spec.validate()
+    if resolver is None:
+        resolver = VolumeResolver(client)
+        await resolver.preflight([handle.spec for handle in app.resources.values()])
     existing_endpoints = environment.get("endpoints") or []
     existing = {e["name"]: e["id"] for e in existing_endpoints}
     # updates send the bound template's current name, so redeploying an
@@ -463,9 +468,7 @@ async def reconcile_endpoints(
 
     from .gpu import needs_gpu_catalog
     from .registry import resolve_registry_auth
-    from .volume import VolumeResolver, attach_endpoint_volumes
 
-    resolver = resolver or VolumeResolver(client)
     endpoints: Dict[str, str] = {}
     for name, handle in sorted(provisionable.items()):
         members = None
@@ -578,6 +581,10 @@ async def deploy_app(
     ]
     await validate_secrets(referenced, api=client)
 
+    from .volume import VolumeResolver
+
+    resolver = VolumeResolver(client, events=events)
+    await resolver.preflight([handle.spec for handle in app.resources.values()])
     _phase(events, "vendor", f"python {python_version}")
     build: BuildResult = build_environment(
         app,
@@ -588,9 +595,6 @@ async def deploy_app(
     )
     if build.excluded:
         manifest["excludedPackages"] = build.excluded
-    from .volume import VolumeResolver
-
-    resolver = VolumeResolver(client, events=events)
     await _prepare_task_resources(app, manifest, client, events, resolver=resolver)
     _phase(events, "package")
     tar_path = package_project(project_root, manifest, env_dir=build.env_dir)

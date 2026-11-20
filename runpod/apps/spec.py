@@ -12,7 +12,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from .errors import InvalidResourceError
-from .datacenter import CPU5_DATACENTERS, DataCenter, datacenter_id
+from .datacenter import CPU5_DATACENTERS, DEFAULT_DATACENTERS, DataCenter, datacenter_id
 from .gpu import GpuGroup, GpuLike, GpuType
 from .volume import Volume, normalize_mounts, validate_mounts
 
@@ -243,12 +243,13 @@ class ResourceSpec:
             self.cpu
             and all(instance.startswith("cpu5") for instance in self.cpu)
             and self.datacenter
-            and all(DataCenter.is_known(dc) for dc in self.datacenter)
+            and all(dc in DEFAULT_DATACENTERS for dc in self.datacenter)
             and not any(dc in CPU5_DATACENTERS for dc in self.datacenter)
         ):
             supported = ", ".join(dc.value for dc in CPU5_DATACENTERS)
             raise InvalidResourceError(
-                f"resource '{self.name}': cpu5 instances are only available in "
+                f"resource '{self.name}': cpu5 instances in the default datacenter "
+                "pool are only available in "
                 f"{supported}, but datacenter is pinned to {', '.join(self.datacenter)}. "
                 f"include a supported datacenter or remove the datacenter pin"
             )

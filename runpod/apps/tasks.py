@@ -158,7 +158,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     else:
         # spread across the storage-supported set; a null DC can pin
         # repeated deploys to one (possibly broken) machine
-        from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
+        from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DEFAULT_DATACENTERS
 
         if spec.is_cpu:
             pool = dict.fromkeys(
@@ -171,7 +171,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
                 )
             )
         else:
-            pool = DataCenter.all()
+            pool = DEFAULT_DATACENTERS
         pod["dataCenterIds"] = [dc.value for dc in pool]
     if spec.is_cpu:
         pod["instanceIds"] = spec.cpu
