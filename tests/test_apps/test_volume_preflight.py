@@ -11,6 +11,7 @@ from runpod.apps.deploy import deploy_app, reconcile_endpoints
 from runpod.apps.dev import DevSession
 from runpod.apps.placement import PlacementError
 from runpod.apps.spec import ResourceKind, ResourceSpec
+from runpod.apps.tasks import TaskExecution
 from runpod.apps.volume import (
     GlobalVolume,
     NetworkVolume,
@@ -410,6 +411,79 @@ async def test_task_mounts_validate_network_before_creating_global(api):
     with pytest.raises(VolumeError, match="invalid"):
         await attach_pod_mounts({}, spec, VolumeResolver(api), [spec])
     api.create_global_volume.assert_not_awaited()
+    api.create_network_volume.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mounted", [False, True])
+@pytest.mark.parametrize("exists", [False, True])
+async def test_task_launch_ignores_unrelated_volume_constraints(api, mounted, exists):
+    task = ResourceSpec(
+        kind=ResourceKind.TASK,
+        name="train",
+        cpu=None if mounted else "cpu3c-1-2",
+        mounts={"/models": GlobalVolume("own")} if mounted else {},
+    )
+    sibling = ResourceSpec(
+        kind=ResourceKind.QUEUE,
+        name="serve",
+        gpu="NVIDIA GeForce RTX 4090",
+        mounts={"/runpod-volume": NetworkVolume("weights", create=False)},
+    )
+    if exists:
+        api.list_network_volumes.return_value = [
+            {"id": "weights", "name": "weights", "dataCenter": "EU-RO-1"}
+        ]
+    api.gpu_stock_status.return_value = "None"
+    api.deploy_task_pod.return_value = {"id": "task-pod"}
+
+    execution = TaskExecution(task, api=api, specs=[task, sibling])
+    await execution.start()
+
+    assert execution.pod_id == "task-pod"
+    api.deploy_task_pod.assert_awaited_once()
+    api.list_network_volumes.assert_not_awaited()
+    api.network_volume_datacenters.assert_not_awaited()
+    api.gpu_stock_status.assert_not_awaited()
+    api.cpu_stock_status.assert_not_awaited()
+    api.create_network_volume.assert_not_awaited()
+    if mounted:
+        api.create_global_volume.assert_awaited_once_with(name="own")
+    else:
+        api.list_global_volumes.assert_not_awaited()
+        api.create_global_volume.assert_not_awaited()
+
+
+async def test_task_preflight_ignores_other_volumes_on_sharing_resources(api):
+    volume = GlobalVolume("shared")
+    task = _spec("train", volume)
+    sibling = ResourceSpec(
+        kind=ResourceKind.TASK,
+        name="serve",
+        mounts={
+            "/models": GlobalVolume("shared"),
+            "/weights": NetworkVolume("weights", create=False),
+        },
+    )
+    await attach_pod_mounts({}, task, VolumeResolver(api), [task, sibling])
+    api.create_global_volume.assert_awaited_once_with(name="shared")
+    api.list_network_volumes.assert_not_awaited()
+
+
+@pytest.mark.parametrize("volume_type", [NetworkVolume, GlobalVolume])
+async def test_task_preflight_preserves_shared_creation_constraints(api, volume_type):
+    task = _spec("train", volume_type("shared"))
+    sibling = _spec("serve", volume_type("shared", create=False))
+    with pytest.raises(VolumeError, match="shared.*create=False"):
+        await attach_pod_mounts({}, task, VolumeResolver(api), [task, sibling])
+    api.create_network_volume.assert_not_awaited()
+    api.create_global_volume.assert_not_awaited()
+
+
+async def test_task_preflight_preserves_shared_placement_constraints(api):
+    task = _spec("train", NetworkVolume("shared"), datacenter="EU-RO-1")
+    sibling = _spec("serve", NetworkVolume("shared"), datacenter="US-MO-2")
+    with pytest.raises(PlacementError, match="no datacenter"):
+        await attach_pod_mounts({}, task, VolumeResolver(api), [task, sibling])
     api.create_network_volume.assert_not_awaited()
 
 

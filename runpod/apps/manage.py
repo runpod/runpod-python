@@ -115,7 +115,11 @@ async def delete_app(
     api: Optional[AppsApiClient] = None,
     events: Optional[object] = None,
 ) -> UndeployResult:
-    """delete an app after undeploying every environment in it."""
+    """delete an app after undeploying every environment in it.
+
+    network and global volumes are retained and continue billing.
+    delete unneeded volumes explicitly after checking for shared use.
+    """
     client = api or AppsApiClient()
     app = await get_app(app_name, api=client)
 

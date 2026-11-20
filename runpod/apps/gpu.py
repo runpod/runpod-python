@@ -6,6 +6,7 @@ configured. CpuInstanceType values are backend cpu flavor ids.
 """
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -177,9 +178,11 @@ def resolve_gpu_string(value: str) -> List[str]:
       - pool ids ("ADA_24", case-insensitive)
       - exact device names ("NVIDIA B200")
       - enum-style names ("NVIDIA_B200")
-      - shorthand device fragments ("B200", "4090", "h100"): every
-        device whose name contains the fragment matches, so "H100"
-        selects all H100 variants
+      - nonnumeric whole device-name tokens ("A40", "h100"), including
+        tokens separated by punctuation ("A100" in "A100-SXM4-80GB")
+      - shorthand device fragments: every device whose name contains
+        the fragment matches for numeric strings ("4000", "6000") or
+        when no whole token matches
 
     unknown strings raise with the full list of valid options.
     """
@@ -197,6 +200,15 @@ def resolve_gpu_string(value: str) -> List[str]:
             return [gpu_type.value]
 
     fragment = upper.replace("_", " ")
+    if not fragment.isdecimal():
+        matches = [
+            gpu_type.value
+            for gpu_type in GpuType.all()
+            if fragment in re.findall(r"\w+", gpu_type.value.upper())
+        ]
+        if matches:
+            return matches
+
     matches = [
         gpu_type.value
         for gpu_type in GpuType.all()

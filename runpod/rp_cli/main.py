@@ -839,14 +839,17 @@ def app_get(app_name):
 @click.argument("app_name")
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
 def app_delete(app_name, yes):
-    """Delete an app, undeploying every environment in it."""
+    """Delete an app and its environments. Volumes are retained and keep billing."""
     from runpod.apps.manage import delete_app
     from runpod.rp_cli import console as ui
 
+    ui.warn(
+        "app deletion retains network and global volumes, which continue billing. "
+        "Review them with `rp volume list`. "
+        "Delete unneeded volumes and their data with `rp volume delete VOLUME_ID`."
+    )
     if not yes:
-        click.confirm(
-            f"delete app '{app_name}' and all its environments?", abort=True
-        )
+        click.confirm(f"delete app '{app_name}' and all its environments?", abort=True)
 
     events = ui.CleanupEvents()
     try:

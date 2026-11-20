@@ -340,13 +340,22 @@ class VolumeResolver:
         self._resolved[key] = resolved
         return resolved
 
-    async def preflight(self, specs: List) -> None:
-        """plan every volume before provisioning any storage."""
+    async def preflight(
+        self, specs: List, *, keys: Optional[Set[Tuple[str, str]]] = None
+    ) -> None:
+        """plan selected volumes and their sharing constraints before provisioning."""
         volumes = {}
         for spec in specs:
+            if keys is not None and not any(
+                (volume.kind, volume.reference) in keys
+                for volume in (spec.mounts or {}).values()
+            ):
+                continue
             spec.validate()
             for volume in spec.mounts.values():
                 key = (volume.kind, volume.reference)
+                if keys is not None and key not in keys:
+                    continue
                 if key not in volumes:
                     volumes[key] = (volume, [])
                 volumes[key][1].append(spec)
@@ -428,11 +437,21 @@ class VolumeResolver:
                     "datacenter does not support network volumes"
                 )
         if specs:
+            from .datacenter import DEFAULT_DATACENTERS
             from .placement import StockMap, _hardware_keys, solve_placement
 
             if self._stock is None:
                 self._stock = StockMap(client)
-            await self._stock.fetch([k for spec in specs for k in _hardware_keys(spec)])
+            await self._stock.fetch(
+                [k for spec in specs for k in _hardware_keys(spec)],
+                datacenters={
+                    location
+                    for spec in specs
+                    for location in (
+                        spec.datacenter or ([dc] if dc else DEFAULT_DATACENTERS)
+                    )
+                },
+            )
             dc = solve_placement(
                 specs,
                 self._stock,
@@ -511,7 +530,9 @@ async def attach_pod_mounts(
 ) -> None:
     """attach task storage and supply the worker's resolved filesystem bindings."""
     validate_mounts(spec.mounts, spec.kind.value, spec.is_cpu)
-    await resolver.preflight(specs)
+    await resolver.preflight(
+        specs, keys={(volume.kind, volume.reference) for volume in spec.mounts.values()}
+    )
     bindings = await resolver.resolve_mounts(spec.mounts, specs)
     payload["volumeMounts"] = [
         {

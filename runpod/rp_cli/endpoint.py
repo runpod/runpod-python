@@ -18,6 +18,7 @@ from runpod.endpoint import runner
 from runpod.endpoint.helpers import is_completed
 from runpod.rp_cli import compute, console as ui, endpoint_config as config
 from runpod.rp_cli.api import api_errors, list_all
+from runpod.rp_cli.volume import _choices as volume_choices
 from runpod.rp_cli.output import (
     completer,
     confirm,
@@ -49,8 +50,7 @@ def _choices(path: str, collection: str):
 
 
 complete_endpoint = _choices("/v2/serverless", "endpoints")
-complete_network_volume = _choices("/v2/network-volumes", "networkVolumes")
-complete_global_volume = _choices("/v2/global-volumes", "globalVolumes")
+complete_volume = completer(volume_choices)
 complete_registry = _choices("/v2/registries", "registries")
 complete_template = _choices("/v2/templates", "templates")
 complete_datacenter = completer(
@@ -292,16 +292,11 @@ def _config_options(creating: bool):
             help="Region (eu, na, asia) or id prefix (us, eu-ro). Repeatable.",
         ),
         click.option(
-            "--network-volume",
+            "--volume",
             multiple=True,
-            help="Network volume ID, at most one per data center. Repeatable.",
-            shell_complete=complete_network_volume,
-        ),
-        click.option(
-            "--global-volume",
-            multiple=True,
-            help="Global volume ID. Repeatable.",
-            shell_complete=complete_global_volume,
+            help="Network or global volume ID. Repeatable. Updates replace mounts "
+            "of each supplied storage type.",
+            shell_complete=complete_volume,
         ),
         click.option(
             "--env", multiple=True, help="Environment variable KEY=VALUE. Repeatable."
@@ -762,8 +757,8 @@ def update_endpoint(endpoint_id, wait, timeout, as_json, **options):
     """Change an endpoint's configuration with flags.
 
     Only the given fields change. --env merges into the existing variables,
-    while list flags such as --data-center and --network-volume replace
-    their list.
+    while --data-center replaces its list. --volume replaces mounts of each
+    supplied storage type and preserves mounts of the other type.
     """
     with api_errors():
         current = run_rest_request("GET", _path(endpoint_id))

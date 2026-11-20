@@ -5,6 +5,7 @@ import click
 
 from runpod.rp_cli import compute
 from runpod.rp_cli.options import container_fields
+from runpod.rp_cli.volume import _get_volume
 
 FLASHBOOT = {"off": "OFF", "standard": "FLASHBOOT", "priority": "PRIORITY_FLASHBOOT"}
 
@@ -184,11 +185,18 @@ def config_body(options: dict, current: Optional[dict] = None) -> dict:
         body["dataCenterIds"] = compute.resolve_regions(
             places, compute.list_datacenters()
         )
-    if options.get("network_volume") or options.get("global_volume"):
+    if options.get("volume"):
         mounts = dict(current.get("mounts") or {})
-        for kind, flag in (("network", "network_volume"), ("global", "global_volume")):
-            if options.get(flag):
-                mounts[kind] = [{"volumeId": volume} for volume in options[flag]]
+        resolved = {}
+        for volume_id in options["volume"]:
+            kind, _ = _get_volume(volume_id)
+            if any(mount["volumeId"] == volume_id for mount in resolved.get(kind, [])):
+                raise click.BadParameter(
+                    f"volume {volume_id!r} is specified more than once",
+                    param_hint="--volume",
+                )
+            resolved.setdefault(kind, []).append({"volumeId": volume_id})
+        mounts.update(resolved)
         body["mounts"] = mounts
     return body
 

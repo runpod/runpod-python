@@ -37,6 +37,7 @@ class DataCenter(str, Enum):
     EUR_NO_1 = "EUR-NO-1"
     EUR_NO_2 = "EUR-NO-2"
 
+    # asia pacific
     AP_IN_1 = "AP-IN-1"
     AP_JP_1 = "AP-JP-1"
 
@@ -72,6 +73,21 @@ def datacenter_id(value: str) -> str:
         return DataCenter.from_string(value).value
     except ValueError:
         return value.strip()
+
+
+DEFAULT_DATACENTERS: List[DataCenter] = [
+    DataCenter.US_CA_2,
+    DataCenter.US_IL_1,
+    DataCenter.US_KS_2,
+    DataCenter.US_MO_1,
+    DataCenter.US_MO_2,
+    DataCenter.US_NC_2,
+    DataCenter.US_NE_1,
+    DataCenter.US_WA_1,
+    DataCenter.EU_CZ_1,
+    DataCenter.EU_RO_1,
+    DataCenter.EUR_NO_1,
+]
 
 
 # datacenters with high cpu serverless stock. storage support is checked

@@ -345,7 +345,7 @@ def _deployed_endpoint_input(
     the environment. binding via flashEnvironmentId is also what makes
     hosts deliver the build artifact to this endpoint's workers.
     """
-    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
+    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DEFAULT_DATACENTERS
     from .images import image_for_spec
 
     from .secret import render_env
@@ -421,13 +421,12 @@ def _deployed_endpoint_input(
 
         payload["gpuIds"] = gpu_ids_value(spec.gpu, pool_members=pool_members)
         payload["gpuCount"] = spec.gpu_count
-        if spec.min_cuda_version:
-            payload["minCudaVersion"] = spec.min_cuda_version
+        payload["minCudaVersion"] = spec.effective_min_cuda_version
         if not spec.datacenter:
             # artifact delivery rides the flash volume (network
             # storage); machines outside storage-cluster regions fail
             # with "requires network storage" and recycle forever
-            payload["locations"] = ",".join(dc.value for dc in DataCenter)
+            payload["locations"] = ",".join(dc.value for dc in DEFAULT_DATACENTERS)
     return payload
 
 

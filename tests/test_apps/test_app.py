@@ -366,6 +366,7 @@ def test_manifest_serialization():
         "workersMax": 3,
         "idleTimeout": 60,
         "gpus": ["ADA_24"],
+        "minCudaVersion": "12.8",
         "dependencies": ["torch"],
         "mounts": [
             {"kind": "network", "reference": "my-volume", "path": "/runpod-volume"}
@@ -424,6 +425,86 @@ class TestGpuStringResolution:
             "NVIDIA A100 80GB PCIe",
             "NVIDIA A100-SXM4-80GB",
         }
+
+    @pytest.mark.parametrize("value", ["A40", "a40", "  A40  "])
+    def test_whole_token_precedes_substring(self, value):
+        from runpod.apps.gpu import resolve_gpu_string
+
+        assert resolve_gpu_string(value) == ["NVIDIA A40"]
+
+    def test_whole_token_matches_all_variants(self):
+        from runpod.apps.gpu import resolve_gpu_string
+
+        assert resolve_gpu_string("h100") == [
+            "NVIDIA H100 80GB HBM3",
+            "NVIDIA H100 PCIe",
+            "NVIDIA H100 NVL",
+        ]
+
+    @pytest.mark.parametrize("value", ["A4", "RTX_A4"])
+    def test_substring_fallback(self, value):
+        from runpod.apps.gpu import resolve_gpu_string
+
+        matches = resolve_gpu_string(value)
+        assert "NVIDIA RTX A4000" in matches
+        assert "NVIDIA RTX A4500" in matches
+
+    def test_longer_token_matches_its_device(self):
+        from runpod.apps.gpu import resolve_gpu_string
+
+        assert resolve_gpu_string("A4000") == ["NVIDIA RTX A4000"]
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (
+                "4000",
+                ["NVIDIA RTX A4000", "NVIDIA RTX 4000 Ada Generation"],
+            ),
+            ("5000", ["NVIDIA RTX A5000"]),
+            (
+                "6000",
+                [
+                    "NVIDIA RTX 6000 Ada Generation",
+                    "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+                    "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+                    "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+                    "NVIDIA RTX A6000",
+                ],
+            ),
+            (
+                "200",
+                ["NVIDIA RTX 2000 Ada Generation", "NVIDIA H200", "NVIDIA B200"],
+            ),
+        ],
+    )
+    def test_numeric_fragment_preserves_all_device_matches(self, value, expected):
+        from runpod.apps.gpu import resolve_gpu_string
+
+        assert resolve_gpu_string(value) == expected
+
+        app = App("a")
+
+        @app.queue(gpu=value)
+        def work():
+            pass
+
+        assert work.spec.to_manifest()["gpus"] == expected
+
+    def test_a40_queue_selects_only_a40(self):
+        from runpod.apps.gpu import gpu_ids_value
+
+        app = App("a")
+
+        @app.queue(gpu="A40")
+        def work():
+            pass
+
+        devices = work.spec.to_manifest()["gpus"]
+        assert devices == ["NVIDIA A40"]
+        assert gpu_ids_value(devices, pool_members={}) == (
+            "AMPERE_48,-NVIDIA RTX A6000"
+        )
 
     def test_any_sentinel(self):
         from runpod.apps.spec import normalize_gpu

@@ -80,6 +80,14 @@ PROTECTED_IGNORES = GitIgnoreSpec.from_lines(
 )
 
 
+def is_discovery_skipped_dir(path: Path) -> bool:
+    return (
+        path.name.startswith(".")
+        or path.name in DISCOVERY_SKIP_DIRS
+        or (path / "pyvenv.cfg").is_file()
+    )
+
+
 def _load_ignores(path: Path) -> GitIgnoreSpec:
     if path.is_symlink() or not path.is_file():
         return GitIgnoreSpec.from_lines([])
@@ -121,14 +129,7 @@ def iter_source_files(
                 or path in excluded
                 or PROTECTED_IGNORES.match_file(rel)
                 or _is_ignored(rel, patterns)
-                or (
-                    discovery
-                    and (
-                        name.startswith(".")
-                        or name in DISCOVERY_SKIP_DIRS
-                        or (path / "pyvenv.cfg").is_file()
-                    )
-                )
+                or (discovery and is_discovery_skipped_dir(path))
             ):
                 if not discovery:
                     log.warning("excluded source path %r from deployment artifact", rel)

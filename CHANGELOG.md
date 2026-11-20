@@ -23,6 +23,29 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.4.0](https://github.com/runpod/runpod-python/compare/v2.3.0...v2.4.0) (2026-11-20)
+
+
+### Features
+
+* **cli:** manage and clean up volumes across storage types ([#741](https://github.com/runpod/runpod-python/issues/741)) ([02bd8a7](https://github.com/runpod/runpod-python/commit/02bd8a725ede91f08a474f94b9b6fa7145ac93fc))
+
+
+### Bug Fixes
+
+* **apps:** default GPU resources to CUDA 12.8 hosts ([#743](https://github.com/runpod/runpod-python/issues/743)) ([7349d7b](https://github.com/runpod/runpod-python/commit/7349d7b8c5f3c655c76133a02877e5d46ed17674))
+* **apps:** match A40 shorthand to the A40 device ([#737](https://github.com/runpod/runpod-python/issues/737)) ([35615c5](https://github.com/runpod/runpod-python/commit/35615c52fcbb03cff2ace1e18312acc67347d57c))
+* **apps:** preserve virtualenv dependencies during discovery rescans ([#740](https://github.com/runpod/runpod-python/issues/740)) ([dd92f6e](https://github.com/runpod/runpod-python/commit/dd92f6ebf79e1c8ce66d252a1d485b17b268910b))
+* **apps:** reject unschedulable cpu5 datacenter pins ([#739](https://github.com/runpod/runpod-python/issues/739)) ([c0a0708](https://github.com/runpod/runpod-python/commit/c0a0708766ddb9b883d545e89f958249f996b9d3))
+* **apps:** user secrets (e.g. HF_TOKEN) are written in plain text into the uploaded build manifest ([#698](https://github.com/runpod/runpod-python/issues/698)) ([574f867](https://github.com/runpod/runpod-python/commit/574f867048ba237099bd75a502259e74a6abb0f8))
+* **apps:** wait for queue jobs with longer execution timeouts ([#742](https://github.com/runpod/runpod-python/issues/742)) ([0600624](https://github.com/runpod/runpod-python/commit/060062459babc996bffcfae70cc14285b4a50633))
+* bootstrap custom runtimes from GitHub release assets ([#706](https://github.com/runpod/runpod-python/issues/706)) ([2b5b76c](https://github.com/runpod/runpod-python/commit/2b5b76c6aa52f5547db33a5c3aca77b034264c4e))
+
+
+### Performance Improvements
+
+* **serverless:** take the next job while a result uploads ([#726](https://github.com/runpod/runpod-python/issues/726)) ([fc1753a](https://github.com/runpod/runpod-python/commit/fc1753a97ad11451daf8cd70263f1af8352f4118))
+
 ## [2.3.0](https://github.com/runpod/runpod-python/compare/v2.2.1...v2.3.0) (2026-11-17)
 
 

@@ -12,7 +12,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from .errors import InvalidResourceError
-from .datacenter import DataCenter, datacenter_id
+from .datacenter import CPU5_DATACENTERS, DataCenter, datacenter_id
 from .gpu import GpuGroup, GpuLike, GpuType
 from .volume import Volume, normalize_mounts, validate_mounts
 
@@ -239,6 +239,19 @@ class ResourceSpec:
             raise InvalidResourceError(
                 f"resource '{self.name}': gpu and cpu are mutually exclusive"
             )
+        if (
+            self.cpu
+            and all(instance.startswith("cpu5") for instance in self.cpu)
+            and self.datacenter
+            and all(DataCenter.is_known(dc) for dc in self.datacenter)
+            and not any(dc in CPU5_DATACENTERS for dc in self.datacenter)
+        ):
+            supported = ", ".join(dc.value for dc in CPU5_DATACENTERS)
+            raise InvalidResourceError(
+                f"resource '{self.name}': cpu5 instances are only available in "
+                f"{supported}, but datacenter is pinned to {', '.join(self.datacenter)}. "
+                f"include a supported datacenter or remove the datacenter pin"
+            )
         validate_mounts(self.mounts, self.kind.value, self.is_cpu)
         if not isinstance(self.name, str) or not self.name:
             raise InvalidResourceError("resource name must be a non-empty string")
@@ -298,6 +311,12 @@ class ResourceSpec:
     @property
     def is_cpu(self) -> bool:
         return self.cpu is not None
+
+    @property
+    def effective_min_cuda_version(self) -> Optional[str]:
+        if self.is_cpu:
+            return None
+        return self.min_cuda_version or "12.8"
 
     @property
     def effective_scaler_type(self) -> str:
@@ -361,8 +380,8 @@ class ResourceSpec:
             data["scalerType"] = self.scaler_type
         if self.scaler_value != DEFAULT_SCALER_VALUE:
             data["scalerValue"] = self.scaler_value
-        if self.min_cuda_version:
-            data["minCudaVersion"] = self.min_cuda_version
+        if min_cuda_version := self.effective_min_cuda_version:
+            data["minCudaVersion"] = min_cuda_version
         if not self.accelerate_downloads:
             data["accelerateDownloads"] = False
         if self.container_disk_gb:

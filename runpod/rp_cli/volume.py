@@ -4,8 +4,11 @@ import sys
 from pathlib import Path
 
 import click
+from requests import RequestException
 
 from runpod.api.rest import run_rest_request
+from runpod.api.ctl_commands import _path_segment
+from runpod.error import QueryError
 from runpod.rp_cli import compute, console as ui
 from runpod.rp_cli.api import api_errors, list_all
 from runpod.rp_cli.output import (
@@ -35,8 +38,8 @@ global_option = click.option(
     "--global",
     "kind",
     flag_value="global",
-    default="network",
-    help="Manage global volumes, which mount in any data center.",
+    default=None,
+    help="Select global volumes only.",
 )
 
 
@@ -49,17 +52,43 @@ def _label(record):
     )
 
 
-def _choices(kind):
-    return [
-        (row["id"], _label(row))
-        for row in list_all(f"/v2/{kind}-volumes", f"{kind}Volumes")
-    ]
+def _list_volumes(kind=None, failures=None):
+    rows = []
+    for volume_kind in ([kind] if kind else ["network", "global"]):
+        try:
+            records = list_all(f"/v2/{volume_kind}-volumes", f"{volume_kind}Volumes")
+        except (QueryError, RequestException) as exc:
+            if failures is None:
+                raise
+            failures.append(f"could not list {volume_kind} volumes: {exc}")
+            continue
+        rows.extend({**row, "kind": volume_kind} for row in records)
+    return rows
+
+
+def _choices(kind=None):
+    failures = []
+    rows = _list_volumes(kind, failures)
+    for failure in failures:
+        click.echo(f"Warning: {failure}", err=True)
+    return [(row["id"], f"{row['kind']}  {_label(row)}") for row in rows]
 
 
 def _complete_ids(ctx, param, incomplete):
-    return completer(lambda: _choices(ctx.params.get("kind", "network")))(
-        ctx, param, incomplete
-    )
+    kind = "network" if ctx.command.name == "expand" else ctx.params.get("kind")
+    return completer(lambda: _choices(kind))(ctx, param, incomplete)
+
+
+def _get_volume(volume_id, kind=None):
+    path_id = _path_segment(volume_id)
+    if kind:
+        return kind, run_rest_request("GET", f"/v2/{kind}-volumes/{path_id}")
+    try:
+        return "network", run_rest_request("GET", f"/v2/network-volumes/{path_id}")
+    except QueryError as exc:
+        if exc.status_code != 404:
+            raise
+    return "global", run_rest_request("GET", f"/v2/global-volumes/{path_id}")
 
 
 def _show(record, kind, as_json, action=None):
@@ -112,7 +141,10 @@ def _growth(volume_id, size, expand=False):
             f"'{size}' is not a size. use N for a total or +N to add N GB",
             param_hint="--size",
         )
-    current = run_rest_request("GET", f"/v2/network-volumes/{volume_id}")["size"]
+    kind, record = _get_volume(volume_id)
+    if kind == "global":
+        raise click.UsageError("global volumes have no size to change")
+    current = record["size"]
     target = current + int(text) if text.startswith("+") else int(text)
     if target < current or (expand and target == current):
         raise click.UsageError(
@@ -144,20 +176,34 @@ def volume():
 @global_option
 @json_option
 def volume_list(kind, as_json):
-    """List volumes with their size, data center, and type."""
+    """List network and global volumes together with their type."""
+    failures = []
     with api_errors():
-        rows = list_all(f"/v2/{kind}-volumes", f"{kind}Volumes")
+        rows = _list_volumes(kind, None if as_json else failures)
     if as_json:
         print_json(rows)
         return
-    fields = NETWORK_FIELDS
-    if kind == "global":
-        fields = GLOBAL_FIELDS[:2] + [("created", lambda row: row["createdAt"][:10])]
+    fields = [
+        ("id", lambda row: row["id"]),
+        ("name", lambda row: row["name"]),
+        ("type", lambda row: row["kind"]),
+        ("size", lambda row: f"{row['size']} GB" if "size" in row else None),
+        ("data center", lambda row: row.get("dataCenter")),
+        ("tier", lambda row: (row.get("type") or "").lower()),
+    ]
     print_table(
         rows,
         [(label.upper(), value) for label, value in fields],
-        f"no {kind} volumes. create one with rp volume create",
+        (
+            "volume inventory unavailable"
+            if failures
+            else "no volumes. create one with rp volume create"
+        ),
     )
+    if failures:
+        raise click.ClickException(
+            "incomplete volume inventory. " + ". ".join(failures)
+        )
 
 
 @volume.command(name="get")
@@ -168,8 +214,8 @@ def volume_get(volume_id, kind, as_json):
     """Show one volume (pick one when VOLUME_ID is omitted)."""
     with api_errors():
         if volume_id is None:
-            volume_id = pick(f"{kind} volume", _choices(kind), "pass VOLUME_ID")
-        record = run_rest_request("GET", f"/v2/{kind}-volumes/{volume_id}")
+            volume_id = pick("volume", _choices(kind), "pass VOLUME_ID")
+        kind, record = _get_volume(volume_id, kind)
     _show(record, kind, as_json)
 
 
@@ -189,24 +235,32 @@ def volume_get(volume_id, kind, as_json):
 @click.option("--data-center", help="Exact data center id, like EU-RO-1.")
 @click.option(
     "--type",
+    "kind",
+    type=click.Choice(["network", "global"], case_sensitive=False),
+    default="network",
+    show_default=True,
+    help="Storage type. Global volumes mount in any data center.",
+)
+@click.option(
+    "--tier",
     "volume_type",
     type=click.Choice(["standard", "high_performance"], case_sensitive=False),
     help="Storage tier, immutable after creation. Defaults to the data center's "
     "primary tier.",
 )
-@global_option
 @json_option
 def volume_create(name, size, regions, data_center, volume_type, kind, as_json):
     """Create a network volume in one data center, or a global volume.
 
     A region matching several data centers narrows to those offering
-    the requested --type, then prompts for one.
+    the requested --tier, then prompts for one.
 
     \b
       rp volume create --name models --size 100 --region eu
       rp volume create --name scratch --size 50 --data-center EU-RO-1
-      rp volume create --name shared --global
+      rp volume create --name shared --type global
     """
+    kind = kind.lower()
     body = {"name": name}
     with api_errors():
         if kind == "global":
@@ -216,7 +270,7 @@ def volume_create(name, size, regions, data_center, volume_type, kind, as_json):
                     ("--size", size),
                     ("--region", regions),
                     ("--data-center", data_center),
-                    ("--type", volume_type),
+                    ("--tier", volume_type),
                 )
                 if value
             ]
@@ -264,7 +318,12 @@ def volume_update(volume_id, name, size, kind, as_json):
     with api_errors():
         if size is not None:
             _growth(volume_id, size)
-        record = run_rest_request("PATCH", f"/v2/{kind}-volumes/{volume_id}", json=body)
+            kind = "network"
+        elif kind is None:
+            kind, _ = _get_volume(volume_id)
+        record = run_rest_request(
+            "PATCH", f"/v2/{kind}-volumes/{_path_segment(volume_id)}", json=body
+        )
     _show(record, kind, as_json, "updated")
 
 
@@ -282,7 +341,9 @@ def volume_expand(volume_id, size, as_json):
     with api_errors():
         current, target = _growth(volume_id, size, expand=True)
         record = run_rest_request(
-            "PATCH", f"/v2/network-volumes/{volume_id}", json={"size": target}
+            "PATCH",
+            f"/v2/network-volumes/{_path_segment(volume_id)}",
+            json={"size": target},
         )
     if as_json:
         print_json(record)
@@ -298,10 +359,11 @@ def volume_expand(volume_id, size, as_json):
 @global_option
 def volume_delete(volume_id, yes, kind):
     """Delete a volume and everything stored on it."""
-    path = f"/v2/{kind}-volumes/{volume_id}"
     with api_errors():
+        if kind is None or not yes:
+            kind, record = _get_volume(volume_id, kind)
+        path = f"/v2/{kind}-volumes/{_path_segment(volume_id)}"
         if not yes:
-            record = run_rest_request("GET", path)
             confirm(
                 f"delete {kind} volume {volume_id} ({_label(record)}) and all its data?",
                 yes,
