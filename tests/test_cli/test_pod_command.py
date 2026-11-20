@@ -1041,6 +1041,125 @@ def test_update_can_swap_paths_of_two_existing_volumes():
     }
 
 
+@pytest.mark.parametrize("pod_center", ["EU-RO-1", None])
+def test_update_rejects_network_volumes_in_different_centers(pod_center):
+    api = FakeApi(
+        {
+            ("GET", "/v2/pods/pod123"): {**POD, "dataCenterId": pod_center},
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "US-TX-3",
+            },
+        }
+    )
+    result = _invoke(
+        ["update", "pod123", "--volume", "vol1:/a", "--volume", "vol2:/b"], api=api
+    )
+    assert result.exit_code == 2, result.output
+    assert "must share a data center" in result.output
+    assert not api.made("PATCH", "/v2/pods/pod123")
+
+
+@pytest.mark.parametrize("existing_mounts", [None, POD["mounts"]])
+def test_update_rejects_network_volume_outside_pod_center(existing_mounts):
+    api = FakeApi(
+        {
+            ("GET", "/v2/pods/pod123"): {**POD, "mounts": existing_mounts},
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "US-TX-3",
+            },
+        }
+    )
+    result = _invoke(["update", "pod123", "--volume", "vol2:/models"], api=api)
+    assert result.exit_code == 2, result.output
+    assert "US-TX-3, outside the requested placement" in result.output
+    assert not api.made("PATCH", "/v2/pods/pod123")
+
+
+@pytest.mark.parametrize("pod_center", ["EU-RO-1", None])
+def test_update_accepts_compatible_network_volumes_without_refetching(pod_center):
+    api = FakeApi(
+        {
+            ("GET", "/v2/pods/pod123"): {**POD, "dataCenterId": pod_center},
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "EU-RO-1",
+            },
+        }
+    )
+    result = _invoke(
+        ["update", "pod123", "--volume", "vol1:/a", "--volume", "vol2:/b"], api=api
+    )
+    assert result.exit_code == 0, result.output
+    assert api.body("PATCH", "/v2/pods/pod123") == {
+        "mounts": {
+            "network": [
+                {"volumeId": "vol1", "path": "/a"},
+                {"volumeId": "vol2", "path": "/b"},
+            ]
+        }
+    }
+    assert [call[1] for call in api.calls if "volumes/" in call[1]] == [
+        "/v2/network-volumes/vol1",
+        "/v2/network-volumes/vol2",
+    ]
+
+
+@pytest.mark.parametrize("command", ["create", "update"])
+@pytest.mark.parametrize("second_path", ["//shared", "//data/../shared", "///shared"])
+def test_leading_slashes_cannot_bypass_mount_collision_checks(command, second_path):
+    api = FakeApi(
+        {
+            ("GET", "/v2/network-volumes/vol2"): {
+                "id": "vol2",
+                "dataCenter": "EU-RO-1",
+            },
+        }
+    )
+    args = (
+        ["create", "a", "--gpu", "4090", "--image", "x"]
+        if command == "create"
+        else ["update", "pod123"]
+    )
+    result = _invoke(
+        [*args, "--volume", "vol1:/shared", "--volume", f"vol2:{second_path}"], api=api
+    )
+    assert result.exit_code == 2, result.output
+    assert "multiple volumes target '/shared'" in result.output
+    assert not any(call[0] in ("POST", "PATCH") for call in api.calls)
+
+
+@pytest.mark.parametrize(
+    "existing_path,new_path", [("/shared", "//shared"), ("//shared", "/shared")]
+)
+def test_leading_slash_collision_checks_include_retained_mounts(
+    existing_path, new_path
+):
+    api = FakeApi(
+        {
+            ("GET", "/v2/pods/pod123"): {
+                **POD,
+                "mounts": {
+                    "global": [{"volumeId": "gv1", "path": existing_path}],
+                },
+            },
+        }
+    )
+    result = _invoke(["update", "pod123", "--volume", f"vol1:{new_path}"], api=api)
+    assert result.exit_code == 2, result.output
+    assert "multiple volumes target '/shared'" in result.output
+    assert not api.made("PATCH", "/v2/pods/pod123")
+
+
+def test_noncolliding_double_slash_mount_path_is_preserved():
+    result = _invoke(["update", "pod123", "--volume", "gv1://shared"])
+    assert result.exit_code == 0, result.output
+    assert result.api.body("PATCH", "/v2/pods/pod123") == {
+        "mounts": {"global": [{"volumeId": "gv1", "path": "//shared"}]},
+    }
+
+
 class TestActions:
     @pytest.mark.parametrize("action", ["stop", "restart"])
     def test_action(self, action):

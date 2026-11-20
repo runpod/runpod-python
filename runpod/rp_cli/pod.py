@@ -260,6 +260,8 @@ def _container_body(
                 if not mount.get("path"):
                     continue
                 path = posixpath.normpath(mount["path"])
+                if path.startswith("//"):
+                    path = path[1:]
                 if path in paths:
                     raise click.UsageError(
                         f"multiple volumes target {path!r}. use a distinct :PATH for each volume"
@@ -699,7 +701,13 @@ def update(pod_id, name, unset_env, locked, as_json, **container):
         current = (
             run_rest_request("GET", f"/v2/pods/{pod_id}") if needs_current else None
         )
-        body = _container_body(container, current, unset_env)
+        network_centers = set()
+        body = _container_body(
+            container, current, unset_env, network_centers=network_centers
+        )
+        if network_centers:
+            pod_center = current.get("dataCenterId")
+            _datacenter_ids((), [pod_center] if pod_center else (), network_centers)
         if name:
             body["name"] = name
         if locked is not None:
