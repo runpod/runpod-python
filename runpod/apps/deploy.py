@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Set
 
+import aiohttp
+
 from .api import AppsApiClient
 from .app import App
 from .build import (
@@ -566,9 +568,19 @@ async def reconcile_endpoints(
                         if (endpoint.get("template") or {}).get("name") == template_name
                         and endpoint["id"] not in existing.values()
                     ]
-                    if len(matches) != 1:
+                    if len(matches) == 1:
+                        undo.append((name, matches[0]["id"], None))
+                    elif matches or isinstance(
+                        exc,
+                        (
+                            aiohttp.ClientError,
+                            OSError,
+                            asyncio.TimeoutError,
+                            asyncio.CancelledError,
+                            KeyboardInterrupt,
+                        ),
+                    ):
                         raise RuntimeError("creation status unknown")
-                    undo.append((name, matches[0]["id"], None))
                 except Exception:
                     rollback_errors.append(f"{name}: creation status unknown")
             for resource, endpoint_id, snapshot in (

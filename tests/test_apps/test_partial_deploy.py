@@ -61,9 +61,15 @@ async def test_reports_confirmed_changes_and_failed_request(updating, cause):
     message = str(caught.value)
     assert caught.value.__cause__ is cause
     assert f"Couldn't deploy 'b_bad': {cause}" in message
-    assert "Rollback incomplete:\n  b_bad: creation status unknown" in message
-    assert "rp flash env get prod --app partial" in message
-    assert "Best-effort rollback completed." not in message
+    if isinstance(cause, TimeoutError):
+        assert "Rollback incomplete:\n  b_bad: creation status unknown" in message
+        assert "rp flash env get prod --app partial" in message
+        assert "Best-effort rollback completed." not in message
+    else:
+        assert (
+            message
+            == "Couldn't deploy 'b_bad': quota exceeded\nBest-effort rollback completed."
+        )
     assert [call.args[0]["name"] for call in api.save_endpoint.await_args_list[:2]] == [
         "a_ok",
         "b_bad",
@@ -207,9 +213,7 @@ def test_cli_reports_partial_deploy_and_failed_phase(tmp_path, monkeypatch):
     assert result.exit_code == 1, result.output
     assert (
         result.output == "Error: Couldn't deploy 'b_bad': quota exceeded\n"
-        "Rollback incomplete:\n  b_bad: creation status unknown\n"
-        "Check `rp flash env get prod --app partial`. "
-        "Remaining workers may still incur charges.\n"
+        "Best-effort rollback completed.\n"
     )
     assert "✗ deploying endpoints" in buffer.getvalue()
     assert "✓ deploying endpoints" not in buffer.getvalue()

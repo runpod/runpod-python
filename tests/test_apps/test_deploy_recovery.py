@@ -74,7 +74,7 @@ async def test_unconfirmed_create_never_claims_complete_rollback(current):
     app = App("demo")
     app.queue(name="worker", cpu="cpu3c-1-2")(lambda: None)
     api = AsyncMock()
-    api.save_endpoint.side_effect = QueryError("request failed")
+    api.save_endpoint.side_effect = asyncio.TimeoutError("request timed out")
     api.get_environment_by_name.return_value = current
     with pytest.raises(EndpointReconciliationError) as caught:
         await reconcile_endpoints(
