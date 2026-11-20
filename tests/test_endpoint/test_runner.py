@@ -23,6 +23,15 @@ class TestRunPodClient(unittest.TestCase):
             runpod.api_key = None
             RunPodClient()
     
+    def test_retry_adapter_mounted_for_http_and_https(self):
+        """Retries on 408/429 must apply to https:// (the default base URL) too"""
+        runpod.api_key = "KEY"
+        client = RunPodClient()
+        for prefix in ("http://", "https://"):
+            adapter = client.rp_session.get_adapter(f"{prefix}api.runpod.ai/v2/x")
+            self.assertEqual(adapter.max_retries.total, 5)
+            self.assertIn(429, adapter.max_retries.status_forcelist)
+
     def test_client_with_custom_api_key(self):
         """Test RunPodClient with custom API key"""
         custom_key = "CUSTOM_API_KEY"
