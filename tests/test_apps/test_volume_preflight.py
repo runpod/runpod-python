@@ -300,6 +300,52 @@ async def test_reconcile_validates_all_volumes_before_saving_endpoints(api):
     api.delete_endpoint.assert_not_awaited()
 
 
+@pytest.mark.parametrize("volume_type", [NetworkVolume, GlobalVolume])
+@pytest.mark.parametrize("first_create", [True, False])
+@pytest.mark.parametrize("exists", [True, False])
+async def test_reconcile_shared_volume_honors_every_create_declaration(
+    api, volume_type, first_create, exists
+):
+    app = App("shared")
+    _queue(app, "a", volume_type("shared", create=first_create))
+    _queue(app, "b", volume_type("shared", create=not first_create))
+    if exists:
+        getattr(api, f"list_{volume_type.kind}_volumes").return_value = [
+            {"id": "existing", "name": "shared", "dataCenter": "EU-RO-1"}
+        ]
+        endpoints = await reconcile_endpoints(
+            api, app, {"id": "env", "name": "prod"}, "build", "3.12"
+        )
+        assert endpoints == {"a": "ep-new", "b": "ep-new"}
+        assert api.save_endpoint.await_count == 2
+    else:
+        with pytest.raises(VolumeError, match="shared.*create=False"):
+            await reconcile_endpoints(
+                api, app, {"id": "env", "name": "prod"}, "build", "3.12"
+            )
+        api.save_endpoint.assert_not_awaited()
+    api.create_network_volume.assert_not_awaited()
+    api.create_global_volume.assert_not_awaited()
+    api.delete_endpoint.assert_not_awaited()
+
+
+@pytest.mark.parametrize("volume_type", [NetworkVolume, GlobalVolume])
+@pytest.mark.parametrize("preflight", [True, False])
+async def test_resolution_honors_additional_create_false_declaration(
+    api, volume_type, preflight
+):
+    resolver = VolumeResolver(api)
+    volume = volume_type("shared")
+    if preflight:
+        await resolver.preflight([_spec("a", volume)])
+    with pytest.raises(VolumeError, match="shared.*create=False"):
+        await resolver.resolve(
+            volume, [_spec("b", volume_type("shared", create=False))]
+        )
+    api.create_network_volume.assert_not_awaited()
+    api.create_global_volume.assert_not_awaited()
+
+
 async def test_deploy_checks_endpoint_volumes_before_creating_task_storage(
     api, tmp_path
 ):

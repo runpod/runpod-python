@@ -357,7 +357,16 @@ class VolumeResolver:
         self._planned = planned
 
     async def _plan(self, volume: Volume, specs: List) -> Dict[str, Any]:
+        if not isinstance(volume, (GlobalVolume, NetworkVolume)):
+            raise VolumeError(f"unsupported volume type {type(volume).__name__}")
         key = (volume.kind, volume.reference)
+        references = [volume] + [
+            ref
+            for spec in specs
+            for ref in spec.mounts.values()
+            if (ref.kind, ref.reference) == key
+        ]
+        create = all(ref.create for ref in references)
         cached = self._resolved.get(key)
         if isinstance(volume, GlobalVolume):
             if cached is not None:
@@ -370,15 +379,12 @@ class VolumeResolver:
                 error=VolumeError,
             )
             if record is None:
-                if not volume.create:
+                if not create:
                     raise VolumeError(
                         f"global volume '{volume.name}' not found and create=False"
                     )
                 return {}
             return {"id": record["id"]}
-        if not isinstance(volume, NetworkVolume):
-            raise VolumeError(f"unsupported volume type {type(volume).__name__}")
-
         client = await self._client()
         if cached is not None:
             record = {"id": cached["id"], "dataCenter": cached["dataCenterId"]}
@@ -387,7 +393,7 @@ class VolumeResolver:
             record = find_by_id_or_name(
                 existing, volume.name, noun="volumes", error=VolumeError
             )
-        if record is None and not volume.create:
+        if record is None and not create:
             raise VolumeError(f"volume '{volume.name}' not found and create=False")
 
         dc = record["dataCenter"] if record is not None else volume.datacenter
@@ -395,15 +401,7 @@ class VolumeResolver:
             from .datacenter import datacenter_id
 
             pins = {
-                datacenter_id(ref.datacenter)
-                for ref in [volume]
-                + [
-                    ref
-                    for spec in specs
-                    for ref in spec.mounts.values()
-                    if (ref.kind, ref.reference) == key
-                ]
-                if ref.datacenter
+                datacenter_id(ref.datacenter) for ref in references if ref.datacenter
             }
             if len(pins) > 1:
                 raise VolumeError(
