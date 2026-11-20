@@ -601,3 +601,74 @@ class TestRefreshKeepsTaskEvents:
 
         await session.refresh([app2])
         assert app2._dev_events is sink
+
+
+class TestDevTemplateNames:
+    """a re-run soon after a session must not reuse the held template name."""
+
+    def test_endpoint_input_sets_template_name(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        assert "name" not in _endpoint_input(app, q.spec)["template"]
+        payload = _endpoint_input(app, q.spec, template_name="tpl-x")
+        assert payload["template"]["name"] == "tpl-x"
+
+    async def test_sessions_use_distinct_template_names_for_one_endpoint(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        names = []
+        for _ in range(2):
+            api = _mock_api()
+            await DevSession([app], api=api).start()
+            payload = api.save_endpoint.await_args.args[0]
+            assert payload["name"] == dev_endpoint_name("a", "q")
+            assert payload["template"]["name"].startswith(f"{payload['name']}-")
+            names.append(payload["template"]["name"])
+
+        assert names[0] != names[1]
+
+    async def test_refresh_keeps_the_session_template_name(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = _mock_api()
+        api.save_endpoint.return_value = {"id": "ep-1"}
+        session = DevSession([app], api=api)
+        await session.start()
+        created = api.save_endpoint.await_args.args[0]["template"]["name"]
+
+        await session.refresh([app])
+
+        refreshed = api.save_endpoint.await_args.args[0]
+        assert refreshed["id"] == "ep-1"
+        assert refreshed["template"]["name"] == created
+
+    async def test_adoption_renames_to_the_session_template_name(self):
+        app = App("a")
+
+        @app.queue(name="q", cpu="cpu3c-1-2")
+        def q():
+            pass
+
+        api = _mock_api()
+        api.list_my_endpoints.return_value = [
+            {"id": "ep-old", "name": dev_endpoint_name("a", "q")}
+        ]
+        api.save_endpoint.return_value = {"id": "ep-old"}
+        session = DevSession([app], api=api)
+        await session.start()
+
+        payload = api.save_endpoint.await_args.args[0]
+        assert payload["id"] == "ep-old"
+        assert payload["template"]["name"] == session._template_name(payload["name"])
