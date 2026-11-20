@@ -21,6 +21,7 @@ from runpod.error import AuthenticationError, QueryError
 from runpod.sandbox import (
     SandboxCreationError,
     SandboxExecutionError,
+    SandboxLimits,
     SandboxStartupTimeout,
     SandboxStateError,
 )
@@ -140,6 +141,18 @@ def sandbox_peer():
         )
         if request.headers.get("Authorization") != "Bearer sandbox-test-key":
             return failure(401, "invalid key")
+        if request.path == "/v2/sandboxes/options":
+            return web.json_response(
+                {
+                    "dataCenterIds": ["EU-RO-1", "US-CA-2"],
+                    "cpuFlavorIds": ["cpu3c"],
+                    "limits": {
+                        "maxConcurrentSandboxes": 10,
+                        "maxIdleTimeoutSeconds": 7200,
+                        "maxLifetimeSeconds": 86400,
+                    },
+                }
+            )
         if request.path == "/v2/global-volumes":
             if service.global_error:
                 return failure(403, service.global_error)
@@ -300,6 +313,7 @@ def sandbox_peer():
             "/v2/sandboxes",
             "/v2/network-volumes",
             "/v2/registries",
+            "/v2/sandboxes/options",
             "/v2/sandboxes/{id}",
             "/v2/sandboxes/{id}/{operation}",
         ):
@@ -1381,3 +1395,34 @@ async def test_same_resolved_volume_id_cannot_be_mounted_as_two_kinds(peer):
             **peer.options,
         )
     assert peer.records == {}
+
+
+def _connection(peer):
+    return {key: value for key, value in peer.options.items() if key != "startup_timeout"}
+
+
+@pytest.mark.asyncio
+async def test_options_returns_what_create_may_choose(peer):
+    options = await AsyncioSandbox.options(**_connection(peer))
+    assert options.data_center_ids == ("EU-RO-1", "US-CA-2")
+    assert options.cpu_flavor_ids == ("cpu3c",)
+    assert options.limits == SandboxLimits(
+        max_concurrent_sandboxes=10,
+        max_idle_timeout_seconds=7200,
+        max_lifetime_seconds=86400,
+    )
+    assert peer.requests[-1][:2] == ("GET", "/v2/sandboxes/options")
+
+
+def test_sync_options_matches_async(peer):
+    options = Sandbox.options(**_connection(peer))
+    assert options.data_center_ids == ("EU-RO-1", "US-CA-2")
+    assert options.cpu_flavor_ids == ("cpu3c",)
+    assert options.limits.max_concurrent_sandboxes == 10
+
+
+@pytest.mark.asyncio
+async def test_options_authentication_failure_propagates(peer):
+    bad = {**_connection(peer), "api_key": "wrong"}
+    with pytest.raises(AuthenticationError):
+        await AsyncioSandbox.options(**bad)
