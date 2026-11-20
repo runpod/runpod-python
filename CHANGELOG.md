@@ -23,6 +23,13 @@
 * Deployment artifacts apply project ignore rules and mandatory secret-file exclusions while preserving vendored dependency assets.
 * Synchronous calls wait across polling timeouts on Python 3.10 and propagate operation timeouts.
 
+## [2.4.1](https://github.com/runpod/runpod-python/compare/v2.4.0...v2.4.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **apps:** validate all volume placements before provisioning ([#738](https://github.com/runpod/runpod-python/issues/738)) ([ddd8972](https://github.com/runpod/runpod-python/commit/ddd8972f8a8170c13619ade2a14476ba03ddfb55))
+
 ## [2.4.0](https://github.com/runpod/runpod-python/compare/v2.3.0...v2.4.0) (2026-11-20)
 
 
