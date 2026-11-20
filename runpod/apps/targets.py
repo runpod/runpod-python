@@ -432,15 +432,20 @@ class QueueClient:
         execution_timeout = (
             policy.get("executionTimeout") if isinstance(policy, dict) else None
         )
-        if (
-            isinstance(execution_timeout, (int, float))
-            and not isinstance(execution_timeout, bool)
-            and math.isfinite(execution_timeout)
-            and execution_timeout > 0
-        ):
-            timeout = max(
-                timeout, execution_timeout / 1000 + QUEUE_EXECUTION_HEADROOM_SECONDS
-            )
+        try:
+            if (
+                isinstance(execution_timeout, (int, float))
+                and not isinstance(execution_timeout, bool)
+                and math.isfinite(execution_timeout)
+                and execution_timeout > 0
+            ):
+                timeout = max(
+                    timeout, execution_timeout / 1000 + QUEUE_EXECUTION_HEADROOM_SECONDS
+                )
+        except OverflowError:
+            raise ValueError(
+                "execution_timeout is too large for the client timeout"
+            ) from None
         start = time.monotonic()
         # leave transport headroom for the server to return a pollable job id.
         wait_ms = int(min(90.0, max(1.0, timeout - 1.0)) * 1000)

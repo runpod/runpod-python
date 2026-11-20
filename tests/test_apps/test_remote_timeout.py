@@ -139,3 +139,28 @@ async def test_remote_with_execution_timeout(kind):
         {"input": {"x": 1}, "policy": {"executionTimeout": 900000}},
         960,
     )
+
+
+@pytest.mark.parametrize("kind", ["handle", "stub"])
+@pytest.mark.parametrize("execution_timeout", [10**400, -(10**400)])
+async def test_remote_rejects_oversized_execution_timeout(kind, execution_timeout):
+    target = SentinelTarget("app", "default", "queue")
+    if kind == "handle":
+        app = Mock(_resolve=AsyncMock(return_value=target))
+        handle = FunctionHandle(
+            app, lambda x: x, ResourceSpec(kind=ResourceKind.QUEUE, name="queue")
+        )
+    else:
+        handle = Queue(app="app", name="queue")
+
+    handle = handle.with_options(execution_timeout=execution_timeout)
+    with (
+        patch.object(Queue, "_target", return_value=target),
+        patch.object(target._client, "_call", new_callable=AsyncMock) as call,
+        pytest.raises(
+            ValueError, match="execution_timeout is too large for the client timeout"
+        ),
+    ):
+        await handle.remote.aio(x=1)
+
+    call.assert_not_awaited()
