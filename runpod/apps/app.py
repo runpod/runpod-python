@@ -102,7 +102,11 @@ class App:
         accelerate_downloads: bool = True,
         container_disk_gb: Optional[int] = None,
     ) -> Callable[[Callable], FunctionHandle]:
-        """declare a queue-based serverless endpoint from a function."""
+        """declare a queue-based serverless endpoint from a function.
+
+        gpu resources default to min_cuda_version="12.8", including custom
+        images. set an explicit version to select a different host cuda floor.
+        """
 
         def decorator(fn: Callable) -> FunctionHandle:
             spec = ResourceSpec(
@@ -158,6 +162,9 @@ class App:
 
         remote task arguments and results use json in every execution
         context. use .local() for direct python execution without transport.
+
+        gpu resources default to min_cuda_version="12.8", including custom
+        images. set an explicit version to select a different host cuda floor.
         """
 
         def decorator(fn: Callable) -> FunctionHandle:
@@ -210,6 +217,9 @@ class App:
         container_disk_gb: Optional[int] = None,
     ) -> Callable[[Any], ApiHandle]:
         """declare a load-balanced serverless endpoint.
+
+        gpu resources default to min_cuda_version="12.8", including custom
+        images. set an explicit version to select a different host cuda floor.
 
         decorate a class with route markers for the native experience, or
         a zero-argument function returning an asgi app to serve an

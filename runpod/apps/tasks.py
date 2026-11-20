@@ -98,18 +98,6 @@ def _runtime_command() -> str:
     return runtime_launcher("task")
 
 
-def cuda_versions_at_least(minimum: str) -> List[str]:
-    """all platform cuda versions >= minimum, ascending."""
-    from .spec import CUDA_VERSIONS
-
-    def _key(version: str):
-        major, minor = version.split(".")
-        return (int(major), int(minor))
-
-    floor = _key(minimum)
-    return sorted((v for v in CUDA_VERSIONS if _key(v) >= floor), key=_key)
-
-
 def _device_names(gpu: Optional[List[str]]) -> List[str]:
     """pods take exact device names, not pool ids; expand pool ids
     (e.g. ADA_24 -> NVIDIA GeForce RTX 4090) and pass device names
@@ -190,10 +178,8 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     else:
         pod["gpuTypeIdList"] = _device_names(spec.gpu)
         pod["gpuCount"] = spec.gpu_count
-        if spec.min_cuda_version:
-            # pods have no min-version filter; allow every version at
-            # or above the requested floor
-            pod["allowedCudaVersions"] = cuda_versions_at_least(spec.min_cuda_version)
+        if min_cuda_version := spec.effective_min_cuda_version:
+            pod["minCudaVersion"] = min_cuda_version
     return pod
 
 

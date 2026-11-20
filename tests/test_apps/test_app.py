@@ -366,6 +366,7 @@ def test_manifest_serialization():
         "workersMax": 3,
         "idleTimeout": 60,
         "gpus": ["ADA_24"],
+        "minCudaVersion": "12.8",
         "dependencies": ["torch"],
         "mounts": [
             {"kind": "network", "reference": "my-volume", "path": "/runpod-volume"}

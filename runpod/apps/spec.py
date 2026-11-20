@@ -300,6 +300,12 @@ class ResourceSpec:
         return self.cpu is not None
 
     @property
+    def effective_min_cuda_version(self) -> Optional[str]:
+        if self.is_cpu:
+            return None
+        return self.min_cuda_version or "12.8"
+
+    @property
     def effective_scaler_type(self) -> str:
         """the scaler the endpoint deploys with: explicit or kind default."""
         if self.scaler_type:
@@ -361,8 +367,8 @@ class ResourceSpec:
             data["scalerType"] = self.scaler_type
         if self.scaler_value != DEFAULT_SCALER_VALUE:
             data["scalerValue"] = self.scaler_value
-        if self.min_cuda_version:
-            data["minCudaVersion"] = self.min_cuda_version
+        if min_cuda_version := self.effective_min_cuda_version:
+            data["minCudaVersion"] = min_cuda_version
         if not self.accelerate_downloads:
             data["accelerateDownloads"] = False
         if self.container_disk_gb:
