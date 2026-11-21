@@ -1,9 +1,10 @@
+import asyncio
 import sys
 import traceback
 from unittest import TestCase
 from unittest.mock import patch
 
-from runpod.serverless.modules.rp_scale import _handle_uncaught_exception
+from runpod.serverless.modules.rp_scale import JobScaler, _handle_uncaught_exception
 
 
 class TestHandleUncaughtException(TestCase):
@@ -52,3 +53,42 @@ class TestHandleUncaughtException(TestCase):
     def test_excepthook_not_set_when_start_not_invoked(self):
         assert sys.excepthook == sys.__excepthook__
         assert sys.excepthook != _handle_uncaught_exception
+
+
+class TestSetScaleConcurrencyValidation(TestCase):
+    """Tests that set_scale guards against invalid concurrency_modifier returns. (Fixes #458)"""
+
+    def _make_scaler(self, modifier):
+        config = {"handler": lambda job: job, "concurrency_modifier": modifier}
+        return JobScaler(config)
+
+    @patch("runpod.serverless.modules.rp_scale.log")
+    def test_none_return_defaults_to_1(self, _mock_log):
+        scaler = self._make_scaler(lambda _: None)
+        asyncio.run(scaler.set_scale())
+        assert scaler.current_concurrency == 1
+
+    @patch("runpod.serverless.modules.rp_scale.log")
+    def test_negative_return_defaults_to_1(self, _mock_log):
+        scaler = self._make_scaler(lambda _: -5)
+        asyncio.run(scaler.set_scale())
+        assert scaler.current_concurrency == 1
+
+    @patch("runpod.serverless.modules.rp_scale.log")
+    def test_zero_return_defaults_to_1(self, _mock_log):
+        scaler = self._make_scaler(lambda _: 0)
+        asyncio.run(scaler.set_scale())
+        assert scaler.current_concurrency == 1
+
+    @patch("runpod.serverless.modules.rp_scale.log")
+    def test_exception_keeps_current(self, _mock_log):
+        scaler = self._make_scaler(lambda _: (_ for _ in ()).throw(RuntimeError("boom")))
+        scaler.current_concurrency = 4
+        asyncio.run(scaler.set_scale())
+        assert scaler.current_concurrency == 4
+
+    @patch("runpod.serverless.modules.rp_scale.log")
+    def test_valid_int_applied(self, _mock_log):
+        scaler = self._make_scaler(lambda _: 8)
+        asyncio.run(scaler.set_scale())
+        assert scaler.current_concurrency == 8
