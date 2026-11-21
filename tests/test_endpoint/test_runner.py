@@ -387,3 +387,37 @@ class TestJob(unittest.TestCase):
         job = runner.Job("endpoint_id", "job_id", mock_client)
         self.assertEqual(list(job.stream()), ["chunk 1"])
         self.assertEqual(job.output(), "final result")
+
+    @patch("runpod.endpoint.runner.time.sleep")
+    @patch("runpod.endpoint.runner.RunPodClient")
+    def test_job_stream_terminal_without_stream_key(self, mock_client, _mock_sleep):
+        """Job.stream exits cleanly when a terminal response omits 'stream'."""
+        for status in ("FAILED", "TIMED_OUT", "COMPLETED"):
+            with self.subTest(status=status):
+                payload = {"id": "job_id", "status": status}
+                if status == "FAILED":
+                    payload["error"] = "out of memory"
+                mock_client.get.side_effect = [payload]
+
+                job = runner.Job("endpoint_id", "job_id", mock_client)
+                self.assertEqual(list(job.stream()), [])
+                self.assertEqual(job.job_status, status)
+
+    @patch("runpod.endpoint.runner.time.sleep")
+    @patch("runpod.endpoint.runner.RunPodClient")
+    def test_job_stream_terminal_with_none_stream(self, mock_client, _mock_sleep):
+        """Job.stream handles 'stream': None on in-progress and terminal responses."""
+        for status in ("FAILED", "TIMED_OUT", "COMPLETED"):
+            with self.subTest(status=status):
+                mock_client.get.side_effect = [
+                    {"status": "IN_PROGRESS", "stream": None},
+                    {
+                        "status": "IN_PROGRESS",
+                        "stream": [{"output": "chunk 1"}, {"output": "chunk 2"}],
+                    },
+                    {"id": "job_id", "status": status, "stream": None},
+                ]
+
+                job = runner.Job("endpoint_id", "job_id", mock_client)
+                self.assertEqual(list(job.stream()), ["chunk 1", "chunk 2"])
+                self.assertEqual(job.job_status, status)

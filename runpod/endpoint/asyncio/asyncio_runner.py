@@ -102,11 +102,9 @@ class Job:
         while True:
             await asyncio.sleep(1)
             stream_partial = await self._fetch_job(source="stream")
-            if (
-                stream_partial["status"] not in FINAL_STATES
-                or len(stream_partial.get("stream", [])) > 0
-            ):
-                for chunk in stream_partial.get("stream", []):
+            stream_chunks = stream_partial.get("stream") or []
+            if stream_partial["status"] not in FINAL_STATES or len(stream_chunks) > 0:
+                for chunk in stream_chunks:
                     yield chunk["output"]
             elif stream_partial["status"] in FINAL_STATES:
                 break
