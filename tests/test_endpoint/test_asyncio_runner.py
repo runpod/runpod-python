@@ -178,6 +178,45 @@ class TestJob(IsolatedAsyncioTestCase):
             assert outputs == ["OUTPUT1"]
             assert await job.output() == "FINAL"
 
+    async def test_stream_terminal_missing_or_none_stream(self):
+        """Job.stream handles missing or None 'stream' on in-progress and terminal responses."""
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer MOCK_API_KEY",
+            "X-Request-ID": "job_id",
+        }
+        with patch(
+            "runpod.endpoint.asyncio.asyncio_runner.asyncio.sleep"
+        ), patch(
+            "aiohttp.ClientSession", new_callable=AsyncMock
+        ) as mock_session_class:
+            mock_session = mock_session_class.return_value
+            for status in ("FAILED", "TIMED_OUT", "COMPLETED"):
+                for terminal_payload in (
+                    {"id": "job_id", "status": status},
+                    {"id": "job_id", "status": status, "stream": None},
+                ):
+                    with self.subTest(
+                        status=status, has_stream="stream" in terminal_payload
+                    ):
+                        responses = [
+                            {"status": "IN_PROGRESS"},
+                            {"status": "IN_PROGRESS", "stream": None},
+                            {
+                                "status": "IN_PROGRESS",
+                                "stream": [{"output": "OUTPUT1"}],
+                            },
+                            terminal_payload,
+                        ]
+                        mock_resp = AsyncMock()
+                        mock_resp.json.side_effect = responses
+                        mock_session.get.return_value = mock_resp
+
+                        job = Job("endpoint_id", "job_id", mock_session, headers)
+                        outputs = [chunk async for chunk in job.stream()]
+                        assert outputs == ["OUTPUT1"]
+                        assert job.job_status == status
+
     async def test_cancel(self):
         """
         Tests Job.cancel
