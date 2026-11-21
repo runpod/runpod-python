@@ -2,6 +2,8 @@
 Unit tests for the debugger utility functions.
 """
 
+import asyncio
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -128,6 +130,45 @@ class TestDebugger(unittest.TestCase):
         self.assertEqual(len(output), 1)
         self.assertEqual(output[0]["name"], "func_to_time")
         self.assertGreater(output[0]["duration_ms"], 0)
+
+    def test_function_timer_called_twice(self):
+        """
+        A timed function can run more than once before the output is collected.
+        """
+
+        @FunctionTimer
+        def func_to_time():
+            pass
+
+        func_to_time()
+        func_to_time()
+
+        output = get_debugger_output()["timestamps"]
+
+        self.assertEqual([entry["name"] for entry in output], ["func_to_time"] * 2)
+
+    def test_timers_in_concurrent_jobs(self):
+        """
+        Jobs that run at the same time (concurrency_modifier) can use the same
+        timers, and a job that finishes and clears the output doesn't break the
+        timers of jobs still running.
+        """
+        barrier = threading.Barrier(3)
+
+        @FunctionTimer
+        def work(job_id):
+            with LineTimer("step"):
+                barrier.wait(timeout=5)
+            if job_id == 0:
+                clear_debugger_output()
+            return job_id
+
+        async def run_jobs():
+            return await asyncio.gather(
+                *(asyncio.to_thread(work, job_id) for job_id in range(3))
+            )
+
+        self.assertEqual(asyncio.run(run_jobs()), [0, 1, 2])
 
     def test_clear_debugger_output(self):
         """
