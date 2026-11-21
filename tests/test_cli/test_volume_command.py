@@ -46,7 +46,12 @@ def rest():
 
 @pytest.fixture
 def listing():
-    with patch("runpod.rp_cli.volume.list_all", return_value=[VOLUME]) as mock:
+    with patch(
+        "runpod.rp_cli.volume.list_all",
+        side_effect=lambda path, collection: (
+            [GLOBAL_VOLUME] if collection == "globalVolumes" else [VOLUME]
+        ),
+    ) as mock:
         yield mock
 
 
@@ -68,24 +73,42 @@ def resource(request, rest):
 
 def test_list_table_and_json(resource, listing):
     kind, record, flag = resource
-    listing.return_value = [record]
     result = invoke(f"list {flag}")
     assert result.exit_code == 0, result.output
     assert record["id"] in result.output
     if kind == "global":
-        assert "2026-09-24" in result.output
+        assert "global" in result.output
+        assert VOLUME["id"] not in result.output
         assert record["createdByUserId"] not in result.output
     else:
-        for text in ("ID", "DATA CENTER", "TYPE", "100 GB", "EU-RO-1", "standard"):
+        for text in (
+            "ID",
+            "DATA CENTER",
+            "TYPE",
+            "TIER",
+            "100 GB",
+            "EU-RO-1",
+            "standard",
+            "network",
+            "global",
+            GLOBAL_VOLUME["id"],
+        ):
             assert text in result.output
     result = invoke(f"list {flag} --json")
-    assert json.loads(result.output) == [record]
-    listing.assert_called_with(f"/v2/{kind}-volumes", f"{kind}Volumes")
+    expected = [{**GLOBAL_VOLUME, "kind": "global"}]
+    if kind == "network":
+        expected.insert(0, {**VOLUME, "kind": "network"})
+    assert json.loads(result.output) == expected
+    calls = [call("/v2/global-volumes", "globalVolumes")]
+    if kind == "network":
+        calls.insert(0, call("/v2/network-volumes", "networkVolumes"))
+    assert listing.call_args_list == calls * 2
 
 
 def test_list_empty(listing):
+    listing.side_effect = None
     listing.return_value = []
-    assert "no network volumes" in invoke("list").output
+    assert "no volumes" in invoke("list").output
 
 
 def test_get_fields_and_json(resource, rest):
@@ -103,7 +126,10 @@ def test_get_picker(rest, listing):
     with patch("runpod.rp_cli.volume.pick", return_value="vol1") as pick:
         result = invoke("get")
     assert result.exit_code == 0, result.output
-    assert pick.call_args.args[1] == [("vol1", "models  100 GB  EU-RO-1  standard")]
+    assert pick.call_args.args[1] == [
+        ("vol1", "network  models  100 GB  EU-RO-1  standard"),
+        (GLOBAL_VOLUME["id"], f"global  {GLOBAL_VOLUME['name']}"),
+    ]
     rest.assert_called_once_with("GET", "/v2/network-volumes/vol1")
 
 
@@ -134,7 +160,7 @@ def test_api_errors_are_clean(rest, command, exception):
 
 def test_create_exact_data_center(rest, datacenters):
     result = invoke(
-        "create --name models --size 100 --data-center EU-RO-1 --type standard"
+        "create --name models --size 100 --data-center EU-RO-1 --tier standard"
     )
     assert result.exit_code == 0, result.output
     datacenters.assert_not_called()
@@ -154,8 +180,8 @@ def test_create_exact_data_center(rest, datacenters):
 @pytest.mark.parametrize(
     "options,candidates",
     [
-        ("--region eu --type high_performance", ["EU-FR-1", "EU-CZ-1"]),
-        ("--type standard", ["EU-RO-1", "EU-CZ-1", "US-TX-3"]),
+        ("--region eu --tier high_performance", ["EU-FR-1", "EU-CZ-1"]),
+        ("--tier standard", ["EU-RO-1", "EU-CZ-1", "US-TX-3"]),
         ("--region eu --region na", ["EU-RO-1", "EU-FR-1", "EU-CZ-1", "US-TX-3"]),
     ],
 )
@@ -186,7 +212,7 @@ def test_create_single_region_match_uses_default_tier(rest, datacenters):
     "options,code,message",
     [
         ("--region eu", 2, "EU-RO-1, EU-FR-1, EU-CZ-1"),
-        ("--region na --type high_performance", 1, "no data center"),
+        ("--region na --tier high_performance", 1, "no data center"),
         ("--region mars", 1, "unknown region"),
         ("--region eu --data-center EU-RO-1", 2, "either --region or --data-center"),
         ("--size 5000", 2, "4096"),
@@ -208,17 +234,55 @@ def test_create_requires_network_size(rest):
     rest.assert_not_called()
 
 
-def test_create_global(rest):
+@pytest.mark.parametrize("kind", ["global", "GLOBAL"])
+def test_create_global(rest, kind):
     rest.return_value = GLOBAL_VOLUME
-    result = invoke("create --name shared --global")
+    result = invoke(f"create --name shared --type {kind}")
     assert result.exit_code == 0, result.output
     rest.assert_called_once_with("POST", "/v2/global-volumes", json={"name": "shared"})
+
+
+def test_create_explicit_network_type_and_tier(rest):
+    result = invoke(
+        "create --name data --type network --tier high_performance "
+        "--size 100 --data-center EU-FR-1"
+    )
+    assert result.exit_code == 0, result.output
+    rest.assert_called_once_with(
+        "POST",
+        "/v2/network-volumes",
+        json={
+            "name": "data",
+            "size": 100,
+            "dataCenter": "EU-FR-1",
+            "type": "HIGH_PERFORMANCE",
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "options",
+    ["--size 50", "--region eu", "--data-center EU-RO-1", "--tier standard"],
+)
+def test_global_creation_rejects_network_options(rest, options):
+    result = invoke(f"create --name shared --type global {options}")
+    assert result.exit_code == 2
+    assert "do not apply to global volumes" in result.output
+    rest.assert_not_called()
+
+
+def test_create_help_distinguishes_storage_type_from_tier():
+    result = invoke("create --help")
+    assert result.exit_code == 0
+    assert "--type [network|global]" in result.output
+    assert "--tier [standard|high_performance]" in result.output
+    assert "--global" not in result.output
 
 
 @pytest.mark.parametrize(
     "command,message",
     [
-        ("create --name s --global --size 10 --region eu", "do not apply"),
+        ("create --name s --type global --size 10 --region eu", "do not apply"),
         ("update vol1 --global --size 20", "global volumes have no size"),
         ("update vol1", "pass --name and/or --size"),
     ],
@@ -234,9 +298,11 @@ def test_rename_without_fetching(resource, rest):
     kind, record, flag = resource
     result = invoke(f"update {record['id']} {flag} --name renamed")
     assert result.exit_code == 0, result.output
-    rest.assert_called_once_with(
-        "PATCH", f"/v2/{kind}-volumes/{record['id']}", json={"name": "renamed"}
+    expected = [] if flag else [call("GET", f"/v2/network-volumes/{record['id']}")]
+    expected.append(
+        call("PATCH", f"/v2/{kind}-volumes/{record['id']}", json={"name": "renamed"})
     )
+    assert rest.call_args_list == expected
 
 
 @pytest.mark.parametrize(
@@ -298,7 +364,9 @@ def test_delete_yes(resource, rest):
     kind, record, flag = resource
     result = invoke(f"delete {record['id']} {flag} --yes")
     assert result.exit_code == 0, result.output
-    rest.assert_called_once_with("DELETE", f"/v2/{kind}-volumes/{record['id']}")
+    expected = [] if flag else [call("GET", f"/v2/network-volumes/{record['id']}")]
+    expected.append(call("DELETE", f"/v2/{kind}-volumes/{record['id']}"))
+    assert rest.call_args_list == expected
 
 
 @pytest.mark.parametrize("answer,code", [("y", 0), ("n", 1)])
@@ -322,13 +390,16 @@ def test_delete_requires_yes_without_terminal(rest):
 
 def test_completion_by_kind(resource, listing):
     kind, record, flag = resource
-    listing.return_value = [record, dict(record, id="other")]
     args = ["volume", "get"] + ([flag] if flag else [])
     items = ShellComplete(cli, {}, "rp", "_RP_COMPLETE").get_completions(
         args, record["id"][:1]
     )
     assert [item.value for item in items] == [record["id"]]
-    listing.assert_called_once_with(f"/v2/{kind}-volumes", f"{kind}Volumes")
+    assert kind in items[0].help
+    expected = [call("/v2/global-volumes", "globalVolumes")]
+    if not flag:
+        expected.insert(0, call("/v2/network-volumes", "networkVolumes"))
+    assert listing.call_args_list == expected
 
 
 def test_completion_suppresses_errors(listing):

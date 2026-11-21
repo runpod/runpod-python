@@ -12,7 +12,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from .errors import InvalidResourceError
-from .datacenter import DataCenter, datacenter_id
+from .datacenter import CPU5_DATACENTERS, DEFAULT_DATACENTERS, DataCenter, datacenter_id
 from .gpu import GpuGroup, GpuLike, GpuType
 from .volume import Volume, normalize_mounts, validate_mounts
 
@@ -246,6 +246,20 @@ class ResourceSpec:
             raise InvalidResourceError(
                 f"resource '{self.name}': gpu and cpu are mutually exclusive"
             )
+        if (
+            self.cpu
+            and all(instance.startswith("cpu5") for instance in self.cpu)
+            and self.datacenter
+            and all(dc in DEFAULT_DATACENTERS for dc in self.datacenter)
+            and not any(dc in CPU5_DATACENTERS for dc in self.datacenter)
+        ):
+            supported = ", ".join(dc.value for dc in CPU5_DATACENTERS)
+            raise InvalidResourceError(
+                f"resource '{self.name}': cpu5 instances in the default datacenter "
+                "pool are only available in "
+                f"{supported}, but datacenter is pinned to {', '.join(self.datacenter)}. "
+                f"include a supported datacenter or remove the datacenter pin"
+            )
         validate_mounts(self.mounts, self.kind.value, self.is_cpu)
         if not isinstance(self.name, str) or not self.name:
             raise InvalidResourceError("resource name must be a non-empty string")
@@ -315,14 +329,25 @@ class ResourceSpec:
         return self.cpu is not None
 
     @property
+    def effective_min_cuda_version(self) -> Optional[str]:
+        if self.is_cpu:
+            return None
+        return self.min_cuda_version or "12.8"
+
+    @property
     def effective_scaler_type(self) -> str:
         """the scaler the endpoint deploys with: explicit or kind default."""
         if self.scaler_type:
             return self.scaler_type
         return "REQUEST_COUNT" if self.kind is ResourceKind.API else "QUEUE_DELAY"
 
-    def to_manifest(self) -> Dict[str, Any]:
-        """serialize for the deploy manifest."""
+    def to_manifest(self, *, include_env: bool = True) -> Dict[str, Any]:
+        """serialize for the deploy manifest.
+
+        include_env is False for endpoints, whose env reaches workers
+        through the endpoint template rather than the manifest, so it is
+        never written into the packaged artifact.
+        """
         self.validate()
         data: Dict[str, Any] = {
             "kind": self.kind.value,
@@ -345,7 +370,7 @@ class ResourceSpec:
                 {"kind": volume.kind, "reference": volume.reference, "path": path}
                 for path, volume in self.mounts.items()
             ]
-        if self.env:
+        if self.env and include_env:
             from .secret import render_env
 
             data["env"] = render_env(self.env)
@@ -371,8 +396,8 @@ class ResourceSpec:
             data["scalerType"] = self.scaler_type
         if self.scaler_value != DEFAULT_SCALER_VALUE:
             data["scalerValue"] = self.scaler_value
-        if self.min_cuda_version:
-            data["minCudaVersion"] = self.min_cuda_version
+        if min_cuda_version := self.effective_min_cuda_version:
+            data["minCudaVersion"] = min_cuda_version
         if not self.accelerate_downloads:
             data["accelerateDownloads"] = False
         if self.container_disk_gb:

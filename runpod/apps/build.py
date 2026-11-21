@@ -63,8 +63,12 @@ RUNTIME_REQUIREMENTS = (
     "tqdm-loggable",
 )
 
-# api workers additionally serve over fastapi/uvicorn
-API_RUNTIME_REQUIREMENTS = ("fastapi[standard]", "uvicorn>=0.30")
+# api workers additionally serve over fastapi/uvicorn. no [standard] extra:
+# the runtime imports only fastapi and uvicorn, and the extra's closure
+# (fastapi-cloud-cli, sentry, opentelemetry, rich, ...) is ~4,000 files and
+# ~18 MB compressed that every cold worker downloads and unpacks. uvicorn
+# still picks up uvloop/httptools from the api images, which ship them.
+API_RUNTIME_REQUIREMENTS = ("fastapi", "uvicorn>=0.30")
 
 # runpod's serverless limit for build artifacts
 MAX_ARTIFACT_MB = 1500

@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 import aiohttp
 
 from ...user_agent import APPS_USER_AGENT
+from .http import raise_for_status
 
 
 def runtime_headers() -> Optional[Dict[str, str]]:
@@ -65,5 +66,5 @@ async def get_json(url: str, headers: Dict[str, str], timeout: float) -> Dict[st
         async with session.get(
             url, headers={**headers, "User-Agent": APPS_USER_AGENT}
         ) as response:
-            response.raise_for_status()
+            await raise_for_status(response)
             return await response.json()

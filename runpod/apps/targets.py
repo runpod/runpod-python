@@ -8,6 +8,7 @@ runpod api); no local state is kept.
 import asyncio
 import inspect
 import json
+import math
 from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
@@ -15,11 +16,12 @@ import aiohttp
 
 from .._hosts import endpoint_domain
 from ..user_agent import APPS_USER_AGENT
-from .errors import EndpointNotFound, JobStatusError, RemoteExecutionError
+from .errors import AppHTTPError, EndpointNotFound, RemoteExecutionError
 from .protocol import FORMAT_JSON, FunctionRequest
 from .serialization import require_json_value
 from .spec import ResourceSpec
 from .utils.events import emit
+from .utils.http import raise_for_status
 from .utils.network import api_key as _api_key
 from .utils.network import endpoint_url_base as _endpoint_url_base
 
@@ -28,6 +30,7 @@ from .utils.network import endpoint_url_base as _endpoint_url_base
 SENTINEL_ID = "flash"
 
 DEFAULT_TIMEOUT_SECONDS = 300.0
+QUEUE_EXECUTION_HEADROOM_SECONDS = 60.0
 
 # terminal job statuses on the queue data plane
 FINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"})
@@ -246,30 +249,20 @@ async def _request_json(
                 async with session.request(
                     method, url, json=payload, headers=headers
                 ) as resp:
-                    if resp.status >= 400 and job_id is not None:
-                        last_exc = JobStatusError(job_id, resp.status, method, url)
-                        if (resp.status == 404 and retry_not_found) or (
-                            resp.status in RETRYABLE_STATUSES and retry_transient
-                        ):
-                            continue
-                        raise last_exc
-                    if resp.status == 404:
+                    if resp.status == 404 and job_id is None:
                         last_exc = EndpointNotFound(app_name, resource_name)
                         if retry_not_found and attempt < attempts - 1:
                             continue
                         raise last_exc
-                    if resp.status in RETRYABLE_STATUSES:
-                        last_exc = aiohttp.ClientResponseError(
-                            resp.request_info,
-                            resp.history,
-                            status=resp.status,
-                            message=await resp.text(),
-                        )
-                        if not retry_transient:
-                            raise last_exc
-                        continue
-                    resp.raise_for_status()
+                    await raise_for_status(resp, job_id=job_id)
                     return await resp.json()
+        except AppHTTPError as exc:
+            if (exc.status == 404 and retry_not_found) or (
+                exc.status in RETRYABLE_STATUSES and retry_transient
+            ):
+                last_exc = exc
+                continue
+            raise
         except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exc:
             if not retry_transient:
                 raise
@@ -435,6 +428,24 @@ class QueueClient:
     ) -> Dict[str, Any]:
         import time
 
+        policy = payload.get("policy")
+        execution_timeout = (
+            policy.get("executionTimeout") if isinstance(policy, dict) else None
+        )
+        try:
+            if (
+                isinstance(execution_timeout, (int, float))
+                and not isinstance(execution_timeout, bool)
+                and math.isfinite(execution_timeout)
+                and execution_timeout > 0
+            ):
+                timeout = max(
+                    timeout, execution_timeout / 1000 + QUEUE_EXECUTION_HEADROOM_SECONDS
+                )
+        except OverflowError:
+            raise ValueError(
+                "execution_timeout is too large for the client timeout"
+            ) from None
         start = time.monotonic()
         # leave transport headroom for the server to return a pollable job id.
         wait_ms = int(min(90.0, max(1.0, timeout - 1.0)) * 1000)
@@ -516,7 +527,7 @@ class QueueClient:
             ) as resp:
                 if resp.status == 404 and self._app_name:
                     raise EndpointNotFound(self._app_name, self._resource_name)
-                resp.raise_for_status()
+                await raise_for_status(resp)
                 text = await resp.text()
         try:
             result = json.loads(text)

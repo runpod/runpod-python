@@ -24,6 +24,7 @@ from ..user_agent import APPS_USER_AGENT
 from .api import AppsApiClient, is_capacity_error
 from .context import CLEANUP_TIMEOUT
 from .spec import ResourceSpec
+from .utils.http import raise_for_status
 
 log = logging.getLogger(__name__)
 
@@ -97,18 +98,6 @@ def _runtime_command() -> str:
     return runtime_launcher("task")
 
 
-def cuda_versions_at_least(minimum: str) -> List[str]:
-    """all platform cuda versions >= minimum, ascending."""
-    from .spec import CUDA_VERSIONS
-
-    def _key(version: str):
-        major, minor = version.split(".")
-        return (int(major), int(minor))
-
-    floor = _key(minimum)
-    return sorted((v for v in CUDA_VERSIONS if _key(v) >= floor), key=_key)
-
-
 def _device_names(gpu: Optional[List[str]]) -> List[str]:
     """pods take exact device names, not pool ids; expand pool ids
     (e.g. ADA_24 -> NVIDIA GeForce RTX 4090) and pass device names
@@ -169,7 +158,7 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
     else:
         # spread across the storage-supported set; a null DC can pin
         # repeated deploys to one (possibly broken) machine
-        from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
+        from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DEFAULT_DATACENTERS
 
         if spec.is_cpu:
             pool = dict.fromkeys(
@@ -182,17 +171,15 @@ def _pod_input(spec: ResourceSpec, token: str, task_name: str) -> Dict[str, Any]
                 )
             )
         else:
-            pool = DataCenter.all()
+            pool = DEFAULT_DATACENTERS
         pod["dataCenterIds"] = [dc.value for dc in pool]
     if spec.is_cpu:
         pod["instanceIds"] = spec.cpu
     else:
         pod["gpuTypeIdList"] = _device_names(spec.gpu)
         pod["gpuCount"] = spec.gpu_count
-        if spec.min_cuda_version:
-            # pods have no min-version filter; allow every version at
-            # or above the requested floor
-            pod["allowedCudaVersions"] = cuda_versions_at_least(spec.min_cuda_version)
+        if min_cuda_version := spec.effective_min_cuda_version:
+            pod["minCudaVersion"] = min_cuda_version
     return pod
 
 
@@ -285,7 +272,7 @@ class _TaskTransport:
                     if resp.status == 404 and attempt < attempts - 1:
                         await asyncio.sleep(2 * (attempt + 1))
                         continue
-                    resp.raise_for_status()
+                    await raise_for_status(resp)
                     if timeout is not None:
                         response = await resp.json()
                         if (
@@ -319,7 +306,7 @@ class _TaskTransport:
                     if resp.status == 404 and attempt < attempts - 1:
                         await asyncio.sleep(2 * (attempt + 1))
                         continue
-                    resp.raise_for_status()
+                    await raise_for_status(resp)
                     data = await resp.json()
                     break
         if data.get("status") == "DONE":

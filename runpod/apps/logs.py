@@ -14,6 +14,7 @@ import aiohttp
 from ..api.ctl_commands import _path_segment
 from ..api.rest import _build_url
 from ..user_agent import APPS_USER_AGENT
+from .utils.http import raise_for_status
 
 HAPI_BASE = os.environ.get("RUNPOD_HAPI_URL", "https://hapi.runpod.net")
 
@@ -39,7 +40,7 @@ async def pod_logs(
         async with session.get(
             url, params={"type": log_type}, headers=_headers()
         ) as resp:
-            resp.raise_for_status()
+            await raise_for_status(resp)
             data = await resp.json()
     return {k: v or [] for k, v in data.items()}
 
@@ -88,7 +89,7 @@ async def stream_pod_logs(
     client_timeout = aiohttp.ClientTimeout(total=STREAM_TIMEOUT_SECONDS, sock_read=60)
     async with aiohttp.ClientSession(timeout=client_timeout) as session:
         async with session.get(url, params=params, headers=headers) as resp:
-            resp.raise_for_status()
+            await raise_for_status(resp)
             event_id = None
             data = []
             content = resp.content.__aiter__()

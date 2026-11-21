@@ -1,11 +1,10 @@
 import asyncio
 import json
-from types import SimpleNamespace
 
-import aiohttp
 import click
 import pytest
 
+from runpod.apps.errors import AppHTTPError
 from runpod.rp_cli import logs
 
 
@@ -95,11 +94,8 @@ def test_snapshot_surfaces_delayed_authentication_failure(monkeypatch):
 
     async def stream(*args, **kwargs):
         await asyncio.sleep(0.03)
-        raise aiohttp.ClientResponseError(
-            SimpleNamespace(real_url="https://api.runpod.io/v2/pods/pod1/logs"),
-            (),
-            status=403,
-            message="denied",
+        raise AppHTTPError(
+            "GET", "https://api.runpod.io/v2/pods/pod1/logs", 403, "denied"
         )
         yield
 
@@ -120,11 +116,8 @@ def test_stream_errors_do_not_hide_auth_failures(
     )
 
     async def stream(*args, **kwargs):
-        raise aiohttp.ClientResponseError(
-            SimpleNamespace(real_url="https://api.runpod.io/v2/pods/pod1/logs"),
-            (),
-            status=status,
-            message="denied",
+        raise AppHTTPError(
+            "GET", "https://api.runpod.io/v2/pods/pod1/logs", status, "denied"
         )
         yield
 
@@ -226,11 +219,11 @@ async def test_follow_retries_transient_http_errors(
                 kwargs["on_event_id"]("cursor1")
                 yield event("first")
             elif len(resumes) == 2:
-                raise aiohttp.ClientResponseError(
-                    SimpleNamespace(real_url="https://api.runpod.io/v2/pods/pod1/logs"),
-                    (),
-                    status=status,
-                    message="temporarily unavailable",
+                raise AppHTTPError(
+                    "GET",
+                    "https://api.runpod.io/v2/pods/pod1/logs",
+                    status,
+                    "temporarily unavailable",
                 )
             else:
                 yield event("resumed")
@@ -273,11 +266,8 @@ def test_http_errors_that_must_surface(monkeypatch, endpoint_id, follow, status)
     )
 
     async def stream(*args, **kwargs):
-        raise aiohttp.ClientResponseError(
-            SimpleNamespace(real_url="https://api.runpod.io/v2/pods/pod1/logs"),
-            (),
-            status=status,
-            message="request failed",
+        raise AppHTTPError(
+            "GET", "https://api.runpod.io/v2/pods/pod1/logs", status, "request failed"
         )
         yield
 

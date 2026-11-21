@@ -22,21 +22,34 @@ def clean_registry():
 
 
 @pytest.mark.parametrize(
-    "error_type",
+    "error,uncertain_when_missing",
     [
-        QueryError,
-        RuntimeError,
-        aiohttp.ClientConnectionError,
-        OSError,
-        TimeoutError,
-        asyncio.TimeoutError,
-        asyncio.CancelledError,
-        KeyboardInterrupt,
+        (QueryError("request failed"), False),
+        (RuntimeError("request failed"), False),
+        (aiohttp.ClientConnectionError("request failed"), True),
+        (OSError("request failed"), True),
+        (TimeoutError("request failed"), True),
+        (asyncio.TimeoutError("request failed"), True),
+        (asyncio.CancelledError("request failed"), True),
+        (KeyboardInterrupt("request failed"), True),
+        pytest.param(QueryError("bad request", status_code=400), False, id="http-400"),
+        pytest.param(
+            QueryError("request timeout", status_code=408), True, id="http-408"
+        ),
+        pytest.param(
+            QueryError("quota exceeded", status_code=429), False, id="http-429"
+        ),
+        pytest.param(QueryError("server error", status_code=500), True, id="http-500"),
+        pytest.param(QueryError("bad gateway", status_code=502), True, id="http-502"),
+        pytest.param(QueryError("unavailable", status_code=503), True, id="http-503"),
+        pytest.param(
+            QueryError("gateway timeout", status_code=504), True, id="http-504"
+        ),
     ],
 )
 @pytest.mark.parametrize("matches", [0, 1, 2])
 async def test_create_failure_cleanup_depends_on_listing_and_error(
-    error_type, matches, caplog
+    error, uncertain_when_missing, matches, caplog
 ):
     app = App("demo")
     for name in ("a_ok", "b_bad"):
@@ -44,7 +57,6 @@ async def test_create_failure_cleanup_depends_on_listing_and_error(
     environment = {"id": "env", "name": "prod", "endpoints": []}
     state = {**deepcopy(environment), "activeBuildId": "new-build"}
     api = AsyncMock()
-    error = error_type("request failed")
 
     async def save(payload):
         if payload["name"] == "a_ok":
@@ -74,7 +86,7 @@ async def test_create_failure_cleanup_depends_on_listing_and_error(
     api.delete_environment.return_value = True
     interrupted = isinstance(error, (asyncio.CancelledError, KeyboardInterrupt))
     with pytest.raises(
-        error_type if interrupted else EndpointReconciliationError
+        type(error) if interrupted else EndpointReconciliationError
     ) as caught:
         await reconcile_endpoints(
             api,
@@ -86,9 +98,7 @@ async def test_create_failure_cleanup_depends_on_listing_and_error(
             environment_created=True,
         )
     message = caplog.text if interrupted else str(caught.value)
-    uncertain = matches > 1 or (
-        matches == 0 and error_type not in (QueryError, RuntimeError)
-    )
+    uncertain = matches > 1 or (matches == 0 and uncertain_when_missing)
     if uncertain:
         api.delete_environment.assert_not_awaited()
         assert "b_bad: creation status unknown" in message

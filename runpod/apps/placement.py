@@ -11,7 +11,7 @@ import asyncio
 import logging
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
-from .datacenter import DataCenter, datacenter_id
+from .datacenter import DEFAULT_DATACENTERS, DataCenter, datacenter_id
 from .errors import AppError
 from .gpu import GpuGroup
 from .utils.client import default_client
@@ -68,49 +68,39 @@ class StockMap:
         self._gpu: Dict[Tuple[str, int, str], int] = {}
         self._gpu_pod: Dict[Tuple[str, int, str], int] = {}
         self._cpu: Dict[Tuple[str, str, bool], int] = {}
-        self._fetched_gpu: Set[Tuple[str, int]] = set()
-        self._fetched_gpu_pod: Set[Tuple[str, int]] = set()
-        self._fetched_cpu: Set[Tuple[str, bool]] = set()
+        self._fetched: Set[Tuple[StockKey, str]] = set()
 
     async def _client(self):
         self._api = default_client(self._api)
         return self._api
 
-    async def fetch(self, keys: Iterable[StockKey]) -> None:
-        """populate stock for the given hardware keys across all datacenters."""
-        keys = list(keys)
-        gpu_ids = {
-            (k[1], k[2])
-            for k in keys
-            if k[0] == "gpu" and k[1] != "*" and (k[1], k[2]) not in self._fetched_gpu
-        }
-        gpu_pod_ids = {
-            (k[1], k[2])
-            for k in keys
-            if k[0] == "gpu-pod"
-            and k[1] != "*"
-            and (k[1], k[2]) not in self._fetched_gpu_pod
-        }
-        cpu_ids = {
-            (k[1], k[0] == "cpu-pod")
-            for k in keys
-            if k[0] in ("cpu", "cpu-pod")
-            and (k[1], k[0] == "cpu-pod") not in self._fetched_cpu
+    async def fetch(
+        self, keys: Iterable[StockKey], *, datacenters: Optional[Iterable[str]] = None
+    ) -> None:
+        """populate stock for hardware in the default or requested datacenters."""
+        datacenters = {
+            datacenter_id(dc)
+            for dc in (DEFAULT_DATACENTERS if datacenters is None else datacenters)
+            if DataCenter.is_known(datacenter_id(dc))
         }
         client = await self._client()
         jobs = []
-        for gpu_id, count in gpu_ids:
-            self._fetched_gpu.add((gpu_id, count))
-            for dc in DataCenter.all():
-                jobs.append(self._fetch_gpu(client, gpu_id, count, dc.value, False))
-        for gpu_id, count in gpu_pod_ids:
-            self._fetched_gpu_pod.add((gpu_id, count))
-            for dc in DataCenter.all():
-                jobs.append(self._fetch_gpu(client, gpu_id, count, dc.value, True))
-        for cpu_id, pods in cpu_ids:
-            self._fetched_cpu.add((cpu_id, pods))
-            for dc in DataCenter.all():
-                jobs.append(self._fetch_cpu(client, cpu_id, dc.value, pods))
+        for key in keys:
+            kind, hardware, count = key
+            if kind in ("gpu", "gpu-pod") and hardware == "*":
+                continue
+            for dc in datacenters:
+                if (key, dc) in self._fetched:
+                    continue
+                self._fetched.add((key, dc))
+                if kind in ("gpu", "gpu-pod"):
+                    jobs.append(
+                        self._fetch_gpu(client, hardware, count, dc, kind == "gpu-pod")
+                    )
+                elif kind in ("cpu", "cpu-pod"):
+                    jobs.append(
+                        self._fetch_cpu(client, hardware, dc, kind == "cpu-pod")
+                    )
         if jobs:
             await asyncio.gather(*jobs)
 
@@ -153,20 +143,22 @@ class StockMap:
         return self._cpu.get((hw, dc, kind == "cpu-pod"), 0)
 
 
-def candidates(spec, stock: StockMap) -> Set[str]:
+def candidates(spec, stock: StockMap, *, volume_dc: Optional[str] = None) -> Set[str]:
     """datacenters where a resource is schedulable.
 
     hardware needs stock in the DC (any of the resource's acceptable
     devices/flavors), intersected with an explicit datacenter pin.
     """
     spec.validate()
-    allowed = {dc.value for dc in DataCenter.all()}
+    allowed = {dc.value for dc in DEFAULT_DATACENTERS}
+    if volume_dc is not None and DataCenter.is_known(datacenter_id(volume_dc)):
+        allowed = {datacenter_id(volume_dc)}
     # stock is only queried for built-in datacenters, so an unlisted pin
     # cannot be ruled out here; the backend decides whether it schedules
     unlisted: Set[str] = set()
     if spec.datacenter:
         unlisted = {dc for dc in spec.datacenter if not DataCenter.is_known(dc)}
-        allowed &= set(spec.datacenter)
+        allowed = {dc for dc in spec.datacenter if DataCenter.is_known(dc)}
 
     keys = _hardware_keys(spec)
     if not keys:
@@ -201,11 +193,14 @@ def solve_placement(
     and every resource's candidate set, ranked maximin: the DC where the
     most-constrained resource has the best stock.
     """
-    per_resource = {spec.name: candidates(spec, stock) for spec in specs}
+    per_resource = [
+        (spec.name, candidates(spec, stock, volume_dc=existing_dc or volume_dc))
+        for spec in specs
+    ]
 
     if existing_dc is not None:
         existing_dc = datacenter_id(existing_dc)
-        blocked = [name for name, dcs in per_resource.items() if existing_dc not in dcs]
+        blocked = [name for name, dcs in per_resource if existing_dc not in dcs]
         if blocked:
             raise PlacementError(
                 f"volume '{volume_name}' lives in {existing_dc}, but "
@@ -214,13 +209,13 @@ def solve_placement(
             )
         return existing_dc
 
-    shared = volume_datacenters.intersection(*per_resource.values())
+    shared = volume_datacenters.intersection(*(dcs for _, dcs in per_resource))
     if volume_dc is not None:
         shared &= {volume_dc}
     if not shared:
         lines = [
             f"  {name:<12} schedulable in: {', '.join(sorted(dcs)) or '(nowhere)'}"
-            for name, dcs in per_resource.items()
+            for name, dcs in per_resource
         ]
         raise PlacementError(
             f"cannot place volume '{volume_name}': no datacenter can host "

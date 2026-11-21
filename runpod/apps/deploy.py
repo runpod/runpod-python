@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set
 
 import aiohttp
 
+from ..error import QueryError
 from .api import AppsApiClient
 from .app import App
 from .build import (
@@ -67,6 +68,44 @@ class DeployResult:
     endpoints: Dict[str, str] = field(default_factory=dict)
 
 
+SECRET_LIKE_ENV_SUFFIXES = ("_TOKEN", "_KEY", "_SECRET", "_PASSWORD")
+
+
+def _warn_secret_like_plain_env(resource_name: str, env: Dict[str, Any]) -> None:
+    """warn when a secret-looking env name carries a literal value.
+
+    literal values are stored in the endpoint or task definition as typed;
+    runpod.Secret keeps the value encrypted until the worker boots.
+    """
+    from .secret import Secret
+
+    for key, value in env.items():
+        if isinstance(value, Secret):
+            continue
+        if key.upper().endswith(SECRET_LIKE_ENV_SUFFIXES):
+            log.warning(
+                "resource '%s' sets %s to a literal value; store it with "
+                "`rp secret add` and reference it with runpod.Secret(...)",
+                resource_name,
+                key,
+            )
+
+
+def _without_env(manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """copy of a manifest with every resource's env removed.
+
+    the packaged artifact never needs env: endpoints get it from their
+    template and deployed tasks from the backend's task definition.
+    """
+    if "resources" not in manifest:
+        return dict(manifest)
+    resources = [
+        {k: v for k, v in resource.items() if k != "env"}
+        for resource in manifest["resources"]
+    ]
+    return {**manifest, "resources": resources}
+
+
 def _validate_endpoint_env(env: Dict[str, str]) -> None:
     reserved = {
         "RUNPOD_API_KEY",
@@ -113,9 +152,13 @@ def build_manifest(
                 f"queue and api names must be at least 3 characters"
             )
 
-        entry = spec.to_manifest()
-        if spec.kind in (ResourceKind.QUEUE, ResourceKind.API):
-            _validate_endpoint_env(entry.get("env", {}))
+        is_endpoint = spec.kind in (ResourceKind.QUEUE, ResourceKind.API)
+        # endpoint env reaches workers through the endpoint template, so it
+        # is never put into the manifest rather than stripped out afterward
+        entry = spec.to_manifest(include_env=not is_endpoint)
+        _warn_secret_like_plain_env(spec.name, spec.env or {})
+        if is_endpoint:
+            _validate_endpoint_env(spec.env or {})
         if spec.kind is ResourceKind.TASK:
             from .images import image_for_spec
 
@@ -253,7 +296,7 @@ def package_project(
                     rel = path.relative_to(env_resolved).as_posix()
                     tar.add(path, arcname=f"{ENV_DIR_NAME}/{rel}", recursive=False)
 
-        manifest_bytes = json.dumps(manifest, indent=2).encode()
+        manifest_bytes = json.dumps(_without_env(manifest), indent=2).encode()
         info = tarfile.TarInfo(name="runpod_manifest.json")
         info.size = len(manifest_bytes)
         import io
@@ -311,7 +354,7 @@ def _deployed_endpoint_input(
     the environment. binding via flashEnvironmentId is also what makes
     hosts deliver the build artifact to this endpoint's workers.
     """
-    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DataCenter
+    from .datacenter import CPU3_DATACENTERS, CPU5_DATACENTERS, DEFAULT_DATACENTERS
     from .images import image_for_spec
 
     from .secret import render_env
@@ -387,13 +430,12 @@ def _deployed_endpoint_input(
 
         payload["gpuIds"] = gpu_ids_value(spec.gpu, pool_members=pool_members)
         payload["gpuCount"] = spec.gpu_count
-        if spec.min_cuda_version:
-            payload["minCudaVersion"] = spec.min_cuda_version
+        payload["minCudaVersion"] = spec.effective_min_cuda_version
         if not spec.datacenter:
             # artifact delivery rides the flash volume (network
             # storage); machines outside storage-cluster regions fail
             # with "requires network storage" and recycle forever
-            payload["locations"] = ",".join(dc.value for dc in DataCenter)
+            payload["locations"] = ",".join(dc.value for dc in DEFAULT_DATACENTERS)
     return payload
 
 
@@ -413,8 +455,13 @@ async def reconcile_endpoints(
 
     obsolete endpoints are removed after the deployment commits.
     """
+    from .volume import VolumeResolver, attach_endpoint_volumes
+
     for handle in app.resources.values():
         handle.spec.validate()
+    if resolver is None:
+        resolver = VolumeResolver(client)
+        await resolver.preflight([handle.spec for handle in app.resources.values()])
     existing_endpoints = environment.get("endpoints") or []
     existing = {e["name"]: e["id"] for e in existing_endpoints}
     existing_templates = {
@@ -429,9 +476,7 @@ async def reconcile_endpoints(
 
     from .gpu import needs_gpu_catalog
     from .registry import resolve_registry_auth
-    from .volume import VolumeResolver, attach_endpoint_volumes
 
-    resolver = resolver or VolumeResolver(client)
     endpoints: Dict[str, str] = {}
     snapshots = {}
     undo = []
@@ -570,15 +615,24 @@ async def reconcile_endpoints(
                     ]
                     if len(matches) == 1:
                         undo.append((name, matches[0]["id"], None))
-                    elif matches or isinstance(
-                        exc,
-                        (
-                            aiohttp.ClientError,
-                            OSError,
-                            asyncio.TimeoutError,
-                            asyncio.CancelledError,
-                            KeyboardInterrupt,
-                        ),
+                    elif (
+                        matches
+                        or isinstance(
+                            exc,
+                            (
+                                aiohttp.ClientError,
+                                OSError,
+                                asyncio.TimeoutError,
+                                asyncio.CancelledError,
+                                KeyboardInterrupt,
+                            ),
+                        )
+                        or (
+                            isinstance(exc, QueryError)
+                            and (
+                                exc.status_code == 408 or (exc.status_code or 0) >= 500
+                            )
+                        )
                     ):
                         raise RuntimeError("creation status unknown")
                 except Exception:
@@ -752,6 +806,10 @@ async def deploy_app(
     ]
     await validate_secrets(referenced, api=client)
 
+    from .volume import VolumeResolver
+
+    resolver = VolumeResolver(client, events=events)
+    await resolver.preflight([handle.spec for handle in app.resources.values()])
     _phase(events, "vendor", f"python {python_version}")
     build: BuildResult = build_environment(
         app,
@@ -762,9 +820,6 @@ async def deploy_app(
     )
     if build.excluded:
         manifest["excludedPackages"] = build.excluded
-    from .volume import VolumeResolver
-
-    resolver = VolumeResolver(client, events=events)
     await _prepare_task_resources(app, manifest, client, events, resolver=resolver)
     _phase(events, "package")
     tar_path = package_project(project_root, manifest, env_dir=build.env_dir)

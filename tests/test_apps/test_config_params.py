@@ -216,16 +216,24 @@ class TestManifestSerialization:
         assert data["accelerateDownloads"] is False
         assert data["containerDiskGb"] == 42
 
+    def test_env_included_by_default(self):
+        spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q", env={"MODE": "fast"})
+        assert spec.to_manifest()["env"] == {"MODE": "fast"}
+
+    def test_env_excluded_when_not_requested(self):
+        spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q", env={"MODE": "fast"})
+        assert "env" not in spec.to_manifest(include_env=False)
+
     def test_defaults_omitted(self):
         spec = ResourceSpec(kind=ResourceKind.QUEUE, name="q")
         data = spec.to_manifest()
+        assert data["minCudaVersion"] == "12.8"
         for key in (
             "maxConcurrency",
             "executionTimeoutMs",
             "flashboot",
             "scalerType",
             "scalerValue",
-            "minCudaVersion",
             "accelerateDownloads",
             "containerDiskGb",
         ):
@@ -337,8 +345,8 @@ class TestDeployPayload:
 
 
 class TestTaskPayload:
-    def test_min_cuda_expands_to_allowed_versions(self):
-        from runpod.apps.tasks import _pod_input, cuda_versions_at_least
+    def test_min_cuda_reaches_pod_input(self):
+        from runpod.apps.tasks import _pod_input
 
         app = App("a")
 
@@ -347,8 +355,8 @@ class TestTaskPayload:
             pass
 
         pod = _pod_input(t.spec, "tok", "t")
-        assert pod["allowedCudaVersions"] == ["12.8", "12.9", "13.0"]
-        assert cuda_versions_at_least("12.9") == ["12.9", "13.0"]
+        assert pod["minCudaVersion"] == "12.8"
+        assert "allowedCudaVersions" not in pod
 
     def test_container_disk_override(self):
         from runpod.apps.tasks import _pod_input
