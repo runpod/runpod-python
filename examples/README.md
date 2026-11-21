@@ -2,14 +2,12 @@
 
 ## Before you start
 
-```bash
-pip install runpod
-rp login
-```
+Install the SDK with `pip install runpod`. The local Serverless handler
+examples below do not require a Runpod account or API key.
 
-`rp login` stores your API key, and every example picks it up from there. If
-`RUNPOD_API_KEY` is set in your environment, the examples use that key
-instead.
+For examples that call the Runpod cloud API, authenticate with `rp login`.
+If `RUNPOD_API_KEY` is set in your environment, the SDK uses it ahead of the
+stored credentials.
 
 ## Which folder to start with
 
