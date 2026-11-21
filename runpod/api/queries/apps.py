@@ -9,6 +9,27 @@ query CpuStock($cpuFlavorInput: CpuFlavorInput, $specificsInput: SpecificsInput)
 }
 """
 
+QUERY_ENDPOINT_SNAPSHOT = """
+query EndpointSnapshot($id: String!) {
+    myself {
+        endpoint(id: $id) {
+            id name type instanceIds gpuIds gpuCount locations
+            workersMin workersMax workersPFBTarget idleTimeout
+            scalerType scalerValue executionTimeoutMs workerInitTimeoutMs
+            flashBootType minCudaVersion allowedCudaVersions
+            modelReferences env { key value }
+            networkVolumeIds { networkVolumeId }
+            volumes { volumeId volumeType }
+            template {
+                name imageName containerDiskInGb dockerArgs
+                env { key value }
+                ports containerRegistryAuthId advancedStart startScript config
+            }
+        }
+    }
+}
+"""
+
 QUERY_FLASH_APP_BY_NAME = """
 query getFlashAppByName($flashAppName: String!) {
     flashAppByName(flashAppName: $flashAppName) {

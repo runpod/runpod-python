@@ -132,7 +132,7 @@ def iter_source_files(
                 or (discovery and is_discovery_skipped_dir(path))
             ):
                 if not discovery:
-                    log.warning("excluded source path %r from deployment artifact", rel)
+                    log.debug("excluded source path %r from deployment artifact", rel)
                 continue
             kept_dirs.append(name)
         dirs[:] = kept_dirs
@@ -148,6 +148,6 @@ def iter_source_files(
                 or (discovery and (path.suffix != ".py" or name == "setup.py"))
             ):
                 if not discovery:
-                    log.warning("excluded source path %r from deployment artifact", rel)
+                    log.debug("excluded source path %r from deployment artifact", rel)
                 continue
             yield path

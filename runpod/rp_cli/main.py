@@ -225,6 +225,7 @@ def deploy(target, env, python_version, exclude, build_only):
         for found in apps:
             ui.set_name_width(list(found.resources))
             events = ui.DeployEvents()
+            succeeded = False
             try:
                 artifact = build_artifact(
                     found,
@@ -234,10 +235,11 @@ def deploy(target, env, python_version, exclude, build_only):
                     events=events,
                     output=Path.cwd() / f"{found.name}-artifact.tar.gz",
                 )
+                succeeded = True
             except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
                 raise click.ClickException(str(exc)) from exc
             finally:
-                events.close()
+                events.close(failed=not succeeded)
             size_mb = artifact.stat().st_size / (1024 * 1024)
             ui.success(
                 f"built [white]{found.name}[/white] "
@@ -268,6 +270,7 @@ def deploy(target, env, python_version, exclude, build_only):
             source=_app_source(found, project_root),
         )
         events = ui.DeployEvents()
+        succeeded = False
         with ui.Timer() as t:
             try:
                 result = asyncio.run(
@@ -280,10 +283,11 @@ def deploy(target, env, python_version, exclude, build_only):
                         events=events,
                     )
                 )
+                succeeded = True
             except Exception as exc:  # noqa: BLE001 - surface engine errors cleanly
                 raise click.ClickException(str(exc)) from exc
             finally:
-                events.close()
+                events.close(failed=not succeeded)
         ui.success(
             f"[bold white]{result.app_name}/{env or found.env}[/bold white] "
             f"is live [dim]{t.elapsed:.1f}s[/dim]"
