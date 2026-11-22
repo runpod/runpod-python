@@ -1953,6 +1953,23 @@ def test_incomplete_listing_fails_without_looping(
     assert info.value.resumable
 
 
+def test_listing_rejects_a_previously_seen_continuation_token(tmp_path):
+    fake = FakeS3()
+    tokens = iter(("first", "second", "first"))
+
+    def page(**kwargs):
+        return {
+            "Contents": [],
+            "IsTruncated": True,
+            "NextContinuationToken": next(tokens),
+        }
+
+    fake.list_objects_v2 = page
+    with pytest.raises(nvt.NetworkVolumeTransferError, match="pagination") as info:
+        _transfer(fake, tmp_path).list_files("folder/")
+    assert info.value.resumable
+
+
 @pytest.mark.parametrize("mode", ["success", "changed", "dropped"])
 def test_download_closes_response_bodies(tmp_path, mode):
     from botocore.exceptions import IncompleteReadError
