@@ -64,6 +64,19 @@ rp flash undeploy --app my-app    # delete an environment's endpoints
 App discovery imports modules synchronously. Keep blocking work inside an
 entrypoint or a resource function; interrupt discovery if an import blocks.
 
+Project discovery and remote imports are separate. In `rp flash dev`, a
+remote `@app.task` call sends the task's defining module to the worker.
+Discovery can import other project modules on your machine, but their source
+files do not travel with that call. If a task raises `ModuleNotFoundError` for
+a project module, keep small helpers in the task's module or install the
+shared code on the worker as a Python package declared in the task's
+`dependencies` (or included in its worker image).
+
+For multi-file projects, `rp flash deploy` bundles project files from the
+deployment directory. If a deployed task cannot import a project module,
+check the build artifact with `rp flash deploy --build-only` and confirm the
+module is included by your `.gitignore` and `.runpodignore` rules.
+
 On Ctrl-C, a dev session waits for its running local entrypoint to finish before
 deleting endpoints. Blocking entrypoint code can delay shutdown. Cleanup failures
 exit with an error and report the endpoint IDs that still need deletion.
