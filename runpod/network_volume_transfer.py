@@ -329,17 +329,20 @@ class _Transfer:
         self, method: str, items: str, marker: str, arg: str, **kwargs: Any
     ) -> List[Any]:
         found: List[Any] = []
+        seen_markers = {kwargs[arg]} if arg in kwargs else set()
         while True:
             page = self._call(method, **kwargs)
             found.extend(page.get(items) or [])
             if not page.get("IsTruncated"):
                 return found
-            if not page.get(marker) or page[marker] == kwargs.get(arg):
+            next_marker = page.get(marker)
+            if not next_marker or next_marker in seen_markers:
                 raise NetworkVolumeTransferError(
                     f"{method} pagination did not advance; retry shortly",
                     resumable=True,
                 )
-            kwargs[arg] = page[marker]
+            seen_markers.add(next_marker)
+            kwargs[arg] = next_marker
 
     def list_files(self, prefix: str) -> List[Dict[str, Any]]:
         """the files under prefix, without folder markers and in-progress
