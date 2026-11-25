@@ -4,6 +4,7 @@ Provides the functionality for scaling the runpod serverless worker.
 """
 
 import asyncio
+import inspect
 import json
 import signal
 import sys
@@ -567,6 +568,10 @@ class JobScaler:
 
         log.info("Stopping job.", job_id)
         self._stopped_jobs.add(job_id)
+        if inspect.getcoroutinestate(task.get_coro()) == inspect.CORO_CREATED:
+            # Cancelling a task before its first step skips handle_job's
+            # try/finally entirely; handle_job checks _stopped_jobs on entry.
+            return True
         task.cancel()
         return True
 
@@ -577,6 +582,9 @@ class JobScaler:
         batch_id_token = _set_batch_id(job.get("batchId"))
         try:
             log.debug("Handling Job", job["id"])
+            if job["id"] in self._stopped_jobs:
+                # Stopped before this task first ran (see stop_job).
+                raise asyncio.CancelledError
 
             # A handler runs only after prestart succeeds.
             if self.prestart_hooks:
@@ -659,6 +667,7 @@ class JobScaler:
             return
         log.info("refresh_worker flag set, stopping pod after stopped job.", job["id"])
         self.kill_worker()
+        await self._drain_earlier_uploads(job["id"])
         result = {"error": STOPPED_JOB_ERROR, "stopPod": True}
         await send_result(session, result, job, is_stream=False)
 
@@ -682,15 +691,22 @@ class JobScaler:
             await self._drain_earlier_uploads(job["id"])
 
     async def _drain_earlier_uploads(self, job_id: str) -> None:
-        """Wait for every in-flight result upload other than this job's."""
+        """Wait for every in-flight result upload other than this job's.
+
+        Stopped jobs are skipped: their upload was cancelled, and a stopped
+        job waits here too, so two of them would wait on each other forever.
+        asyncio.wait, unlike gather, leaves the uploads running if this
+        waiter is cancelled.
+        """
         pending = [
             task
             for other_id in list(self._sending_results)
             if other_id != job_id
+            and other_id not in self._stopped_jobs
             and (task := self.jobs_tasks.get(other_id)) is not None
         ]
         if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+            await asyncio.wait(pending)
 
     async def _wait_for_prestart(self) -> None:
         """Wait for prestart to finish or shutdown to begin."""

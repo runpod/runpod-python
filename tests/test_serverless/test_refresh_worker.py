@@ -667,6 +667,134 @@ async def test_repeated_stop_signal_does_not_interrupt_the_stop_pod_send(progres
 
 
 @pytest.mark.asyncio
+async def test_stop_before_the_job_task_starts_still_refreshes(progress):
+    """run_jobs registers a job's task before it first runs. A stop landing in
+    that window used to cancel the task before handle_job's try/finally was
+    entered: no refresh, and the job's tracking state was never cleared."""
+    scaler = rp_scale.JobScaler({"handler": lambda _: None, "refresh_worker": True})
+    handler = AsyncMock()
+    scaler.jobs_handler = handler
+    job = generate_job("A")
+    await scaler.jobs_queue.put(job)
+    queued = await scaler.jobs_queue.get()
+    progress.add(queued)
+
+    with patch.object(rp_scale, "send_result", AsyncMock()) as send_result:
+        task = asyncio.create_task(scaler.handle_job(AsyncMock(), queued))
+        scaler.jobs_tasks["A"] = task
+        assert await scaler.stop_job("A")  # no yield: the task has not started
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert task.cancelled()
+    handler.assert_not_awaited()
+    send_result.assert_awaited_once()
+    assert send_result.await_args.args[1]["stopPod"] is True
+    assert not scaler.is_alive()
+    assert scaler.jobs_tasks == {}
+    assert scaler._stopped_jobs == set()
+    assert progress.count == 0
+    await asyncio.wait_for(scaler.jobs_queue.join(), timeout=DEADLINE)
+
+
+async def _start_job(scaler, progress, job_id):
+    """Start a job task the way run_jobs does: queued, tracked, in progress."""
+    await scaler.jobs_queue.put(generate_job(job_id))
+    job = await scaler.jobs_queue.get()
+    progress.add(job)
+    task = asyncio.create_task(scaler.handle_job(AsyncMock(), job))
+    scaler.jobs_tasks[job_id] = task
+    return task
+
+
+async def _until(predicate):
+    for _ in range(DEADLINE * 100):
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("condition never held")
+
+
+@pytest.mark.asyncio
+async def test_stopped_job_stop_pod_waits_for_uploads_in_flight(progress):
+    """A stopped job's stopPod must not reach the platform while another job's
+    result is still uploading: the restart would lose that result."""
+    scaler = rp_scale.JobScaler({"handler": lambda _: None, "refresh_worker": True})
+
+    async def blocking(_session, _config, _job):
+        await asyncio.Event().wait()
+
+    scaler.jobs_handler = blocking
+    upload_done = asyncio.Event()
+    upload = asyncio.create_task(upload_done.wait())
+    scaler.jobs_tasks["U"] = upload
+    scaler._sending_results.add("U")
+
+    with patch.object(rp_scale, "send_result", AsyncMock()) as send_result:
+        stopped = await _start_job(scaler, progress, "S")
+        await asyncio.sleep(0)  # let S start its handler
+        assert await scaler.stop_job("S")
+        await asyncio.sleep(0.1)
+        send_result.assert_not_awaited()
+        upload_done.set()
+        await asyncio.wait_for(
+            asyncio.gather(stopped, return_exceptions=True), timeout=DEADLINE
+        )
+        send_result.assert_awaited_once()
+        assert send_result.await_args.args[1]["stopPod"] is True
+
+
+@pytest.mark.asyncio
+async def test_jobs_stopped_mid_upload_do_not_wait_on_each_other(progress):
+    """Two jobs stopped while their results upload must each send stopPod,
+    not wait for each other forever."""
+    scaler = rp_scale.JobScaler(
+        {"handler": lambda _: {"ok": 1}, "refresh_worker": True}
+    )
+
+    async def hung_upload(*_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    with (
+        patch.object(rp_job, "send_result", hung_upload),
+        patch.object(rp_scale, "send_result", AsyncMock()) as send_result,
+    ):
+        first = await _start_job(scaler, progress, "U1")
+        await _until(lambda: "U1" in scaler._sending_results)
+        second = await _start_job(scaler, progress, "U2")
+        await _until(lambda: "U2" in scaler._sending_results)
+        assert await scaler.stop_job("U1")
+        assert await scaler.stop_job("U2")
+        _, pending = await asyncio.wait({first, second}, timeout=DEADLINE)
+        for task in pending:
+            task.cancel()
+        assert not pending, "stopped jobs deadlocked waiting on each other"
+        sent = [call.args[2]["id"] for call in send_result.await_args_list]
+        assert sorted(sent) == ["U1", "U2"]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_refresh_drain_leaves_other_uploads_running():
+    """Cancelling a task that waits for other uploads (shutdown) must not
+    cancel those uploads with it."""
+    scaler = rp_scale.JobScaler({"handler": lambda _: None})
+    upload_done = asyncio.Event()
+
+    async def upload():
+        await upload_done.wait()
+
+    other = asyncio.create_task(upload())
+    scaler.jobs_tasks["U"] = other
+    scaler._sending_results.add("U")
+    waiter = asyncio.create_task(scaler._drain_earlier_uploads("R"))
+    await asyncio.sleep(0)
+    waiter.cancel()
+    await asyncio.gather(waiter, return_exceptions=True)
+    assert not other.cancelled()
+    upload_done.set()
+    await asyncio.wait_for(other, timeout=DEADLINE)
+
+
+@pytest.mark.asyncio
 async def test_cancel_outside_a_stop_signal_sends_no_stop_pod(progress):
     """Only a stop signal refreshes. A job task cancelled for any other reason
     (shutdown, event loop teardown) reports nothing."""
