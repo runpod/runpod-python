@@ -1,5 +1,6 @@
 """Shared REST quotas for threads and asynchronous callers."""
 
+import asyncio
 import hmac
 import math
 import os
@@ -8,7 +9,7 @@ import re
 import threading
 import time
 from concurrent.futures import Future
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 from typing import Mapping, Optional
@@ -116,6 +117,18 @@ class _Bucket:
     def _remove_waiter(self, waiter: Future[None]) -> None:
         with self.lock:
             self.waiters.discard(waiter)
+
+    @asynccontextmanager
+    async def reserve_async(self, budget: _RetryBudget):
+        while wait := self.acquire(budget):
+            if isinstance(wait, Future):
+                await asyncio.wrap_future(wait)
+            else:
+                await asyncio.sleep(wait)
+        try:
+            yield time.monotonic()
+        finally:
+            self.release()
 
     def _notify_waiters(self) -> None:
         with self.lock:

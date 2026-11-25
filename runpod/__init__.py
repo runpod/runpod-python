@@ -44,6 +44,8 @@ _LAZY_ATTRS = {
     "AsyncioEndpoint": "runpod.endpoint",
     "AsyncioJob": "runpod.endpoint",
     "Endpoint": "runpod.endpoint",
+    "AsyncioSandbox": "runpod.sandbox",
+    "Sandbox": "runpod.sandbox",
     # apps surface
     "Api": "runpod.apps",
     "App": "runpod.apps",
