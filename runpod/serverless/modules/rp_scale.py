@@ -4,6 +4,7 @@ Provides the functionality for scaling the runpod serverless worker.
 """
 
 import asyncio
+import inspect
 import json
 import signal
 import sys
@@ -20,6 +21,9 @@ from .rp_prestart import (
     run_prestart_phase,
 )
 from .worker_state import IS_LOCAL_TEST, JobsProgress
+
+# Sent with stopPod when a stopped job refreshes its worker.
+STOPPED_JOB_ERROR = "Job stopped before it finished; refreshing worker."
 
 log = RunPodLogger()
 # If no queued request was ever grabbed, give some time to grab one
@@ -90,6 +94,10 @@ class JobScaler:
         # Jobs whose handler finished and whose result is still being sent.
         # They no longer hold a slot, so the next job-take overlaps the upload.
         self._sending_results: set[str] = set()
+        # Jobs cancelled by a stop signal, as opposed to shutdown or teardown.
+        self._stopped_jobs: set[str] = set()
+        # Stopped jobs now sending stopPod; a repeated stop must not cancel it.
+        self._sending_stop_pod: set[str] = set()
 
         self.stop_signals_fetcher = get_stop_signals
         self.stop_signals_fetcher_timeout = 90
@@ -555,8 +563,18 @@ class JobScaler:
         if task is None:
             log.debug(f"JobScaler.stop_job | No in-progress job for {job_id}.")
             return False
+        if job_id in self._sending_stop_pod:
+            # A repeated stop must not interrupt the stopPod send. Before that
+            # point it may: it is how a handler stuck in cancel cleanup exits.
+            log.debug(f"JobScaler.stop_job | {job_id} is already sending stopPod.")
+            return False
 
         log.info("Stopping job.", job_id)
+        self._stopped_jobs.add(job_id)
+        if inspect.getcoroutinestate(task.get_coro()) == inspect.CORO_CREATED:
+            # Cancelling a task before its first step skips handle_job's
+            # try/finally entirely; handle_job checks _stopped_jobs on entry.
+            return True
         task.cancel()
         return True
 
@@ -567,6 +585,9 @@ class JobScaler:
         batch_id_token = _set_batch_id(job.get("batchId"))
         try:
             log.debug("Handling Job", job["id"])
+            if job["id"] in self._stopped_jobs:
+                # Stopped before this task first ran (see stop_job).
+                raise asyncio.CancelledError
 
             # A handler runs only after prestart succeeds.
             if self.prestart_hooks:
@@ -593,6 +614,8 @@ class JobScaler:
 
         except asyncio.CancelledError:
             log.info("Job stopped.", job["id"])
+            if job["id"] in self._stopped_jobs:
+                await self._refresh_after_stop(session, job)
             raise  # CancelledError is a BaseException
 
         except Exception as err:
@@ -609,6 +632,8 @@ class JobScaler:
             else:
                 self.job_progress.remove(job)
             self.jobs_tasks.pop(job["id"], None)
+            self._stopped_jobs.discard(job["id"])
+            self._sending_stop_pod.discard(job["id"])
             self._slot_freed.set()
 
             log.debug("Finished Job", job["id"])
@@ -630,6 +655,27 @@ class JobScaler:
             log.info("Refresh requested, taking no more jobs.", job["id"])
             self.kill_worker()
 
+    async def _refresh_after_stop(
+        self, session: ClientSession, job: dict[str, Any]
+    ) -> None:
+        """Honor the start-time refresh_worker flag for a stopped job.
+
+        A stopped job never returns, so the normal refresh (stopPod on the
+        job's result) would be skipped and the worker would take the next job
+        with whatever the stopped handler left behind: running subprocesses,
+        files, module state. Stop intake and send stopPod instead. The platform
+        has already ended the request, so it keeps the request's status and
+        only acts on stopPod.
+        """
+        if not self.config.get("refresh_worker", False):
+            return
+        log.info("refresh_worker flag set, stopping pod after stopped job.", job["id"])
+        self.kill_worker()
+        self._sending_stop_pod.add(job["id"])
+        await self._drain_earlier_uploads(job["id"])
+        result = {"error": STOPPED_JOB_ERROR, "stopPod": True}
+        await send_result(session, result, job, is_stream=False)
+
     async def _release_slot(self, job: dict[str, Any], job_result: Any) -> None:
         """Free a finished job's slot before its result is sent.
 
@@ -650,15 +696,22 @@ class JobScaler:
             await self._drain_earlier_uploads(job["id"])
 
     async def _drain_earlier_uploads(self, job_id: str) -> None:
-        """Wait for every in-flight result upload other than this job's."""
+        """Wait for every in-flight result upload other than this job's.
+
+        Stopped jobs are skipped: their upload was cancelled, and a stopped
+        job waits here too, so two of them would wait on each other forever.
+        asyncio.wait, unlike gather, leaves the uploads running if this
+        waiter is cancelled.
+        """
         pending = [
             task
             for other_id in list(self._sending_results)
             if other_id != job_id
+            and other_id not in self._stopped_jobs
             and (task := self.jobs_tasks.get(other_id)) is not None
         ]
         if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+            await asyncio.wait(pending)
 
     async def _wait_for_prestart(self) -> None:
         """Wait for prestart to finish or shutdown to begin."""

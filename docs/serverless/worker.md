@@ -118,6 +118,45 @@ A worker can process more than one job concurrently. When a single request is ca
 
 No handler changes are required to support this. Async handlers that hold resources can perform cleanup by catching `asyncio.CancelledError`, but they **must re-raise** it after cleaning up. Swallowing the cancellation makes the worker report the job as completed instead of stopped.
 
+Sync handlers run on the worker's event loop, so a stop signal cannot interrupt them. The stop takes effect once the handler returns.
+
+### Stopped Jobs and `refresh_worker`
+
+If the worker starts with `refresh_worker` set in its config, a stopped job refreshes the worker the same way a finished job does. The worker stops taking new jobs and asks the server to replace it. A job stopped on a worker without `refresh_worker` does not refresh it; the worker goes on to its next job.
+
+A per-job `refresh_worker` flag in the handler's return value cannot apply here, because a stopped handler never returns.
+
+### Cleaning Up Subprocesses
+
+Cancelling the handler's task does not stop processes the handler started. The direct child of `asyncio.create_subprocess_exec` is killed only when its transport is closed or garbage collected, and its own children are never touched. They keep running into the next job on the same worker.
+
+Handlers that start subprocesses must kill the whole process group when cancelled. Start the child in its own session so that it leads a new process group, then kill that group and reap the child before re-raising:
+
+```python
+import asyncio
+import os
+import signal
+
+
+async def handler(job):
+    proc = await asyncio.create_subprocess_exec(
+        "python", "train.py", job["input"]["config"],
+        start_new_session=True,  # child leads its own process group
+    )
+    try:
+        await proc.wait()
+    except asyncio.CancelledError:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # the group already exited
+        await proc.wait()  # reap the child so it does not linger as a zombie
+        raise
+    return {"returncode": proc.returncode}
+```
+
+`os.killpg` reaches only processes that stay in the group. A grandchild that calls `setsid` itself escapes it; for those workloads, set `refresh_worker` so that a stopped job replaces the worker.
+
 ## See Also
 
 - [Worker Fitness Checks](./worker_fitness_checks.md) - Validate your worker environment at startup
