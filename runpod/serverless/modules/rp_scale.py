@@ -96,6 +96,8 @@ class JobScaler:
         self._sending_results: set[str] = set()
         # Jobs cancelled by a stop signal, as opposed to shutdown or teardown.
         self._stopped_jobs: set[str] = set()
+        # Stopped jobs now sending stopPod; a repeated stop must not cancel it.
+        self._sending_stop_pod: set[str] = set()
 
         self.stop_signals_fetcher = get_stop_signals
         self.stop_signals_fetcher_timeout = 90
@@ -561,9 +563,10 @@ class JobScaler:
         if task is None:
             log.debug(f"JobScaler.stop_job | No in-progress job for {job_id}.")
             return False
-        if job_id in self._stopped_jobs:
-            # Already stopping; a second cancel would interrupt the stopPod send.
-            log.debug(f"JobScaler.stop_job | {job_id} is already stopping.")
+        if job_id in self._sending_stop_pod:
+            # A repeated stop must not interrupt the stopPod send. Before that
+            # point it may: it is how a handler stuck in cancel cleanup exits.
+            log.debug(f"JobScaler.stop_job | {job_id} is already sending stopPod.")
             return False
 
         log.info("Stopping job.", job_id)
@@ -630,6 +633,7 @@ class JobScaler:
                 self.job_progress.remove(job)
             self.jobs_tasks.pop(job["id"], None)
             self._stopped_jobs.discard(job["id"])
+            self._sending_stop_pod.discard(job["id"])
             self._slot_freed.set()
 
             log.debug("Finished Job", job["id"])
@@ -667,6 +671,7 @@ class JobScaler:
             return
         log.info("refresh_worker flag set, stopping pod after stopped job.", job["id"])
         self.kill_worker()
+        self._sending_stop_pod.add(job["id"])
         await self._drain_earlier_uploads(job["id"])
         result = {"error": STOPPED_JOB_ERROR, "stopPod": True}
         await send_result(session, result, job, is_stream=False)

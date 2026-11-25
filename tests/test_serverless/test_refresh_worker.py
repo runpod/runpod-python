@@ -772,6 +772,42 @@ async def test_jobs_stopped_mid_upload_do_not_wait_on_each_other(progress):
         assert sorted(sent) == ["U1", "U2"]
 
 
+@pytest.mark.parametrize("refresh", [False, True], ids=["no-refresh", "refresh"])
+@pytest.mark.asyncio
+async def test_repeated_stop_interrupts_stuck_handler_cleanup(progress, refresh):
+    """A handler whose cancel cleanup hangs holds its slot until a second stop
+    cancels it again. Only the stopPod send itself is shielded from repeats."""
+    config = {"handler": lambda _: None, "refresh_worker": refresh}
+    scaler = rp_scale.JobScaler(config)
+    in_cleanup = asyncio.Event()
+
+    async def stuck_cleanup(_session, _config, _job):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            in_cleanup.set()
+            await asyncio.Event().wait()  # cleanup that never finishes
+            raise
+
+    scaler.jobs_handler = stuck_cleanup
+    with patch.object(rp_scale, "send_result", AsyncMock()) as send_result:
+        task = await _start_job(scaler, progress, "A")
+        try:
+            await asyncio.sleep(0)
+            assert await scaler.stop_job("A")
+            await asyncio.wait_for(in_cleanup.wait(), timeout=DEADLINE)
+            assert await scaler.stop_job("A")
+            _, pending = await asyncio.wait({task}, timeout=DEADLINE)
+            assert not pending, "the second stop did not interrupt the stuck cleanup"
+            assert scaler.jobs_tasks == {}
+            assert progress.count == 0
+            assert send_result.await_count == (1 if refresh else 0)
+        finally:
+            while not task.done():
+                task.cancel()
+                await asyncio.sleep(0)
+
+
 @pytest.mark.asyncio
 async def test_cancelled_refresh_drain_leaves_other_uploads_running():
     """Cancelling a task that waits for other uploads (shutdown) must not
