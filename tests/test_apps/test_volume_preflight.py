@@ -98,6 +98,7 @@ async def test_preflight_plans_shared_storage_without_creating(api):
 
     await resolver.preflight(specs)
 
+    assert resolver.created_volumes == []
     api.create_network_volume.assert_not_awaited()
     api.list_network_volumes.assert_awaited_once()
     api.network_volume_datacenters.assert_awaited_once()
@@ -110,17 +111,24 @@ async def test_preflight_plans_shared_storage_without_creating(api):
     api.create_network_volume.assert_awaited_once_with(
         name="shared", size=50, data_center_id="EU-RO-1"
     )
+    assert resolver.created_volumes == [
+        {"kind": "network", "name": "shared", "id": "nv-new"}
+    ]
 
 
 async def test_global_creation_is_deferred_until_resolution(api):
     resolver = VolumeResolver(api)
     volume = GlobalVolume("global")
     await resolver.preflight([_spec("a", volume)])
+    assert resolver.created_volumes == []
     api.create_global_volume.assert_not_awaited()
     assert await resolver.resolve(volume) == {"id": "gv-new"}
     api.create_global_volume.assert_awaited_once_with(name="global")
     assert api.list_global_volumes.await_count == 2
     api.network_volume_datacenters.assert_not_awaited()
+    assert resolver.created_volumes == [
+        {"kind": "global", "name": "global", "id": "gv-new"}
+    ]
 
 
 @pytest.mark.parametrize("datacenter", ["EU-RO-1", "US-MO-2"])

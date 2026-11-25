@@ -36,6 +36,12 @@ def deployment_api():
         "id": "app",
         "flashEnvironments": [{"id": "env", "name": "default"}],
     }
+    api.get_environment_by_name.return_value = {
+        "id": "env",
+        "name": "default",
+        "activeBuildId": None,
+        "endpoints": [],
+    }
     api.prepare_artifact_upload.return_value = {
         "uploadUrl": "upload",
         "objectKey": "key",

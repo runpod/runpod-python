@@ -292,6 +292,7 @@ class VolumeResolver:
         self._api = api
         self.events = events
         self._resolved: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        self.created_volumes: List[Dict[str, str]] = []
         self._planned: Dict[Tuple[str, str], Tuple[Dict[str, Any], List]] = {}
         self._stock = None
         self._volume_datacenters: Optional[Set[str]] = None
@@ -322,11 +323,17 @@ class VolumeResolver:
         client = await self._client()
         if isinstance(volume, GlobalVolume):
             record = await client.create_global_volume(name=volume.name)
+            self.created_volumes.append(
+                {"kind": volume.kind, "name": volume.name, "id": record["id"]}
+            )
             log.info("created global volume %s (%s)", volume.name, record["id"])
         else:
             dc = planned["dataCenterId"]
             record = await client.create_network_volume(
                 name=volume.name, size=volume.size, data_center_id=dc
+            )
+            self.created_volumes.append(
+                {"kind": volume.kind, "name": volume.name, "id": record["id"]}
             )
             emit(self.events, "volume_created", volume.name, volume.size, dc)
             log.info(
