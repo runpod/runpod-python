@@ -21,6 +21,9 @@ from .rp_prestart import (
 )
 from .worker_state import IS_LOCAL_TEST, JobsProgress
 
+# Sent with stopPod when a stopped job refreshes its worker.
+STOPPED_JOB_ERROR = "Job stopped before it finished; refreshing worker."
+
 log = RunPodLogger()
 # If no queued request was ever grabbed, give some time to grab one
 # and attach a failure reason, for better UX.
@@ -90,6 +93,8 @@ class JobScaler:
         # Jobs whose handler finished and whose result is still being sent.
         # They no longer hold a slot, so the next job-take overlaps the upload.
         self._sending_results: set[str] = set()
+        # Jobs cancelled by a stop signal, as opposed to shutdown or teardown.
+        self._stopped_jobs: set[str] = set()
 
         self.stop_signals_fetcher = get_stop_signals
         self.stop_signals_fetcher_timeout = 90
@@ -555,8 +560,13 @@ class JobScaler:
         if task is None:
             log.debug(f"JobScaler.stop_job | No in-progress job for {job_id}.")
             return False
+        if job_id in self._stopped_jobs:
+            # Already stopping; a second cancel would interrupt the stopPod send.
+            log.debug(f"JobScaler.stop_job | {job_id} is already stopping.")
+            return False
 
         log.info("Stopping job.", job_id)
+        self._stopped_jobs.add(job_id)
         task.cancel()
         return True
 
@@ -593,6 +603,8 @@ class JobScaler:
 
         except asyncio.CancelledError:
             log.info("Job stopped.", job["id"])
+            if job["id"] in self._stopped_jobs:
+                await self._refresh_after_stop(session, job)
             raise  # CancelledError is a BaseException
 
         except Exception as err:
@@ -609,6 +621,7 @@ class JobScaler:
             else:
                 self.job_progress.remove(job)
             self.jobs_tasks.pop(job["id"], None)
+            self._stopped_jobs.discard(job["id"])
             self._slot_freed.set()
 
             log.debug("Finished Job", job["id"])
@@ -629,6 +642,25 @@ class JobScaler:
         if self._requests_refresh(job_result):
             log.info("Refresh requested, taking no more jobs.", job["id"])
             self.kill_worker()
+
+    async def _refresh_after_stop(
+        self, session: ClientSession, job: dict[str, Any]
+    ) -> None:
+        """Honor the start-time refresh_worker flag for a stopped job.
+
+        A stopped job never returns, so the normal refresh (stopPod on the
+        job's result) would be skipped and the worker would take the next job
+        with whatever the stopped handler left behind: running subprocesses,
+        files, module state. Stop intake and send stopPod instead. The platform
+        has already ended the request, so it keeps the request's status and
+        only acts on stopPod.
+        """
+        if not self.config.get("refresh_worker", False):
+            return
+        log.info("refresh_worker flag set, stopping pod after stopped job.", job["id"])
+        self.kill_worker()
+        result = {"error": STOPPED_JOB_ERROR, "stopPod": True}
+        await send_result(session, result, job, is_stream=False)
 
     async def _release_slot(self, job: dict[str, Any], job_result: Any) -> None:
         """Free a finished job's slot before its result is sent.

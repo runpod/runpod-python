@@ -367,8 +367,16 @@ class FakeAiApi:
         self.stop_pod_received = False
         self.requests_after_stop_pod: list[str] = []
         self.polled_empty = asyncio.Event()
+        self.pending_stops: list[str] = []
+        self.stopped: set[str] = set()
         self.port = 0
         self._runner = None
+
+    def signal_stop(self, job_id: str):
+        """Cancel a request the way ai-api does: mark it terminal, then signal
+        the worker over the stop channel."""
+        self.stopped.add(job_id)
+        self.pending_stops.append(job_id)
 
     def _record(self, request):
         if self.stop_pod_received and "/job-take" in request.path:
@@ -387,12 +395,20 @@ class FakeAiApi:
 
     async def job_done(self, request):
         payload = json.loads(await request.text())
-        self.done[request.match_info["job_id"]] = payload
+        job_id = request.match_info["job_id"]
+        self.done[job_id] = payload
         if payload.get("stopPod"):
             self.stop_pod_received = True
+        if job_id in self.stopped:
+            # ai-api keeps the request's terminal status and answers 400, but
+            # still honors stopPod for the worker.
+            return web.Response(status=400, text="request is already completed")
         return web.Response(status=200)
 
     async def job_stop(self, _request):
+        if self.pending_stops:
+            job_ids, self.pending_stops = self.pending_stops, []
+            return web.json_response({"jobsToStop": job_ids})
         await asyncio.sleep(0.05)
         return web.Response(status=204)
 
@@ -542,6 +558,133 @@ async def test_http_refresh_on_a_later_job(http_worker):
         scaler.kill_worker()
         run.cancel()
         await asyncio.gather(run, return_exceptions=True)
+
+
+# ---------------------------------------------------------------------------
+# A stopped job (cancelled or timed out) and the start-time refresh_worker flag
+# ---------------------------------------------------------------------------
+
+
+def _blocking_handler(started: dict[str, asyncio.Event]):
+    """Job A runs until it is stopped, like a long build; other jobs finish."""
+
+    async def handler(job):
+        started.setdefault(job["id"], asyncio.Event()).set()
+        if job["id"] == "A":
+            await asyncio.Event().wait()
+        return {"echo": job["input"]["n"]}
+
+    return handler
+
+
+async def _wait_started(started: dict[str, asyncio.Event], job_id: str):
+    for _ in range(DEADLINE * 100):
+        if job_id in started:
+            return await asyncio.wait_for(started[job_id].wait(), timeout=DEADLINE)
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"job {job_id} never started")
+
+
+@pytest.mark.asyncio
+async def test_http_stopped_job_with_refresh_flag_refreshes_the_worker(http_worker):
+    """A stop must not hand the next job to a worker that promised one job per
+    lifetime: stop intake and send stopPod, as a finished job would."""
+    server = await http_worker([generate_job("A", n=1), generate_job("B", n=2)])
+    started: dict[str, asyncio.Event] = {}
+    scaler = rp_scale.JobScaler(
+        {"handler": _blocking_handler(started), "refresh_worker": True}
+    )
+    run = asyncio.create_task(scaler.run())
+    try:
+        await _wait_started(started, "A")
+        server.signal_stop("A")
+        _, pending = await asyncio.wait({run}, timeout=DEADLINE)
+        assert server.takes == ["A"], "job B was taken by a worker due a refresh"
+        assert [job["id"] for job in server.queue] == ["B"]
+        assert server.done["A"]["stopPod"] is True
+        assert server.done["A"]["error"]
+        assert "B" not in started
+        assert not pending, "the worker did not exit after a stopped refresh job"
+    finally:
+        scaler.kill_worker()
+        run.cancel()
+        await asyncio.gather(run, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_http_stopped_job_without_refresh_flag_serves_next_job(http_worker):
+    """Without refresh_worker, a stop ends only that job; the worker goes on."""
+    server = await http_worker([generate_job("A", n=1), generate_job("B", n=2)])
+    started: dict[str, asyncio.Event] = {}
+    scaler = rp_scale.JobScaler({"handler": _blocking_handler(started)})
+    run = asyncio.create_task(scaler.run())
+    try:
+        await _wait_started(started, "A")
+        server.signal_stop("A")
+        await asyncio.wait_for(server.polled_empty.wait(), timeout=DEADLINE)
+        assert server.takes[:2] == ["A", "B"]
+        assert server.done == {"B": {"output": {"echo": 2}}}
+        assert not server.stop_pod_received
+        assert not run.done(), "a worker without refresh must keep running"
+    finally:
+        scaler.kill_worker()
+        run.cancel()
+        await asyncio.gather(run, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_repeated_stop_signal_does_not_interrupt_the_stop_pod_send(progress):
+    """ai-api can signal the same request twice (cancel, then a ping that still
+    sees it). The second signal must not cancel the stopPod upload."""
+    queue = FakeQueue(["A", "B"])
+    scaler, tasks, release = start_worker(queue, {}, config={"refresh_worker": True})
+    release["A"] = asyncio.Event()
+    sending = asyncio.Event()
+    unblock = asyncio.Event()
+    sent = []
+
+    async def slow_send(_session, result, job, is_stream=False):
+        sending.set()
+        await unblock.wait()
+        sent.append((job["id"], result))
+
+    try:
+        with patch.object(rp_scale, "send_result", slow_send):
+            for _ in range(DEADLINE * 100):
+                if "A" in scaler.jobs_tasks:
+                    break
+                await asyncio.sleep(0.01)
+            assert await scaler.stop_job("A")
+            await asyncio.wait_for(sending.wait(), timeout=DEADLINE)
+            assert not await scaler.stop_job("A")
+            unblock.set()
+            assert await wait_for_exit(tasks)
+        assert [job_id for job_id, _ in sent] == ["A"]
+        assert sent[0][1]["stopPod"] is True
+        assert queue.taken == ["A"]
+    finally:
+        await stop(scaler, tasks, release)
+
+
+@pytest.mark.asyncio
+async def test_cancel_outside_a_stop_signal_sends_no_stop_pod(progress):
+    """Only a stop signal refreshes. A job task cancelled for any other reason
+    (shutdown, event loop teardown) reports nothing."""
+    queue = FakeQueue(["A", "B"])
+    scaler, tasks, release = start_worker(queue, {}, config={"refresh_worker": True})
+    release["A"] = asyncio.Event()
+    try:
+        with patch.object(rp_scale, "send_result", AsyncMock()) as send_result:
+            for _ in range(DEADLINE * 100):
+                if "A" in scaler.jobs_tasks:
+                    break
+                await asyncio.sleep(0.01)
+            task = scaler.jobs_tasks["A"]
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            send_result.assert_not_awaited()
+    finally:
+        await stop(scaler, tasks, release)
 
 
 # ---------------------------------------------------------------------------
