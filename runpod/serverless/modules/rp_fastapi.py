@@ -280,14 +280,16 @@ class WorkerAPI:
             description=STREAM_DESCRIPTION,
             tags=["Check Job Results"],
         )
-        api_router.add_api_route(
-            "/status/{job_id}",
-            self._sim_status,
-            methods=["POST"],
-            summary="Mimics the behavior of the status endpoint.",
-            description=STATUS_DESCRIPTION,
-            tags=["Check Job Results"],
-        )
+        # Separate routes give GET and POST distinct OpenAPI operation IDs.
+        for method in ("GET", "POST"):
+            api_router.add_api_route(
+                "/status/{job_id}",
+                self._sim_status,
+                methods=[method],
+                summary="Mimics the behavior of the status endpoint.",
+                description=STATUS_DESCRIPTION,
+                tags=["Check Job Results"],
+            )
 
         # Include the APIRouter in the FastAPI application.
         self.rp_app.include_router(api_router)
