@@ -41,6 +41,12 @@ class TestWorker(TestCase):
 
             mock_os.environ.get.return_value = "something"
             assert runpod.serverless.worker._is_local(self.mock_config) is False
+            assert (
+                runpod.serverless.worker._is_local(
+                    {"rp_args": {"test_file": "other.json"}}
+                )
+                is True
+            )
 
     def test_start(self):
         """
@@ -571,3 +577,16 @@ class TestRunWorker(TestCase):
 
         runpod.serverless.start(self.config)
         assert sys.excepthook != _handle_uncaught_exception
+
+
+def test_set_config_args_accepts_test_file_spellings():
+    """--test_file and --test-file both set rp_args["test_file"]"""
+    for args in (
+        ["--test_file", "other.json"],
+        ["--test-file", "other.json"],
+        ["--test-file=other.json"],
+    ):
+        with patch.object(sys, "argv", ["handler.py", *args, "--custom", "x"]):
+            config = runpod.serverless._set_config_args({})
+            assert config["rp_args"]["test_file"] == "other.json"
+            assert sys.argv == ["handler.py", "--custom", "x"]

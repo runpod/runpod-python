@@ -31,12 +31,13 @@ async def run_local(config: dict[str, Any]) -> None:
         log.info("test_input set, using test_input as job input.")
         local_job = config["rp_args"]["test_input"]
     else:
-        if not os.path.exists("test_input.json"):
-            log.warn("test_input.json not found, exiting.")
+        test_file = config["rp_args"].get("test_file") or "test_input.json"
+        if not os.path.exists(test_file):
+            log.warn(f"{test_file} not found, exiting.")
             sys.exit(1)
 
-        log.info("Using test_input.json as job input.")
-        with open("test_input.json", encoding="UTF-8") as file:
+        log.info(f"Using {test_file} as job input.")
+        with open(test_file, encoding="UTF-8") as file:
             local_job = json.loads(file.read())
 
     if local_job.get("input", None) is None:

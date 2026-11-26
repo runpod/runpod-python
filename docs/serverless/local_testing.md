@@ -18,6 +18,14 @@ To test your serverless worker locally, create the file `test_input.json` in the
 
 Then run the python file which contains your worker handler, it will be called with the contents of `test_input.json` as the input.
 
+To use a different file, for example to keep one input file per test case, pass its path with `--test_file`:
+
+```bash
+python your_handler.py --test_file tests/inputs/long_prompt.json
+```
+
+`--test-file` works as well. If both `--test_input` and `--test_file` are passed, `--test_input` is used.
+
 ## Test Input Argument
 
 The second method of testing your serverless worker locally is to pass the input as an argument to the python file which contains your worker handler.
