@@ -17,7 +17,9 @@ heartbeat = rp_ping.Heartbeat()
 
 def _is_local(config) -> bool:
     """Returns True if the worker is running locally, False otherwise."""
-    if config["rp_args"].get("test_input", None):
+    if config["rp_args"].get("test_input", None) or config["rp_args"].get(
+        "test_file", None
+    ):
         return True
 
     if os.environ.get("RUNPOD_WEBHOOK_GET_JOB", None) is None:

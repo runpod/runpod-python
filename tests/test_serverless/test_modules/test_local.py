@@ -164,3 +164,50 @@ class TestRunLocal(IsolatedAsyncioTestCase):
 
         assert mock_file.called
         assert mock_run.called is False
+
+    @patch("runpod.serverless.modules.rp_local.run_job", return_value={})
+    @patch("builtins.open", new_callable=mock_open, read_data='{"input": "test"}')
+    async def test_run_local_with_test_file(self, mock_file, mock_run):
+        """
+        Test run_local function reads the file passed with --test_file
+        """
+        config = {"handler": "handler", "rp_args": {"test_file": "inputs/other.json"}}
+        with patch("os.path.exists", return_value=True) as mock_exists:
+            with self.assertRaises(SystemExit) as sys_exit:
+                await rp_local.run_local(config)
+            self.assertEqual(sys_exit.exception.code, 0)
+
+        mock_exists.assert_called_with("inputs/other.json")
+        mock_file.assert_called_once_with("inputs/other.json", encoding="UTF-8")
+        assert mock_run.called
+
+    @patch("runpod.serverless.modules.rp_local.run_job", return_value={})
+    async def test_run_local_with_missing_test_file(self, mock_run):
+        """
+        Test run_local function exits when the --test_file path does not exist
+        """
+        config = {"handler": "handler", "rp_args": {"test_file": "missing.json"}}
+        with patch("os.path.exists", return_value=False) as mock_exists:
+            with self.assertRaises(SystemExit) as sys_exit:
+                await rp_local.run_local(config)
+            self.assertEqual(sys_exit.exception.code, 1)
+
+        mock_exists.assert_called_with("missing.json")
+        assert mock_run.called is False
+
+    @patch("runpod.serverless.modules.rp_local.run_job", return_value={})
+    @patch("builtins.open", new_callable=mock_open, read_data='{"input": "file"}')
+    async def test_run_local_test_input_takes_precedence(self, mock_file, mock_run):
+        """
+        Test run_local function prefers --test_input over --test_file
+        """
+        config = {
+            "handler": "handler",
+            "rp_args": {"test_input": {"input": "inline"}, "test_file": "other.json"},
+        }
+        with self.assertRaises(SystemExit) as sys_exit:
+            await rp_local.run_local(config)
+        self.assertEqual(sys_exit.exception.code, 0)
+
+        assert mock_file.called is False
+        self.assertEqual(mock_run.call_args.args[1]["input"], "inline")

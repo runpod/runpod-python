@@ -85,6 +85,14 @@ parser.add_argument(
     default=None,
     help="Test input for the worker, formatted as JSON.",
 )
+parser.add_argument(
+    "--test_file",
+    "--test-file",
+    dest="test_file",
+    type=str,
+    default=None,
+    help="Path to a JSON file to use as test input instead of test_input.json.",
+)
 
 
 def _set_config_args(config: dict[str, Any]) -> dict[str, Any]:

@@ -20,6 +20,10 @@ from runpod._startup import run_import_checks
         ["handler.py"],
         ["handler.py", "--test_input", "{}"],
         ["handler.py", "--test_input={}"],
+        ["handler.py", "--test_file", "other.json"],
+        ["handler.py", "--test_file=other.json"],
+        ["handler.py", "--test-file", "other.json"],
+        ["handler.py", "--test-file=other.json"],
         ["handler.py", "--rp_serve_api"],
     ],
 )

@@ -21,6 +21,7 @@ def is_early_check_eligible() -> bool:
     if os.environ.get("RUNPOD_REALTIME_PORT", "0").strip() not in ("", "0"):
         return False
     return is_serverless_environment() and not any(
-        arg.split("=", 1)[0] in ("--test_input", "--rp_serve_api")
+        arg.split("=", 1)[0]
+        in ("--test_input", "--test_file", "--test-file", "--rp_serve_api")
         for arg in sys.argv[1:]
     )
