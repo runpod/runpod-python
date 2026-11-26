@@ -117,6 +117,18 @@ class TestValidator(unittest.TestCase):
         )
         self.assertNotIn("errors", result)
 
+    def test_validate_int_for_float_is_converted(self):
+        """
+        Tests validate converts an int given for a float input
+        """
+        result = rp_validator.validate(
+            {"a": 1}, {"a": {"type": float, "required": True}}
+        )
+
+        self.assertNotIn("errors", result)
+        self.assertEqual(result["validated_input"]["a"], 1.0)
+        self.assertIsInstance(result["validated_input"]["a"], float)
+
 
 if __name__ == "__main__":
     unittest.main()
