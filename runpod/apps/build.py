@@ -100,8 +100,13 @@ def _requirements_txt(project_root: Path) -> List[str]:
     requirements: List[str] = []
     req_file = project_root / "requirements.txt"
     if req_file.exists():
-        for line in req_file.read_text().splitlines():
+        for line_number, line in enumerate(req_file.read_text().splitlines(), 1):
             line = line.strip()
+            if re.match(r"^(?:-r|--requirement(?:[=\s]|$))", line):
+                raise BuildError(
+                    f"requirements.txt:{line_number}: nested requirements are not "
+                    "supported. List the included dependencies in requirements.txt."
+                )
             if line and not line.startswith("#") and not line.startswith("-"):
                 requirements.append(line)
     return requirements

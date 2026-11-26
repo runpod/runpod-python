@@ -62,6 +62,24 @@ class TestCollectRequirements:
         # numpy deduped by name, requirements.txt wins on order
         assert reqs == ["numpy==1.26", "pandas", "requests"]
 
+    @pytest.mark.parametrize(
+        "directive",
+        [
+            "-r extra.txt",
+            "-rextra.txt",
+            "--requirement extra.txt",
+            "--requirement=extra.txt",
+        ],
+    )
+    def test_rejects_nested_requirements(self, tmp_path, directive):
+        (tmp_path / "requirements.txt").write_text(
+            f"requests==2.32.3\n  {directive}\n"
+        )
+        (tmp_path / "extra.txt").write_text("numpy==2.1.3\n")
+
+        with pytest.raises(BuildError, match=r"requirements\.txt:2:.*not supported"):
+            collect_requirements(tmp_path, App("a"))
+
     def test_no_requirements_file(self, tmp_path):
         app = App("a")
 
