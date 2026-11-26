@@ -526,10 +526,17 @@ _send_ping()           # Load job state, construct URL, HTTP GET
 FastAPI application wrapping user handler.
 
 **Endpoints**:
-- `POST /runsync`: Execute handler synchronously, return output
-- `POST /run`: Execute handler asynchronously, return job ID
-- `GET /status/{job_id}`: Check async job status
-- `POST /stream/{job_id}`: Streaming output (generator handlers)
+- `POST /runsync`: Execute the handler immediately and return its output.
+- `POST /run`: Store the job input in memory and return a job ID with `IN_PROGRESS`.
+- `POST /status/{job_id}`: Execute the stored job and return its output.
+- `POST /stream/{job_id}`: Execute the stored job with a generator handler and return the collected chunks.
+
+For local testing, send the input to `POST /run`, then send a single
+`POST /status/{job_id}` with the returned ID. Use `POST /stream/{job_id}`
+instead to inspect the chunks produced by a generator handler. The local
+server starts the handler when you request the result and removes the
+stored job after execution. Requesting the same ID again returns
+`Job ID not found`.
 
 **Usage**:
 ```bash
@@ -556,11 +563,10 @@ python worker.py --rp_serve_api --rp_api_port 8000 --rp_api_host localhost
 ```
 
 **Features**:
-- Job queue simulation
-- In-memory job tracking
+- In-memory storage for pending job inputs
 - Automatic job ID generation
 - Handler error capture
-- Generator streaming support
+- Collection of generator output
 
 ---
 
