@@ -32,22 +32,24 @@ def get_auth_header():
         "Accept-Encoding": "gzip, deflate",
     }
 
+
 def AsyncClientSession(*args, **kwargs):  # pylint: disable=invalid-name
     """
     Deprecation from aiohttp.ClientSession forbids inheritance.
-    This is now a factory method
+    This is now a factory method. Explicit session options override defaults.
     """
-    return ClientSession(
-        connector=TCPConnector(limit=0),
-        headers=get_auth_header(),
-        timeout=ClientTimeout(600, ceil_threshold=400),
-        *args,
-        **kwargs,
-    )
+    if "connector" not in kwargs:
+        kwargs["connector"] = TCPConnector(limit=0)
+    if "headers" not in kwargs:
+        kwargs["headers"] = get_auth_header()
+    if "timeout" not in kwargs:
+        kwargs["timeout"] = ClientTimeout(600, ceil_threshold=400)
+    return ClientSession(*args, **kwargs)
 
 
 class SyncClientSession(requests.Session):
     """
     Inherits requests.Session to override `request()` method for tracing
     """
+
     pass
