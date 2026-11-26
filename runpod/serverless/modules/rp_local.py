@@ -12,7 +12,8 @@ from runpod.serverless.modules import rp_capture
 from runpod.serverless.modules.rp_logger import RunPodLogger
 
 from .rp_fitness import _terminate_unhealthy
-from .rp_job import run_job
+from .rp_handler import is_generator
+from .rp_job import run_job, run_job_generator
 from .rp_prestart import (
     get_prestart_hooks,
     has_prestart_hooks,
@@ -50,7 +51,15 @@ async def run_local(config: dict[str, Any]) -> None:
     if await run_prestart_phase(get_prestart_hooks(), config.get("prestart_timeout")):
         _terminate_unhealthy(1)
 
-    job_result = await run_job(config["handler"], local_job)
+    if is_generator(config["handler"]):
+        job_result = {"output": []}
+        async for stream_output in run_job_generator(config["handler"], local_job):
+            if stream_output.get("error"):
+                job_result = stream_output
+                break
+            job_result["output"].append(stream_output["output"])
+    else:
+        job_result = await run_job(config["handler"], local_job)
 
     if job_result.get("error", None):
         log.error(f"Job {local_job['id']} failed with error: {job_result['error']}")
