@@ -44,16 +44,24 @@ jobs:
         env:
           UV_PYTHON: ${{ matrix.python-version }}
 
-      # Consumed by the weekly coverage report, which reads the artifact from
-      # the newest successful run on main. Name is per-matrix-version because
-      # upload-artifact@v4 requires unique names within a run.
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v7
+      # Shared with the other repos' coverage jobs. It lives in its own public
+      # repo because a public repository -- this one -- cannot resolve an action
+      # from a private one. An earlier attempt to consume it from the private
+      # internal-workflows repo failed at `Set up job` on every matrix leg with
+      # "Unable to resolve action, not found", so no tests ran at all.
+      #
+      # Pinned by commit rather than tag: a tag can be repointed at new code,
+      # and pinning means a change to the action cannot reach us until we bump
+      # it deliberately.
+      - name: Coverage summary
         if: always()
+        uses: runpod/coverage-summary-action@65b35a32ecfd9c2f0dc2352394eca1decfba4915
         with:
-          name: coverage-${{ matrix.python-version }}
-          path: coverage.xml
-          if-no-files-found: error
+          format: cobertura
+          coverage-file: coverage.xml
+          results: pytest-results.xml
+          artifact-name: coverage-${{ matrix.python-version }}
+          if-no-files-found: warn
 
   e2e:
     if: github.event_name != 'schedule' && github.repository == 'runpod/runpod-python'
